@@ -4,6 +4,7 @@
 #include "progress.h"
 #include "task_types.h"
 #include "threading.h"
+#include <gtk/gtk.h>
 
 typedef struct taskErrData_ taskErrData, *taskErrPtr, **taskErrHandle;
 
@@ -15,6 +16,9 @@ struct taskErrData_ {
   taskErrHandle next;
 };
 
+/* Create the embeddable task progress widget for wazoo tab */
+GtkWidget *create_task_progress_widget(void);
+
 OSErr AddFilterTask(void);
 void RemoveFilterTask(void);
 OSErr AddProgressTask(threadDataHandle threadData);
@@ -22,6 +26,7 @@ void RemoveProgressTask(threadDataHandle threadData);
 OSErr AddTaskErrorsS(const char *error, const char *explanation,
                      TaskKindEnum taskKind, long persId);
 void RemoveTaskErrors(TaskKindEnum taskKind, long persId);
+void UpdateTaskProgress(int percent, int remaining);
 void DrawTaskProgressBar(ControlHandle bar);
 void InvalTPRect(Rect *invalRect);
 void OpenTasksWin(void);

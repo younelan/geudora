@@ -15,6 +15,7 @@
 #include "gtk_toolbar_dock.h"
 #include "mailbox.h" /* For MessageSummary */
 #include "message.h"
+#include "taskProgress.h"
 #include "toc.h"
 #include "wazoo.h"
 #include <gtk/gtk.h>
@@ -1621,6 +1622,13 @@ static GtkWidget *create_main_layout(void) {
                            gtk_label_new("Mailboxes"));
   gtk_notebook_set_tab_detachable(GTK_NOTEBOOK(left_wazoo), mb_vbox, TRUE);
   gtk_notebook_set_tab_reorderable(GTK_NOTEBOOK(left_wazoo), mb_vbox, TRUE);
+
+  /* Task Progress tab — shows active tasks, errors, check times */
+  GtkWidget *tp_panel = create_task_progress_widget();
+  gtk_notebook_append_page(GTK_NOTEBOOK(left_wazoo), tp_panel,
+                           gtk_label_new("Tasks"));
+  gtk_notebook_set_tab_detachable(GTK_NOTEBOOK(left_wazoo), tp_panel, TRUE);
+  gtk_notebook_set_tab_reorderable(GTK_NOTEBOOK(left_wazoo), tp_panel, TRUE);
 
   gtk_widget_set_vexpand(left_wazoo, TRUE);
   gtk_box_append(GTK_BOX(left_wazoo_box), left_wazoo);

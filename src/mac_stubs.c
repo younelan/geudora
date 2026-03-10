@@ -585,7 +585,7 @@ void UUPCPrime(void) {}
 void UUPCWriteAddr(void) {}
 /* UpdateMyWindow - real impl in mywindow.c */
 void UpdateSum(void* m) {}
-void UpdateTaskProgress(void* t) {}
+/* UpdateTaskProgress — real impl in taskProgress.c */
 bool UseFlowOut(void) { return false; }
 bool UserHasValidPaidModeRegcode(void) { return false; }
 /* UserSelectWindow - real impl in mywindow.c */

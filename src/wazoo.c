@@ -43,7 +43,7 @@ DAMAGE. */
  * ----------------------------------------------------------------------- */
 static const short kWazooKinds[] = {
 	MB_WIN, PH_WIN, ALIAS_WIN, FILT_WIN,
-	PERS_WIN, STA_WIN, SIG_WIN, LINK_WIN, STAT_WIN,
+	PERS_WIN, STA_WIN, SIG_WIN, LINK_WIN, STAT_WIN, TASKS_WIN,
 	0  /* sentinel */
 };
 
