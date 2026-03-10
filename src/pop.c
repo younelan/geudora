@@ -154,7 +154,7 @@ extern OSErr StackQueue(void *what, void **stack);
 extern OSErr StackTop(void *into, void **stack);
 extern bool ValidHash(uint32_t hash);
 extern void RemoveUTF8FromSum(void *sum);
-void MakeMessTitle(unsigned char *title, TOCHandle tocH, int sumNum,
+void MakeMessTitle(unsigned char *title, TOCType * tocH, int sumNum,
                    bool useSummary);
 extern void MyParamText(PStr p1, PStr p2, PStr p3, PStr p4);
 extern void BeginHexBin(HeaderDHandle hdh);
@@ -327,7 +327,7 @@ short GetMyMail(TransStream stream, bool quietly, short *gotSome,
   Str255 msgname;
   Str63 hostName;
   long port;
-  TOCHandle tocH;
+  TOCType * tocH;
   short err;
   short fetchCount, message, fetched;
   POPDHandle popDH = nil;
@@ -436,7 +436,7 @@ short GetMyMail(TransStream stream, bool quietly, short *gotSome,
 
                   // delete this message if a translator requested it.
                   if (ETLDeleteRequest) {
-                    DeleteSum(tocH, (*tocH)->count - 1);
+                    DeleteSum(tocH, tocH->count - 1);
                     fetched--;
                     ETLDeleteRequest = false;
                   }
@@ -495,7 +495,7 @@ short GetMyMail(TransStream stream, bool quietly, short *gotSome,
 /**********************************************************************
  * RenameInTemp
  **********************************************************************/
-TOCHandle RenameInTemp(TOCHandle tocH) {
+TOCType * RenameInTemp(TOCType * tocH) {
   Str63 name;
   FSSpec deliverSpec, inSpec, deliverFolder;
   FSSpec deliverTOCSpec, tocSpec;
@@ -503,7 +503,7 @@ TOCHandle RenameInTemp(TOCHandle tocH) {
   long maxFileNum = 0, fileNum;
   OSErr err;
 
-  if (!tocH || !(*tocH)->count)
+  if (!tocH || !tocH->count)
     return tocH;
   if (err = SubFolderSpec(DELIVERY_FOLDER, &deliverFolder)) {
     Aprintf(OK_ALRT, Note, THREAD_SUBFOLDER_ERR, DELIVERY_FOLDER, err);
@@ -511,7 +511,7 @@ TOCHandle RenameInTemp(TOCHandle tocH) {
   }
 
   // make sure the toc is written
-  if (TOCIsDirty(tocH) || (*tocH)->reallyDirty)
+  if (TOCIsDirty(tocH) || tocH->reallyDirty)
     if (err = WriteTOC(tocH))
       return tocH;
 
@@ -551,8 +551,8 @@ TOCHandle RenameInTemp(TOCHandle tocH) {
     *tocSpec.name = 0;
 
   // Move files
-  if ((*tocH)->win)
-    CloseMyWindow(GetMyWindowWindowPtr((*tocH)->win));
+  if (tocH->win)
+    CloseMyWindow(GetMyWindowWindowPtr(tocH->win));
   if (err = SpecMoveAndRename(&inSpec, &deliverSpec)) {
     Aprintf(OK_ALRT, Note, THREAD_DELIVER_CREATE_ERR, deliverSpec.name, err);
   } else {
@@ -1147,7 +1147,7 @@ int POPGetMessage(TransStream stream, long messageNumber, short *gotSome,
   char buffer[CMD_BUFFER];
   long size = sizeof(buffer);
   short count;
-  TOCHandle tocH =
+  TOCType * tocH =
       GetInTOC(); /* shd already be in memory, so NBD to grab it here */
   POPDesc pd;
   long msgsize;
@@ -1350,7 +1350,7 @@ int POPCmdError(short cmd, unsigned char *args, unsigned char *message) {
  * FetchMessageText - read in the body of a message
  ************************************************************************/
 int FetchMessageText(TransStream stream, long estSize, POPDPtr pdp,
-                     short messageNumber, TOCHandle useTocH) {
+                     short messageNumber, TOCType * useTocH) {
   return (FetchMessageTextLo(stream, estSize, pdp, messageNumber, useTocH,
                              false, false));
 }
@@ -1359,10 +1359,10 @@ int FetchMessageText(TransStream stream, long estSize, POPDPtr pdp,
  * FetchMessageText - read in the body of a message
  ************************************************************************/
 int FetchMessageTextLo(TransStream stream, long estSize, POPDPtr pdp,
-                       short messageNumber, TOCHandle useTocH, bool imap,
+                       short messageNumber, TOCType * useTocH, bool imap,
                        bool import) {
   unsigned char *text = nil;
-  TOCHandle tocH;
+  TOCType * tocH;
   MSumType sum;
   long eof, chopHere;
   Str255 name;
@@ -1411,7 +1411,7 @@ int FetchMessageTextLo(TransStream stream, long estSize, POPDPtr pdp,
 
   eof = FindTOCSpot(tocH, estSize);
 
-  Prr = SetFPos((*tocH)->refN, fsFromStart, eof);
+  Prr = SetFPos(tocH->refN, fsFromStart, eof);
   if (Prr) {
     FileSystemError(WRITE_MBOX, name, Prr);
     goto done;
@@ -1422,7 +1422,7 @@ int FetchMessageTextLo(TransStream stream, long estSize, POPDPtr pdp,
     Dprintf("\p%d;sc;g", Prr);
 #endif // DEBUG //////////////////////////
 
-  count = SaveAndSplit(stream, (*tocH)->refN, estSize, &hdh, (*tocH)->imapTOC);
+  count = SaveAndSplit(stream, tocH->refN, estSize, &hdh, tocH->imapTOC);
 
 #ifdef DEBUG ////////////////////////////
   if (BUG15)
@@ -1430,8 +1430,8 @@ int FetchMessageTextLo(TransStream stream, long estSize, POPDPtr pdp,
 #endif // DEBUG //////////////////////////
 
 done:
-  if (!Prr && !GetFPos((*tocH)->refN, &chopHere))
-    SetEOF((*tocH)->refN, chopHere);
+  if (!Prr && !GetFPos(tocH->refN, &chopHere))
+    SetEOF(tocH->refN, chopHere);
 
   // if we're adding IMAP messages, or importing mail, we'll close and flush
   // later.
@@ -1521,7 +1521,7 @@ done:
     {
       MSumType newSum;
 
-      newSum = (*tocH)->sums[messageNumber];
+      newSum = tocH->sums[messageNumber];
       newSum.offset = sum.offset;
       newSum.length = sum.length;
       newSum.bodyOffset = sum.bodyOffset;
@@ -1534,7 +1534,7 @@ done:
       if (!(newSum.opts & OPT_IMAP_SENT))
         PSCopy(newSum.from, sum.from);
       RemoveUTF8FromSum(&newSum);
-      (*tocH)->sums[messageNumber] = newSum;
+      tocH->sums[messageNumber] = newSum;
     } else if (!SaveMessageSum(&sum, &tocH)) {
       if (import)
         ImportErr = memFullErr; // stop if we're importing.
@@ -1575,7 +1575,7 @@ done:
     if (imap) // add the message error to the IMAP message we just downloaded
       AddMesgError(tocH, messageNumber, errorStr, -1);
     else // add it to the last message added to the mailbox.  OK for POP.
-      AddMesgError(tocH, (*tocH)->count - 1, errorStr, -1);
+      AddMesgError(tocH, tocH->count - 1, errorStr, -1);
   }
 
   if (Prr) {
@@ -1585,18 +1585,18 @@ done:
 
   count = part - 1;
 
-  InvalSum(tocH, useTocH ? messageNumber : (*tocH)->count - 1);
-  if (!PrefIsSet(PREF_CORVAIR) && !((*tocH)->count % 5)) {
+  InvalSum(tocH, useTocH ? messageNumber : tocH->count - 1);
+  if (!PrefIsSet(PREF_CORVAIR) && !(tocH->count % 5)) {
     Prr = WriteTOC(tocH);
     FlushVol(nil, spec.vRefNum);
   }
-  MakeMessTitle(name, tocH, useTocH ? messageNumber : (*tocH)->count - count,
+  MakeMessTitle(name, tocH, useTocH ? messageNumber : tocH->count - count,
                 False);
   ComposeLogR(LOG_RETR, nil, MSG_GOT, name, count);
   if (!imap)
     UpdateNumStatWithTime(
         kStatReceivedMail, 1,
-        (*tocH)->sums[useTocH ? messageNumber : (*tocH)->count - 1].seconds +
+        tocH->sums[useTocH ? messageNumber : tocH->count - 1].seconds +
             ZoneSecs());
   return (Prr ? 0 : count);
 }
@@ -2848,7 +2848,7 @@ OSErr BuildPOPD(TransStream stream, POPDHandle *popDH, short count,
   short popMode = GetPrefLong(PREF_POP_MODE);
   int total = 0;
 #ifdef THREADING_ON
-  TOCHandle tempInTocH = nil;
+  TOCType * tempInTocH = nil;
 
   if (InAThread())
     tempInTocH = GetTempInTOC();
@@ -2925,7 +2925,7 @@ OSErr BuildPOPD(TransStream stream, POPDHandle *popDH, short count,
         if (tempInTocH) {
           sum = FindSumByHash(tempInTocH, new.uidHash);
           if (sum != -1) {
-            if (sum == ((*tempInTocH)->count - 1)) {
+            if (sum == (tempInTocH->count - 1)) {
               DeleteSum(tempInTocH, sum);
               old.retred = False;
               old.stubbed = False;

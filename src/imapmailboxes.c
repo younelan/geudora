@@ -51,8 +51,7 @@ ADVISED OF THE POSSIBILITY OF SUCH DAMAGE. */
 #define MAX_BOX_NAME 31
 #include "gtk_dialogs.h"
 
-extern PersHandle CurPers;
-extern PersHandle PersList;
+#include "threading.h"  /* PersList + CurPers macros = CurThreadGlobals->t* */
 #ifndef CurPersSafe
 #define CurPersSafe PERS_FORCE(CurPers)
 #endif
@@ -135,7 +134,7 @@ OSErr DirIterate_Shim(short v, long d, CInfoPBPtr p) {
 #define CleanupConnection(s)
 #define KeychainAvailable() 0
 #define TellFiltMBRename(a, b, c, d, e)
-extern TOCHandle FindTOC(FSSpecPtr spec);
+extern TOCType * FindTOC(FSSpecPtr spec);
 typedef struct ThreadDataRec {
   struct ThreadDataRec **next;
   struct {
@@ -174,7 +173,7 @@ short SFWTC;
 #define ComposeLogS(...) 0
 #define LOG_MOVE 0
 
-extern TOCHandle TOCList;
+extern TOCType * TOCList;
 
 #define kIMAPList 0
 #define kIMAPListErr 1
@@ -293,8 +292,8 @@ bool IMAPMailboxExists(Str255 mailboxName);
 bool GetNextMailboxToExpunge(MailboxNodeHandle tree, FSSpec *spec);
 bool MarkOrExpungeMailboxIfNeeded(MailboxNodeHandle mbox, FSSpec *spec,
                                   bool bNow);
-void CloseIMAPMailboxImmediately(TOCHandle tocH, bool bHiddenToo);
-OSErr CleanHiddenCacheMailbox(TOCHandle hidTocH);
+void CloseIMAPMailboxImmediately(TOCType * tocH, bool bHiddenToo);
+OSErr CleanHiddenCacheMailbox(TOCType * hidTocH);
 
 /**********************************************************************
  * CreateIMAPMailFolder - make the folder to store the IMAP cache in
@@ -1101,16 +1100,16 @@ OSErr WriteIMAPMailboxInfo(FSSpecPtr spec, MailboxNodeHandle node) {
 /***************************************************************************
  * UpdateIMAPMailboxInfo - update the IMAP mailbox info in a cache file
  ***************************************************************************/
-OSErr UpdateIMAPMailboxInfo(TOCHandle tocH) {
+OSErr UpdateIMAPMailboxInfo(TOCType * tocH) {
   OSErr err = noErr;
   MailboxNodeHandle node = 0;
   FSSpec cacheSpec;
 
   // must be an IMAP mailbox
-  if (!(*tocH)->imapTOC)
+  if (!tocH->imapTOC)
     return (noErr);
 
-  cacheSpec = ((*tocH)->mailbox.spec);
+  cacheSpec = (tocH->mailbox.spec);
 
   // find the mailbox node
   node = TOCToMbox(tocH);
@@ -1452,7 +1451,6 @@ void ZapMailboxNode(MailboxNodeHandle *node) {
 void LocateNodeBySpecInAllPersTrees(FSSpecPtr spec, MailboxNodeHandle *node,
                                     PersHandle *pers) {
   MailboxNodeHandle tree = 0;
-  SignedByte state;
   static MailboxNodeHandle oldNode;
   static FSSpec oldSpec;
   static PersHandle oldPers;
@@ -1468,6 +1466,9 @@ void LocateNodeBySpecInAllPersTrees(FSSpecPtr spec, MailboxNodeHandle *node,
   *node = 0;
   *pers = 0;
 
+  // No personalities yet? Nothing to search.
+  if (!PersList) return;
+
   // Is it in the cache?
   if (!InAThread() && SameSpec(spec, &oldSpec)) {
     *node = oldNode;
@@ -1476,18 +1477,14 @@ void LocateNodeBySpecInAllPersTrees(FSSpecPtr spec, MailboxNodeHandle *node,
   }
 
   for (*pers = PersList; *pers; *pers = (**pers)->next) {
-    state = HGetState((Handle)(*pers));
-    LDRef(*pers);
     if ((**pers)->mailboxTree) {
       tree = (**pers)->mailboxTree;
       if (tree) {
-        if (*node = LocateNodeBySpec((**pers)->mailboxTree, spec)) {
-          HSetState((Handle)(*pers), state);
+        if ((*node = LocateNodeBySpec((**pers)->mailboxTree, spec))) {
           break;
         }
       }
     }
-    HSetState((Handle)(*pers), state);
   }
 
   if (!InAThread()) {
@@ -2111,12 +2108,12 @@ long IMAPMailboxMessageCount(FSSpecPtr mailboxSpec, bool check) {
   PersHandle oldPers = CurPers;
   OSErr err = noErr;
   long flags = SA_MESSAGES;
-  TOCHandle tocH;
+  TOCType * tocH;
 
   // Look in the mailbox for messages
   tocH = TOCBySpec(mailboxSpec);
-  if (tocH && ((*tocH)->count))
-    localMessageCount = (*tocH)->count;
+  if (tocH && (tocH->count))
+    localMessageCount = tocH->count;
 
   // Return the number of messages in the local mailbox if we don't care about
   // an accurate count
@@ -2405,7 +2402,7 @@ bool IMAPRenameMailbox(FSSpecPtr cacheFolderSpec, UPtr name) {
   char newName[MAILTMPLEN + 4];
   FSSpec cacheFileSpec, newSpec;
   Str63 newCacheName;
-  TOCHandle tocH = 0;
+  TOCType * tocH = 0;
 
   // make sure we have an old name and a new name
   if (!cacheFolderSpec || !name)
@@ -2467,8 +2464,8 @@ bool IMAPRenameMailbox(FSSpecPtr cacheFolderSpec, UPtr name) {
             // rename the window if it's open
             if ((tocH = FindTOC(&cacheFileSpec))) {
               TOCSetDirty(tocH, 1);
-              PCopy((*tocH)->mailbox.spec.name, newCacheName);
-              SetWTitle_(GetMyWindowWindowPtr((*tocH)->win), newCacheName);
+              PCopy(tocH->mailbox.spec.name, newCacheName);
+              SetWTitle_(GetMyWindowWindowPtr(tocH->win), newCacheName);
             }
 
             // clean up the connection used to rename the mailbox
@@ -2871,11 +2868,11 @@ MailboxNodeHandle CreateSpecialMailbox(bool tryCreate, long mboxAtt) {
  * LocateIMAPJunkToc - given an IMAP mailbox, return the appropriate
  *	junk TOC.
  ************************************************************************/
-TOCHandle LocateIMAPJunkToc(TOCHandle tocH, bool createIfNeeded, bool silent) {
+TOCType * LocateIMAPJunkToc(TOCType * tocH, bool createIfNeeded, bool silent) {
   PersHandle pers;
   MailboxNodeHandle mbox;
 
-  if (tocH && (*tocH)->imapTOC) {
+  if (tocH && tocH->imapTOC) {
     pers = TOCToPers(tocH);
     if (pers) {
       mbox = GetIMAPJunkMailbox(pers, createIfNeeded, silent);
@@ -2929,14 +2926,14 @@ bool IMAPEmptyTrash(bool localOnly, bool currentOnly, bool all) {
     WindowPtr winWP = MyFrontWindow();
     MyWindowPtr win = GetWindowMyWindowPtr(winWP);
     short kind = winWP ? GetWindowKind(winWP) : 0;
-    TOCHandle tocH = 0;
+    TOCType * tocH = 0;
 
     // look at the frontmost window
     if (win && kind == MBOX_WIN)
-      tocH = (TOCHandle)GetMyWindowPrivateData(win);
+      tocH = (TOCType *)GetMyWindowPrivateData(win);
 
     if (tocH) {
-      if ((*tocH)->imapTOC) {
+      if (tocH->imapTOC) {
         // frontmost window is an IMAP mailbox.  Empty the trash for the
         // personality it belongs to.
         PushPers(TOCToPers(tocH));
@@ -2972,7 +2969,7 @@ bool IMAPEmptyTrash(bool localOnly, bool currentOnly, bool all) {
 short IMAPCountTrashMessages(bool localOnly, bool currentOnly, bool all) {
   short totalFound = 0;
   MailboxNodeHandle trash = 0;
-  TOCHandle tocH = 0;
+  TOCType * tocH = 0;
   PersHandle pers;
   FSSpec mailboxSpec;
 
@@ -2990,14 +2987,14 @@ short IMAPCountTrashMessages(bool localOnly, bool currentOnly, bool all) {
       WindowPtr winWP = MyFrontWindow();
       MyWindowPtr win = GetWindowMyWindowPtr(winWP);
       short kind = winWP ? GetWindowKind(winWP) : 0;
-      TOCHandle tocH = 0;
-      TOCHandle trashToc = 0;
+      TOCType * tocH = 0;
+      TOCType * trashToc = 0;
 
       // look at the frontmost window
       if (win && kind == MBOX_WIN)
-        tocH = (TOCHandle)GetMyWindowPrivateData(win);
+        tocH = (TOCType *)GetMyWindowPrivateData(win);
 
-      if (tocH && ((*tocH)->imapTOC)) {
+      if (tocH && (tocH->imapTOC)) {
         // figure out which IMAP personality this mailbox belongs to
         pers = TOCToPers(tocH);
         if (pers) {
@@ -3164,7 +3161,7 @@ bool ChooseSpecialMailbox(PersHandle pers, short msg, FSSpecPtr specialSpec) {
  * FancyTrashForThisPers - return 1 is FTM is on for the personality
  *	that owns the mailbox specified by the TOC
  ************************************************************************/
-bool FancyTrashForThisPers(TOCHandle tocH) {
+bool FancyTrashForThisPers(TOCType * tocH) {
   bool result = 0;
   MailboxNodeHandle node = 0;
   PersHandle pers = 0;
@@ -3173,7 +3170,7 @@ bool FancyTrashForThisPers(TOCHandle tocH) {
   // must have a tocH
   if (tocH) {
     // must be an IMAP toc
-    if (!(*tocH)->imapTOC)
+    if (!tocH->imapTOC)
       return (0);
     {
       // who does this toc belong to?
@@ -3305,13 +3302,13 @@ OSErr EnsureIMAPCacheFolders(FSSpecPtr attach, FSSpecPtr imapAttach) {
 /************************************************************************
  * TOCToMbox - given a TOC, return a handle to it's mailboxnode
  ************************************************************************/
-MailboxNodeHandle TOCToMbox(TOCHandle tocH) { return ((*tocH)->imapMBH); }
+MailboxNodeHandle TOCToMbox(TOCType * tocH) { return (tocH->imapMBH); }
 
 /************************************************************************
  * TOCToPers - given a TOC, return the owning personality
  ************************************************************************/
-PersHandle TOCToPers(TOCHandle tocH) {
-  return (tocH ? MailboxNodeToPers((*tocH)->imapMBH) : NULL);
+PersHandle TOCToPers(TOCType * tocH) {
+  return (tocH ? MailboxNodeToPers(tocH->imapMBH) : NULL);
 }
 
 /************************************************************************
@@ -3340,21 +3337,21 @@ PersHandle MailboxNodeToPers(MailboxNodeHandle mbox) {
  *	Also, be sure to update the subject, from, and status when fetching
  *	 an IMAP message from the server, just in case.
  ************************************************************************/
-void SalvageIMAPTOC(TOCHandle oldTocH, TOCHandle newTocH, short *newCount) {
+void SalvageIMAPTOC(TOCType * oldTocH, TOCType * newTocH, short *newCount) {
   short sumNum;
   short minHeaderCount;
   short i, j;
 
   // Only do this on an IMAP toc!
-  if ((*oldTocH)->imapTOC && (*newTocH)->imapTOC) {
+  if (oldTocH->imapTOC && newTocH->imapTOC) {
     //
     // remove all messages with bogus UIDs
     //
 
-    for (sumNum = (*newTocH)->count - 1; sumNum >= 0; sumNum--) {
-      if (((*newTocH)->sums[sumNum].msgIdHash ==
-           (*newTocH)->sums[sumNum].uidHash)               // bogus UID
-          || !ValidHash((*newTocH)->sums[sumNum].uidHash)) // no UID
+    for (sumNum = newTocH->count - 1; sumNum >= 0; sumNum--) {
+      if ((newTocH->sums[sumNum].msgIdHash ==
+           newTocH->sums[sumNum].uidHash)               // bogus UID
+          || !ValidHash(newTocH->sums[sumNum].uidHash)) // no UID
       {
         DeleteIMAPSum(newTocH, sumNum);
         if (newCount && *newCount)
@@ -3368,9 +3365,9 @@ void SalvageIMAPTOC(TOCHandle oldTocH, TOCHandle newTocH, short *newCount) {
 
     if (*newCount > 0) {
       minHeaderCount = 0;
-      for (i = 0; i < (*oldTocH)->count; i++) {
+      for (i = 0; i < oldTocH->count; i++) {
         if (!IMAPMessageDownloaded(oldTocH, i)) {
-          SaveMessageSum(&(*oldTocH)->sums[i], &newTocH);
+          SaveMessageSum(&oldTocH->sums[i], &newTocH);
           minHeaderCount++;
         }
       }
@@ -3382,12 +3379,12 @@ void SalvageIMAPTOC(TOCHandle oldTocH, TOCHandle newTocH, short *newCount) {
       if (minHeaderCount > 0) {
         // we copied some minimal headers.  Go through each one and make sure it
         // has a unique UID.
-        for (i = 0; i < (*newTocH)->count; i++) {
+        for (i = 0; i < newTocH->count; i++) {
           if (!IMAPMessageDownloaded(newTocH, i)) {
-            for (j = 0; j < (*newTocH)->count; j++) {
+            for (j = 0; j < newTocH->count; j++) {
               if ((i != j) && !IMAPMessageDownloaded(newTocH, j)) {
-                if ((*newTocH)->sums[i].uidHash ==
-                    (*newTocH)->sums[j].uidHash) {
+                if (newTocH->sums[i].uidHash ==
+                    newTocH->sums[j].uidHash) {
                   // duplicate found.  Remove the duplicate
                   DeleteIMAPSum(newTocH, j);
                   minHeaderCount--;
@@ -3431,10 +3428,10 @@ void UnlockMailboxNodeHandle(MailboxNodeHandle node) {
  *	This is necessary when an IMAP cache is removed.
  ************************************************************************/
 void ClosePersMailboxes(PersHandle pers) {
-  TOCHandle tocH, nextTocH;
+  TOCType *tocH, *nextTocH;
 
   for (tocH = TOCList; tocH; tocH = nextTocH) {
-    nextTocH = (*tocH)->next;
+    nextTocH = tocH->next;
 
     // should we close this toc?
     if (TOCToPers(tocH) == pers) {
@@ -3451,7 +3448,7 @@ void ClosePersMailboxes(PersHandle pers) {
 void IMAPCloseChildMailboxes(FSSpecPtr spec) {
   MailboxNodeHandle node;
   PersHandle pers;
-  TOCHandle tocH, nextTocH;
+  TOCType *tocH, *nextTocH;
   FSSpec tocSpec;
 
   // does this mailbox have children?
@@ -3459,10 +3456,10 @@ void IMAPCloseChildMailboxes(FSSpecPtr spec) {
   if (node && (*node)->childList) {
     // iterate over all open windows ...
     for (tocH = TOCList; tocH; tocH = nextTocH) {
-      nextTocH = (TOCHandle)(*tocH)->next;
+      nextTocH = (TOCType *)tocH->next;
 
       // should we close this toc?
-      tocSpec = (*tocH)->mailbox.spec;
+      tocSpec = tocH->mailbox.spec;
       if (LocateNodeBySpec((*node)->childList, &tocSpec)) {
         // close the IMAP mailbox, skip any final processing
         CloseIMAPMailboxImmediately(tocH, 0);
@@ -3475,7 +3472,7 @@ void IMAPCloseChildMailboxes(FSSpecPtr spec) {
  * CloseIMAPMailboxImmediately - close an IMAP mailbox, skip final
  *  processing.  Close the hidden mailbox if requested
  ************************************************************************/
-void CloseIMAPMailboxImmediately(TOCHandle tocH, bool bHiddenToo) {
+void CloseIMAPMailboxImmediately(TOCType * tocH, bool bHiddenToo) {
   MailboxNodeHandle mbox;
   short sumNum;
 
@@ -3496,14 +3493,14 @@ void CloseIMAPMailboxImmediately(TOCHandle tocH, bool bHiddenToo) {
 
     // close all message windows
     TOCSetDirty(tocH, 0);
-    for (sumNum = 0; sumNum < (*tocH)->count; sumNum++)
-      if ((*tocH)->sums[sumNum].messH)
+    for (sumNum = 0; sumNum < tocH->count; sumNum++)
+      if (tocH->sums[sumNum].messH)
         CloseMyWindow(
-            GetMyWindowWindowPtr((*(*tocH)->sums[sumNum].messH)->win));
+            GetMyWindowWindowPtr((*tocH->sums[sumNum].messH)->win));
 
     // close the mailbox window
-    if ((*tocH)->win)
-      CloseMyWindow(GetMyWindowWindowPtr((*tocH)->win));
+    if (tocH->win)
+      CloseMyWindow(GetMyWindowWindowPtr(tocH->win));
   }
 }
 
@@ -3511,10 +3508,10 @@ void CloseIMAPMailboxImmediately(TOCHandle tocH, bool bHiddenToo) {
  * IMAPMailboxHasUnread - delude ourselves into beliving this mailbox
  *	has something important in it.
  **********************************************************************/
-bool IMAPMailboxHasUnread(TOCHandle tocH, bool itDoesNow) {
+bool IMAPMailboxHasUnread(TOCType * tocH, bool itDoesNow) {
   OSErr err = noErr;
   CInfoPBRec mailboxFileInfo;
-  FSSpec boxSpec = (*tocH)->mailbox.spec;
+  FSSpec boxSpec = tocH->mailbox.spec;
   short myMenu;
   short myItem;
   Style oldStyle;
@@ -3560,7 +3557,7 @@ bool IMAPMailboxHasUnread(TOCHandle tocH, bool itDoesNow) {
  * IMAPDontFccMailbox - return 1 if this mailbox shouldn't be auto-
  *	fcc'ed to.
  **********************************************************************/
-bool IMAPDontAutoFccMailbox(TOCHandle tocH) {
+bool IMAPDontAutoFccMailbox(TOCType * tocH) {
   bool result = 0;
   MailboxNodeHandle mbox;
   PersHandle pers;
@@ -3570,7 +3567,7 @@ bool IMAPDontAutoFccMailbox(TOCHandle tocH) {
     return (1);
 
   // if this isn't an IMAP toc, assume we can Fcc to it
-  if (!(*tocH)->imapTOC)
+  if (!tocH->imapTOC)
     return (0);
 
   // find which mailbox this TOC points to
@@ -3595,16 +3592,16 @@ bool IMAPDontAutoFccMailbox(TOCHandle tocH) {
  *	in the mailbox trees
  **********************************************************************/
 void AttachOpenTocsToIMAPMailboxTrees(void) {
-  TOCHandle tocH;
+  TOCType * tocH;
   PersHandle pers;
   MailboxNodeHandle mbox;
   FSSpec mboxSpec;
 
-  for (tocH = TOCList; tocH; tocH = (TOCHandle)(*tocH)->next) {
-    if ((*tocH)->imapTOC) {
-      mboxSpec = ((*tocH)->mailbox.spec);
+  for (tocH = TOCList; tocH; tocH = (TOCType *)tocH->next) {
+    if (tocH->imapTOC) {
+      mboxSpec = (tocH->mailbox.spec);
       LocateNodeBySpecInAllPersTrees(&mboxSpec, &mbox, &pers);
-      (*tocH)->imapMBH = mbox;
+      tocH->imapMBH = mbox;
     }
   }
 }
@@ -3642,11 +3639,11 @@ long IMAPCountMailboxes(MailboxNodeHandle tree, MailboxNeedsEnum needs) {
 /**********************************************************************
  * UIDToSumNum - return the sumnum of the message with a given UID.
  **********************************************************************/
-short UIDToSumNum(unsigned long uid, TOCHandle tocH) {
+short UIDToSumNum(unsigned long uid, TOCType * tocH) {
   short sumNum;
 
-  for (sumNum = 0; sumNum < (*tocH)->count; sumNum++)
-    if ((*tocH)->sums[sumNum].uidHash == uid)
+  for (sumNum = 0; sumNum < tocH->count; sumNum++)
+    if (tocH->sums[sumNum].uidHash == uid)
       return (sumNum);
 
   return (-1);
@@ -3656,15 +3653,15 @@ short UIDToSumNum(unsigned long uid, TOCHandle tocH) {
  * IMAPMailboxTitle - provide custom titles for special IMAP boxes.
  *	Do this for all non-Dominant IMAP mailboxes.
  **********************************************************************/
-bool IMAPMailboxTitle(TOCHandle tocH, Str255 title) {
+bool IMAPMailboxTitle(TOCType * tocH, Str255 title) {
   MailboxNodeHandle mbox;
   PersHandle pers;
 
-  if (tocH && (*tocH)->imapTOC) {
+  if (tocH && tocH->imapTOC) {
     mbox = TOCToMbox(tocH);
     pers = TOCToPers(tocH);
     if (mbox && pers && (pers != PersList)) {
-      ComposeRString(title, IMAP_MAILBOXTITLE_FMT, (*tocH)->mailbox.spec.name,
+      ComposeRString(title, IMAP_MAILBOXTITLE_FMT, tocH->mailbox.spec.name,
                      (*pers)->name);
       return (1);
     }
@@ -3710,9 +3707,9 @@ bool IMAPMailboxExists(Str255 mailboxName) {
  * GetHiddenCacheMailbox - find and open the cache mailbox where
  *	deleted messages are stored.  Create it if needed.
  **********************************************************************/
-TOCHandle GetHiddenCacheMailbox(MailboxNodeHandle mbox, bool bForce,
+TOCType * GetHiddenCacheMailbox(MailboxNodeHandle mbox, bool bForce,
                                 bool bCreateIfNeeded) {
-  TOCHandle tocH = NULL;
+  TOCType * tocH = NULL;
   FSSpec hidSpec;
   bool bExists;
 
@@ -3736,7 +3733,7 @@ TOCHandle GetHiddenCacheMailbox(MailboxNodeHandle mbox, bool bForce,
 
     // and associate it with the mbox
     if (tocH)
-      (*tocH)->imapMBH = mbox;
+      tocH->imapMBH = mbox;
   }
 
   return (tocH);
@@ -3746,7 +3743,7 @@ TOCHandle GetHiddenCacheMailbox(MailboxNodeHandle mbox, bool bForce,
  * CleanHiddenCacheMailbox - clear out the hidden cache mailbox,
  *	hopefully clearing it of any corrupted messages.
  **********************************************************************/
-OSErr CleanHiddenCacheMailbox(TOCHandle hidTocH) {
+OSErr CleanHiddenCacheMailbox(TOCType * hidTocH) {
   OSErr err = noErr;
   FSSpec spec;
   short mNum;
@@ -3755,17 +3752,17 @@ OSErr CleanHiddenCacheMailbox(TOCHandle hidTocH) {
   ASSERT(0);
 
   // was a toc specified?
-  if (!hidTocH || !*hidTocH)
+  if (!hidTocH || !hidTocH)
     return (paramErr);
 
   // is this really a hidden toc?
   spec = GetMailboxSpec(hidTocH, -1);
   if (EqualStrRes(spec.name, IMAP_HIDDEN_TOC_NAME)) {
     // close and remove all of its messages
-    for (mNum = (*hidTocH)->count - 1; mNum >= 0; mNum--) {
-      if ((*hidTocH)->sums[mNum].messH)
+    for (mNum = hidTocH->count - 1; mNum >= 0; mNum--) {
+      if (hidTocH->sums[mNum].messH)
         CloseMyWindow(
-            GetMyWindowWindowPtr((*(*hidTocH)->sums[mNum].messH)->win));
+            GetMyWindowWindowPtr((*hidTocH->sums[mNum].messH)->win));
       DeleteIMAPSum(hidTocH, mNum);
     }
 
@@ -3780,7 +3777,7 @@ OSErr CleanHiddenCacheMailbox(TOCHandle hidTocH) {
  * HideDeletedMessages - Hide/Show deleted messages in a mailbox.
  **********************************************************************/
 OSErr HideDeletedMessages(MailboxNodeHandle mbox, bool bForce, bool bShow) {
-  TOCHandle tocH, hidTocH;
+  TOCType *tocH, *hidTocH;
   short sumNum;
   OSErr err = noErr;
 
@@ -3808,21 +3805,21 @@ OSErr HideDeletedMessages(MailboxNodeHandle mbox, bool bForce, bool bShow) {
 
   if (bShow) {
     // move all summaries from the deleted cache to the real mailbox
-    for (sumNum = (*hidTocH)->count - 1; (sumNum >= 0) && (err == noErr);
+    for (sumNum = hidTocH->count - 1; (sumNum >= 0) && (err == noErr);
          --sumNum) {
       CycleBalls();
-      err = IMAPTransferLocalCache(hidTocH, &((*hidTocH)->sums[sumNum]), tocH,
-                                   (*hidTocH)->sums[sumNum].uidHash, 0);
+      err = IMAPTransferLocalCache(hidTocH, &(hidTocH->sums[sumNum]), tocH,
+                                   hidTocH->sums[sumNum].uidHash, 0);
       DeleteIMAPSum(hidTocH, sumNum);
     }
   } else {
     // move all deleted messages from the mailbox to the deleted cache
-    for (sumNum = (*tocH)->count - 1; (sumNum >= 0) && (err == noErr);
+    for (sumNum = tocH->count - 1; (sumNum >= 0) && (err == noErr);
          sumNum--) {
-      if ((*tocH)->sums[sumNum].opts & OPT_DELETED) {
+      if (tocH->sums[sumNum].opts & OPT_DELETED) {
         CycleBalls();
-        err = IMAPTransferLocalCache(tocH, &((*tocH)->sums[sumNum]), hidTocH,
-                                     (*tocH)->sums[sumNum].uidHash, 0);
+        err = IMAPTransferLocalCache(tocH, &(tocH->sums[sumNum]), hidTocH,
+                                     tocH->sums[sumNum].uidHash, 0);
         DeleteIMAPSum(tocH, sumNum);
       }
     }
@@ -3844,19 +3841,19 @@ OSErr HideDeletedMessages(MailboxNodeHandle mbox, bool bForce, bool bShow) {
  * CountDeletedMessages - Count the number of deleted messages in a
  *	mailbox.  Consider the hidden toc as well, if appropriate.
  **********************************************************************/
-short CountDeletedIMAPMessages(TOCHandle tocH) {
+short CountDeletedIMAPMessages(TOCType * tocH) {
   short count, sumNum;
   MailboxNodeHandle mbox = TOCToMbox(tocH);
-  TOCHandle hidTocH;
+  TOCType * hidTocH;
 
-  for (count = sumNum = 0; sumNum < (*tocH)->count; sumNum++)
-    if ((*tocH)->sums[sumNum].opts & OPT_DELETED)
+  for (count = sumNum = 0; sumNum < tocH->count; sumNum++)
+    if (tocH->sums[sumNum].opts & OPT_DELETED)
       count++;
 
   // do we need to consider the hidden toc as well?
   hidTocH = GetHiddenCacheMailbox(mbox, 0, 0);
-  for (sumNum = 0; hidTocH && (sumNum < (*hidTocH)->count); sumNum++)
-    if ((*hidTocH)->sums[sumNum].opts & OPT_DELETED)
+  for (sumNum = 0; hidTocH && (sumNum < hidTocH->count); sumNum++)
+    if (hidTocH->sums[sumNum].opts & OPT_DELETED)
       count++;
 
   return (count);
@@ -3866,7 +3863,7 @@ short CountDeletedIMAPMessages(TOCHandle tocH) {
  * HideShowSummary - make sure a summary is in the right toc.  If it's
  *	not, move it.  Return 1 if the summary is shown.
  **********************************************************************/
-bool HideShowSummary(TOCHandle toc, TOCHandle tocH, TOCHandle hidTocH,
+bool HideShowSummary(TOCType * toc, TOCType * tocH, TOCType * hidTocH,
                      short sumNum) {
   bool bShown = 0;
   bool bDeleted;
@@ -3875,21 +3872,21 @@ bool HideShowSummary(TOCHandle toc, TOCHandle tocH, TOCHandle hidTocH,
   // must have a source toc, a visible toc and a hidden toc
   if (toc && tocH && hidTocH) {
     // is this summary marked as deleted?
-    bDeleted = ((*toc)->sums[sumNum].opts & OPT_DELETED) != 0;
+    bDeleted = (toc->sums[sumNum].opts & OPT_DELETED) != 0;
 
     // is this a deleted summary in the visible toc?
     if (bDeleted && (toc == tocH)) {
       // move it to the hidden toc
-      err = IMAPTransferLocalCache(tocH, &((*tocH)->sums[sumNum]), hidTocH,
-                                   (*tocH)->sums[sumNum].uidHash, 0);
+      err = IMAPTransferLocalCache(tocH, &(tocH->sums[sumNum]), hidTocH,
+                                   tocH->sums[sumNum].uidHash, 0);
       DeleteIMAPSum(tocH, sumNum);
     }
     // is this a non deleted summary in the hidden toc?
     else if (!bDeleted) {
       if (toc == hidTocH) {
         // move it to the visible toc
-        err = IMAPTransferLocalCache(hidTocH, &((*hidTocH)->sums[sumNum]), tocH,
-                                     (*hidTocH)->sums[sumNum].uidHash, 0);
+        err = IMAPTransferLocalCache(hidTocH, &(hidTocH->sums[sumNum]), tocH,
+                                     hidTocH->sums[sumNum].uidHash, 0);
         DeleteIMAPSum(hidTocH, sumNum);
       }
       bShown = 1;
@@ -3908,15 +3905,15 @@ bool HideShowSummary(TOCHandle toc, TOCHandle tocH, TOCHandle hidTocH,
  * ShowHideFilteredSummary - move a filtered IMAP summary to the proper
  *	toc.  Returns 1 if the summary was moved.
  **********************************************************************/
-bool ShowHideFilteredSummary(TOCHandle toc, short sumNum) {
+bool ShowHideFilteredSummary(TOCType * toc, short sumNum) {
   bool bMoved = 0;
   MailboxNodeHandle mbox;
-  TOCHandle tocH, hidTocH;
+  TOCType *tocH, *hidTocH;
   short junkThresh = GetRLong(JUNK_MAILBOX_THRESHHOLD);
   bool bIsJunk;
-  TOCHandle junkTocH = LocateIMAPJunkToc(toc, 0, 1);
+  TOCType * junkTocH = LocateIMAPJunkToc(toc, 0, 1);
 
-  if (toc && *toc) {
+  if (toc) {
     mbox = TOCToMbox(toc);
     if (mbox) {
       // find the real toc ...
@@ -3933,13 +3930,13 @@ bool ShowHideFilteredSummary(TOCHandle toc, short sumNum) {
 
       // skip junked messages
       bIsJunk = (junkTocH && HasFeature(featureJunk) &&
-                 ((*toc)->sums[sumNum].spamScore >= junkThresh));
+                 (toc->sums[sumNum].spamScore >= junkThresh));
 
       if (toc == hidTocH) {
         // only move non-deleted, filtered, not junk messages to the visible
         // toc.
-        if ((((*hidTocH)->sums[sumNum].opts & OPT_DELETED) == 0) // not deleted
-            && (((*hidTocH)->sums[sumNum].flags & FLAG_UNFILTERED) ==
+        if (((hidTocH->sums[sumNum].opts & OPT_DELETED) == 0) // not deleted
+            && ((hidTocH->sums[sumNum].flags & FLAG_UNFILTERED) ==
                 0)       // already filtered
             && !bIsJunk) // not about to be filtered to Junk
           bMoved = HideShowSummary(toc, tocH, hidTocH, sumNum);
@@ -3960,7 +3957,7 @@ bool ShowHideFilteredSummary(TOCHandle toc, short sumNum) {
  **********************************************************************/
 MailboxNodeHandle GetRealIMAPSpec(FSSpec orig, FSSpecPtr spec) {
   MailboxNodeHandle node = NULL; // initialize
-  TOCHandle tocH;
+  TOCType * tocH;
   PersHandle pers;
   CInfoPBRec pb;
   OSErr err;
@@ -4097,7 +4094,7 @@ void IMAPAutoExpungeWarning(void) {
  * IMAPAutoExpungeMailbox - check to see if this mailbox needs to be
  *	automatically expunged.
  **********************************************************************/
-bool IMAPAutoExpungeMailbox(TOCHandle tocH) {
+bool IMAPAutoExpungeMailbox(TOCType * tocH) {
   bool bNeeds = 0;
   FSSpec spec;
 
@@ -4114,9 +4111,9 @@ bool IMAPAutoExpungeMailbox(TOCHandle tocH) {
     return (0);
 
   // is this an IMAP toc?
-  if (tocH && (*tocH)->imapTOC) {
+  if (tocH && tocH->imapTOC) {
     // make sure this isn't a hidden cache mailbox.  We should ignore those.
-    spec = (*tocH)->mailbox.spec;
+    spec = tocH->mailbox.spec;
     if (!EqualStrRes(spec.name, IMAP_HIDDEN_TOC_NAME)) {
       // is the auto expunge preference set?
       PushPers(CurPers);
@@ -4230,7 +4227,7 @@ bool GetNextMailboxToExpunge(MailboxNodeHandle tree, FSSpec *spec) {
 bool MarkOrExpungeMailboxIfNeeded(MailboxNodeHandle mbox, FSSpec *spec,
                                   bool bNow) {
   bool bNeeds = 0;
-  TOCHandle tocH;
+  TOCType * tocH;
   short numDeleted, numTotal;
 
   ASSERT(!InAThread());
@@ -4251,7 +4248,7 @@ bool MarkOrExpungeMailboxIfNeeded(MailboxNodeHandle mbox, FSSpec *spec,
         bNeeds = (numDeleted != 0);
       else {
         // how many total messages are there?
-        numTotal = (*tocH)->count;
+        numTotal = tocH->count;
         if (!DoesIMAPMailboxNeed(mbox, kShowDeleted))
           numTotal += numDeleted;
 
@@ -4286,12 +4283,12 @@ bool MarkOrExpungeMailboxIfNeeded(MailboxNodeHandle mbox, FSSpec *spec,
  * MarkSumAsDeleted - mark an IMAP summary as deleted.  Set the auto
  *	expunge flag for the mailbox as well.
  **********************************************************************/
-void MarkSumAsDeleted(TOCHandle tocH, short sumNum, bool bDeleted) {
+void MarkSumAsDeleted(TOCType * tocH, short sumNum, bool bDeleted) {
   if (bDeleted) {
-    (*tocH)->sums[sumNum].opts |= OPT_DELETED;
+    tocH->sums[sumNum].opts |= OPT_DELETED;
     SetIMAPMailboxNeeds(TOCToMbox(tocH), kNeedsAutoExp, 1);
   } else
-    (*tocH)->sums[sumNum].opts &= ~OPT_DELETED;
+    tocH->sums[sumNum].opts &= ~OPT_DELETED;
 }
 
 /**********************************************************************

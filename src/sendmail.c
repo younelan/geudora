@@ -101,7 +101,7 @@ extern void GetResInfo(Handle res, short *id, unsigned int *type,
 extern short AttachOptNumber(long flags);
 extern void UpdateNumStat(int type, int val);
 extern bool IsMailbox(FSSpecPtr spec);
-extern MyWindowPtr GetAMessageLo(TOCHandle tocH, int sumNum, GtkWidget *winWP,
+extern MyWindowPtr GetAMessageLo(TOCType * tocH, int sumNum, GtkWidget *winWP,
                                  void *p1, bool newWin, bool *outNew);
 extern OSErr TransmitMessageForSpool(TransStream stream, MessHandle messH);
 extern int FlushTOCs(bool andClose, bool canSkip);
@@ -321,7 +321,7 @@ int StartSMTP(TransStream stream, unsigned char *serverName, long port) {
 /************************************************************************
  * MySendMessage - send a message to the SMTP server
  ************************************************************************/
-int MySendMessage(TransStream stream, TOCHandle tocH, int sumNum,
+int MySendMessage(TransStream stream, TOCType * tocH, int sumNum,
                   CSpecHandle specList) {
   WindowPtr messWinWP;
   Str255 buffer;
@@ -908,7 +908,7 @@ int DoRcptTosFrom(TransStream stream, MessHandle messH, short index,
         if (!addresses) {
           AddOutgoingMesgError(
               (*messH)->sumNum,
-              (*(*messH)->tocH)->sums[(*messH)->sumNum].uidHash, sErr,
+              (*messH)->tocH->sums[(*messH)->sumNum].uidHash, sErr,
               BAD_ADDRESS);
           return (sErr = 550);
         }
@@ -948,7 +948,7 @@ int DoRcptTosFrom(TransStream stream, MessHandle messH, short index,
             sErr = 550;
             AddOutgoingMesgError(
                 (*messH)->sumNum,
-                (*(*messH)->tocH)->sums[(*messH)->sumNum].uidHash, sErr,
+                (*messH)->tocH->sums[(*messH)->sumNum].uidHash, sErr,
                 BAD_ADDRESS);
             break;
           }
@@ -986,7 +986,7 @@ int DoRcptTosFrom(TransStream stream, MessHandle messH, short index,
                   --*buffer;
                 AddOutgoingMesgError(
                     (*messH)->sumNum,
-                    (*(*messH)->tocH)->sums[(*messH)->sumNum].uidHash, sErr,
+                    (*messH)->tocH->sums[(*messH)->sumNum].uidHash, sErr,
                     BAD_ADDRESS_ERR_TEXT, address, buffer);
               }
             }
@@ -1007,7 +1007,7 @@ int DoRcptTosFrom(TransStream stream, MessHandle messH, short index,
     } else {
       sErr = 550;
       AddOutgoingMesgError((*messH)->sumNum,
-                           (*(*messH)->tocH)->sums[(*messH)->sumNum].uidHash,
+                           (*messH)->tocH->sums[(*messH)->sumNum].uidHash,
                            sErr, BAD_ADDRESS);
     }
     ZapHandle(text);
@@ -1041,7 +1041,7 @@ OSErr SendPipeRCPT(TransStream stream, PStr newRecip, AccuPtr pipe,
         if (buffer[*buffer] == '\r')
           --*buffer;
         AddOutgoingMesgError((*messH)->sumNum,
-                             (*(*messH)->tocH)->sums[(*messH)->sumNum].uidHash,
+                             (*messH)->tocH->sums[(*messH)->sumNum].uidHash,
                              err, BAD_ADDRESS_ERR_TEXT, address, buffer);
       }
       chatter = False;
@@ -1173,7 +1173,7 @@ int TransmitMessageLo(TransStream stream, MessHandle messH, bool chatter,
       if (errSpec.vRefNum) {
         //	Report error with graphic file
         AddOutgoingMesgError((*messH)->sumNum,
-                             (*(*messH)->tocH)->sums[(*messH)->sumNum].uidHash,
+                             (*messH)->tocH->sums[(*messH)->sumNum].uidHash,
                              sErr, GRAPHIC_FILE_ERR, sErr, errSpec.name);
       }
       sErr = 543;
@@ -1236,7 +1236,7 @@ OSErr AllAttachOnBoardLo(MessHandle messH, bool errReport) {
     if (err = GetIndAttachment(messH, index, &spec, nil))
       if ((err != 1) && errReport) {
         AddOutgoingMesgError((*messH)->sumNum,
-                             (*(*messH)->tocH)->sums[(*messH)->sumNum].uidHash,
+                             (*messH)->tocH->sums[(*messH)->sumNum].uidHash,
                              err, ATTACH_MESS_ERR, err, spec.name);
         FileSystemError(BINHEX_OPEN, spec.name, err);
       }
@@ -2093,7 +2093,7 @@ OSErr FinishSMTP(TransStream stream, MessHandle messH) {
       if (*buffer)
         buffer[strlen(buffer) - 1] = 0;
       AddOutgoingMesgError((*messH)->sumNum,
-                           (*(*messH)->tocH)->sums[(*messH)->sumNum].uidHash,
+                           (*messH)->tocH->sums[(*messH)->sumNum].uidHash,
                            sErr, BAD_XMIT_ERR_TEXT, "", buffer);
     }
   }
@@ -3175,7 +3175,7 @@ PStr BuildContentID(PStr into, PStr mid, long part, short i) {
  * SendDigest - send a mailbox, as a digest
  **********************************************************************/
 OSErr SendDigest(TransStream stream, FSSpecPtr spec) {
-  TOCHandle tocH = TOCBySpec(spec);
+  TOCType * tocH = TOCBySpec(spec);
   Str255 boundary;
   Str63 date;
   short i;
@@ -3204,7 +3204,7 @@ OSErr SendDigest(TransStream stream, FSSpecPtr spec) {
     sErr = SendPString(stream, NewLine);
 
   if (!sErr)
-    for (i = 0; i < (*tocH)->count; i++) {
+    for (i = 0; i < tocH->count; i++) {
       UHandle tSig, tRSig, tHSig;
 
       tSig = eSignature;
@@ -3675,9 +3675,9 @@ void BuildDateHeader(unsigned char *buffer, long seconds) {
 /************************************************************************
  * SaveB4Send - grab an outgoing message, saving if necessary
  ************************************************************************/
-MessHandle SaveB4Send(TOCHandle tocH, short sumNum) {
+MessHandle SaveB4Send(TOCType * tocH, short sumNum) {
   short which;
-  MessHandle messH = (MessHandle)(*tocH)->sums[sumNum].messH;
+  MessHandle messH = (MessHandle)tocH->sums[sumNum].messH;
 
   if (messH && (*messH)->win->isDirty) {
     which = WannaSend((*messH)->win);
@@ -3699,7 +3699,7 @@ MessHandle SaveB4Send(TOCHandle tocH, short sumNum) {
     MyThreadEndCritical();
     if (!winResult)
       return (nil);
-    messH = (MessHandle)(*tocH)->sums[sumNum].messH;
+    messH = (MessHandle)tocH->sums[sumNum].messH;
   }
   return (messH);
 }
@@ -4361,9 +4361,9 @@ OSErr SendPString(TransStream stream, PStr string) {
 /************************************************************************
  * TimeStamp - put a time stamp on a message
  ************************************************************************/
-void TimeStamp(TOCHandle tocH, short sumNum, uint32_t when, long delta) {
-  PtrTimeStamp(LDRef(tocH)->sums + sumNum, when, delta);
-  UL(tocH);
+void TimeStamp(TOCType * tocH, short sumNum, uint32_t when, long delta) {
+  PtrTimeStamp(tocH->sums + sumNum, when, delta);
+  (void)0; /* was UL(tocH) - no-op */
 #ifdef NEVER
   CalcSumLengths(tocH, sumNum);
 #endif

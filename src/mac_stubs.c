@@ -1,8 +1,7 @@
 #include <stdbool.h>
 #include <gtk/gtk.h>
-
-typedef struct Point { short v; short h; } Point;
-typedef struct Rect { short top; short left; short bottom; short right; } Rect;
+#include "mailbox.h"
+#include "schizo.h"
 
 void ActiveTicks() {}
 int AddInlineSig(void* messH) {
@@ -46,7 +45,7 @@ void BeginPGP(void* pgpc) {
 }
 void BoxCenterSelection() {}
 void BoxCount() {}
-int BoxFOpen(void* tocH) {
+int BoxFOpen(TOCType *tocH) {
   return 0;
 }
 void BoxMap() {}
@@ -72,9 +71,7 @@ void CheckOnIdle() {}
 void CheckThreadError() {}
 void CheckThreadRunning() {}
 void ClearPrefBit() {}
-bool CloseMyWindow(void *winWP) {
-  return false;
-}
+/* CloseMyWindow — real inline in legacy_shim.h */
 void CompAttachSpec(void* win, void* spec) {
 }
 void CompDelAttachment(void* messH, void* where) {
@@ -219,9 +216,7 @@ short FindFolder(short vRef, uint32_t type, bool create, int *foundVRef, long *f
   return 0;
 }
 void FindListView() {}
-short FindTOCSpot(void* tocH, long serialNum) {
-  return 0;
-}
+/* FindTOCSpot — real implementation in buildtoc.c */
 int FlattenTLMIME(void* emsMIME, void* flat) {
   return 0;
 }
@@ -244,11 +239,9 @@ void GetItemCmd(void* mh, short item, short *cmd) {
 }
 void GetMenuHandle() {}
 void GetMenuItemText() {}
-void* GetNamedResource(uint32_t type, const unsigned char *name) {
-  return NULL;
-}
+/* GetNamedResource — real inline in legacy_shim.h */
 void GetNewMyDialog() {}
-void GetNewMyWindow() {}
+/* GetNewMyWindow - real impl in mywindow.c */
 void GetPassStuff(unsigned char *persName, unsigned char *uName, unsigned char *hName) {
 }
 void GetPortBounds() {}
@@ -268,21 +261,20 @@ void GetRealname() {}
 void GetResInfo(void **res, short *id, unsigned int *type, unsigned char *name) {
 }
 void GetResName() {}
-void GetResource() {}
+void *GetResource(uint32_t type, short id) { return NULL; }
 void* GetReturnAddr(void* addr, bool wantDefault) {
   return NULL;
 }
 void GetSMTPInfo() {}
-short GetSumColor(void* tocH, short sumNum) {
+short GetSumColor(TOCType *tocH, short sumNum) {
   return 0;
 }
-void GetTOCFromSearchWin() {}
 void* GetTrashTOC() {
   return NULL;
 }
 void GetUUPCMail() {}
 void GetWindowPort() {}
-void GetWindowPrivateData() {}
+/* GetWindowPrivateData — real inline in legacy_shim.h */
 void GlobalToLocal() {}
 void GrowZoning() {}
 void HRename() {}
@@ -313,7 +305,7 @@ int InsertCommaIfNeedBe(void* pte, void* hs) {
 void InsertWin() {}
 void InvalBoxSizeBox(void *wp) {
 }
-void InvalContent() {}
+/* InvalContent - real impl in mywindow.c */
 void InvalidListView() {}
 void InvalidatePasswords(bool pwGood, bool auxpwGood, bool all) {
 }
@@ -331,9 +323,7 @@ bool IsMe(char *address) {
 }
 void IsNewsgroupAddr() {}
 void IsQueuedState() {}
-int IsWindowVisible(void *wp) {
-  return 0;
-}
+/* IsWindowVisible — real inline in mailbox.h */
 void LVActivate() {}
 void LVCalcSize() {}
 void LVClick() {}
@@ -357,7 +347,7 @@ void LooseTrans() {}
 void MBTickle() {}
 void MailRoot() {}
 void MainEvent() {}
-short MatchAlias(void* spec, long flags, ...) {
+short MatchAlias(FSSpecPtr spec, long flags, ...) {
   return 0;
 }
 void MemCanFail() {}
@@ -411,7 +401,7 @@ int MyDirCreate(short vRefNum, long parentDirID, const char *directoryName, long
   return 0;
 }
 void MyDisposeDialog() {}
-void MyDisposeWindow() {}
+/* MyDisposeWindow - real impl in mywindow.c */
 int MyFSClose(short refN) {
   return 0;
 }
@@ -421,11 +411,10 @@ int MyFSpDirCreate(void* spec, void* scriptTag, long *createdDirID) {
 void MyGetWTitle() {}
 void MyHostname() {}
 void MyNMRec() {}
-void MySelectWindow(void* winWP) {
-}
+/* MySelectWindow - real impl in floatingwin.c */
 void MySetThemeWindowBackground() {}
 void MyWinHasSelection() {}
-void MyWindowDidResize() {}
+/* MyWindowDidResize - real impl in mywindow.c */
 void NeedToFilterIMAP() {}
 void NeedToFilterIn() {}
 void NeedToFilterOut() {}
@@ -467,7 +456,9 @@ short PBGetCatInfoSync(void *pb) {
 void PETE() {}
 void ParseProtocolFromURLPtr() {}
 void ParseURL() {}
-void PersList() {}
+/* PersList - NOT a stub. PersList is a macro in threading.h:
+   #define PersList (CurThreadGlobals->tPersList)
+   Having a function with this name shadows the macro and causes crashes. */
 void PeteCleanList() {}
 void PeteSelectedString() {}
 void PlotIconID() {}
@@ -487,9 +478,7 @@ void Re() {}
 void* ReReadPGPClearText(void* stream, short refN, void* buf, long bSize, void* spec) {
   return NULL;
 }
-int ReadSum(void *u1, bool b1, void* lip, bool b2) {
-  return 0;
-}
+/* ReadSum — real implementation in buildtoc.c */
 int RecordTLID(void* spec, void* id) {
   return 0;
 }
@@ -537,14 +526,14 @@ void SetPrefBit() {}
 void SetPrefText() {}
 void SetPriority(void* tocH, short sumNum, int priority) {
 }
-void SetRect() {}
+/* SetRect — real inline in legacy_shim.h */
 void SetResInfo(void **res, short id, unsigned char *name) {
 }
 void SetSig(void* tocH, short sumNum, int sigId) {
 }
 void SetStrOverride(short strn, const char *str) {
 }
-void SetSumColor(void* tocH, short sumNum, short color) {
+void SetSumColor(TOCType *tocH, short sumNum, short color) {
 }
 void SetSumFlag(void* tocH, short sumNum, long flag) {
 }
@@ -554,10 +543,8 @@ void ShowBoxSizes(void* win) {
 }
 void ShowMessageSeparator(void* pte, bool center) {
 }
-bool ShowMyWindow(void *winWP) {
-  return false;
-}
-void ShowMyWindowBehind() {}
+/* ShowMyWindow - real impl in mywindow.c */
+/* ShowMyWindowBehind - real impl in mywindow.c */
 void ShowWindow() {}
 void SigStyled() {}
 int SigValidate(short sigId) {
@@ -582,13 +569,8 @@ void geditctrl_set_editable(void* ctrl, int editable) {}
 void geditctrl_set_rich_text(void* ctrl, int offset, int is_rich) {}
 int pstrincmp(const unsigned char *s1, const unsigned char *s2) { return 0; }
 
-void toc_free(void* toc) {}
-void* toc_get_message(void* toc, int index) { return NULL; }
-int toc_get_message_count(void* toc) { return 0; }
-void* toc_get_summaries(void* toc) { return NULL; }
-int toc_get_unread_count(void* toc) { return 0; }
-void* toc_load(const char* path) { return NULL; }
-int toc_save(void* toc) { return 0; }
+/* toc_free, toc_get_message, toc_get_message_count, toc_get_summaries,
+   toc_get_unread_count, toc_load, toc_save — real implementations in toc.c */
 
 void TextFace(int f) {}
 void TextFont(int f) {}
@@ -601,12 +583,12 @@ void TransmitMessageForSpool(void) {}
 void UUPCDry(void) {}
 void UUPCPrime(void) {}
 void UUPCWriteAddr(void) {}
-void UpdateMyWindow(void* w) {}
+/* UpdateMyWindow - real impl in mywindow.c */
 void UpdateSum(void* m) {}
 void UpdateTaskProgress(void* t) {}
 bool UseFlowOut(void) { return false; }
 bool UserHasValidPaidModeRegcode(void) { return false; }
-void UserSelectWindow(void* w) {}
+/* UserSelectWindow - real impl in mywindow.c */
 bool WNE(int e, void* m, int t) { return false; }
 void* Win2TOC(void* w) { return NULL; }
 void WrapWrong(void) {}
@@ -615,7 +597,7 @@ void eSignature(void) {}
 int flavorTypeText = 0;
 
 
-void* CurPers = NULL;
+/* CurPers is a macro in threading.h = CurThreadGlobals->tCurPers */
 short InBG = 0;
 bool StartingUp(void) { return false; }
 int SuckAddresses(void ***addr, void **text, bool b1, bool b2, bool b3, void *p) { return 0; }
@@ -625,3 +607,5 @@ bool SumFlagIsSet(void* tocH, short sumNum, long flag) { return false; }
 bool TOCIsDirty(void) { return false; }
 void TaskDontAutoClose(void) {}
 
+
+bool ExpandAliasesLow(void **h1, void *h2, int i, bool b1, void *p1, int i2) { return true; }

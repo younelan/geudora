@@ -74,6 +74,7 @@ ADVISED OF THE POSSIBILITY OF SUCH DAMAGE. */
 #include "StringUtil.h"
 #include "gtk_dialogs.h"
 #include "progress.h"
+#include "threading.h"  /* PersList macro */
 
 /* LL_Queue macro from util.h - can't include util.h due to header conflicts */
 #define LL_Queue(head, item, cast)                                             \
@@ -111,7 +112,7 @@ int GetPOPInfoLo(unsigned char *server, unsigned char *s2, long *port);
 
 /* Globals from other files */
 extern IMAPConnectionHandle gIMAPConnectionPool;
-extern PersHandle CurPers;
+/* CurPers is a macro in threading.h = CurThreadGlobals->tCurPers */
 extern bool HesOK;
 
 // connection management

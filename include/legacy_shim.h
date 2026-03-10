@@ -77,7 +77,8 @@ static inline void GetWTitle(void *win, unsigned char *title) {
   if (title)
     *title = 0;
 }
-static inline void SetWTitle(void *win, const unsigned char *title) {}
+/* SetWTitle - real impl in mywindow.c */
+void SetWTitle(void *winWP, unsigned char *title);
 static inline void InsertMenu(void *mh, short item) {}
 static inline void SetDItemValue(void *dp, short item, short value) {}
 static inline short GetDItemValue(void *dp, short item) { return 0; }
@@ -146,7 +147,8 @@ static inline long PopUpMenuSelect(void *mh, short top, short left,
 /* Declared here; implementation forward-declared so compilers find it */
 int PtrAndHand(const void *ptr, void **hand, long size);
 static inline void BoxSelectSame(void *tocH, int item, int sum) {}
-static inline void MBOpenFolder(void *hStringList, bool isIMAP) {}
+/* MBOpenFolder - real impl in mbwin.c */
+void MBOpenFolder(void *hStringList, bool isIMAP);
 
 #ifndef optionKey
 #define optionKey 0x0800
@@ -394,11 +396,11 @@ static inline bool EqualString(void *s1, void *s2, bool caseSens, bool diac) {
 
 /* Message/Window Stubs */
 static inline void ReZoomMyWindow(void *w) {}
-static inline void InvalContent(void *w) {}
+/* InvalContent - real impl in mywindow.c */
 // static inline void ShowMessageSeparator(void *pte, bool center) {}
 static inline bool CloseMyWindow(void *w) { return true; }
 
-static inline void UpdateMyWindow(void *w) {}
+/* UpdateMyWindow - real impl in mywindow.c */
 // static inline void EnsureMessNewline(void *messH) {}
 static inline void ApplyDefaultStationery(void *win, bool b1, bool b2) {}
 
@@ -423,7 +425,7 @@ static inline bool PositionPrefsTitle(bool save, void *win) { return true; }
 /* UI Stubs */
 /* IsRoot provided by fileutil.h - do not stub here. */
 /* In the GTK port all managed windows are app windows */
-static inline bool IsMyWindow(void *winWP) { return winWP != NULL; }
+/* IsMyWindow - real impl in mywindow.c */
 static inline void CheckBox(void *win, bool checked) {}
 static inline void *MyFrontNonFloatingWindow(void) { return 0; }
 #define FrontWindow_ MyFrontNonFloatingWindow

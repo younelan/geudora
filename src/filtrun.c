@@ -40,24 +40,24 @@ int ReallyDoAnAlert(int templ, int which);
 
 bool DoesIntersectNick(UHandle nickAddresses,UHandle nickExpanded,UPtr spot,long len);
 bool DoesIntersectNickFile(PStr file,UPtr spot,long len);
-bool TermDateMatch(MTPtr mt, TOCHandle tocH, short sumNum);
-bool TermJunkMatch(MTPtr mt, TOCHandle tocH, short sumNum);
-bool TermPersMatch(MTPtr mt, TOCHandle tocH, short sumNum);
-bool TermPriorMatch(MTPtr mt, TOCHandle tocH, short sumNum);
+bool TermDateMatch(MTPtr mt, TOCType * tocH, short sumNum);
+bool TermJunkMatch(MTPtr mt, TOCType * tocH, short sumNum);
+bool TermPersMatch(MTPtr mt, TOCType * tocH, short sumNum);
+bool TermPriorMatch(MTPtr mt, TOCType * tocH, short sumNum);
 bool AnyFilters(FilterKeywordEnum fType);
 bool AnyFiltersLo(FilterKeywordEnum fType,Handle hFilters);
 bool RightFilterType(FilterKeywordEnum fType,short filter);
-bool FilterMatch(short filter,TOCHandle tocH, short sumNum,FilterPBPtr fpb);
+bool FilterMatch(short filter,TOCType * tocH, short sumNum,FilterPBPtr fpb);
 int TakeFilterAction(short filter,FilterPBPtr fpb,bool noXfer);
-bool TermMatch(MTPtr mt,TOCHandle tocH, short sumNum,FilterPBPtr fpb);
+bool TermMatch(MTPtr mt,TOCType * tocH, short sumNum,FilterPBPtr fpb);
 bool TermPtrMatch(MTPtr mtmt,UPtr spot,UPtr end);
 void Filter1Postprocess(FilterKeywordEnum fType,FilterPBPtr fpb);
-int FilterMessageLo(FilterKeywordEnum fType,TOCHandle tocH,short sumNum,FilterPBPtr fpb,bool noXfer);
+int FilterMessageLo(FilterKeywordEnum fType,TOCType * tocH,short sumNum,FilterPBPtr fpb,bool noXfer);
 bool TermExpMatch(MTPtr mtmt, UPtr spot, UPtr end,UHandle *cache);
-void FiltLogMatch(short filter,TOCHandle tocH,short sumNum);
+void FiltLogMatch(short filter,TOCType * tocH,short sumNum);
 uLong FilterLastMatch(short filter);
-bool FromIntersectNickFile(MTPtr mt, TOCHandle tocH,short sumNum);
-bool FromIntersectNickFileMatch(MTPtr mt, TOCHandle tocH,short sumNum);
+bool FromIntersectNickFile(MTPtr mt, TOCType * tocH,short sumNum);
+bool FromIntersectNickFileMatch(MTPtr mt, TOCType * tocH,short sumNum);
 
 int FGlobalErr;
 
@@ -90,7 +90,7 @@ void Filter1Postprocess(FilterKeywordEnum fType,FilterPBPtr fpb)
 #ifdef THREADING_ON
 		if (which==IN_TEMP)
 		{
-			TOCHandle tocH=GetRealInTOC();
+			TOCType * tocH=GetRealInTOC();
 			which=IN;
 			ASSERT(tocH);
 			if (!tocH)
@@ -192,20 +192,20 @@ void FilterPostprocess(FilterKeywordEnum fType,FilterPBPtr fpb)
 	 */
 	if (fpb->mailbox)
 	{
-		TOCHandle tocH = GetSpecialTOC(IN);
+		TOCType * tocH = GetSpecialTOC(IN);
 		WindowPtr	tocWinWP = nil;
 
 		behindWP = OpenBehindMePlease();
-		if (tocH && (*tocH)->win)
+		if (tocH && tocH->win)
 		{
 			// if in box open, show it first
-			tocWinWP = GetMyWindowWindowPtr ((*tocH)->win);
+			tocWinWP = GetMyWindowWindowPtr (tocH->win);
 			if (!PrefIsSet(PREF_NO_OPEN_IN) && fpb->notify && fType==flkIncoming && IsWindowVisible(tocWinWP))
 			{
 				if (!behindWP)
 				{
 					SelectWindow_(tocWinWP);
-					behindWP = GetMyWindowWindowPtr((*tocH)->win);
+					behindWP = GetMyWindowWindowPtr(tocH->win);
 				}
 				else SendBehind (tocWinWP,behindWP);
 			}
@@ -217,10 +217,10 @@ void FilterPostprocess(FilterKeywordEnum fType,FilterPBPtr fpb)
 			spec = (*fpb->mailbox)[i];
 			if (tocH=TOCBySpec(&spec.spec))
 			{
-				ShowBoxAt(tocH,(*tocH)->previewPTE ? -1:FumLub(tocH),behindWP);
-				if (PrefIsSet(PREF_ZOOM_OPEN)) ReZoomMyWindow(GetMyWindowWindowPtr((*tocH)->win));
+				ShowBoxAt(tocH,tocH->previewPTE ? -1:FumLub(tocH),behindWP);
+				if (PrefIsSet(PREF_ZOOM_OPEN)) ReZoomMyWindow(GetMyWindowWindowPtr(tocH->win));
 				if (!behindWP && tocWinWP) UpdateMyWindow(tocWinWP);	// make sure topmost one updates NOW
-				behindWP = GetMyWindowWindowPtr((*tocH)->win);
+				behindWP = GetMyWindowWindowPtr(tocH->win);
 			}
 		}
 	}
@@ -314,21 +314,21 @@ int InitFPB(FilterPBPtr fpb,bool zapAddrs,bool listsToo)
 /************************************************************************
  * FilterSelectedMessage - filter the selection from a mailbox
  ************************************************************************/
-int FilterSelectedMessages(FilterKeywordEnum fType,TOCHandle tocH,FilterPBPtr fpb)
+int FilterSelectedMessages(FilterKeywordEnum fType,TOCType * tocH,FilterPBPtr fpb)
 {
 	short err=noErr;
 	short sumNum;
 	short countWas;
 	short lastSelected = -1;
-	short initialCount = (*tocH)->count;
-	bool isOut = (*tocH)->which==OUT;
+	short initialCount = tocH->count;
+	bool isOut = tocH->which==OUT;
 	uLong pTicks=0;
 	long count;
-	TOCHandle realTocH;
+	TOCType * realTocH;
 	short realSumNum;
 	long realSearialNum;
 	FSSpec inSpec;
-	TOCHandle inTocH;
+	TOCType * inTocH;
 	bool justFakingIt = false;
 	bool bHidden = false;
 			
@@ -346,19 +346,19 @@ int FilterSelectedMessages(FilterKeywordEnum fType,TOCHandle tocH,FilterPBPtr fp
 		justFakingIt = fType==flkIncoming && !AnyFilters(fType);
 		if (justFakingIt || AnyFilters(fType))
 		{
-			if ((*tocH)->imapTOC) IMAPStartManualFiltering();
+			if (tocH->imapTOC) IMAPStartManualFiltering();
 			count = CountSelectedMessages(tocH);
 			if (count>10) OpenProgress();
 			ProgressMessageR(kpTitle,FILTERING);
 			ProgressMessageR(kpSubTitle,LEFT_TO_PROCESS);
 			Progress(NoBar,count,nil,nil,nil);
-			for (sumNum=0;sumNum<(*tocH)->count;sumNum++)
+			for (sumNum=0;sumNum<tocH->count;sumNum++)
 			{
 #ifdef SPEECH_ENABLED
 				(void) SpeechIdle ();
 #endif
 				if (count>1) MiniEvents(); if (CommandPeriod) break;
-				if ((*tocH)->sums[sumNum].selected)
+				if (tocH->sums[sumNum].selected)
 				{
 					fpb->notify++;
 					if (!(--count%10) || TickCount()-pTicks>30)
@@ -367,7 +367,7 @@ int FilterSelectedMessages(FilterKeywordEnum fType,TOCHandle tocH,FilterPBPtr fp
 						pTicks = TickCount();
 					}
 					lastSelected = sumNum;
-					countWas = (*tocH)->count;
+					countWas = tocH->count;
 					
 					/*
 					 * load up cache
@@ -375,19 +375,19 @@ int FilterSelectedMessages(FilterKeywordEnum fType,TOCHandle tocH,FilterPBPtr fp
 					 
 					if ((realTocH = GetRealTOC(tocH,sumNum,&realSumNum)))
 					{
-						realSearialNum = (*realTocH)->sums[realSumNum].serialNum;
+						realSearialNum = realTocH->sums[realSumNum].serialNum;
 						
 						CacheMessage(realTocH,realSumNum);
 
-						if (!(*realTocH)->imapTOC)
+						if (!realTocH->imapTOC)
 						{
-							if (!(*realTocH)->sums[realSumNum].cache)
+							if (!realTocH->sums[realSumNum].cache)
 							{
 								WarnUser(MEM_ERR,MemError());
 								err = 1;
 							}
 							else
-								HNoPurge((*realTocH)->sums[realSumNum].cache);
+								HNoPurge(realTocH->sums[realSumNum].cache);
 						}
 						
 						/*
@@ -403,17 +403,17 @@ int FilterSelectedMessages(FilterKeywordEnum fType,TOCHandle tocH,FilterPBPtr fp
 						}
 		
 						// Hide the message if it was deleted.
-						if ((*tocH)->imapTOC)
+						if (tocH->imapTOC)
 							bHidden = ShowHideFilteredSummary(tocH, sumNum);
 						
 						// adjust the count to account for messages that are removed from the toc during the filtering process
-						if (bHidden || ((err==euFilterXfered) && ((!(*tocH)->imapTOC && !(*tocH)->virtualTOC))))
+						if (bHidden || ((err==euFilterXfered) && ((!tocH->imapTOC && !tocH->virtualTOC))))
 						{
 							// a message was either moved into the hidden IMAP cache,
 							// or a message was transferred from a non IMAP, non virtual toc
 							sumNum--;
-							InvalContent((*tocH)->win);
-							UpdateMyWindow(GetMyWindowWindowPtr((*tocH)->win));
+							InvalContent(tocH->win);
+							UpdateMyWindow(GetMyWindowWindowPtr(tocH->win));
 						}
 						
 						/*
@@ -422,13 +422,13 @@ int FilterSelectedMessages(FilterKeywordEnum fType,TOCHandle tocH,FilterPBPtr fp
 						if (err==euFilterXfered)
 						{
 							// update the search window if it's open
-							if ((*realTocH)->imapTOC) (*tocH)->sums[sumNum].u.virtualMess.virtualMBIdx = -1;
+							if (realTocH->imapTOC) tocH->sums[sumNum].u.virtualMess.virtualMBIdx = -1;
 							if (!bHidden) InvalSum(tocH, sumNum);
 						}
 						else
 						{
-							if ((*realTocH)->sums[realSumNum].cache)
-								HPurge((*realTocH)->sums[realSumNum].cache);
+							if (realTocH->sums[realSumNum].cache)
+								HPurge(realTocH->sums[realSumNum].cache);
 						}
 					}
 					if (err==euFilterStop||err==euFilterXfered) err = noErr;
@@ -444,21 +444,21 @@ int FilterSelectedMessages(FilterKeywordEnum fType,TOCHandle tocH,FilterPBPtr fp
 		FiltersDecRef();
 	}
 	NotifyHelpers(0,eManFilter,tocH);
-	if (initialCount>(*tocH)->count && !CommandPeriod) BoxSelectAfter((*tocH)->win,lastSelected);
+	if (initialCount>tocH->count && !CommandPeriod) BoxSelectAfter(tocH->win,lastSelected);
 	return(err);
 }
 
 /************************************************************************
  * FilterFlaggedMessages - filter the flagged messages in a mailbox
  ************************************************************************/
-int FilterFlaggedMessages(FilterKeywordEnum fType,TOCHandle tocH,FilterPBPtr fpb)
+int FilterFlaggedMessages(FilterKeywordEnum fType,TOCType * tocH,FilterPBPtr fpb)
 {
 	short err=noErr;
 	short sumNum;
 	short countWas;
 	short lastSelected = -1;
-	short initialCount = (*tocH)->count;
-	bool isOut = (*tocH)->which==OUT;
+	short initialCount = tocH->count;
+	bool isOut = tocH->which==OUT;
 	uLong pTicks=0;
 	long count = CountFlaggedMessages(tocH);
 			
@@ -472,13 +472,13 @@ int FilterFlaggedMessages(FilterKeywordEnum fType,TOCHandle tocH,FilterPBPtr fpb
 		ProgressMessageR(kpSubTitle,LEFT_TO_PROCESS);
 		Progress(NoBar,count,nil,nil,nil);
 		fpb->doNotifyThing = fpb->notify = 0;
-		for (sumNum=0;sumNum<(*tocH)->count;sumNum++)
+		for (sumNum=0;sumNum<tocH->count;sumNum++)
 		{
 #ifdef SPEECH_ENABLED
 			(void) SpeechIdle ();
 #endif
 			if (count>1) MiniEvents(); if (CommandPeriod) break;
-			if ((*tocH)->sums[sumNum].flags&FLAG_UNFILTERED)
+			if (tocH->sums[sumNum].flags&FLAG_UNFILTERED)
 			{
 				fpb->notify++;
 				fpb->doNotifyThing++;
@@ -488,7 +488,7 @@ int FilterFlaggedMessages(FilterKeywordEnum fType,TOCHandle tocH,FilterPBPtr fpb
 					pTicks = TickCount();
 				}
 				lastSelected = sumNum;
-				countWas = (*tocH)->count;
+				countWas = tocH->count;
 				
 				/*
 				 * load up cache
@@ -496,15 +496,15 @@ int FilterFlaggedMessages(FilterKeywordEnum fType,TOCHandle tocH,FilterPBPtr fpb
 
 				CacheMessage(tocH,sumNum);
 
-				if (!(*tocH)->imapTOC)
+				if (!tocH->imapTOC)
 				{
-					if (!(*tocH)->sums[sumNum].cache)
+					if (!tocH->sums[sumNum].cache)
 					{
 						WarnUser(MEM_ERR,MemError());
 						err = 1;
 					}
 					else
-						HNoPurge((*tocH)->sums[sumNum].cache);
+						HNoPurge(tocH->sums[sumNum].cache);
 				}
 									
 				/*
@@ -516,7 +516,7 @@ int FilterFlaggedMessages(FilterKeywordEnum fType,TOCHandle tocH,FilterPBPtr fpb
 				 * clean up after
 				 */
 				 
-				if ((*tocH)->sums[sumNum].cache) HPurge((*tocH)->sums[sumNum].cache);
+				if (tocH->sums[sumNum].cache) HPurge(tocH->sums[sumNum].cache);
 				if (err==euFilterStop||err==euFilterXfered) err = noErr;
 				if (err || CommandPeriod) break;
 			}
@@ -526,7 +526,7 @@ int FilterFlaggedMessages(FilterKeywordEnum fType,TOCHandle tocH,FilterPBPtr fpb
 	}
 	FiltersDecRef();
 	NotifyHelpers(0,eManFilter,tocH);
-	if (initialCount>(*tocH)->count && !CommandPeriod) BoxSelectAfter((*tocH)->win,lastSelected);
+	if (initialCount>tocH->count && !CommandPeriod) BoxSelectAfter(tocH->win,lastSelected);
 	return(err);
 }
 
@@ -534,7 +534,7 @@ int FilterFlaggedMessages(FilterKeywordEnum fType,TOCHandle tocH,FilterPBPtr fpb
  * FilterFlaggedMessagesIncrementally - spam score and filter messages in
  *	an IMAP mailbox a chunk at a time.
  ************************************************************************/
-int FilterIMAPTocIncrementally(TOCHandle tocH,FilterPBPtr fpb,bool noXfer)
+int FilterIMAPTocIncrementally(TOCType * tocH,FilterPBPtr fpb,bool noXfer)
 {
 	short err = noErr;
 	short sumNum;
@@ -552,10 +552,10 @@ int FilterIMAPTocIncrementally(TOCHandle tocH,FilterPBPtr fpb,bool noXfer)
 	
 beginFilter:
 
-	for (sumNum=0;sumNum<(*tocH)->count;sumNum++)
+	for (sumNum=0;sumNum<tocH->count;sumNum++)
 	{	
 		// skip messages that don't need to be filtered
-		if (((*tocH)->sums[sumNum].flags&FLAG_UNFILTERED) == 0)
+		if ((tocH->sums[sumNum].flags&FLAG_UNFILTERED) == 0)
 			continue;
 			
 		//filter the whole darn thing if need more time and we got the idle time 
@@ -582,10 +582,10 @@ beginFilter:
 			JunkScoreIMAPBox(tocH, sumNum, sumNum, false);
 			
 			// Junk it if we ought to
-			if (JunkPrefBoxHold() && ((*tocH)->sums[sumNum].spamScore >= spamThresh))
+			if (JunkPrefBoxHold() && (tocH->sums[sumNum].spamScore >= spamThresh))
 			{
-				(*tocH)->sums[sumNum].flags &= ~FLAG_UNFILTERED;
-				ZapHandle((*tocH)->sums[sumNum].cache);
+				tocH->sums[sumNum].flags &= ~FLAG_UNFILTERED;
+				ZapHandle(tocH->sums[sumNum].cache);
 				fpb->doNotifyThing--;
 				err = euFilterXfered;
 			}
@@ -598,10 +598,10 @@ beginFilter:
 		if (!err) 
 		{
 			// only filter this message if it's not open
-			if ((*tocH)->sums[sumNum].messH == NULL)
+			if (tocH->sums[sumNum].messH == NULL)
 			{
 				err = FilterMessageLo(flkIncoming,tocH,sumNum,fpb,noXfer);
-				(*tocH)->sums[sumNum].flags &= ~FLAG_UNFILTERED;
+				tocH->sums[sumNum].flags &= ~FLAG_UNFILTERED;
 			}
 		}
 		dirty = true;
@@ -613,7 +613,7 @@ beginFilter:
 		{
 			// make sure we open the visible mailbox, not the hidden one.
 			if (mailboxspec.name[0] == 0)
-				GetRealIMAPSpec((*tocH)->mailbox.spec, &mailboxspec);
+				GetRealIMAPSpec(tocH->mailbox.spec, &mailboxspec);
 	
 			// a message survived the filtering process and remained in this mailbox.
 			// open this mailbox if we ought to ...
@@ -624,8 +624,8 @@ beginFilter:
 			}
 			
 			// cleanup
-			if ((*tocH)->sums[sumNum].cache)
-				ZapHandle((*tocH)->sums[sumNum].cache);
+			if (tocH->sums[sumNum].cache)
+				ZapHandle(tocH->sums[sumNum].cache);
 		}
 		
 		// make the summary visible or invisible as appropriate
@@ -672,7 +672,7 @@ beginFilter:
 /************************************************************************
  * NotifyMA - let message assistant know the user wants to filter
  ************************************************************************/
-int NotifyMA(TOCHandle tocH)
+int NotifyMA(TOCType * tocH)
 {
 	AliasHandle maAlias=nil;
 	int err;
@@ -701,7 +701,7 @@ int NotifyMA(TOCHandle tocH)
 /************************************************************************
  * MABuildDescriptors - build descriptors for notifying 
  ************************************************************************/
-int MABuildDescriptors(TOCHandle tocH, AEDescPtr listD, AEDescPtr optD)
+int MABuildDescriptors(TOCType * tocH, AEDescPtr listD, AEDescPtr optD)
 {
 	short mNum;
 	int err;
@@ -713,7 +713,7 @@ int MABuildDescriptors(TOCHandle tocH, AEDescPtr listD, AEDescPtr optD)
 	 */
 	if (!(err=AECreateList(nil,0,False,listD)))
 	{
-		for (mNum=0;mNum<(*tocH)->count;mNum++)
+		for (mNum=0;mNum<tocH->count;mNum++)
 		{
 			if (err=MessObjFromTOC(tocH,mNum,&messD)) break;
 			if (err=AEPutDesc(listD,0,&messD)) break;
@@ -804,13 +804,13 @@ void GenSpecWindow(CSpecHandle specList)
  * FilterMessagesAfter - filter messages after a particular spot
  *	NOT IMAP SAFE
  ************************************************************************/
-int FilterMessagesFrom(FilterKeywordEnum fType,TOCHandle tocH,short startWith,FilterPBPtr fpb,bool noXfer)
+int FilterMessagesFrom(FilterKeywordEnum fType,TOCType * tocH,short startWith,FilterPBPtr fpb,bool noXfer)
 {
 	short err;
 	short sumNum;
 	short countWas;
 	MyWindowPtr win;
-	bool isOut = (*tocH)->which==OUT;
+	bool isOut = tocH->which==OUT;
 	short count;	
 	short filterHogTicks = GetRLong(FILTER_HOG_TICKS);
 	uLong startTick = TickCount();
@@ -818,12 +818,12 @@ int FilterMessagesFrom(FilterKeywordEnum fType,TOCHandle tocH,short startWith,Fi
 	bool deliveryBatch = fType==flkDelivery;
 	bool dirty = false;
 	FSSpec inSpec;
-	bool isTempIn = (*tocH)->which==IN_TEMP;
-	TOCHandle realInTocH = GetRealInTOC();
+	bool isTempIn = tocH->which==IN_TEMP;
+	TOCType * realInTocH = GetRealInTOC();
 	
 	if (!realInTocH) return(1);	// oops!
 
-	if ((*tocH)->imapTOC) return(1);
+	if (tocH->imapTOC) return(1);
 
 	inSpec = GetMailboxSpec(realInTocH,-1);
 	
@@ -843,7 +843,7 @@ int FilterMessagesFrom(FilterKeywordEnum fType,TOCHandle tocH,short startWith,Fi
 #endif
 	}
 	else
-		count = (*tocH)->count-startWith;
+		count = tocH->count-startWith;
 	
 	if (err=RegenerateFilters()) return(err);
 
@@ -858,7 +858,7 @@ beginFilter:
 			OpenProgress();
 		}
 		ProgressR(NoBar,count,FILTERING,LEFT_TO_FILTER,nil);
-		for (sumNum=startWith;sumNum<(*tocH)->count;sumNum++)
+		for (sumNum=startWith;sumNum<tocH->count;sumNum++)
 		{
 			/*
 			 filter the whole darn thing if need more time and we got the idle time 
@@ -882,7 +882,7 @@ beginFilter:
 			CheckSLIP();
 			fpb->doNotifyThing++;
 			fpb->notify++;
-			countWas = (*tocH)->count;
+			countWas = tocH->count;
 			Progress(NoBar,count--,nil,nil,nil);
 			/*
 			 * load up message or cache
@@ -896,16 +896,16 @@ beginFilter:
 			{
 				CacheMessage(tocH,sumNum);
 
-				if (!(*tocH)->sums[sumNum].cache)
+				if (!tocH->sums[sumNum].cache)
 				{
 					WarnUser(MEM_ERR,MemError());
 					err = 1;
 				}
 				else
-					HNoPurge((*tocH)->sums[sumNum].cache);
+					HNoPurge(tocH->sums[sumNum].cache);
 			}
 			
-			ASSERT(!JunkPrefBoxHold() || (*tocH)->sums[sumNum].spamScore < GetRLong(JUNK_MAILBOX_THRESHHOLD));
+			ASSERT(!JunkPrefBoxHold() || tocH->sums[sumNum].spamScore < GetRLong(JUNK_MAILBOX_THRESHHOLD));
 			
 			/*
 			 * do the filtering
@@ -927,8 +927,8 @@ beginFilter:
 				}
 				else
 				{
-					if ((*tocH)->sums[sumNum].cache)
-						HPurge((*tocH)->sums[sumNum].cache);
+					if (tocH->sums[sumNum].cache)
+						HPurge(tocH->sums[sumNum].cache);
 					ASSERT(realInTocH);
 					if ((deliveryBatch || isTempIn) && realInTocH)
 					{
@@ -951,11 +951,11 @@ beginFilter:
 	{
 		if ((deliveryBatch || isTempIn) && realInTocH)
 		{
-			count=(*tocH)->count;
+			count=tocH->count;
 		if (!deliveryBatch)
 			OpenProgress();
 			ProgressR(NoBar,count,MOVING_MESSAGES_TO_IN,LEFT_TO_MOVE,nil);
-			for (sumNum=0;sumNum<(*tocH)->count;sumNum++)
+			for (sumNum=0;sumNum<tocH->count;sumNum++)
 			{
 				/*
 				 filter the whole darn thing if need more time and we got the idle time 
@@ -1009,7 +1009,7 @@ beginFilter:
 /**********************************************************************
  * FilterMessage - filter a single message, including postprocessing
  **********************************************************************/
-int FilterMessage(FilterKeywordEnum fType,TOCHandle tocH,short sumNum)
+int FilterMessage(FilterKeywordEnum fType,TOCType * tocH,short sumNum)
 {
 	FilterPB fpb;
 	int err;
@@ -1021,7 +1021,7 @@ int FilterMessage(FilterKeywordEnum fType,TOCHandle tocH,short sumNum)
 	FilterPostprocess(fType,&fpb);
 	
 	// Hide the message if it was deleted from an IMAP mailbox.
-	if ((fType == flkManual) && (*tocH)->imapTOC)
+	if ((fType == flkManual) && tocH->imapTOC)
 		ShowHideFilteredSummary(tocH, sumNum);
 						
 	return(err);
@@ -1031,17 +1031,17 @@ int FilterMessage(FilterKeywordEnum fType,TOCHandle tocH,short sumNum)
 /************************************************************************
  * FilterMessageLo - filter a message; needs to be setup first
  ************************************************************************/
-int FilterMessageLo(FilterKeywordEnum fType,TOCHandle tocH,short sumNum,FilterPBPtr fpb,bool noXfer)
+int FilterMessageLo(FilterKeywordEnum fType,TOCType * tocH,short sumNum,FilterPBPtr fpb,bool noXfer)
 {
 	short err;
 	bool done=False;
 	Str255 title;
-	short oldCount = (*tocH)->count;
+	short oldCount = tocH->count;
 	bool oldSensitive = Sensitive;
 	short f;
 	short n;
 	bool openIncomingErr=False;
-	bool unjunking = fType==flkIncoming && (*tocH)->which==JUNK;
+	bool unjunking = fType==flkIncoming && tocH->which==JUNK;
 	
 	Sensitive = False;	// do all filtering insensitively
 	
@@ -1052,17 +1052,17 @@ int FilterMessageLo(FilterKeywordEnum fType,TOCHandle tocH,short sumNum,FilterPB
 	
 	if (err=RegenerateFilters()) return(err);
 	CacheMessage(tocH,sumNum);
-	if (!(*tocH)->imapTOC)
+	if (!tocH->imapTOC)
 	{
-		if (!(*tocH)->sums[sumNum].cache)
+		if (!tocH->sums[sumNum].cache)
 		{
 			WarnUser(GENERAL,MemError());
 			return(1);
 		}
-		HNoPurge((*tocH)->sums[sumNum].cache);
+		HNoPurge(tocH->sums[sumNum].cache);
 	}
 
-	openIncomingErr = (fType==flkIncoming && PrefIsSet(PREF_OPEN_IN_ERR_MESS) && ((*tocH)->which==IN || (*tocH)->which==IN_TEMP) && (*tocH)->sums[sumNum].state==MESG_ERR);
+	openIncomingErr = (fType==flkIncoming && PrefIsSet(PREF_OPEN_IN_ERR_MESS) && (tocH->which==IN || tocH->which==IN_TEMP) && tocH->sums[sumNum].state==MESG_ERR);
 
 	if (AnyFilters(fType) || openIncomingErr)
 	{
@@ -1099,14 +1099,14 @@ int FilterMessageLo(FilterKeywordEnum fType,TOCHandle tocH,short sumNum,FilterPB
 		Filter1Postprocess(fType,fpb);
 	}
 	FiltersDecRef();
-	if (oldCount==(*tocH)->count && (*tocH)->sums[sumNum].cache)
-		HPurge((*tocH)->sums[sumNum].cache);
+	if (oldCount==tocH->count && tocH->sums[sumNum].cache)
+		HPurge(tocH->sums[sumNum].cache);
 
 	// Kill the message cache if we filled it with minimal headers for an IMAP filtering spree
-	if (oldCount==(*tocH)->count && (*tocH)->sums[sumNum].cache && (*tocH)->sums[sumNum].offset < 0)
+	if (oldCount==tocH->count && tocH->sums[sumNum].cache && tocH->sums[sumNum].offset < 0)
 	{
-		ZapHandle((*tocH)->sums[sumNum].cache);
-		(*tocH)->sums[sumNum].cache = nil;
+		ZapHandle(tocH->sums[sumNum].cache);
+		tocH->sums[sumNum].cache = nil;
 	}
 		
 	Sensitive = oldSensitive;
@@ -1147,7 +1147,7 @@ void AddSpecToList(FSSpecPtr spec,CSpecHandle specList)
 /************************************************************************
  * TermMatch - does a message match a term?
  ************************************************************************/
-bool TermMatch(MTPtr mt,TOCHandle tocH, short sumNum,FilterPBPtr fpb)
+bool TermMatch(MTPtr mt,TOCType * tocH, short sumNum,FilterPBPtr fpb)
 {
 	UPtr text;
 	long bodyOffset;
@@ -1166,7 +1166,7 @@ bool TermMatch(MTPtr mt,TOCHandle tocH, short sumNum,FilterPBPtr fpb)
 	 */
 	
 	// Set things up to do filtering to or in an IMAP mailbox
-	if (!IMAPStartFiltering(tocH, ((*tocH)->imapTOC && ((*tocH)->sums[sumNum].offset==-1))))
+	if (!IMAPStartFiltering(tocH, (tocH->imapTOC && (tocH->sums[sumNum].offset==-1))))
 	{
 		// failed?  Warn the user, and stop the filtering process.
 		IMAPError(kIMAPSearching, kIMAPSelectMailboxErr, errIMAPSearchMailboxErr);
@@ -1175,36 +1175,36 @@ bool TermMatch(MTPtr mt,TOCHandle tocH, short sumNum,FilterPBPtr fpb)
 	}
 	
 	// if the message to be filtered has not been downloaded
-	if ((*tocH)->imapTOC && ((*tocH)->sums[sumNum].offset==-1))
+	if (tocH->imapTOC && (tocH->sums[sumNum].offset==-1))
 	{
 		// if we're not looking at anything but headers
 		if (mt->headerID!=FILTER_BODY)
 		{
 			// then download the headers and stick 'em in the cache
-			if (!(*tocH)->sums[sumNum].cache)
+			if (!tocH->sums[sumNum].cache)
 			{
 				Handle cache;
 				
 				if ((cache=IMAPFetchMessageHeadersForFiltering(tocH, sumNum)) != NULL)
 				{
 					HPurge(cache);
-					(*tocH)->sums[sumNum].cache = cache;
+					tocH->sums[sumNum].cache = cache;
 				}
 			}
 			
 			// make sure we've got a valid cache to work with
-			if ((*tocH)->imapTOC && (!(*tocH)->sums[sumNum].cache) || !*((*tocH)->sums[sumNum].cache))
+			if (tocH->imapTOC && (!tocH->sums[sumNum].cache) || !*(tocH->sums[sumNum].cache))
 			{
 				ASSERT(0);		// call John now!
 				
-				ComposeLogS(LOG_FILT,nil,"\pMissing Cache! %s sumnum %d uid %d",(*tocH)->mailbox.spec.name, sumNum, (*tocH)->sums[sumNum].uidHash);
+				ComposeLogS(LOG_FILT,nil,"\pMissing Cache! %s sumnum %d uid %d",tocH->mailbox.spec.name, sumNum, tocH->sums[sumNum].uidHash);
 				return (false);
 			}
 			
-			if ((*tocH)->sums[sumNum].cache)
+			if (tocH->sums[sumNum].cache)
 			{
-				text = LDRef((*tocH)->sums[sumNum].cache);
-				bodyOffset = GetHandleSize((*tocH)->sums[sumNum].cache);
+				text = LDRef(tocH->sums[sumNum].cache);
+				bodyOffset = GetHandleSize(tocH->sums[sumNum].cache);
 			}
 			else 
 			{
@@ -1217,23 +1217,23 @@ bool TermMatch(MTPtr mt,TOCHandle tocH, short sumNum,FilterPBPtr fpb)
 	else
 	{
 		// this is a critical point to verify the cache so that we don't crash
-		if (!(*tocH)->sums[sumNum].cache)
+		if (!tocH->sums[sumNum].cache)
 		{
 			ASSERT(0);	// if this is IMAP, call John now!
-			ComposeLogS(LOG_FILT,nil,"\pMissing Cache! %s sumnum %d uid %d",(*tocH)->mailbox.spec.name, sumNum, (*tocH)->sums[sumNum].uidHash);
+			ComposeLogS(LOG_FILT,nil,"\pMissing Cache! %s sumnum %d uid %d",tocH->mailbox.spec.name, sumNum, tocH->sums[sumNum].uidHash);
 			return false;
 		}
 		
-		text = LDRef((*tocH)->sums[sumNum].cache);
-		bodyOffset = (*tocH)->sums[sumNum].bodyOffset;
+		text = LDRef(tocH->sums[sumNum].cache);
+		bodyOffset = tocH->sums[sumNum].bodyOffset;
 	}
 
 	// make sure we've got a valid cache to work with
-	if ((*tocH)->imapTOC && (!(*tocH)->sums[sumNum].cache) || !*((*tocH)->sums[sumNum].cache))
+	if (tocH->imapTOC && (!tocH->sums[sumNum].cache) || !*(tocH->sums[sumNum].cache))
 	{
 		ASSERT(0);		// call John now!
 		
-		ComposeLogS(LOG_FILT,nil,"\pMissing Cache! %s sumnum %d uid %d",(*tocH)->mailbox.spec.name, sumNum, (*tocH)->sums[sumNum].uidHash);
+		ComposeLogS(LOG_FILT,nil,"\pMissing Cache! %s sumnum %d uid %d",tocH->mailbox.spec.name, sumNum, tocH->sums[sumNum].uidHash);
 		return (false);
 	}
 			
@@ -1255,9 +1255,9 @@ bool TermMatch(MTPtr mt,TOCHandle tocH, short sumNum,FilterPBPtr fpb)
 			match = FromIntersectNickFileMatch(mt,tocH,sumNum);
 		}
 		// if this is an IMAP message that hasn't been downloaded, look on the server
-		else if ((*tocH)->imapTOC && ((*tocH)->sums[sumNum].offset==-1) && !text)	
+		else if (tocH->imapTOC && (tocH->sums[sumNum].offset==-1) && !text)	
 		{
-			match = IMAPTermMatch(mt, &(*tocH)->sums[sumNum]);
+			match = IMAPTermMatch(mt, &tocH->sums[sumNum]);
 		}		
 		else
 		{
@@ -1292,7 +1292,7 @@ bool TermMatch(MTPtr mt,TOCHandle tocH, short sumNum,FilterPBPtr fpb)
 				
 				/* match */
 				match = TermPtrMatch(mt,spot,hEnd);
-				if (!match && ((*tocH)->which==OUT || ((*tocH)->sums[sumNum].flags&FLAG_OUT)))
+				if (!match && (tocH->which==OUT || (tocH->sums[sumNum].flags&FLAG_OUT)))
 				{
 					UPtr hnStart,hnEnd;
 					short hid;
@@ -1347,14 +1347,14 @@ bool TermMatch(MTPtr mt,TOCHandle tocH, short sumNum,FilterPBPtr fpb)
 	else
 	{
 		// if this is an IMAP message that hasn't been downloaded, check the server.
-		if ((*tocH)->imapTOC && ((*tocH)->sums[sumNum].offset==-1))	
+		if (tocH->imapTOC && (tocH->sums[sumNum].offset==-1))	
 		{
-			match = IMAPTermMatch(mt, &(*tocH)->sums[sumNum]);
+			match = IMAPTermMatch(mt, &tocH->sums[sumNum]);
 		}
 		else
 		{
 			spot = text + bodyOffset + 1;
-		  	end = text + GetHandleSize((*tocH)->sums[sumNum].cache);
+		  	end = text + GetHandleSize(tocH->sums[sumNum].cache);
 			match = TermPtrMatch(mt,spot,end);
 			switch (mt->verb)
 			{
@@ -1368,7 +1368,7 @@ bool TermMatch(MTPtr mt,TOCHandle tocH, short sumNum,FilterPBPtr fpb)
 	}
 		
 done:
-	UL((*tocH)->sums[sumNum].cache);
+	UL(tocH->sums[sumNum].cache);
 	return(match);
 }
 
@@ -1445,26 +1445,26 @@ done:
  * FromIntersectNickFile - Is this the special case of matching from address
  *  against nickname file?
  ************************************************************************/
-bool FromIntersectNickFile(MTPtr mt, TOCHandle tocH,short sumNum)
+bool FromIntersectNickFile(MTPtr mt, TOCType * tocH,short sumNum)
 {
 	return
 		(mt->verb==mbmIntersectsFile || mt->verb==mbmNotIntersectsFile)
 		&& !striscmp(mt->header+1,"from")
-		&& ValidHash((*tocH)->sums[sumNum].fromHash);
+		&& ValidHash(tocH->sums[sumNum].fromHash);
 }
 
 /************************************************************************
  * FromIntersectNickFileMatch - Special case routine for matching from address
  *  against nickname file
  ************************************************************************/
-bool FromIntersectNickFileMatch(MTPtr mt, TOCHandle tocH,short sumNum)
+bool FromIntersectNickFileMatch(MTPtr mt, TOCType * tocH,short sumNum)
 {
 	PStr file = nil;
 	bool match;
 	
 	if (*mt->value  && !EqualStrRes(mt->value,ANY_ALIAS_FILE)) file = mt->value;
 	
-	match = HashAppearsInAliasFile((*tocH)->sums[sumNum].fromHash,file);
+	match = HashAppearsInAliasFile(tocH->sums[sumNum].fromHash,file);
 	
 	if (mt->verb==mbmNotIntersectsFile) match = !match;
 	
@@ -1609,12 +1609,12 @@ bool TermPtrMatch(MTPtr mt,UPtr spot,UPtr end)
 /************************************************************************
  * TermDateMatch - does the date of a message match a term?
  ************************************************************************/
-bool TermDateMatch(MTPtr mt, TOCHandle tocH, short sumNum)
+bool TermDateMatch(MTPtr mt, TOCType * tocH, short sumNum)
 {
 	Str255 s;
 	bool match;
 	
-	ComputeLocalDate(&(*tocH)->sums[sumNum],s);
+	ComputeLocalDate(&tocH->sums[sumNum],s);
 	match = TermPtrMatch(mt,s+1,s+*s+1);
 	if (mt->verb==mbmIsnt || mt->verb==mbmNotContains) match = !match;
 	return(match);
@@ -1623,7 +1623,7 @@ bool TermDateMatch(MTPtr mt, TOCHandle tocH, short sumNum)
 /************************************************************************
  * TermPersMatch - does the personality of a message match a term?
  ************************************************************************/
-bool TermPersMatch(MTPtr mt, TOCHandle tocH, short sumNum)
+bool TermPersMatch(MTPtr mt, TOCType * tocH, short sumNum)
 {
 	Str255 s;
 	bool match;
@@ -1638,7 +1638,7 @@ bool TermPersMatch(MTPtr mt, TOCHandle tocH, short sumNum)
 /************************************************************************
  * TermJunkMatch - does the junk score of a message match a term?
  ************************************************************************/
-bool TermJunkMatch(MTPtr mt, TOCHandle tocH, short sumNum)
+bool TermJunkMatch(MTPtr mt, TOCType * tocH, short sumNum)
 {
 	long num;
 	
@@ -1646,10 +1646,10 @@ bool TermJunkMatch(MTPtr mt, TOCHandle tocH, short sumNum)
 	
 	switch (mt->verb)
 	{
-		case mbmIs: return (*tocH)->sums[sumNum].spamScore == num; break;
-		case mbmIsnt: return (*tocH)->sums[sumNum].spamScore != num; break;
-		case mbmJunkMore: return (*tocH)->sums[sumNum].spamScore > num; break;
-		case mbmJunkLess: return (*tocH)->sums[sumNum].spamScore < num; break;
+		case mbmIs: return tocH->sums[sumNum].spamScore == num; break;
+		case mbmIsnt: return tocH->sums[sumNum].spamScore != num; break;
+		case mbmJunkMore: return tocH->sums[sumNum].spamScore > num; break;
+		case mbmJunkLess: return tocH->sums[sumNum].spamScore < num; break;
 		default: return false; break;
 	}
 }
@@ -1657,13 +1657,13 @@ bool TermJunkMatch(MTPtr mt, TOCHandle tocH, short sumNum)
 /************************************************************************
  * TermPriorMatch - does the priority of a message match a term?
  ************************************************************************/
-bool TermPriorMatch(MTPtr mt, TOCHandle tocH, short sumNum)
+bool TermPriorMatch(MTPtr mt, TOCType * tocH, short sumNum)
 {
 	Str255 s;
 	bool match;
 	short priority;
 	
-	priority = (*tocH)->sums[sumNum].priority;
+	priority = tocH->sums[sumNum].priority;
 	priority = Prior2Display(priority);
 	if (priority==3) return(mt->verb==mbmIsnt || mt->verb==mbmNotContains);
 	PriorityHeader(s,priority);
@@ -1739,14 +1739,14 @@ bool RightFilterType(FilterKeywordEnum fType,short filter)
 /************************************************************************
  * FilterMatchHi - does a message match a filter?
  ************************************************************************/
-bool FilterMatchHi(short f,TOCHandle tocH,short sumNum)
+bool FilterMatchHi(short f,TOCType * tocH,short sumNum)
 {
 	FilterPB fpb;
 	Handle cache;
 	bool match = false;
 	
 	CacheMessage(tocH,sumNum);
-	cache = (*tocH)->sums[sumNum].cache;
+	cache = tocH->sums[sumNum].cache;
 	if (cache)
 	{
 		HNoPurge(cache);
@@ -1760,10 +1760,10 @@ bool FilterMatchHi(short f,TOCHandle tocH,short sumNum)
 		HPurge(cache);
 
 		// Purge the message cache if we filled it with minimal headers for an IMAP filtering spree
-		if ((*tocH)->sums[sumNum].cache && (*tocH)->sums[sumNum].offset < 0)
+		if (tocH->sums[sumNum].cache && tocH->sums[sumNum].offset < 0)
 		{
-			ZapHandle((*tocH)->sums[sumNum].cache);
-			(*tocH)->sums[sumNum].cache = nil;
+			ZapHandle(tocH->sums[sumNum].cache);
+			tocH->sums[sumNum].cache = nil;
 		}
 	}
 	return(match);
@@ -1772,7 +1772,7 @@ bool FilterMatchHi(short f,TOCHandle tocH,short sumNum)
 /************************************************************************
  * FilterMatch - does a message match a filter?
  ************************************************************************/
-bool FilterMatch(short filter,TOCHandle tocH,short sumNum,FilterPBPtr fpb)
+bool FilterMatch(short filter,TOCType * tocH,short sumNum,FilterPBPtr fpb)
 {
 	MatchTerm term;
 	bool match;
@@ -1816,10 +1816,10 @@ bool FilterMatch(short filter,TOCHandle tocH,short sumNum,FilterPBPtr fpb)
 	
 	// Purge the message cache if we filled it with minimal headers for an IMAP filtering spree.
 	// Note, only do this if we successfully matched.  Otherwise, we'll take care of it when filtering is through.
-	if (result && (*tocH)->sums[sumNum].cache && (*tocH)->sums[sumNum].offset < 0)
+	if (result && tocH->sums[sumNum].cache && tocH->sums[sumNum].offset < 0)
 	{
-		ZapHandle((*tocH)->sums[sumNum].cache);
-		(*tocH)->sums[sumNum].cache = nil;
+		ZapHandle(tocH->sums[sumNum].cache);
+		tocH->sums[sumNum].cache = nil;
 	}
 		
 	return(result);
@@ -1828,7 +1828,7 @@ bool FilterMatch(short filter,TOCHandle tocH,short sumNum,FilterPBPtr fpb)
 /**********************************************************************
  * 
  **********************************************************************/
-void FiltLogMatch(short filter,TOCHandle tocH,short sumNum)
+void FiltLogMatch(short filter,TOCType * tocH,short sumNum)
 {
 	Str31 name;
 	Str255 title;
@@ -1841,7 +1841,7 @@ void FiltLogMatch(short filter,TOCHandle tocH,short sumNum)
 /************************************************************************
  * NonSequitur - change the subject
  ************************************************************************/
-void NonSequitur(PStr subject, TOCHandle tocH, short sumNum)
+void NonSequitur(PStr subject, TOCType * tocH, short sumNum)
 {
 	Str255 newSub;
 	Str127 oldSub;
@@ -1851,7 +1851,7 @@ void NonSequitur(PStr subject, TOCHandle tocH, short sumNum)
 	
 	GetRString(brackets,SUBJ_TRIM_STR);
 	GetRString(replace,SUBJ_REPLACE);
-	PCopy(oldSub,(*tocH)->sums[sumNum].subj);
+	PCopy(oldSub,tocH->sums[sumNum].subj);
 
 	if (ampr = PPtrFindSub(replace,subject+1,*subject))
 	{

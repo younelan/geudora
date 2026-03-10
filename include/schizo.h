@@ -95,14 +95,14 @@ OSErr GetPersProperty(AEDescPtr token, AppleEvent *reply, long refCon);
 OSErr AECreatePersonality(DescType theClass, AEDescPtr inContainer,
                           AppleEvent *event, AppleEvent *reply);
 OSErr AEPersObj(PersHandle pers, AEDescPtr obj);
-OSErr AESetPers(TOCHandle tocH, short sumNum, AEDescPtr descP);
+OSErr AESetPers(TOCType * tocH, short sumNum, AEDescPtr descP);
 #endif
 int32_t PersDelete(PersHandle pers);
 long PersCount(void);
 int32_t PersSetName(PersHandle pers, unsigned char *name);
 void PushPers(PersHandle newCur);
 void PopPers(void);
-int32_t SetPers(TOCHandle tocH, short sumNum, PersHandle pers, bool stationery);
+int32_t SetPers(TOCType * tocH, short sumNum, PersHandle pers, bool stationery);
 void CheckPers(MyWindowPtr win, bool all);
 short Pers2Index(PersHandle goalPers);
 PersHandle Index2Pers(short n);

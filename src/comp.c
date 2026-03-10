@@ -50,9 +50,9 @@ int SetWinMinSize(MyWindowPtr win, int width, int height);
 bool IsColorWin(void *winWP);
 int MessFind(MyWindowPtr win);
 int MessagePosition(MyWindowPtr win);
-int GetMessageLength(TOCHandle tocH, int sumNum);
-int ReadMessage(TOCHandle tocH, int sumNum, unsigned char *buffer);
-int ShowMyWindow(GtkWidget *winWP);
+int GetMessageLength(TOCType * tocH, int sumNum);
+int ReadMessage(TOCType * tocH, int sumNum, unsigned char *buffer);
+bool ShowMyWindow(void *winWP);
 extern short AWrite(short refNum, long *count, unsigned char *buffer);
 
 /* Missing constants */
@@ -76,7 +76,7 @@ extern short AWrite(short refNum, long *count, unsigned char *buffer);
  * private function declarations - ported to use gEditCtrl instead of Pete
  ************************************************************************/
 int GetCompTexts(MessHandle messH, bool new);
-void MakeCompTitle(char *string, TOCHandle tocH, MessHandle messH, int sumNum);
+void MakeCompTitle(char *string, TOCType * tocH, MessHandle messH, int sumNum);
 int WriteComp(MessHandle messH, short refN, long offset);
 char *GetMyHostname(char *hostname);
 int CompStripHeaderReturns(MessHandle messH);
@@ -109,7 +109,7 @@ int GatherCompAddresses(MyWindowPtr win, char *addrList);
 /**********************************************************************
  * OpenComp - open an outgoing message - ported to use gEditCtrl
  **********************************************************************/
-MyWindowPtr OpenComp(TOCHandle tocH, int sumNum, GtkWidget *winWP,
+MyWindowPtr OpenComp(TOCType * tocH, int sumNum, GtkWidget *winWP,
                      MyWindowPtr win, bool showIt, bool new) {
   char title[256];
   MessHandle messH;
@@ -136,7 +136,7 @@ MyWindowPtr OpenComp(TOCHandle tocH, int sumNum, GtkWidget *winWP,
 
   winWP = (GtkWidget *)GetMyWindowWindowPtr(win);
 
-  (*tocH)->sums[sumNum].messH = messH;
+  tocH->sums[sumNum].messH = messH;
   MakeCompTitle(title, tocH, messH, sumNum);
 
   (*messH)->win = win;
@@ -154,7 +154,7 @@ MyWindowPtr OpenComp(TOCHandle tocH, int sumNum, GtkWidget *winWP,
   LL_Push(MessList, messH);
 
   /* formatting toolbar - simplified for GTK */
-  (*tocH)->sums[sumNum].flags |= FLAG_ICON_BAR;
+  tocH->sums[sumNum].flags |= FLAG_ICON_BAR;
   if (PrefIsSet(PREF_COMP_TOOLBAR))
     SetMessOpt(messH, OPT_COMP_TOOLBAR_VISIBLE);
 
@@ -163,8 +163,8 @@ MyWindowPtr OpenComp(TOCHandle tocH, int sumNum, GtkWidget *winWP,
   (*messH)->sendButton = grumble;
 
   // Set button state based on message state
-  bool isGreyed = ((*tocH)->sums[sumNum].state == SENT ||
-                   (*tocH)->sums[sumNum].state == BUSY_SENDING);
+  bool isGreyed = (tocH->sums[sumNum].state == SENT ||
+                   tocH->sums[sumNum].state == BUSY_SENDING);
   gtk_widget_set_sensitive(GTK_WIDGET(grumble), !isGreyed);
 
   if (GetCompTexts(messH, new)) {
@@ -299,7 +299,7 @@ int GetCompTexts(MessHandle messH, bool new) {
   MyWindowPtr messWin = (*messH)->win;
   GtkWidget *messWinWP = (GtkWidget *)GetMyWindowWindowPtr(messWin);
   int sumNum = (*messH)->sumNum;
-  TOCHandle tocH = (*messH)->tocH;
+  TOCType * tocH = (*messH)->tocH;
   char *buffer = NULL;
   Accumulator extras;
   int which;
@@ -479,7 +479,7 @@ failure:
  * MakeCompTitle - make a reasonable composition title
  * Ported to use standard C strings instead of Pascal strings
  **********************************************************************/
-void MakeCompTitle(char *string, TOCHandle tocH, MessHandle messH, int sumNum) {
+void MakeCompTitle(char *string, TOCType * tocH, MessHandle messH, int sumNum) {
   char subject[256] = "";
   char to[256] = "";
   char pattern[64];
@@ -487,7 +487,7 @@ void MakeCompTitle(char *string, TOCHandle tocH, MessHandle messH, int sumNum) {
   // Get subject from message
   if (messH && (*messH)->win && (*messH)->win->pte) {
     // Extract subject from headers (simplified)
-    g_strlcpy(subject, (*tocH)->sums[sumNum].subj, sizeof(subject));
+    g_strlcpy(subject, tocH->sums[sumNum].subj, sizeof(subject));
   }
 
   // Get To address (simplified)
@@ -855,14 +855,14 @@ bool CompSend(MessHandle messH) {
  **********************************************************************/
 bool CompSave(MessHandle messH) {
   MyWindowPtr win = (*messH)->win;
-  TOCHandle tocH = (*messH)->tocH;
+  TOCType * tocH = (*messH)->tocH;
   int sumNum = (*messH)->sumNum;
 
   if (!win || !win->pte)
     return false;
 
   // Save message to mailbox
-  int err = WriteComp(messH, (*tocH)->refN, (*tocH)->sums[sumNum].offset);
+  int err = WriteComp(messH, tocH->refN, tocH->sums[sumNum].offset);
 
   if (!err) {
     // win->isDirty = false; // Remove if not in MyWindow struct

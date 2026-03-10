@@ -30,7 +30,7 @@ typedef struct _GtkWidget GtkWidget;
 #define WinPtr2MessH(aWindowPtr) ((MessHandle)GetWindowPrivateData(aWindowPtr))
 #define Win2MessH(aMyWindowPtr)                                                \
   ((MessHandle)GetMyWindowPrivateData(aMyWindowPtr))
-#define SumOf(mH) (&(*(*mH)->tocH)->sums[(*mH)->sumNum])
+#define SumOf(mH) (&(*mH)->tocH->sums[(*mH)->sumNum])
 #define BodyOf(mH) ((*mH)->txes[BODY])
 #define MessFlagIsSet(mH, f) (0 != (SumOf(mH)->flags & (f)))
 #define SetMessFlag(mH, f)                                                     \
@@ -155,7 +155,7 @@ typedef GtkWidget *ListHandle;
  **********************************************************************/
 typedef struct mstruct MessType, *MessPtr, **MessHandle;
 struct mstruct {
-  TOCHandle tocH;   /* the table of contents to which this message belongs */
+  TOCType * tocH;   /* the table of contents to which this message belongs */
   int sumNum;       /* the summary number of this message's summary */
   MyWindowPtr win;  /* window I'm displayed in */
   bool dirty;       /* whether or not message is dirty */
@@ -165,7 +165,7 @@ struct mstruct {
   ControlHandle analControl;
   GtkWidget *bodyPTE;       /* internal editor widget (gTextviewCtrl) */
   GtkWidget *subPTE;        /* internal editor widget (gTextviewCtrl) */
-  TOCHandle openedFromTocH; /* toc from which we were requested (links) */
+  TOCType * openedFromTocH; /* toc from which we were requested (links) */
   long openedFromSerialNum; // serial # of message from which we were requested
                             // (links)
   Accumulator extras;       /* extra header lines */
@@ -200,7 +200,7 @@ OSErr SetMessText(MessHandle messH, short whichTXE, unsigned char *string,
                   long size);
 OSErr RedirectAnnotation(MessHandle messH);
 int SigValidate(short sigId);
-void SetSig(TOCHandle tocH, short sumNum, int sigId);
+void SetSig(TOCType * tocH, short sumNum, int sigId);
 ControlHandle FindControlByRefCon(MyWindowPtr win, long refCon);
 short GetControlValue(ControlHandle cntl);
 void SetControlMaximum(ControlHandle cntl, short max);
@@ -216,29 +216,29 @@ int SuckAddresses(void ***addr, void **text, bool b1, bool b2, bool b3,
                   void *p);
 int SuckPtrAddresses(void ***addr, void *text, long size, bool b1, bool b2,
                      bool b3, void *p);
-void SetSumFlag(TOCHandle tocH, short sumNum, long flag);
-bool SumFlagIsSet(TOCHandle tocH, short sumNum, long flag);
+void SetSumFlag(TOCType * tocH, short sumNum, long flag);
+bool SumFlagIsSet(TOCType * tocH, short sumNum, long flag);
 
 /* Hash function - portable version */
 uLong HashWithSeedLo(unsigned char *s, uLong n, uLong seed);
 #define HashWithSeed(s, seed)                                                  \
   HashWithSeedLo((unsigned char *)(s), strlen((char *)(s)), seed)
 
-OSErr TOCFindMessByMID(uLong mid, TOCHandle tocH, long *sumNum);
+OSErr TOCFindMessByMID(uLong mid, TOCType * tocH, long *sumNum);
 
-int AppendMessage(TOCHandle fromTocH, int fromN, TOCHandle toTocH, bool copy,
+int AppendMessage(TOCType * fromTocH, int fromN, TOCType * toTocH, bool copy,
                   bool toTemp, bool isIMAPtoPopTransfer);
-MyWindowPtr GetAMessage(TOCHandle tocH, short sumNum, void *u1, void *u2,
+MyWindowPtr GetAMessage(TOCType * tocH, short sumNum, void *u1, void *u2,
                         bool b1);
-OSErr EnsureMID(TOCHandle tocH, short sumNum);
+OSErr EnsureMID(TOCType * tocH, short sumNum);
 OSErr SpoolMessage(MessHandle messH, FSSpecPtr theSpec, short refN);
 long FindAnAttachment(Handle text, long offset, FSSpecPtr spec, bool attach,
                       uLong *cid, uLong *relURL, uLong *absURL);
 MyWindowPtr ReopenMessage(MyWindowPtr win);
 OSErr FileGraphicChangeGraphic(GtkWidget *pte, long offset, FSSpecPtr spec);
 void BoxSelectAfter(MyWindowPtr win, short sumNum);
-void Preview(TOCHandle tocH, short sumNum);
-void MovingAttachments(TOCHandle tocH, short sumNum, bool attach, bool wipe,
+void Preview(TOCType * tocH, short sumNum);
+void MovingAttachments(TOCType * tocH, short sumNum, bool attach, bool wipe,
                        bool toTrash, bool inPlace);
 void NukeXfUndo(void);
 OSErr RemSpoolFolder(long uidHash);

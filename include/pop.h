@@ -71,9 +71,9 @@ OSErr RecordAttachment(FSSpecPtr spec, HeaderDHandle hdh);
 void AddAttachInfo(short theIndex, long result);
 OSErr WriteAttachNote(short refN);
 int FetchMessageText(TransStream stream, long estSize, POPDPtr pd,
-                     short messageNumber, TOCHandle useTocH);
+                     short messageNumber, TOCType * useTocH);
 int FetchMessageTextLo(TransStream stream, long estSize, POPDPtr pd,
-                       short messageNumber, TOCHandle useTocH, bool imap,
+                       short messageNumber, TOCType * useTocH, bool imap,
                        bool import);
 int POPrror(void);
 int POPIntroductions(TransStream stream, PStr user, bool *capabilities);
@@ -84,7 +84,7 @@ int EndPOP(TransStream stream);
 int StartPOP(TransStream stream, unsigned char *serverName, long port);
 void AttachNoteLo(FSSpecPtr spec, PStr theMessage);
 #ifdef BATCH_DELIVERY_ON
-TOCHandle RenameInTemp(TOCHandle tocH);
+TOCType * RenameInTemp(TOCType * tocH);
 #endif
 
 /*
@@ -104,11 +104,11 @@ bool IdIsOnPOPD(OSType listType, short listId, uint32_t uidHash);
 #ifdef TS_TO_PERS
 #undef TS_TO_PERS
 #endif
-#define TS_TO_PERS(tocH, sumNum) (SUM_TO_PERS((*tocH)->sums + sumNum))
+#define TS_TO_PERS(tocH, sumNum) (SUM_TO_PERS((tocH)->sums + sumNum))
 #define MESS_TO_PERS(messH) (SUM_TO_PERS(SumOf(messH)))
 
 #define SUM_TO_PPERS(sum) (FindPersById((sum)->popPersId))
-#define TS_TO_PPERS(tocH, sumNum) (SUM_TO_PPERS((*tocH)->sums + sumNum))
+#define TS_TO_PPERS(tocH, sumNum) (SUM_TO_PPERS((tocH)->sums + sumNum))
 #define MESS_TO_PPERS(messH) (SUM_TO_PPERS(SumOf(messH)))
 
 #define MessOnPOPD(list, messH)                                                \
@@ -118,7 +118,7 @@ bool IdIsOnPOPD(OSType listType, short listId, uint32_t uidHash);
   (IdIsOnPOPD(PERS_POPD_TYPE(SUM_TO_PPERS(sum)), list, (sum)->uidHash))
 #define TSOnPOPD(list, tocH, sumNum)                                           \
   (IdIsOnPOPD(PERS_POPD_TYPE(TS_TO_PPERS(tocH, sumNum)), list,                 \
-              (*tocH)->sums[sumNum].uidHash))
+              (tocH)->sums[sumNum].uidHash))
 #define RemMessFromPOPD(list, messH)                                           \
   (RemIdFromPOPD(PERS_POPD_TYPE(MESS_TO_PPERS(messH)), list,                   \
                  SumOf(messH)->uidHash))
@@ -126,7 +126,7 @@ bool IdIsOnPOPD(OSType listType, short listId, uint32_t uidHash);
   (RemIdFromPOPD(PERS_POPD_TYPE(SUM_TO_PPERS(sum)), list, (sum)->uidHash))
 #define RemTSFromPOPD(list, tocH, sumNum)                                      \
   (RemIdFromPOPD(PERS_POPD_TYPE(TS_TO_PPERS(tocH, sumNum)), list,              \
-                 (*tocH)->sums[sumNum].uidHash))
+                 (tocH)->sums[sumNum].uidHash))
 #define AddMessToPOPD(list, messH, dupOk)                                      \
   (AddIdToPOPD(PERS_POPD_TYPE(MESS_TO_PPERS(messH)), list,                     \
                SumOf(messH)->uidHash, dupOk))
@@ -134,7 +134,7 @@ bool IdIsOnPOPD(OSType listType, short listId, uint32_t uidHash);
   (AddIdToPOPD(PERS_POPD_TYPE(SUM_TO_PPERS(sum)), list, (sum)->uidHash, dupOk))
 #define AddTSToPOPD(list, tocH, sumNum, dupOk)                                 \
   (AddIdToPOPD(PERS_POPD_TYPE(TS_TO_PPERS(tocH, sumNum)), list,                \
-               (*tocH)->sums[sumNum].uidHash, dupOk))
+               (tocH)->sums[sumNum].uidHash, dupOk))
 
 OSErr KerbDestroy(void);
 OSErr KerbDestroyUser(void);

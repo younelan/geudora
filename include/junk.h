@@ -139,28 +139,28 @@ ADVISED OF THE POSSIBILITY OF SUCH DAMAGE. */
 
 #define blJunk 0
 
-OSErr FilterJunk(TOCHandle fromTocH);
+OSErr FilterJunk(TOCType * fromTocH);
 #define GetJunkTOC() GetSpecialTOC(JUNK)
 
-void JunkTOCCleanse(TOCHandle tocH);
-OSErr ArchiveJunk(TOCHandle tocH);
+void JunkTOCCleanse(TOCType * tocH);
+OSErr ArchiveJunk(TOCType * tocH);
 bool SpecIsJunkSpec(FSSpecPtr spec);
-bool BoxIsJunkBox(TOCHandle tocH);
+bool BoxIsJunkBox(TOCType * tocH);
 void PreexistingJunkWarning(FSSpecPtr spec);
-short JunkRescanBox(TOCHandle tocH);
+short JunkRescanBox(TOCType * tocH);
 OSErr JunkRescanJunkMailbox();
-OSErr Junk(TOCHandle tocH, short sumNum, bool isJunk, bool ezOpen);
-OSErr JunkSetScore(TOCHandle tocH, short sumNum, short because, short score);
+OSErr Junk(TOCType * tocH, short sumNum, bool isJunk, bool ezOpen);
+OSErr JunkSetScore(TOCType * tocH, short sumNum, short because, short score);
 short JunkIntro(void);
 bool JunkTrimOK(void);
 bool JunkItemsEnable(MyWindowPtr win, bool shouldEnable);
 void JunkReassignKeys(bool switchem);
 
 Boolean CanScoreJunk();
-void JunkScoreBox(TOCHandle tocH, short first, short last, bool rescore);
-void JunkScoreIMAPBox(TOCHandle tocH, short first, short last, bool unfiltered);
-void JunkScoreSelected(TOCHandle tocH);
-OSErr MoveToJunk(TOCHandle source, short spamThresh, FilterPB *fpb);
-OSErr MoveToIMAPJunk(TOCHandle source, short sumNum, short spamThresh,
+void JunkScoreBox(TOCType * tocH, short first, short last, bool rescore);
+void JunkScoreIMAPBox(TOCType * tocH, short first, short last, bool unfiltered);
+void JunkScoreSelected(TOCType * tocH);
+OSErr MoveToJunk(TOCType * source, short spamThresh, FilterPB *fpb);
+OSErr MoveToIMAPJunk(TOCType * source, short sumNum, short spamThresh,
                      FilterPB *fpb);
 #endif

@@ -291,7 +291,7 @@ void StatsIdle(void) {
 
   facetimeMode = kFacetimeOther;
   if ((winWP = MyFrontWindow()) && IsMyWindow(winWP)) {
-    TOCHandle tocH;
+    TOCType * tocH;
 
     switch (GetWindowKind(winWP)) {
     case COMP_WIN:
@@ -304,8 +304,8 @@ void StatsIdle(void) {
 
     case MBOX_WIN:
     case CBOX_WIN:
-      tocH = (TOCHandle)GetWindowPrivateData(winWP);
-      if ((*tocH)->previewPTE)
+      tocH = (TOCType *)GetWindowPrivateData(winWP);
+      if (tocH->previewPTE)
         facetimeMode = kFacetimeRead;
       break;
     }

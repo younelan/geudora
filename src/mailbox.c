@@ -47,7 +47,7 @@ ADVISED OF THE POSSIBILITY OF SUCH DAMAGE. */
 #endif
 #include "gtk_menus.h"
 #include "imapmailboxes.h" /* For IsIMAPCacheFolder */
-int AddMesgError(TOCHandle tocH, short sum, unsigned char *errorStr,
+int AddMesgError(TOCType * tocH, short sum, unsigned char *errorStr,
                  int errorCode);
 #include "message.h"  /* For MyWindow struct */
 #include "prefdefs.h" /* For PREF_THREADING_OFF */
@@ -117,9 +117,9 @@ int BoxMatchMenuItemsIn1Menu(MenuHandle mh, AccuPtr a, unsigned char *name,
 char *MailboxAlias(short which, char *name);
 char *MailboxSpecAlias(FSSpecPtr spec, char *name);
 void BuildBoxMenus(void);
-bool DeleteSum(TOCHandle tocH, int sumNum);
-void MakeMessTitle(unsigned char *name, TOCHandle tocH, int sumNum, bool b);
-bool IsQueued(TOCHandle tocH, int sumNum);
+bool DeleteSum(TOCType * tocH, int sumNum);
+void MakeMessTitle(unsigned char *name, TOCType * tocH, int sumNum, bool b);
+bool IsQueued(TOCType * tocH, int sumNum);
 
 /* New Missing Decls */
 void MBTickle(void *u1, void *u2);
@@ -131,7 +131,7 @@ unsigned char *CollapseLWSP(unsigned char *s);
 void AppendMenu(MenuHandle mh, const unsigned char *item);
 void SetMenuItemCommandID(MenuHandle mh, short item, long id);
 void SetMenuItemHierarchicalMenu(MenuHandle mh, short item, MenuHandle subMenu);
-void SelectBoxRange(TOCHandle tocH, int start, int end, bool add, int u1,
+void SelectBoxRange(TOCType * tocH, int start, int end, bool add, int u1,
                     int u2);
 
 /* Restored declarations */
@@ -139,12 +139,12 @@ void SelectBoxRange(TOCHandle tocH, int start, int end, bool add, int u1,
 /* HGetState/HSetState provided by legacy_shim.h */
 char *FindHeaderString(char *text, char *header, long *len, bool caseSens);
 void MBDrawerOpen(MyWindowPtr win);
-/* TOCHandle GetOutTOC(void); - Redundant macro conflict */
+/* TOCType * GetOutTOC(void); - Redundant macro conflict */
 void BeautifyFrom(unsigned char *who);
 MyWindowPtr GetNewMyDialog(short id, void *w, void *h, void *behind);
 void CycleBalls(void);
 long GetPrefLong(short pref);
-void SetWTitle(WindowPtr w, const unsigned char *title);
+/* SetWTitle declared in mailbox.h */
 /* GetAMessage declared in message.h */
 void RemoveUTF8FromSum(MSumPtr sum);
 void SetHandleBig(Handle h, long size);
@@ -161,10 +161,10 @@ WindowPtr GetDialogWindow(DialogPtr dp);
 #define GetMyWindowDialogPtr(win) ((DialogPtr)GetMyWindowWindowPtr(win))
 /* Legacy Dialog Functions */
 /* CloseMyWindow provided by legacy_shim.h */
-TOCHandle FindTOC(FSSpecPtr spec);
+TOCType * FindTOC(FSSpecPtr spec);
 void Box2TOCSpec(FSSpecPtr spec, FSSpecPtr tocSpec);
 void utl_SaveWindowPos(WindowPtr win, Rect *r, bool *zoomed);
-UPtr GetMailboxName(TOCHandle tocH, short sum, UPtr name);
+UPtr GetMailboxName(TOCType * tocH, short sum, UPtr name);
 /* UpdateIMAPMailbox declared in mailbox.h */
 
 void GetPortBounds(void *port, Rect *r);
@@ -212,24 +212,15 @@ bool IsQueuedState(int state);
 void MenuID2VD(short menuID, short *vRef, long *dirID);
 
 #define LOG_FILT 6 /* Stub */
-bool DeleteSum(TOCHandle tocH, int sumNum);
+bool DeleteSum(TOCType * tocH, int sumNum);
 void CycleBalls(void);
 long GetPrefLong(short pref);
-void SetWTitle(WindowPtr w, const unsigned char *title);
-
-/* Missing Window Manager Prototypes & Forward Decls */
-/* UsingWindow declared in mailbox.h as UsingWindow(GtkWidget*) */
+/* SetWTitle, ShowMyWindow, UserSelectWindow, GetNewMyWindow, OpenMailbox,
+   InitMailboxWin, MyDisposeWindow — all declared in mailbox.h */
 bool IsWindowVisible(WindowPtr win);
-void ShowMyWindow(WindowPtr win);
-void UserSelectWindow(WindowPtr win);
-MyWindowPtr GetNewMyWindow(short windType, void *w, void *h, void *behind,
-                           bool visible, bool goAway, long refCon);
-int OpenMailbox(FSSpecPtr spec, bool showIt, TOCHandle toc);
-void InitMailboxWin(MyWindowPtr win, TOCHandle toc, bool showIt);
-long TOCDelDup(TOCHandle tocH);
-TOCHandle CheckTOC(FSSpecPtr spec);
-TOCHandle GetTOCFromSearchWin(FSSpecPtr spec);
-void MyDisposeWindow(WindowPtr win);
+long TOCDelDup(TOCType * tocH);
+TOCType * CheckTOC(FSSpecPtr spec);
+TOCType * GetTOCFromSearchWin(FSSpecPtr spec);
 
 /* Map legacy types to shim types */
 /* mesgErrorPtr and MesgErrorType moved to top */
@@ -249,7 +240,7 @@ typedef struct MenuAndScore {
   long score;
 } MenuAndScore, *MenuAndScorePtr, **MenuAndScoreHandle;
 
-void ZeroMailbox(TOCHandle tocH);
+void ZeroMailbox(TOCType * tocH);
 int AddBoxMap(short vRef, long dirId);
 bool WantRebuildTOC(UPtr boxName, int why);
 void AddBox(short function, UPtr name, short level, bool unread);
@@ -260,13 +251,13 @@ void RemoveBox(short function, UPtr name, short level);
  */
 /* AddMesgError implementation is below */
 int BoxSpecByNameInMenu(MenuHandle mh, FSSpecPtr spec, unsigned char *name);
-long TOCDelEmpty(TOCHandle tocH);
+long TOCDelEmpty(TOCType * tocH);
 short FindBoxByNameIn1Menu(MenuHandle mh, unsigned char *name);
-int RedoWho(TOCHandle tocH, short sumNum);
+int RedoWho(TOCType * tocH, short sumNum);
 int ChainTrash(FSSpecPtr spec);
-void SetSumColorLo(TOCHandle tocH, short sumNum, short color);
-void SetStateLo(TOCHandle tocH, int sumNum, int state);
-void SetState(TOCHandle tocH, int sumNum, int state);
+void SetSumColorLo(TOCType * tocH, short sumNum, short color);
+void SetStateLo(TOCType * tocH, int sumNum, int state);
+void SetState(TOCType * tocH, int sumNum, int state);
 
 int BoxMatchScore(unsigned char *name, unsigned char *candidate);
 bool IsFromLine(unsigned char *line);
@@ -274,12 +265,12 @@ int BoxMatchMenuItemsIn1Menu(MenuHandle mh, AccuPtr a, unsigned char *name,
                              int score());
 int CompareMAS(MenuAndScorePtr mas1, MenuAndScorePtr mas2);
 void SwapMAS(MenuAndScorePtr mas1, MenuAndScorePtr mas2);
-static void ProcessIMAPChanges(Handle sumList, TOCHandle toc,
+static void ProcessIMAPChanges(Handle sumList, TOCType * toc,
                                IMAPUpdateType message);
 static int IMAPRecvLine(TransStream stream, UPtr buffer, long *size);
-void DeleteIMAPSum(TOCHandle tocH, int sumNum);
-void DeleteMessageLo(TOCHandle tocH, int sumNum, bool nuke);
-void DecodeIMAPMessages(TOCHandle tocH, FSSpecPtr spec);
+void DeleteIMAPSum(TOCType * tocH, int sumNum);
+void DeleteMessageLo(TOCType * tocH, int sumNum, bool nuke);
+void DecodeIMAPMessages(TOCType * tocH, FSSpecPtr spec);
 
 /* Allocate/free helpers that replace legacy "Handle" based NuHandle
  * allocation. These keep mailbox.c self-contained and use standard
@@ -297,8 +288,8 @@ static long gIMAPMsgEnd;
 /************************************************************************
  * TOCSetDirty - set the dirty bit
  ************************************************************************/
-void TOCSetDirty(TOCHandle tocH, bool dirty) {
-  (*tocH)->durty = dirty;
+void TOCSetDirty(TOCType * tocH, bool dirty) {
+  tocH->durty = dirty;
   AnyTOCDirty++;
 }
 
@@ -307,8 +298,8 @@ void TOCSetDirty(TOCHandle tocH, bool dirty) {
  ************************************************************************/
 int AddOutgoingMesgError(short sumNum, uLong uidHash, int errorCode,
                          int template, ...) {
-  TOCHandle tocH = NULL;
-  TOCHandle tempTocH = NULL;
+  TOCType * tocH = NULL;
+  TOCType * tempTocH = NULL;
   short outSumNum = sumNum;
   Str255 fmtdError, error;
   va_list args;
@@ -349,10 +340,10 @@ int AddOutgoingMesgError(short sumNum, uLong uidHash, int errorCode,
  * DeleteMesgError
  ************************************************************************/
 
-int DeleteMesgError(TOCHandle tocH, short sum) {
+int DeleteMesgError(TOCType * tocH, short sum) {
   mesgErrorHandle mesgErrH;
 
-  if ((mesgErrH = (mesgErrorHandle)(*tocH)->sums[sum].mesgErrH)) {
+  if ((mesgErrH = (mesgErrorHandle)tocH->sums[sum].mesgErrH)) {
     /* Free using standard allocation primitives: free the inner
      * mesgError struct, then free the handle (pointer-to-pointer).
      */
@@ -361,7 +352,7 @@ int DeleteMesgError(TOCHandle tocH, short sum) {
       *mesgErrH = NULL;
     }
     free(mesgErrH);
-    (*tocH)->sums[sum].mesgErrH = NULL;
+    tocH->sums[sum].mesgErrH = NULL;
     /* persist changes to sidecar */
     mesg_error_store_save_all(tocH);
   }
@@ -372,20 +363,20 @@ int DeleteMesgError(TOCHandle tocH, short sum) {
  * AddMesgError
  ************************************************************************/
 
-int AddMesgError(TOCHandle tocH, short sum, unsigned char *errorStr,
+int AddMesgError(TOCType * tocH, short sum, unsigned char *errorStr,
                  int errorCode) {
   int err = noErr;
   (void)err; /* Error ignored according to legacy comment below */
   mesgErrorHandle mesgErrH = NULL;
 
   /* tocH and sum should be valid, mesgErrH should be empty */
-  ASSERT(tocH && (sum != -1) && !(*tocH)->sums[sum].mesgErrH &&
-         (sum < (*tocH)->count));
-  if (!(tocH && (sum != -1) && (sum < (*tocH)->count)))
+  ASSERT(tocH && (sum != -1) && !tocH->sums[sum].mesgErrH &&
+         (sum < tocH->count));
+  if (!(tocH && (sum != -1) && (sum < tocH->count)))
     return -1;
 
   /* if for some reason, mesgErrH isn't empty, overwrite it */
-  mesgErrH = (mesgErrorHandle)(*tocH)->sums[sum].mesgErrH;
+  mesgErrH = (mesgErrorHandle)tocH->sums[sum].mesgErrH;
   if (!mesgErrH) {
     mesgErrorPtr inner = (mesgErrorPtr)calloc(1, sizeof(MesgErrorType));
     if (inner) {
@@ -407,14 +398,14 @@ int AddMesgError(TOCHandle tocH, short sum, unsigned char *errorStr,
      */
     if (errorStr)
       PCopyTrim((*mesgErrH)->errorStr, errorStr, sizeof((*mesgErrH)->errorStr));
-    (*mesgErrH)->uidHash = (*tocH)->sums[sum].uidHash;
+    (*mesgErrH)->uidHash = tocH->sums[sum].uidHash;
     (*mesgErrH)->errorCode = errorCode;
   }
   // let's ignore the error since we can set the mesg state
-  (*tocH)->sums[sum].state = MESG_ERR;
-  (*tocH)->sums[sum].mesgErrH = (void *)mesgErrH;
+  tocH->sums[sum].state = MESG_ERR;
+  tocH->sums[sum].mesgErrH = (void *)mesgErrH;
   TOCSetDirty(tocH, true);
-  (*tocH)->reallyDirty = true;
+  tocH->reallyDirty = true;
   /* persist current mesg error state to sidecar */
   mesg_error_store_save_all(tocH);
   return (noErr);
@@ -424,7 +415,7 @@ int AddMesgError(TOCHandle tocH, short sum, unsigned char *errorStr,
  * FillMesgErrors - fill toc
  ************************************************************************/
 
-int FillMesgErrors(TOCHandle tocH) {
+int FillMesgErrors(TOCType * tocH) {
   /* Load per-mailbox JSON sidecar and populate in-memory mesgErrH entries.
    * Legacy resource-fork persistence removed during GTK port.
    */
@@ -438,7 +429,7 @@ int FillMesgErrors(TOCHandle tocH) {
  * GetMailbox - put a mailbox window frontmost; open if necessary
  **********************************************************************/
 int GetMailbox(FSSpecPtr spec, bool showIt) {
-  TOCHandle toc;
+  TOCType * toc;
 
   if (ResolveAliasOrElse(spec, nil, nil))
     return (userCanceledErr);
@@ -450,14 +441,14 @@ int GetMailbox(FSSpecPtr spec, bool showIt) {
 
   if ((toc = TOCBySpec(spec))) {
     WindowPtr tocWinWP;
-    tocWinWP = GetMyWindowWindowPtr((*toc)->win);
+    tocWinWP = GetMyWindowWindowPtr(toc->win);
     UsingWindow(tocWinWP);
     if (showIt) {
       if (!IsWindowVisible(tocWinWP)) {
         ShowMyWindow(tocWinWP);
 
         // if we're showing an IMAP mailbox, resync it.
-        if ((*toc)->imapTOC) {
+        if (toc->imapTOC) {
           (void)FetchNewMessages(toc, true, false, true, false);
           UpdateIMAPMailbox(toc);
         } else {
@@ -474,7 +465,7 @@ int GetMailbox(FSSpecPtr spec, bool showIt) {
 /**********************************************************************
  * OpenMailbox - open the named mailbox
  **********************************************************************/
-int OpenMailbox(FSSpecPtr spec, bool showIt, TOCHandle toc) {
+int OpenMailbox(FSSpecPtr spec, bool showIt, TOCType * toc) {
   MyWindow *win;
   WindowPtr winWP;
 
@@ -524,19 +515,19 @@ int OpenMailbox(FSSpecPtr spec, bool showIt, TOCHandle toc) {
     ShowMyWindow(winWP);
 
     // Open mailbox drawer?
-    if ((*toc)->drawer && !(*toc)->drawerWin) {
+    if (toc->drawer && !toc->drawerWin) {
       // Don't open draw if there is one already open
       // Open drawer
-      TOCHandle tocTemp;
+      TOCType * tocTemp;
 
-      for (tocTemp = TOCList; tocTemp; tocTemp = (*tocTemp)->next) {
-        if ((*tocTemp)->drawerWin) {
+      for (tocTemp = TOCList; tocTemp; tocTemp = tocTemp->next) {
+        if (tocTemp->drawerWin) {
           // Found another one. Don't open this one.
-          (*toc)->drawer = false;
+          toc->drawer = false;
           break;
         }
       }
-      if ((*toc)->drawer)
+      if (toc->drawer)
         // Open drawer
         MBDrawerOpen(win);
     }
@@ -545,12 +536,13 @@ int OpenMailbox(FSSpecPtr spec, bool showIt, TOCHandle toc) {
   /*
    * push it onto list of open toc's
    */
-  LL_Push(TOCList, toc);
+  toc->next = TOCList;
+  TOCList = toc;
 
   MyThreadEndCritical();
 
   // if we're opening and showing an IMAP mailbox, fetch new messages
-  if (showIt && (*toc)->imapTOC && AutoCheckOK() && !StartingUp) {
+  if (showIt && toc->imapTOC && AutoCheckOK() && !StartingUp) {
     (void)FetchNewMessages(toc, true, false, true, false);
     UpdateIMAPMailbox(toc);
   } else {
@@ -582,7 +574,7 @@ void MBDrawerOpen(MyWindowPtr win) {}
 /**********************************************************************
  * InitMailboxWin - initialize mailbox window data
  **********************************************************************/
-void InitMailboxWin(MyWindowPtr win, TOCHandle toc, bool showIt) {
+void InitMailboxWin(MyWindowPtr win, TOCType * toc, bool showIt) {
   WindowPtr winWP = GetMyWindowWindowPtr(win);
   Str255 scratch;
 
@@ -591,7 +583,7 @@ void InitMailboxWin(MyWindowPtr win, TOCHandle toc, bool showIt) {
 
   // SetTopMargin(win,win->vPitch+2*FontDescent);
 
-  // SetWindowKind (winWP,(*toc)->which==OUT ? CBOX_WIN : MBOX_WIN);
+  // SetWindowKind (winWP,toc->which==OUT ? CBOX_WIN : MBOX_WIN);
   SetMyWindowPrivateData(win, (void *)toc);
   win->close = BoxClose;
   win->button = BoxButton; /* Was click/bgClick */
@@ -609,15 +601,15 @@ void InitMailboxWin(MyWindowPtr win, TOCHandle toc, bool showIt) {
   // win->idle = BoxIdle;
   win->find = BoxFind;
 
-  (*toc)->win = win;
+  toc->win = win;
 
   // Title the window.
   if (!IMAPMailboxTitle(toc, scratch))
     PCopy((unsigned char *)scratch,
           (unsigned char *)MailboxAlias(
-              (*toc)->which,
+              toc->which,
               (char *)PCopy((unsigned char *)scratch,
-                            (unsigned char *)(*toc)->mailbox.spec.name)));
+                            (unsigned char *)toc->mailbox.spec.name)));
 
   // Insert a NULL if the user is trying to avoid AMO
   if (GetPrefLong(PREF_AMO_AVOIDANCE) == kAMOAvoidAll ||
@@ -629,7 +621,7 @@ void InitMailboxWin(MyWindowPtr win, TOCHandle toc, bool showIt) {
 /**********************************************************************
  * TOCDelDup - delete duplicate messages from a table of contents
  **********************************************************************/
-long TOCDelDup(TOCHandle tocH) {
+long TOCDelDup(TOCType * tocH) {
   long i, j, nuke;
   long count = 0;
   short n, removed;
@@ -637,13 +629,12 @@ long TOCDelDup(TOCHandle tocH) {
   MSumPtr iSum, jSum;
 
   // this doesn't work on IMAP mailboxes
-  if ((*tocH)->imapTOC)
+  if (tocH->imapTOC)
     return (0);
 
-  n = (*tocH)->count;
+  n = tocH->count;
 
-  LDRef(tocH);
-  for (i = 0, iSum = (*tocH)->sums; i < n; i++, iSum++) {
+  for (i = 0, iSum = tocH->sums; i < n; i++, iSum++) {
     if (iSum->msgIdHash != kNeverHashed && iSum->msgIdHash != -2 &&
         iSum->msgIdHash != kNoMessageId)
       for (j = i + 1, jSum = iSum + 1; j < n; j++, jSum++) {
@@ -667,18 +658,16 @@ long TOCDelDup(TOCHandle tocH) {
           else
             nuke = j; // i and j identical; delete j
           if (nuke >= 0) {
-            (*tocH)->sums[nuke].msgIdHash = -2;
+            tocH->sums[nuke].msgIdHash = -2;
             count++;
           }
         }
       }
   }
-  UL(tocH);
-
   if (count) {
     removed = 0;
-    for (n = (*tocH)->count; n-- && removed < count;) {
-      if ((*tocH)->sums[n].msgIdHash == -2) {
+    for (n = tocH->count; n-- && removed < count;) {
+      if (tocH->sums[n].msgIdHash == -2) {
         if (!DeleteSum(tocH, n)) // changed by Clarence, 4/28/97
           removed++;
       }
@@ -690,12 +679,12 @@ long TOCDelDup(TOCHandle tocH) {
 /**********************************************************************
  * TOCDelEmpty - delete empty messages from a table of contents
  **********************************************************************/
-long TOCDelEmpty(TOCHandle tocH) {
+long TOCDelEmpty(TOCType * tocH) {
   long count = 0;
   short n;
 
-  for (n = (*tocH)->count; n--;) {
-    if ((*tocH)->sums[n].length == 0) {
+  for (n = tocH->count; n--;) {
+    if (tocH->sums[n].length == 0) {
       if (!DeleteSum(tocH, n)) // changed by Clarence, 4/28/97
         count++;
     }
@@ -707,7 +696,7 @@ long TOCDelEmpty(TOCHandle tocH) {
  * OpenFilterMessages - open messages that filters say we should
  **********************************************************************/
 int OpenFilterMessages(FSSpecPtr spec) {
-  TOCHandle tocH = TOCBySpec(spec);
+  TOCType * tocH = TOCBySpec(spec);
   short i;
   bool openedOne;
 
@@ -719,16 +708,16 @@ int OpenFilterMessages(FSSpecPtr spec) {
 
   do {
     openedOne = false;
-    for (i = (*tocH)->count - 1; i >= 0; i--)
-      if ((*tocH)->sums[i].opts & OPT_OPEN) {
-        (*tocH)->sums[i].opts &= ~OPT_OPEN;
-        (*tocH)->sums[i].opts |= OPT_AUTO_OPENED;
+    for (i = tocH->count - 1; i >= 0; i--)
+      if (tocH->sums[i].opts & OPT_OPEN) {
+        tocH->sums[i].opts &= ~OPT_OPEN;
+        tocH->sums[i].opts |= OPT_AUTO_OPENED;
         TOCSetDirty(tocH, true);
         {
           Str63 name;
           ComposeLogS(LOG_FILT, nil, (unsigned char *)"\022Opening message %p",
                       (unsigned char *)name);
-          PSCopy((unsigned char *)name, (unsigned char *)(*tocH)->sums[i].subj);
+          PSCopy((unsigned char *)name, (unsigned char *)tocH->sums[i].subj);
         }
         GetAMessage(tocH, i, nil, nil, true);
         openedOne = true;
@@ -741,44 +730,33 @@ int OpenFilterMessages(FSSpecPtr spec) {
 /**********************************************************************
  * SaveMessageSum - save a message summary into a TOC
  **********************************************************************/
-bool SaveMessageSum(void *vsum, TOCHandle *tocH) {
+bool SaveMessageSum(void *vsum, TOCType **tocH) {
   MSumPtr sum = (MSumPtr)vsum;
-  long grow;
-  long goal;
-  TOCHandle new;
-  int err;
+  if (!tocH || !*tocH) return false;
+  TOCType *toc = *tocH;
 
   RemoveUTF8FromSum(sum);
-  sum->serialNum = (**tocH)->nextSerialNum++;
-  if ((**tocH)->count) {
-    goal = GetHandleSize_(*tocH) + sizeof(MSumType);
-    SetHandleBig_(*tocH, goal);
-    if ((err = MemError())) { // Restored outer if statement
-      if (/*(**tocH)->building && TempMaxMem(&grow) > goal*/ 0) {
-        if ((new = (TOCHandle)NuHTempBetter(goal))) {
-          BMD(**tocH, *new, goal - sizeof(MSumType));
-          DisposeHandle((Handle)*tocH);
-          *tocH = new;
-          err = noErr;
-        }
-      }
-    }
-    if (err) {
-      WarnUser(SAVE_SUM_ERR, err);
-      return (False);
-    }
+  sum->serialNum = toc->nextSerialNum++;
+
+  /* Grow the TOC to hold one more summary */
+  size_t newSize = sizeof(TOCType) + MAX(0, toc->count) * sizeof(MSumType);
+  TOCType *grown = (TOCType *)g_realloc(toc, newSize);
+  if (!grown) {
+    WarnUser(SAVE_SUM_ERR, memFullErr);
+    return false;
   }
-  (**tocH)->needRedo = (**tocH)->count;
-  (**tocH)->resort = kResortWhenever;
-  BMD(sum, &(**tocH)->sums[(**tocH)->count++], sizeof(MSumType));
-#ifdef NEVER
-  CalcSumLengths(*tocH, (**tocH)->count - 1);
-#endif
-  InvalSum(*tocH, (**tocH)->count - 1);
-  TOCSetDirty(*tocH, true);
-  (**tocH)->reallyDirty = True;
-  (**tocH)->analScanned = false;
-  return (True);
+  *tocH = grown;
+  toc = grown;
+
+  toc->needRedo = toc->count;
+  toc->resort = kResortWhenever;
+  memcpy(&toc->sums[toc->count], sum, sizeof(MSumType));
+  toc->count++;
+  InvalSum(toc, toc->count - 1);
+  TOCSetDirty(toc, true);
+  toc->reallyDirty = true;
+  toc->analScanned = false;
+  return true;
 }
 
 /************************************************************************
@@ -846,7 +824,7 @@ int Spec2Menu(FSSpecPtr spec, bool forXfer, short *menu, short *item) {
 /**********************************************************************
  * TOCH2Menu - find the menu item that corresponds to a toch
  **********************************************************************/
-int TOCH2Menu(TOCHandle tocH, bool forXfer, short *mnu, short *item) {
+int TOCH2Menu(TOCType * tocH, bool forXfer, short *mnu, short *item) {
   FSSpec spec = GetMailboxSpec(tocH, -1);
   return (Spec2Menu(&spec, forXfer, mnu, item));
 }
@@ -1015,37 +993,37 @@ int Path2Box(char *path, FSSpecPtr box) {
 /************************************************************************
  * CalcAllSumLengths - calculate all the lengths for all the sums in a toc
  ************************************************************************/
-void CalcAllSumLengths(TOCHandle toc) {
+void CalcAllSumLengths(TOCType * toc) {
   int sumNum;
 
-  for (sumNum = 0; sumNum < (*toc)->count; sumNum++)
+  for (sumNum = 0; sumNum < toc->count; sumNum++)
     CalcSumLengths(toc, sumNum);
 }
 
 /************************************************************************
  * CalcSumLengths - calculcate how long the strings in a sum can be
  ************************************************************************/
-void CalcSumLengths(TOCHandle tocH, int sumNum) {
+void CalcSumLengths(TOCType * tocH, int sumNum) {
   Str255 scratch;
   short trunc;
   short dWidth = (*BoxLines)[WID_DATE] - (*BoxLines)[WID_DATE - 1];
   short fWidth = (*BoxLines)[WID_FROM] - (*BoxLines)[WID_FROM - 1];
 
   if (FontIsFixed) {
-    (*tocH)->sums[sumNum].dateTrunc = dWidth / FontWidth - 1;
-    (*tocH)->sums[sumNum].fromTrunc = fWidth / FontWidth - 1;
+    tocH->sums[sumNum].dateTrunc = dWidth / FontWidth - 1;
+    tocH->sums[sumNum].fromTrunc = fWidth / FontWidth - 1;
   } else {
-    PCopy(scratch, (*tocH)->sums[sumNum].date);
+    PCopy(scratch, tocH->sums[sumNum].date);
     trunc = CalcTrunc(scratch, dWidth, InsurancePort);
     if (trunc && trunc < *scratch)
       trunc--;
-    (*tocH)->sums[sumNum].dateTrunc = trunc;
+    tocH->sums[sumNum].dateTrunc = trunc;
 
-    PCopy(scratch, (*tocH)->sums[sumNum].from);
+    PCopy(scratch, tocH->sums[sumNum].from);
     trunc = CalcTrunc(scratch, fWidth, InsurancePort);
     if (trunc && trunc < *scratch)
       trunc--;
-    (*tocH)->sums[sumNum].fromTrunc = trunc;
+    tocH->sums[sumNum].fromTrunc = trunc;
   }
 }
 #endif
@@ -1054,8 +1032,8 @@ void CalcSumLengths(TOCHandle tocH, int sumNum) {
  * SetState - set a message's state in its summary,
  * 				handle virtual TOCs, too
  **********************************************************************/
-void SetState(TOCHandle tocH, int sumNum, int state) {
-  TOCHandle realTOC;
+void SetState(TOCType * tocH, int sumNum, int state) {
+  TOCType * realTOC;
   short realSum;
 
   SetStateLo(tocH, sumNum, state);
@@ -1066,35 +1044,35 @@ void SetState(TOCHandle tocH, int sumNum, int state) {
     tocH = realTOC;
     sumNum = realSum;
   }
-  SearchUpdateSum(tocH, sumNum, tocH, (*tocH)->sums[sumNum].serialNum, false,
+  SearchUpdateSum(tocH, sumNum, tocH, tocH->sums[sumNum].serialNum, false,
                   false); //	Notify search window
 }
 
 /**********************************************************************
  * SetStateLo - set a message's state in its summary.
  **********************************************************************/
-void SetStateLo(TOCHandle tocH, int sumNum, int state) {
-  int oldState = (*tocH)->sums[sumNum].state;
+void SetStateLo(TOCType * tocH, int sumNum, int state) {
+  int oldState = tocH->sums[sumNum].state;
 
   if (oldState == state)
     return; /* nothing to do */
 
   InvalTocBox(tocH, sumNum, blStat);
 
-  (*tocH)->sums[sumNum].state = state;
+  tocH->sums[sumNum].state = state;
   TOCSetDirty(tocH, true);
-  if ((*tocH)->sums[sumNum].selected)
-    (*tocH)->lastSameTicks = 1; // no unreading, pal
+  if (tocH->sums[sumNum].selected)
+    tocH->lastSameTicks = 1; // no unreading, pal
 
   if (oldState == UNREAD || state == UNREAD)
-    (*tocH)->unreadBase = -1; // force update
+    tocH->unreadBase = -1; // force update
 
   if (IsQueuedState(oldState) || IsQueuedState(state))
-    (*tocH)->reallyDirty = True;
+    tocH->reallyDirty = True;
   if (IsQueuedState(state))
     DeleteMesgError(tocH, sumNum);
 
-  if ((*tocH)->which != OUT) {
+  if (tocH->which != OUT) {
     if (((state == SENT || state == UNSENT) &&
          (oldState == READ || oldState == UNREAD)) ||
         ((oldState == SENT || oldState == UNSENT) &&
@@ -1109,31 +1087,31 @@ void SetStateLo(TOCHandle tocH, int sumNum, int state) {
       false); // save the message state change, notify the server later.
 
   if (state == READ) {
-    TOCHandle realTOC;
+    TOCType * realTOC;
     short realSum;
 
     realTOC = GetRealTOC(tocH, sumNum, &realSum);
-    if (!(*tocH)->imapTOC || PrefIsSet(PREF_COUNT_ALL_IMAP) ||
+    if (!tocH->imapTOC || PrefIsSet(PREF_COUNT_ALL_IMAP) ||
         // count only those IMAP messages that are in InBox
         TOCToMbox(realTOC) == LocateInboxForPers(TOCToPers(realTOC)))
       UpdateNumStatWithTime(kStatReadMsg, 1,
-                            (*tocH)->sums[sumNum].seconds + ZoneSecs());
+                            tocH->sums[sumNum].seconds + ZoneSecs());
   }
 }
 
-short FindSumByHash(TOCHandle tocH, uint32_t hash) {
+short FindSumByHash(TOCType * tocH, uint32_t hash) {
   short sumNum, myCount;
 
 #ifdef THREADING_ON
   // check toc sanity-- InsaneTOC doesn't work unless we WriteTOC immediately
   // before
-  myCount = ((GetHandleSize_(tocH) - sizeof(TOCType)) / sizeof(MSumType)) + 1;
-  if (myCount > (*tocH)->count)
+  myCount = tocH->count; /* Was GetHandleSize_-based, now direct */
+  if (myCount > tocH->count)
 #endif
-    myCount = (*tocH)->count;
+    myCount = tocH->count;
 
   for (sumNum = myCount - 1; sumNum >= 0; sumNum--)
-    if ((*tocH)->sums[sumNum].uidHash == hash)
+    if (tocH->sums[sumNum].uidHash == hash)
       break;
   return (sumNum);
 }
@@ -1141,7 +1119,7 @@ short FindSumByHash(TOCHandle tocH, uint32_t hash) {
 /**********************************************************************
  * RedoWho - Redo the who field because of an in/out transition.
  **********************************************************************/
-int RedoWho(TOCHandle tocH, short sumNum) {
+int RedoWho(TOCType * tocH, short sumNum) {
   Str255 who;
   short hState;
   int err = noErr;
@@ -1152,13 +1130,13 @@ int RedoWho(TOCHandle tocH, short sumNum) {
   short i;
 
   if (!(err = CacheMessage(tocH, sumNum)))
-    if ((*tocH)->sums[sumNum].cache) {
-      hState = HGetState((*tocH)->sums[sumNum].cache);
-      text = LDRef((*tocH)->sums[sumNum].cache);
-      len = GetHandleSize((*tocH)->sums[sumNum].cache);
+    if (tocH->sums[sumNum].cache) {
+      hState = HGetState(tocH->sums[sumNum].cache);
+      text = LDRef(tocH->sums[sumNum].cache);
+      len = GetHandleSize(tocH->sums[sumNum].cache);
       *who = 0;
-      if ((*tocH)->sums[sumNum].state == SENT ||
-          (*tocH)->sums[sumNum].state == UNSENT) {
+      if (tocH->sums[sumNum].state == SENT ||
+          tocH->sums[sumNum].state == UNSENT) {
         hLen = len;
         spot = (unsigned char *)FindHeaderString(
             (char *)text, GetRString((char *)hName, HEADER_STRN + TO_HEAD),
@@ -1181,14 +1159,14 @@ int RedoWho(TOCHandle tocH, short sumNum) {
       if (spot && hLen) {
         MakePStr(who, (char *)spot, hLen);
         BeautifyFrom(who);
-        PSCopy((unsigned char *)(*tocH)->sums[sumNum].from, who);
-        if ((*tocH)->sums[sumNum].messH) {
+        PSCopy((unsigned char *)tocH->sums[sumNum].from, who);
+        if (tocH->sums[sumNum].messH) {
           MakeMessTitle(hName, tocH, sumNum, True);
-          SetWTitle_(GetMyWindowWindowPtr((*(*tocH)->sums[sumNum].messH)->win),
+          SetWTitle_(GetMyWindowWindowPtr((*tocH->sums[sumNum].messH)->win),
                      hName);
         }
       }
-      HSetState((*tocH)->sums[sumNum].cache, hState);
+      HSetState(tocH->sums[sumNum].cache, hState);
     }
   if (!err)
     InvalSum(tocH, sumNum);
@@ -1200,16 +1178,16 @@ int RedoWho(TOCHandle tocH, short sumNum) {
 /**********************************************************************
  * GetSumColor - get a message's color from its summary.
  **********************************************************************/
-short GetSumColor(TOCHandle tocH, short sumNum) {
-  return (SumColor((*tocH)->sums + sumNum));
+short GetSumColor(TOCType * tocH, short sumNum) {
+  return (SumColor(tocH->sums + sumNum));
 }
 
 /**********************************************************************
  * SetSumColor - set a message's color in its summary,
  * handle virtual TOCs, too
  **********************************************************************/
-void SetSumColor(TOCHandle tocH, short sumNum, short color) {
-  TOCHandle realTOC;
+void SetSumColor(TOCType * tocH, short sumNum, short color) {
+  TOCType * realTOC;
   short realSum;
 
   SetSumColorLo(tocH, sumNum, color);
@@ -1220,14 +1198,14 @@ void SetSumColor(TOCHandle tocH, short sumNum, short color) {
     tocH = realTOC;
     sumNum = realSum;
   }
-  SearchUpdateSum(tocH, sumNum, tocH, (*tocH)->sums[sumNum].serialNum, false,
+  SearchUpdateSum(tocH, sumNum, tocH, tocH->sums[sumNum].serialNum, false,
                   false); //	Notify search window
 }
 
 /**********************************************************************
  * SetSumColorLo - set a message's color in its summary.
  **********************************************************************/
-void SetSumColorLo(TOCHandle tocH, short sumNum, short color) {
+void SetSumColorLo(TOCType * tocH, short sumNum, short color) {
   int oldColor = GetSumColor(tocH, sumNum);
   MessHandle messH;
 
@@ -1236,13 +1214,13 @@ void SetSumColorLo(TOCHandle tocH, short sumNum, short color) {
 
   InvalSum(tocH, sumNum);
 
-  (*tocH)->sums[sumNum].flags &=
+  tocH->sums[sumNum].flags &=
       ~(FLAG_HUE1 | FLAG_HUE2 | FLAG_HUE3 | FLAG_HUE4);
-  (*tocH)->sums[sumNum].flags |= (color << 14);
+  tocH->sums[sumNum].flags |= (color << 14);
   TOCSetDirty(tocH, true);
 
   /* set the priority display in the message */
-  if (messH = (*tocH)->sums[sumNum].messH) {
+  if (messH = tocH->sums[sumNum].messH) {
     WindowPtr messWinWP = GetMyWindowWindowPtr((*messH)->win);
     (*messH)->win->label = color;
     if (IsColorWin(messWinWP)) {
@@ -1253,8 +1231,8 @@ void SetSumColorLo(TOCHandle tocH, short sumNum, short color) {
   }
 
   /* If this is an IMAP message, tell the server about the label change */
-  if ((*tocH)->imapTOC)
-    QueueMessFlagChange(tocH, sumNum, (*tocH)->sums[sumNum].state, false);
+  if (tocH->imapTOC)
+    QueueMessFlagChange(tocH, sumNum, tocH->sums[sumNum].state, false);
 }
 #endif
 
@@ -1262,21 +1240,21 @@ void SetSumColorLo(TOCHandle tocH, short sumNum, short color) {
  * BoxFOpen - open the mailbox file represented by a toc
  * may be called on open mailbox, and reports error to user
  **********************************************************************/
-int BoxFOpenLo(TOCHandle tocH, short sumNum) {
+int BoxFOpenLo(TOCType * tocH, short sumNum) {
   short refN;
   int err = 0;
   FSSpec newSpec, spec;
 
-  if ((*tocH)->refN == 0) {
-    LDRef(tocH);
+  if (tocH->refN == 0) {
+    tocH;
     spec = GetMailboxSpec(tocH, sumNum);
     err = AFSpOpenDF(&spec, &newSpec, fsRdWrPerm, &refN);
     if (err)
       FileSystemError(OPEN_MBOX, spec.name, err);
     else
-      (*tocH)->refN = refN;
+      tocH->refN = refN;
     ComposeLogS(LOG_FLOW, nil, (unsigned char *)"\014BoxFOpen %p\r", spec.name);
-    UL(tocH);
+    (void)0;
   }
 
   return (err);
@@ -1287,109 +1265,114 @@ int BoxFOpenLo(TOCHandle tocH, short sumNum) {
  * may be called on open mailbox, and reports error to user
  **********************************************************************/
 /* Local Decls for usage */
-void NoteFreeSpace(TOCHandle tocH);
+void NoteFreeSpace(TOCType * tocH);
 int MyFSClose(short refN);
 // short FSClose(short refNum); removed - defined in mailbox.h as void*
 
-int BoxFOpen(TOCHandle tocH) { return BoxFOpenLo(tocH, -1); }
+int BoxFOpen(TOCType * tocH) { return BoxFOpenLo(tocH, -1); }
 // #pragma segment Main
 /**********************************************************************
  * BoxFClose - close a mailbox file represented by a toc.  May be
  * called on open mailbox, reports any errors to user.
  **********************************************************************/
-void BoxFClose(TOCHandle tocH, bool flush) {
+void BoxFClose(TOCType * tocH, bool flush) {
   int err;
   FSSpec spec;
 
-  if ((*tocH)->refN > 0) {
+  if (tocH->refN > 0) {
     NoteFreeSpace(tocH);
-    err = flush ? MyFSClose((*tocH)->refN) : (int)(long)FSClose((*tocH)->refN);
-    (*tocH)->refN = 0;
+    err = flush ? MyFSClose(tocH->refN) : (int)(long)FSClose(tocH->refN);
+    tocH->refN = 0;
     spec = GetMailboxSpec(tocH, -1);
     if (err)
       FileSystemError(CLOSE_MBOX, spec.name, err);
-    UL(tocH);
+    (void)0;
   }
 }
 
 /************************************************************************
  * NoteFreeSpace - note the free space on a volume
  ************************************************************************/
-void NoteFreeSpace(TOCHandle tocH) {
+void NoteFreeSpace(TOCType * tocH) {
   FSSpec newSpec;
 
   newSpec = GetMailboxSpec(tocH, -1);
   IsAlias(&newSpec, &newSpec);
-  (*tocH)->volumeFree = VolumeFree(newSpec.vRefNum);
+  tocH->volumeFree = VolumeFree(newSpec.vRefNum);
 }
 
-void Preview(TOCHandle tocH, short sumNum);
+void Preview(TOCType * tocH, short sumNum);
 
 #pragma segment Mailbox
 
 /**********************************************************************
  * DeleteSum - remove a sum from a toc
  **********************************************************************/
-bool DeleteSum(TOCHandle tocH, int sumNum) {
+bool DeleteSum(TOCType * tocH, int sumNum) {
   MSumPtr sum;
   int mNum;
   Str31 name;
 
   ASSERT(tocH);
-  ASSERT(sumNum < (*tocH)->count);
+  ASSERT(sumNum < tocH->count);
   ASSERT(sumNum >= 0);
-  ASSERT((*tocH)->sums[sumNum].state != BUSY_SENDING);
-  if (!tocH || !(sumNum < (*tocH)->count) || !(sumNum >= 0) ||
-      ((*tocH)->sums[sumNum].state == BUSY_SENDING))
+  ASSERT(tocH->sums[sumNum].state != BUSY_SENDING);
+  if (!tocH || !(sumNum < tocH->count) || !(sumNum >= 0) ||
+      (tocH->sums[sumNum].state == BUSY_SENDING))
     return -1;
 
   if (LogLevel & LOG_MOVE)
     ComposeLogS(LOG_MOVE, nil, "\pDelete %p,%p from %p\015",
-                (*tocH)->sums[sumNum].from, (*tocH)->sums[sumNum].subj,
+                tocH->sums[sumNum].from, tocH->sums[sumNum].subj,
                 GetMailboxName(tocH, sumNum, name));
 
-  (*tocH)->analScanned = false;
+  tocH->analScanned = false;
 
-  if ((*tocH)->previewID == (*tocH)->sums[sumNum].uidHash &&
-      (*tocH)->previewPTE)
+  if (tocH->previewID == tocH->sums[sumNum].uidHash &&
+      tocH->previewPTE)
     Preview(tocH, -1);
-  // (*tocH)->maxValid = MIN((*tocH)->maxValid, sumNum - 1);
+  // tocH->maxValid = MIN(tocH->maxValid, sumNum - 1);
   if (IsQueued(tocH, sumNum))
     ForceSend = 0;
-  if ((*tocH)->sums[sumNum].cache) {
-    DisposeHandle((*tocH)->sums[sumNum].cache);
-    (*tocH)->sums[sumNum].cache = NULL;
+  if (tocH->sums[sumNum].cache) {
+    DisposeHandle(tocH->sums[sumNum].cache);
+    tocH->sums[sumNum].cache = NULL;
   }
-  if (!(*tocH)->virtualTOC)
+  if (!tocH->virtualTOC)
     DeleteMesgError(tocH, sumNum);
-  if (sumNum < (*tocH)->count - 1) /* is this not the last sum? */
+  if (sumNum < tocH->count - 1) /* is this not the last sum? */
   {
-    LDRef(tocH);
-    sum = (*tocH)->sums + sumNum;
-    BMD(sum + 1, sum, ((*tocH)->count - 1 - sumNum) * sizeof(MSumType));
-    UL(tocH);
-    for (mNum = sumNum; mNum < (*tocH)->count - 1; mNum++)
-      if ((MessHandle)(*tocH)->sums[mNum].messH)
-        (*(MessHandle)(*tocH)->sums[mNum].messH)->sumNum--;
+    sum = tocH->sums + sumNum;
+    BMD(sum + 1, sum, (tocH->count - 1 - sumNum) * sizeof(MSumType));
+    for (mNum = sumNum; mNum < tocH->count - 1; mNum++)
+      if ((MessHandle)tocH->sums[mNum].messH)
+        (*(MessHandle)tocH->sums[mNum].messH)->sumNum--;
   }
-  SetHandleBig_(tocH,
-                MAX(sizeof(TOCType), GetHandleSize_(tocH) - sizeof(MSumType)));
-  if (--(*tocH)->count == 0 && !(*tocH)->virtualTOC)
+  /* Shrink TOC by one summary */
+  {
+    size_t newSize = sizeof(TOCType) + MAX(0, tocH->count - 2) * sizeof(MSumType);
+    if (newSize < sizeof(TOCType)) newSize = sizeof(TOCType);
+    /* Note: caller must update their pointer if realloc moves memory.
+       For now, shrink in-place (realloc shrink usually doesn't move). */
+    TOCType *shrunk = (TOCType *)g_realloc(tocH, newSize);
+    if (shrunk) tocH = shrunk;
+  }
+  if (--tocH->count == 0 && !tocH->virtualTOC)
     ZeroMailbox(tocH);
 
   TOCSetDirty(tocH, true);
   return noErr;
 }
 
-// bool IsQueued(TOCHandle tocH, int sumNum); MOVED TO TOP
+// bool IsQueued(TOCType * tocH, int sumNum); MOVED TO TOP
 
 /**********************************************************************
  * InvalSum - invalidate an entire message summary line
  **********************************************************************/
-void InvalSum(TOCHandle tocH, short sum) {
+void InvalSum(TOCType * tocH, short sum) {
   /* GTK Port: Invalidation handled by widgets
   Rect r;
-  MyWindowPtr win = (*tocH)->win;
+  MyWindowPtr win = tocH->win;
   // GrafPtr oldPort;
   long top, bottom;
 
@@ -1410,7 +1393,7 @@ void InvalSum(TOCHandle tocH, short sum) {
   r.left = win->contR.left;
   r.right = win->contR.right;
   InvalWindowRect(GetMyWindowWindowPtr(win), &r);
-  (*tocH)->resort = MAX((*tocH)->resort, kNoSlowResort);
+  tocH->resort = MAX(tocH->resort, kNoSlowResort);
   */
 }
 
@@ -1692,9 +1675,9 @@ bool BadMailboxNameChars(FSSpecPtr spec) {
 /************************************************************************
  * ZeroMailbox - set a mailbox's size to zero.  Assumes box is empty
  ************************************************************************/
-void ZeroMailbox(TOCHandle tocH) {
+void ZeroMailbox(TOCType * tocH) {
   if (!BoxFOpen(tocH)) {
-    SetEOF((*tocH)->refN, 0L);
+    SetEOF(tocH->refN, 0L);
     BoxFClose(tocH, false);
   }
 }
@@ -1716,7 +1699,7 @@ int ChainTrash(FSSpecPtr spec) {
  * RemoveMailbox - move a mailbox to the trash
  ************************************************************************/
 int RemoveMailbox(FSSpecPtr spec, bool trashChain) {
-  TOCHandle tocH;
+  TOCType * tocH;
   int err;
   FSSpec tocSpec;
   short sumNum;
@@ -1726,12 +1709,12 @@ int RemoveMailbox(FSSpecPtr spec, bool trashChain) {
    */
   if (tocH = FindTOC(spec)) {
     TOCSetDirty(tocH, false);
-    for (sumNum = 0; sumNum < (*tocH)->count; sumNum++)
-      if ((*tocH)->sums[sumNum].messH)
+    for (sumNum = 0; sumNum < tocH->count; sumNum++)
+      if (tocH->sums[sumNum].messH)
         CloseMyWindow(
-            GetMyWindowWindowPtr((*(*tocH)->sums[sumNum].messH)->win));
-    if ((*tocH)->win)
-      CloseMyWindow(GetMyWindowWindowPtr((*tocH)->win));
+            GetMyWindowWindowPtr((*tocH->sums[sumNum].messH)->win));
+    if (tocH->win)
+      CloseMyWindow(GetMyWindowWindowPtr(tocH->win));
   }
 
   /*
@@ -1754,26 +1737,26 @@ int RemoveMailbox(FSSpecPtr spec, bool trashChain) {
  ************************************************************************/
 bool MessagePosition(bool save, MyWindowPtr win) {
   WindowPtr winWP = GetMyWindowWindowPtr(win);
-  TOCHandle tocH = (*(MessHandle)GetMyWindowPrivateData(win))->tocH;
+  TOCType * tocH = (*(MessHandle)GetMyWindowPrivateData(win))->tocH;
   short sumNum = (*(MessHandle)GetMyWindowPrivateData(win))->sumNum;
   Rect r;
   bool zoomed;
   bool res = True;
 
   if (save) {
-    if (!(*tocH)->virtualTOC) {
+    if (!tocH->virtualTOC) {
       /*      utl_SaveWindowPos(winWP, &r, &zoomed);
-            (*tocH)->sums[sumNum].u.savedPos = r;
+            tocH->sums[sumNum].u.savedPos = r;
             if (zoomed)
-              (*tocH)->sums[sumNum].flags |= FLAG_ZOOMED;
+              tocH->sums[sumNum].flags |= FLAG_ZOOMED;
             else
-              (*tocH)->sums[sumNum].flags &= ~FLAG_ZOOMED; */
+              tocH->sums[sumNum].flags &= ~FLAG_ZOOMED; */
       TOCSetDirty(tocH, true);
     }
   } else {
-    /*    r = (*tocH)->sums[sumNum].u.savedPos;
+    /*    r = tocH->sums[sumNum].u.savedPos;
         if (r.right - r.left > 100 && r.bottom - r.top > 40) {
-          zoomed = ((*tocH)->sums[sumNum].flags & FLAG_ZOOMED) != 0;
+          zoomed = (tocH->sums[sumNum].flags & FLAG_ZOOMED) != 0;
           utl_RestoreWindowPos(winWP, &r, zoomed, 1, 0, 0, 0);
         } else */
     {
@@ -2184,9 +2167,9 @@ short VD2MenuId(short vRef, long dirId) {
 /************************************************************************
  * SelectMessage - select a single message in a mailbox
  ************************************************************************/
-void SelectMessage(TOCHandle tocH, short mNum) {
+void SelectMessage(TOCType * tocH, short mNum) {
   SelectBoxRange(tocH, mNum, mNum, False, 0, 0);
-  BoxCenterSelection((*tocH)->win);
+  BoxCenterSelection(tocH->win);
 }
 
 /************************************************************************
@@ -2447,11 +2430,11 @@ short FindBoxByNameIn1Menu(MenuHandle mh, unsigned char *name) {
 /************************************************************************
  * FirstMsgSelected - return index of first message selected
  ************************************************************************/
-short FirstMsgSelected(TOCHandle tocH) {
+short FirstMsgSelected(TOCType * tocH) {
   short i;
 
-  for (i = 0; i < (*tocH)->count; i++)
-    if ((*tocH)->sums[i].selected)
+  for (i = 0; i < tocH->count; i++)
+    if (tocH->sums[i].selected)
       return (i);
   return (-1);
 }
@@ -2459,11 +2442,11 @@ short FirstMsgSelected(TOCHandle tocH) {
 /************************************************************************
  * LastMsgSelected - return index of last message selected
  ************************************************************************/
-short LastMsgSelected(TOCHandle tocH) {
+short LastMsgSelected(TOCType * tocH) {
   short i;
 
-  for (i = (*tocH)->count - 1; i >= 0; i--)
-    if ((*tocH)->sums[i].selected)
+  for (i = tocH->count - 1; i >= 0; i--)
+    if (tocH->sums[i].selected)
       break;
   return (i);
 }
@@ -2471,12 +2454,12 @@ short LastMsgSelected(TOCHandle tocH) {
 /**********************************************************************
  * CountSelectedMessages - count the number of messages selected
  **********************************************************************/
-short CountSelectedMessages(TOCHandle tocH) {
+short CountSelectedMessages(TOCType * tocH) {
   short i;
   short n = 0;
 
-  for (i = 0; i < (*tocH)->count; i++)
-    if ((*tocH)->sums[i].selected)
+  for (i = 0; i < tocH->count; i++)
+    if (tocH->sums[i].selected)
       n++;
   return (n);
 }
@@ -2485,16 +2468,16 @@ short CountSelectedMessages(TOCHandle tocH) {
  * SizeSelectedMessages - figure out how big all the selected messages are
  *  Set countOpenOnes to false to ignore ones that are already open
  **********************************************************************/
-long SizeSelectedMessages(TOCHandle tocH, bool countOpenOnes) {
+long SizeSelectedMessages(TOCType * tocH, bool countOpenOnes) {
   short sum;
   long size = 0;
 
-  for (sum = (*tocH)->count; sum--;) {
-    if ((*tocH)->sums[sum].selected)
-      if (!countOpenOnes && (*tocH)->sums[sum].messH)
+  for (sum = tocH->count; sum--;) {
+    if (tocH->sums[sum].selected)
+      if (!countOpenOnes && tocH->sums[sum].messH)
         continue;
       else
-        size += (*tocH)->sums[sum].length;
+        size += tocH->sums[sum].length;
   }
   return size;
 }
@@ -2503,12 +2486,12 @@ long SizeSelectedMessages(TOCHandle tocH, bool countOpenOnes) {
  * CountFlaggedMessages - count the number of messages flagged for
  * 	filtering
  **********************************************************************/
-long CountFlaggedMessages(TOCHandle tocH) {
+long CountFlaggedMessages(TOCType * tocH) {
   short i;
   long n = 0;
 
-  for (i = 0; i < (*tocH)->count; i++)
-    if ((*tocH)->sums[i].flags & FLAG_UNFILTERED)
+  for (i = 0; i < tocH->count; i++)
+    if (tocH->sums[i].flags & FLAG_UNFILTERED)
       n++;
   return (n);
 }
@@ -2655,10 +2638,10 @@ int GraftMailbox(short vRef, long dirId, FSSpecPtr realSpec, FSSpecPtr boxSpec,
     if (!FSpGetFInfo(&tocSpec, &info)) {
       if (PrefIsSet(PREF_NEW_TOC)) {
         {
-          TOCHandle tocH = CheckTOC(realSpec);
+          TOCType * tocH = CheckTOC(realSpec);
           if (tocH)
             WriteTOC(tocH);
-          ZapHandle(tocH);
+          g_free(tocH);
         }
       } else {
         realTocSpec = tocSpec;
@@ -2727,7 +2710,7 @@ void AddBoxHigh(FSSpecPtr spec) {
 /**********************************************************************
  * PopupMailboxPath - popup a list of mailboxes and folders
  **********************************************************************/
-void PopupMailboxPath(MyWindowPtr win, TOCHandle tocH, short sum, Point pt) {
+void PopupMailboxPath(MyWindowPtr win, TOCType * tocH, short sum, Point pt) {
   WindowPtr winWP = GetMyWindowWindowPtr(win);
   MenuHandle hMenu;
   short top, left;
@@ -2757,8 +2740,8 @@ void PopupMailboxPath(MyWindowPtr win, TOCHandle tocH, short sum, Point pt) {
         sum = (*messH)->sumNum;
       } else {
         //	This is a mailbox.
-        tocH = (TOCHandle)GetMyWindowPrivateData(win);
-        if ((*tocH)->virtualTOC)
+        tocH = (TOCType *)GetMyWindowPrivateData(win);
+        if (tocH->virtualTOC)
           //	no popup on virtual mailboxes
           return;
       }
@@ -2777,7 +2760,7 @@ void PopupMailboxPath(MyWindowPtr win, TOCHandle tocH, short sum, Point pt) {
 
     //	Name of Eudora Folder
     spec = GetMailboxSpec(tocH, -1);
-    IsIMAP = (*tocH)->imapTOC;
+    IsIMAP = tocH->imapTOC;
 
     if (!IsIMAP) {
       GetDirName(nil, Root.vRef, Root.dirId, s);
@@ -2813,7 +2796,7 @@ void PopupMailboxPath(MyWindowPtr win, TOCHandle tocH, short sum, Point pt) {
 
     case kSelMailbox:
       //	Open mailbox window
-      tocWinWP = GetMyWindowWindowPtr((*tocH)->win);
+      tocWinWP = GetMyWindowWindowPtr(tocH->win);
       ShowMyWindow(tocWinWP);
       UserSelectWindow(tocWinWP);
       SelectMessage(tocH, sum);
@@ -2852,24 +2835,24 @@ void PopupMailboxPath(MyWindowPtr win, TOCHandle tocH, short sum, Point pt) {
  *	GetMailboxSpec - get the filespec for the indicated mailbox (and
  *message)
  **********************************************************************/
-FSSpec GetMailboxSpec(TOCHandle tocH, short sum) {
+FSSpec GetMailboxSpec(TOCType * tocH, short sum) {
   FSSpec spec;
 
   if (tocH) {
-    if ((*tocH)->virtualTOC) {
+    if (tocH->virtualTOC) {
       // virtual mailbox
       short index;
 
-      if (sum < 0 || sum > (*tocH)->count)
+      if (sum < 0 || sum > tocH->count)
         goto error;
-      index = (*tocH)->sums[sum].u.virtualMess.virtualMBIdx;
-      if (index < 0 || index >= (*tocH)->mailbox.virtualMB.specListCount)
+      index = tocH->sums[sum].u.virtualMess.virtualMBIdx;
+      if (index < 0 || index >= tocH->mailbox.virtualMB.specListCount)
         goto error;
-      return (*(*tocH)->mailbox.virtualMB.specList)[index];
+      return (*tocH->mailbox.virtualMB.specList)[index];
     }
 
     // normal mailbox
-    return (*tocH)->mailbox.spec;
+    return tocH->mailbox.spec;
   }
 
 // no tocH--shouldn't happen
@@ -2881,7 +2864,7 @@ error:
 /**********************************************************************
  *	GetMailboxName - get the name of the indicated mailbox (and message)
  **********************************************************************/
-UPtr GetMailboxName(TOCHandle tocH, short sum, UPtr name) {
+UPtr GetMailboxName(TOCType * tocH, short sum, UPtr name) {
   FSSpec spec;
 
   spec = GetMailboxSpec(tocH, sum);
@@ -2892,13 +2875,13 @@ UPtr GetMailboxName(TOCHandle tocH, short sum, UPtr name) {
 /**********************************************************************
  *	GetRealSummary - find real summary from a message serial number
  **********************************************************************/
-MSumPtr FindRealSummary(TOCHandle tocH, long serialNum, short *realSum) {
+MSumPtr FindRealSummary(TOCType * tocH, long serialNum, short *realSum) {
   short i, count;
   MSumPtr sum;
 
   if (tocH) {
-    count = (*tocH)->count;
-    for (i = 0, sum = (*tocH)->sums; i < count; i++, sum++)
+    count = tocH->count;
+    for (i = 0, sum = tocH->sums; i < count; i++, sum++)
       if (serialNum == sum->serialNum) {
         // found it!
         *realSum = i;
@@ -2911,7 +2894,7 @@ MSumPtr FindRealSummary(TOCHandle tocH, long serialNum, short *realSum) {
 /**********************************************************************
  *	FindSumBySerialNum - find real summary from a message serial number
  **********************************************************************/
-short FindSumBySerialNum(TOCHandle tocH, long serialNum) {
+short FindSumBySerialNum(TOCType * tocH, long serialNum) {
   short sumNum;
 
   return FindRealSummary(tocH, serialNum, &sumNum) ? sumNum : -1;
@@ -2920,13 +2903,13 @@ short FindSumBySerialNum(TOCHandle tocH, long serialNum) {
 /**********************************************************************
  *	GetRealTOC - if virtual TOC, return real one
  **********************************************************************/
-TOCHandle GetRealTOC(TOCHandle tocH, short sum, short *realSum) {
+TOCType * GetRealTOC(TOCType * tocH, short sum, short *realSum) {
   *realSum = sum;
   if (tocH) {
-    if ((*tocH)->virtualTOC) {
+    if (tocH->virtualTOC) {
       // virtual mailbox
       FSSpec spec = GetMailboxSpec(tocH, sum);
-      TOCHandle realTocH;
+      TOCType * realTocH;
 
       if (!spec.vRefNum)
         goto error;
@@ -2939,12 +2922,12 @@ TOCHandle GetRealTOC(TOCHandle tocH, short sum, short *realSum) {
       }
       if (!realTocH)
         goto error;
-      if (sum < 0 || sum > (*tocH)->count)
+      if (sum < 0 || sum > tocH->count)
         goto error;
 
       // search for the message in the real TOC by message serial number
       return FindRealSummary(
-                 realTocH, (*tocH)->sums[sum].u.linkMess.linkSerialNum, realSum)
+                 realTocH, tocH->sums[sum].u.virtualMess.linkSerialNum, realSum)
                  ? realTocH
                  : nil;
     } else {
@@ -2960,7 +2943,7 @@ error:
 /**********************************************************************
  * ProcessIMAPChanges - process IMAP adds, deletes, or updates
  **********************************************************************/
-static void ProcessIMAPChanges(Handle sumList, TOCHandle toc,
+static void ProcessIMAPChanges(Handle sumList, TOCType * toc,
                                IMAPUpdateType message) {
   short count;
   MSumPtr pSum;
@@ -2969,8 +2952,8 @@ static void ProcessIMAPChanges(Handle sumList, TOCHandle toc,
   bool selected;
   MailboxNodeHandle mbox = TOCToMbox(toc);
   UIDCopyPtr pCopy;
-  TOCHandle toTocH;
-  TOCHandle tocH, hidTocH = NULL;
+  TOCType * toTocH;
+  TOCType *tocH = NULL, *hidTocH = NULL;
   long numMessages, numUidResponses;
   long j, newUid;
   // NOTE: reverse PREF_IMAP_VISIBLE_SUM_FILTER once we're comfortable with
@@ -3028,8 +3011,8 @@ static void ProcessIMAPChanges(Handle sumList, TOCHandle toc,
       found = false;
 
       tocH = toc;
-      for (sum = 0; sum < (*tocH)->count; sum++) {
-        if (pSum->uidHash == (*tocH)->sums[sum].uidHash) {
+      for (sum = 0; sum < tocH->count; sum++) {
+        if (pSum->uidHash == tocH->sums[sum].uidHash) {
           // found it!
           found = true;
           break;
@@ -3039,8 +3022,8 @@ static void ProcessIMAPChanges(Handle sumList, TOCHandle toc,
       // look in the hidden toc if appropriate
       if (!found && hidTocH) {
         tocH = hidTocH;
-        for (sum = 0; sum < (*tocH)->count; sum++) {
-          if (pSum->uidHash == (*tocH)->sums[sum].uidHash) {
+        for (sum = 0; sum < tocH->count; sum++) {
+          if (pSum->uidHash == tocH->sums[sum].uidHash) {
             // found it!
             found = true;
             break;
@@ -3088,27 +3071,27 @@ static void ProcessIMAPChanges(Handle sumList, TOCHandle toc,
 
     case kDoDelete:
       if (found) {
-        selected = (*tocH)->sums[sum].selected;
+        selected = tocH->sums[sum].selected;
         DeleteIMAPSum(tocH, sum); // delete the summary
 
         // select the next summary if we oughtta
-        if ((*tocH)->win && selected && !IMAPFilteringUnderway())
-          BoxSelectAfter((*tocH)->win, sum);
+        if (tocH->win && selected && !IMAPFilteringUnderway())
+          BoxSelectAfter(tocH->win, sum);
       }
       break;
 
     case kDoUpdate:
       // Don't update this message if it's in the list of pending changes.
-      if (found && !PendingMessFlagChange((*tocH)->sums[sum].uidHash, mbox)) {
+      if (found && !PendingMessFlagChange(tocH->sums[sum].uidHash, mbox)) {
         // update the message state, unless it's in a state we want to keep
-        if (UpdatableIMAPState((*tocH)->sums[sum].state))
-          (*tocH)->sums[sum].state = pSum->state;
+        if (UpdatableIMAPState(tocH->sums[sum].state))
+          tocH->sums[sum].state = pSum->state;
 
         // update the message label if we ought to
         if (SumColor(pSum) ==
             flaggedColor) // new label is flagged, update the existing label
           SetSumColor(tocH, sum, flaggedColor);
-        else if (SumColor((*tocH)->sums + sum) ==
+        else if (SumColor(tocH->sums + sum) ==
                  flaggedColor) // old label is flagged, new label is not, turn
                                // off label
           SetSumColor(tocH, sum, 0);
@@ -3186,7 +3169,7 @@ static int IMAPRecvLine(TransStream stream, UPtr buffer, long *size) {
 /**********************************************************************
  * UpdateIMAPMailbox - check for any changes to the local IMAP mailbox
  **********************************************************************/
-OSErr UpdateIMAPMailbox(TOCHandle toc) {
+OSErr UpdateIMAPMailbox(TOCType * toc) {
   Handle toAdd = nil, toUpdate = nil, toDelete = nil, toCopy = nil;
   IMAPSResultHandle results = nil;
   short sumNum;
@@ -3209,7 +3192,7 @@ OSErr UpdateIMAPMailbox(TOCHandle toc) {
 
         // is it visible?
         LockMailboxNodeHandle(mbox);
-        if ((*toc)->win && IsWindowVisible(GetMyWindowWindowPtr((*toc)->win))) {
+        if (toc->win && IsWindowVisible(GetMyWindowWindowPtr(toc->win))) {
           FetchNewMessages(toc, true, false, true, false);
           SetIMAPMailboxNeeds(mbox, kNeedsResync, false);
         }
@@ -3231,7 +3214,7 @@ OSErr UpdateIMAPMailbox(TOCHandle toc) {
 
     if (toDelete == MSUM_DELETE_ALL) {
       //	delete everything
-      for (sumNum = (*toc)->count; sumNum--;)
+      for (sumNum = toc->count; sumNum--;)
         DeleteIMAPSum(toc, sumNum);
     } else {
       if (checkAttachments)
@@ -3245,13 +3228,13 @@ OSErr UpdateIMAPMailbox(TOCHandle toc) {
     // if we succeeded ...
     if (mbox) {
       // update the mailbox information ...
-      spec = (*toc)->mailbox.spec;
+      spec = toc->mailbox.spec;
       WriteIMAPMailboxInfo(&spec, mbox);
 
-      if (toc && (*toc)->win &&
-          IsWindowVisible(GetMyWindowWindowPtr((*toc)->win))) {
+      if (toc && toc->win &&
+          IsWindowVisible(GetMyWindowWindowPtr(toc->win))) {
         // resort mailbox if needed
-        if ((*toc)->resort)
+        if (toc->resort)
           MBResort(toc);
 
         /// do message selection
@@ -3260,8 +3243,8 @@ OSErr UpdateIMAPMailbox(TOCHandle toc) {
 
           // make selection if nothing is selected.
           if (LastMsgSelected(toc) < 0)
-            ShowBoxAt(toc, (*toc)->previewPTE ? -1 : FumLub(toc),
-                      GetMyWindowWindowPtr((*toc)->win));
+            ShowBoxAt(toc, toc->previewPTE ? -1 : FumLub(toc),
+                      GetMyWindowWindowPtr(toc->win));
         }
       }
     }
@@ -3272,7 +3255,7 @@ OSErr UpdateIMAPMailbox(TOCHandle toc) {
   //
 
   while (IMAPMessagesWaiting(toc, &spec)) {
-    TOCHandle hidTocH = NULL;
+    TOCType * hidTocH = NULL;
 
     // first, decode messages in the visible portion of the toc
     DecodeIMAPMessages(toc, &spec);
@@ -3324,8 +3307,8 @@ OSErr UpdateIMAPMailbox(TOCHandle toc) {
 /**********************************************************************
  * DeleteIMAPSum - remove an IMAP summary from a toc
  **********************************************************************/
-void DeleteIMAPSum(TOCHandle tocH, int sumNum) {
-  SearchUpdateSum(tocH, sumNum, tocH, (*tocH)->sums[sumNum].serialNum, false,
+void DeleteIMAPSum(TOCType * tocH, int sumNum) {
+  SearchUpdateSum(tocH, sumNum, tocH, tocH->sums[sumNum].serialNum, false,
                   true);
   DeleteMessageLo(tocH, sumNum, true);
 }
@@ -3345,7 +3328,7 @@ bool IsMailboxSubmenu(short menu) {
  *	and should be done another way.  That's  abig project for another
  *	day, though.
  **********************************************************************/
-void DecodeIMAPMessages(TOCHandle toc, FSSpecPtr spec) {
+void DecodeIMAPMessages(TOCType * toc, FSSpecPtr spec) {
   int err;
   short count;
   short fileRef;
@@ -3398,7 +3381,7 @@ void DecodeIMAPMessages(TOCHandle toc, FSSpecPtr spec) {
   // open the destination mailbox
   err = BoxFOpen(toc);
   if (err != noErr) {
-    FileSystemError(OPEN_MBOX, (*toc)->mailbox.spec.name, err);
+    FileSystemError(OPEN_MBOX, toc->mailbox.spec.name, err);
   } else {
     for (curIMAPIndex = 0; curIMAPIndex < countIMAP; curIMAPIndex++) {
       BadBinHex = False;
@@ -3410,15 +3393,15 @@ void DecodeIMAPMessages(TOCHandle toc, FSSpecPtr spec) {
       IMAPIdx = (*hIMAPIndex)[curIMAPIndex];
       //	search for the summary
       count = 0;
-      for (sumNum = 0; sumNum < (*toc)->count; sumNum++) {
-        if ((*toc)->sums[sumNum].uidHash == IMAPIdx.uid) {
+      for (sumNum = 0; sumNum < toc->count; sumNum++) {
+        if (toc->sums[sumNum].uidHash == IMAPIdx.uid) {
           MessHandle messH;
           MyWindowPtr win;
 
           SeekLine(IMAPIdx.offset, Lip);
           gIMAPMsgEnd = IMAPIdx.offset + IMAPIdx.length;
           CurTrans = IMAPTrans;
-          count = FetchMessageTextLo(nil, (*toc)->sums[sumNum].length, nil,
+          count = FetchMessageTextLo(nil, toc->sums[sumNum].length, nil,
                                      sumNum, toc, true, false);
           CurTrans = saveCurTrans;
           SetHandleBig_(AttachedFiles, 0);
@@ -3433,9 +3416,9 @@ void DecodeIMAPMessages(TOCHandle toc, FSSpecPtr spec) {
           // set the sum options if this message needs to have an attachment
           // downloaded.
           if (HasStubFileAttachment(toc, sumNum))
-            (*toc)->sums[sumNum].opts |= OPT_FETCH_ATTACHMENTS;
+            toc->sums[sumNum].opts |= OPT_FETCH_ATTACHMENTS;
           else
-            (*toc)->sums[sumNum].opts &= ~OPT_FETCH_ATTACHMENTS;
+            toc->sums[sumNum].opts &= ~OPT_FETCH_ATTACHMENTS;
 
           // moodmail?
           if (AnalDoIncoming())
@@ -3444,7 +3427,7 @@ void DecodeIMAPMessages(TOCHandle toc, FSSpecPtr spec) {
           // spamwatch?
           if (HasFeature(featureJunk) && JunkPrefBoxHold() && CanScoreJunk()) {
             // only score message if it hasn't been manually scored before
-            if ((*toc)->sums[sumNum].spamBecause != JUNK_BECAUSE_USER)
+            if (toc->sums[sumNum].spamBecause != JUNK_BECAUSE_USER)
               JunkScoreIMAPBox(toc, sumNum, sumNum, false);
           }
 
@@ -3452,19 +3435,19 @@ void DecodeIMAPMessages(TOCHandle toc, FSSpecPtr spec) {
           InvalSum(toc, sumNum);
 
           //	Redisplay message
-          if ((messH = (*toc)->sums[sumNum].messH) && (*messH)->bodyPTE &&
+          if ((messH = toc->sums[sumNum].messH) && (*messH)->bodyPTE &&
               (win = (*messH)->win))
             RedisplayIMAPMessage(win);
 
           //	Update the preview pane.
-          if ((*toc)->previewID == (*toc)->sums[sumNum].serialNum)
-            (*toc)->previewID = 0; // redraw previewed message
+          if (toc->previewID == toc->sums[sumNum].serialNum)
+            toc->previewID = 0; // redraw previewed message
           else
-            (*toc)->conConMultiScan = true; // run concentrator.
+            toc->conConMultiScan = true; // run concentrator.
 
           // delete the message if a translator has asked us to
           if (ETLDeleteRequest) {
-            (*toc)->sums[sumNum].opts |=
+            toc->sums[sumNum].opts |=
                 OPT_ORPHAN_ATT; // don't delete its attachments
 
             // jdboyd 7/30/04
@@ -3474,10 +3457,10 @@ void DecodeIMAPMessages(TOCHandle toc, FSSpecPtr spec) {
             // the unfiltered flag keeps it around.  I don't know what this was
             // there before, but it's causing problems removing ESP commands.
             //
-            // (*toc)->sums[sumNum].flags &= ~FLAG_UNFILTERED;
+            // toc->sums[sumNum].flags &= ~FLAG_UNFILTERED;
             // // don't run filters on this message
 
-            (*toc)->sums[sumNum].opts |=
+            toc->sums[sumNum].opts |=
                 OPT_EMSR_DELETE_REQUESTED; // mark this message so we know to
                                            // delete later
             ETLDeleteRequest = false;

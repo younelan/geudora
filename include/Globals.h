@@ -80,8 +80,8 @@ extern Byte CheckOnIdle;               /* check next time we're idle? */
 extern Str15 Type2SelString;           /* current type-2-select string */
 extern uint32_t Type2SelTicks; /* ticks for last key for type-2-select */
 extern short DragSumNum;       /* sumNum for finishing a drag */
-extern TOCHandle DragTOCFrom;  /* window drag came from */
-extern TOCHandle DragTOCTo;    /* window drag went into */
+extern TOCType * DragTOCFrom;  /* window drag came from */
+extern TOCType * DragTOCTo;    /* window drag went into */
 extern short DragModsWere;     /* what the flags were */
 extern uint32_t DragSequence;  // sequence number for drag
 extern short StationVRef;      /* vref for stationery folder */
@@ -93,7 +93,7 @@ extern long ____RandomFailThresh; // random memory failure threshhold.  set this
 #endif
 #define kCheck 0x02
 #define kSend 0x01
-extern TOCHandle TOCList; /* list of open TOC's */
+extern TOCType * TOCList; /* list of open TOC's */
 #ifndef NICKATNIGHT
 extern struct AliasDStruct **Aliases; /* list of alias files */
 #endif
@@ -172,7 +172,7 @@ extern short
 extern long TypeToOpen;
 extern WindowPtr UglyHackFrontWindow; // used for easy-open
 extern Str127 MyHostname;             /* our hostname, if we know it */
-extern TOCHandle DamagedTOC;
+extern TOCType * DamagedTOC;
 extern bool ThereIsColor;
 extern bool NoDominant; // don't inherit setting from dominant, just this once
 extern ICacheHandle ICache;

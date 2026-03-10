@@ -51,9 +51,9 @@ void ApplyStationeryLo(MyWindowPtr win, FSSpecPtr spec, bool b1, bool b2,
 
 /* Main composition functions - ported to use gEditCtrl instead of Pete */
 bool SaveComp(MyWindowPtr win);
-MyWindowPtr OpenComp(TOCHandle tocH, int sumNum, GtkWidget *winWP,
+MyWindowPtr OpenComp(TOCType * tocH, int sumNum, GtkWidget *winWP,
                      MyWindowPtr win, bool showIt, bool new);
-int QueueSelectedMessages(TOCHandle tocH, short toState, unsigned long when);
+int QueueSelectedMessages(TOCType * tocH, short toState, unsigned long when);
 int CreateMessageBody(char *buffer, unsigned long *hashPtr);
 long CountCompBytes(MessHandle messH);
 void UpdateSum(MessHandle messH, long offset, long length);

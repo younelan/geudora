@@ -57,13 +57,13 @@ typedef struct XferFlags {
 typedef struct IMAPTransferRec_ {
   short command;
   FSSpec targetSpec;
-  TOCHandle destToc;
+  TOCType * destToc;
   void *uids;
   bool attachmentsToo;
-  TOCHandle delToc;
+  TOCType * delToc;
   bool nuke;
   bool expunge;
-  TOCHandle sourceToc;
+  TOCType * sourceToc;
   bool copy;
   void *attachments;
   FSSpec targetBox;
@@ -93,21 +93,21 @@ void GrabSignature(uint32_t fid);
 OSErr SigSpec(FSSpecPtr spec, long id);
 OSErr TransmitMessageHi(TransStream stream, MessHandle messH, bool chatter,
                         bool sendDataCmd);
-void ShowBoxAt(TOCHandle tocH, short selectMe, WindowPtr behindWin);
-short FumLub(TOCHandle tocH);
+void ShowBoxAt(TOCType * tocH, short selectMe, WindowPtr behindWin);
+short FumLub(TOCType * tocH);
 #ifdef THREADING_ON
 void FilterXferMessages(void);
 void ResetCheckTime(bool force);
 #endif
 #ifdef BATCH_DELIVERY_ON
-void NotifyNewMail(short gotSome, bool noXfer, TOCHandle tocH,
+void NotifyNewMail(short gotSome, bool noXfer, TOCType * tocH,
                    FilterPB *fpbDelivery);
-void NotifyNewMailLo(short gotSome, bool noXfer, TOCHandle tocH,
+void NotifyNewMailLo(short gotSome, bool noXfer, TOCType * tocH,
                      FilterPB *fpbDelivery, bool OpenIn);
 #else
-void NotifyNewMail(short gotSome, bool noXfer, TOCHandle tocH);
+void NotifyNewMail(short gotSome, bool noXfer, TOCType * tocH);
 #endif
-OSErr DoFcc(TOCHandle tocH, short sumNum, CSpecHandle list);
+OSErr DoFcc(TOCType * tocH, short sumNum, CSpecHandle list);
 void CompAttDel(MessHandle messH);
 WindowPtr OpenBehindMePlease(void);
 void ProcessReceivedRegFiles(void);

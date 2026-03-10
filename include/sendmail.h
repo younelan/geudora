@@ -58,11 +58,11 @@ OSErr AllAttachOnBoardLo(MessHandle messH, bool errReport);
 PStr MessReturnAddr(MessHandle messH, PStr buffer);
 PStr GetReturnAddr(PStr addr, bool wantDefault);
 int StartSMTP(TransStream stream, unsigned char *serverName, long Port);
-int MySendMessage(TransStream stream, TOCHandle tocH, int sumNum,
+int MySendMessage(TransStream stream, TOCType * tocH, int sumNum,
                   CSpecHandle specList);
 int SMTPError(TransStream stream);
 int EndSMTP(TransStream stream);
-MessHandle SaveB4Send(TOCHandle tocH, short sumNum);
+MessHandle SaveB4Send(TOCType * tocH, short sumNum);
 int DoRcptTos(TransStream stream, MessHandle messH, bool chatter,
               CSpecHandle fccList, AccuPtr newsGroupAcc);
 int DoRcptTosFrom(TransStream stream, MessHandle messH, short index,
@@ -76,7 +76,7 @@ int TransmitMessage(TransStream stream, MessHandle messH, bool chatter,
 OSErr TransmitHeaders(TransStream stream, MessHandle messH, UHandle enriched,
                       PStr boundary, bool mime, bool others,
                       emsMIMEHandle *tlMIME, bool isRelated);
-void TimeStamp(TOCHandle tocH, short sumNum, uint32_t when, long delta);
+void TimeStamp(TOCType * tocH, short sumNum, uint32_t when, long delta);
 void PtrTimeStamp(MSumPtr sum, uint32_t when, long delta);
 #define GetReply(stream, buffer, size, chatter, isEhlo)                        \
   GetReplyLo(stream, buffer, size, nil, chatter, isEhlo)

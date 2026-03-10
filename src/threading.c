@@ -84,10 +84,10 @@ ADVISED OF THE POSSIBILITY OF SUCH DAMAGE. */
 #endif
 
 // External declarations for missing headers
-extern bool IsQueued(TOCHandle tocH, short sumNum);
+extern bool IsQueued(TOCType * tocH, short sumNum);
 extern long ApproxMessageSize(MessHandle messH);
-extern void SetState(TOCHandle tocH, short sumNum, short state);
-extern void WriteTOC(TOCHandle tocH);
+extern void SetState(TOCType * tocH, short sumNum, short state);
+extern void WriteTOC(TOCType * tocH);
 
 // Ensure threadTooManyReqsErr is defined (Mac specific error code)
 #ifndef threadTooManyReqsErr
@@ -101,7 +101,7 @@ extern bool GetPref(int pref);
 extern void GetPrefString(int pref, char *val);
 extern void SetPref(int pref, const char *val);
 extern bool ShouldSMTPAuth(void);
-extern bool DeleteSum(TOCHandle tocH, int sumNum);
+extern bool DeleteSum(TOCType * tocH, int sumNum);
 
 #define threadNotFoundErr (-32767)
 
@@ -246,7 +246,7 @@ static OSErr InitThreadGlobals(threadGlobalsPtr *newThreadGlobals) {
  ************************************************************************/
 static OSErr CopyOutToTemp(void) {
   int ii;
-  TOCHandle tocH, tempTocH;
+  TOCType *tocH, *tempTocH;
   StateEnum state;
   MessHandle messH;
   OSErr err = noErr;
@@ -261,25 +261,25 @@ static OSErr CopyOutToTemp(void) {
   TotalQueuedSize = 0;
   if (tocH && tempTocH) {
     // only copy messages ready to be sent now
-    for (ii = 0; ii < (*tocH)->count; ii++) {
-      if (!(*tocH)->sums[ii].messH && IsQueued(tocH, ii)) {
-        pers = FindPersById((*tocH)->sums[ii].persId);
+    for (ii = 0; ii < tocH->count; ii++) {
+      if (!tocH->sums[ii].messH && IsQueued(tocH, ii)) {
+        pers = FindPersById(tocH->sums[ii].persId);
         ASSERT(pers);
         if (pers && (*pers)->sendMeNow &&
-            (*tocH)->sums[ii].seconds <= gmtSecs) {
+            tocH->sums[ii].seconds <= gmtSecs) {
           /*
            * handle open, dirty windows
            */
           if ((messH = SaveB4Send(tocH, ii)) != NULL) {
             MiniEvents(); // in case we're hogging time
             TotalQueuedSize += (ApproxMessageSize(messH) * 1024);
-            state = (*tocH)->sums[ii].state;
-            err = MoveMessageLo(tocH, ii, &(*tempTocH)->mailbox.spec, true,
+            state = tocH->sums[ii].state;
+            err = MoveMessageLo(tocH, ii, &tempTocH->mailbox.spec, true,
                                 true, true);
             if (err)
               break;
             SetState(tocH, ii, BUSY_SENDING);
-            SetState(tempTocH, (*tempTocH)->count - 1, state);
+            SetState(tempTocH, tempTocH->count - 1, state);
             if ((*messH)->win)
               CloseMyWindow(GetMyWindowWindowPtr((*messH)->win));
           }
@@ -566,7 +566,7 @@ static OSErr DisposeThreadGlobals(threadGlobalsPtr threadGlobals) {
  *move these unlocked messages, we can just clear temp out box
  ************************************************************************/
 void CleanTempOutTOC(void) {
-  TOCHandle tempTocH;
+  TOCType * tempTocH;
   short ii;
   uLong oldForceSend = ForceSend;
 
@@ -574,7 +574,7 @@ void CleanTempOutTOC(void) {
   ASSERT(tempTocH);
   // maybe there's a quicker way???
   if (tempTocH)
-    for (ii = 0; ii < (*tempTocH)->count; ii++)
+    for (ii = 0; ii < tempTocH->count; ii++)
       if (!DeleteSum(tempTocH, ii))
         ii--;
   ForceSend = oldForceSend;
@@ -584,17 +584,17 @@ void CleanTempOutTOC(void) {
  * CleanRealOutTOC -
  ************************************************************************/
 void CleanRealOutTOC(void) {
-  TOCHandle tocH = GetRealOutTOC(), tempTocH = GetTempOutTOC();
+  TOCType *tocH = GetRealOutTOC(), *tempTocH = GetTempOutTOC();
   int ii;
   short sum;
 
   if (!(tocH && tempTocH))
     return;
 
-  for (ii = (*tocH)->count - 1; ii >= 0; ii--) {
-    if ((*tocH)->sums[ii].state == BUSY_SENDING) {
-      sum = FindSumByHash(tempTocH, (*tocH)->sums[ii].uidHash);
-      SetState(tocH, ii, (sum != -1) ? (*tempTocH)->sums[sum].state : SENDABLE);
+  for (ii = tocH->count - 1; ii >= 0; ii--) {
+    if (tocH->sums[ii].state == BUSY_SENDING) {
+      sum = FindSumByHash(tempTocH, tocH->sums[ii].uidHash);
+      SetState(tocH, ii, (sum != -1) ? tempTocH->sums[sum].state : SENDABLE);
     }
   }
 }

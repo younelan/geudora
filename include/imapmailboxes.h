@@ -166,19 +166,19 @@ bool CanModifyMailboxTrees(void);
 OSErr UpdateLocalCache(bool progress);
 bool MailboxTreeGood(PersHandle pers);
 OSErr GetIMAPAttachFolder(FSSpecPtr attachSpec);
-MailboxNodeHandle TOCToMbox(TOCHandle tocH);
-PersHandle TOCToPers(TOCHandle tocH);
+MailboxNodeHandle TOCToMbox(TOCType * tocH);
+PersHandle TOCToPers(TOCType * tocH);
 PersHandle MailboxNodeToPers(MailboxNodeHandle mbox);
-void SalvageIMAPTOC(TOCHandle oldTocH, TOCHandle newTocH, short *newCount);
+void SalvageIMAPTOC(TOCType * oldTocH, TOCType * newTocH, short *newCount);
 void LockMailboxNodeHandle(MailboxNodeHandle node);
 void UnlockMailboxNodeHandle(MailboxNodeHandle node);
 void ClosePersMailboxes(PersHandle pers);
 void IMAPCloseChildMailboxes(FSSpecPtr spec);
-bool IMAPMailboxHasUnread(TOCHandle tocH, bool itDoesNow);
+bool IMAPMailboxHasUnread(TOCType * tocH, bool itDoesNow);
 void PathToMailboxName(CStr path, Str63 mboxName, char delimiter);
-OSErr UpdateIMAPMailboxInfo(TOCHandle tocH);
-short UIDToSumNum(unsigned long uid, TOCHandle tocH);
-bool IMAPMailboxTitle(TOCHandle tocH, Str255 title);
+OSErr UpdateIMAPMailboxInfo(TOCType * tocH);
+short UIDToSumNum(unsigned long uid, TOCType * tocH);
+bool IMAPMailboxTitle(TOCType * tocH, Str255 title);
 void IMAPPersIDChanged(PersHandle pers, MailboxNodeHandle tree);
 
 // Mailbox Information
@@ -222,18 +222,18 @@ MailboxNodeHandle GetSpecialMailbox(PersHandle pers, bool createIfNeeded,
   GetSpecialMailbox(pers, createIfNeeded, silent, LATT_TRASH)
 #define GetIMAPJunkMailbox(pers, createIfNeeded, silent)                       \
   GetSpecialMailbox(pers, createIfNeeded, silent, LATT_JUNK)
-TOCHandle LocateIMAPJunkToc(TOCHandle tocH, bool createIfNeeded, bool silent);
+TOCType * LocateIMAPJunkToc(TOCType * tocH, bool createIfNeeded, bool silent);
 void ResetSpecialMailbox(PersHandle pers, long mboxAtt);
 #define ResetTrashMailbox(pers) ResetSpecialMailbox(pers, LATT_TRASH)
 #define ResetJunkMailbox(pers) ResetSpecialMailbox(pers, LATT_JUNK)
 bool EnsureSpecialMailboxes(PersHandle pers);
 
 // Delete Messages cache
-TOCHandle GetHiddenCacheMailbox(MailboxNodeHandle mbox, bool bForce,
+TOCType * GetHiddenCacheMailbox(MailboxNodeHandle mbox, bool bForce,
                                 bool bCreateIfNeeded);
 OSErr HideDeletedMessages(MailboxNodeHandle mbox, bool bForce, bool bShow);
-short CountDeletedIMAPMessages(TOCHandle tocH);
-bool HideShowSummary(TOCHandle toc, TOCHandle tocH, TOCHandle hidTocH,
+short CountDeletedIMAPMessages(TOCType * tocH);
+bool HideShowSummary(TOCType * toc, TOCType * tocH, TOCType * hidTocH,
                      short sumNum);
 
 // IMAP Auto Expunge
@@ -252,22 +252,22 @@ bool HideShowSummary(TOCHandle toc, TOCHandle tocH, TOCHandle hidTocH,
 
 void IMAPAutoExpungeWarning(void);
 bool IMAPAutoExpunge(void);
-bool IMAPAutoExpungeMailbox(TOCHandle tocH);
-void MarkSumAsDeleted(TOCHandle tocH, short sumNum, bool bDeleted);
+bool IMAPAutoExpungeMailbox(TOCType * tocH);
+void MarkSumAsDeleted(TOCType * tocH, short sumNum, bool bDeleted);
 
 // Hidden Summary Filtering
-bool ShowHideFilteredSummary(TOCHandle toc, short sumNum);
+bool ShowHideFilteredSummary(TOCType * toc, short sumNum);
 MailboxNodeHandle GetRealIMAPSpec(FSSpec orig, FSSpecPtr spec);
 
 // IMAP Fancy Trash Mode
 bool IMAPEmptyTrash(bool localOnly, bool currentOnly, bool all);
 short IMAPCountTrashMessages(bool localOnly, bool currentOnly, bool all);
-bool FancyTrashForThisPers(TOCHandle tocH);
+bool FancyTrashForThisPers(TOCType * tocH);
 
 // Other
 bool SpecIsFilled(FSSpecPtr spec);
 MailboxNodeHandle LocateInboxForPers(PersHandle pers);
-bool IMAPDontAutoFccMailbox(TOCHandle tocH);
+bool IMAPDontAutoFccMailbox(TOCType * tocH);
 
 Handle DupHandle(Handle h);
 
@@ -277,6 +277,6 @@ Handle DupHandle(Handle h);
 #endif
 
 /* DeleteIMAPSum is implemented as a real function in mailbox.c */
-void DeleteIMAPSum(TOCHandle tocH, int sumNum);
+void DeleteIMAPSum(TOCType * tocH, int sumNum);
 
 #endif // IMAPMAILBOXES_H

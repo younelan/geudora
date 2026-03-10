@@ -30,7 +30,7 @@
 #define GetRealOutTOC() GetSpecialTOC(OUT)
 #define GetInTOC() (InAThread() ? GetTempInTOC() : GetRealInTOC())
 #define GetOutTOC() (InAThread() ? GetTempOutTOC() : GetRealOutTOC())
-bool AmTempToc(TOCHandle tocH);
+bool AmTempToc(TOCType * tocH);
 #else
 #define GetInTOC() GetSpecialTOC(IN)
 #define GetOutTOC() GetSpecialTOC(OUT)
@@ -77,10 +77,8 @@ typedef struct {
   union {
     struct {
       short virtualMBIdx;
-    } virtualMess;
-    struct {
       long linkSerialNum;
-    } linkMess;
+    } virtualMess;
   } u;
   void **mesgErrH; /* Message error handle */
 } MessageSummary;
@@ -100,7 +98,7 @@ typedef struct TOCType {
   long total;          /* Total bytes */
   long updateID;       /* Update ID */
   void **imapTOC;      /* IMAP info */
-  struct TOCType **next;
+  struct TOCType *next;
 
   /* Mailbox specification */
   struct {
@@ -108,6 +106,8 @@ typedef struct TOCType {
     struct {
       long specListCount;
       FSSpecPtr *specList;
+      void *data;   /* search window private data (SearchInfo*) */
+      short type;   /* virtual mailbox type (0 = none, kSearchMB = search) */
     } virtualMB;
   } mailbox; /* Mailbox file specification */
 
@@ -152,7 +152,7 @@ typedef struct TOCType {
   long majorVersion;        /* Major version number */
   long minorVersion;        /* Minor version number */
   long needsCompact;        /* Needs compaction flag */
-  struct TOCType **nextTOC; /* Linked list of TOCs */
+  struct TOCType *nextTOC; /* Linked list of TOCs */
   long pluginKey;           /* Plugin key */
   long pluginValue;         /* Plugin value */
   short updateError;        /* Update error code */
@@ -173,7 +173,10 @@ typedef struct TOCType {
   MessageSummary sums[1]; /* Variable length array of summaries */
 } TOCType;
 
-/* TOCHandle is defined in mailbox.h */
+/* TOCType * is defined in mailbox.h */
+
+/* Virtual mailbox types */
+#define kSearchMB 1
 
 /* Mailbox type constants */
 #define kResortWhenever 1
@@ -226,13 +229,13 @@ typedef struct TOCType {
 #define featureJunk 1
 
 /* Function prototypes */
-void InvalSum(TOCHandle tocH, short sumNum);
-short FindSumByHash(TOCHandle tocH, uint32_t hash);
-TOCHandle GetSpecialTOC(short nameId);
-TOCHandle GetRealTOC(TOCHandle tocH, short sum, short *realSum);
-TOCHandle LocateIMAPJunkToc(TOCHandle source, bool create, bool open);
-FSSpec GetMailboxSpec(TOCHandle tocH, short num);
-void BoxSetSummarySelected(TOCHandle tocH, short sum, bool select);
+void InvalSum(TOCType * tocH, short sumNum);
+short FindSumByHash(TOCType * tocH, uint32_t hash);
+TOCType * GetSpecialTOC(short nameId);
+TOCType * GetRealTOC(TOCType * tocH, short sum, short *realSum);
+TOCType * LocateIMAPJunkToc(TOCType * source, bool create, bool open);
+FSSpec GetMailboxSpec(TOCType * tocH, short num);
+void BoxSetSummarySelected(TOCType * tocH, short sum, bool select);
 int GetPrefBit(short prefId, int bit);
 int GetPrefBitNoDominant(short prefId, int bit);
 #undef PrefIsSet
@@ -240,40 +243,37 @@ bool PrefIsSet(short prefId);
 void UseFeature(short featureId);
 /* AddTSToPOPD is a macro defined in pop.h */
 /* AddSpecToList declared in filtrun.h */
-void RedateTS(TOCHandle tocH, short sum);
+void RedateTS(TOCType * tocH, short sum);
 void RemIdFromPOPD(uint32_t popdType, short deleteId, uint32_t uidHash);
-int MoveSelectedMessagesLo(TOCHandle tocH, FSSpecPtr dest, bool a, bool b,
+int MoveSelectedMessagesLo(TOCType * tocH, FSSpecPtr dest, bool a, bool b,
                            bool c, bool d);
-int MoveSelectedMessages(TOCHandle tocH, FSSpecPtr dest, bool openIt);
-int MoveMessageLo(TOCHandle tocH, int sumNum, FSSpecPtr dest, bool copy,
+int MoveSelectedMessages(TOCType * tocH, FSSpecPtr dest, bool openIt);
+int MoveMessageLo(TOCType * tocH, int sumNum, FSSpecPtr dest, bool copy,
                   bool toTemp, bool holdOpen);
 /* IMAP-specific functions are declared in imapdownload.h */
-PersHandle TOCToPers(TOCHandle tocH);
-MailboxNodeHandle TOCToMbox(TOCHandle tocH);
-TOCHandle TOCBySpec(FSSpecPtr spec);
+PersHandle TOCToPers(TOCType * tocH);
+MailboxNodeHandle TOCToMbox(TOCType * tocH);
+TOCType * TOCBySpec(FSSpecPtr spec);
 bool IMAPFilteringUnderway(void);
 MailboxNodeHandle LocateInboxForPers(PersHandle pers);
 MailboxNodeHandle GetIMAPJunkMailbox(PersHandle pers, bool create,
                                      bool switchTo);
 
-TOCHandle toc_load(const char *path);
-void toc_free(TOCHandle toc);
-MessageSummary *toc_get_summaries(TOCHandle toc, int *count);
-int toc_write(TOCHandle toc);
-int toc_save(TOCHandle toc);
-MessageSummary *toc_get_message(TOCHandle toc, uint32_t index);
-uint32_t toc_get_message_count(TOCHandle toc);
-int toc_get_unread_count(TOCHandle toc);
+TOCType * toc_load(const char *path);
+void toc_free(TOCType * toc);
+MessageSummary *toc_get_summaries(TOCType * toc, int *count);
+int toc_write(TOCType * toc);
+int toc_save(TOCType * toc);
+MessageSummary *toc_get_message(TOCType * toc, uint32_t index);
+uint32_t toc_get_message_count(TOCType * toc);
+int toc_get_unread_count(TOCType * toc);
 
-void TOCSetDirty(TOCHandle tocH, bool dirty);
+void TOCSetDirty(TOCType * tocH, bool dirty);
 OSErr TOCDates(FSSpecPtr spec, uLong *box, uLong *res, uLong *file);
 
 #define OPT_INLINE_SIG 0x0100 /* Dummy value */
 
-/* CopySum: portable summary copy (idx unused in GTK port) */
-static inline void CopySum(MSumPtr from, MSumPtr to, short idx) {
-  (void)idx;
-  if (from && to) *to = *from;
-}
+/* CopySum — real implementation in searchwin.c */
+void CopySum(MSumPtr from, MSumPtr to, short idx);
 
 #endif /* TOC_H */

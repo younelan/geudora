@@ -47,7 +47,7 @@ bool MessKey(MyWindowPtr win, EventRecord *event);
 short SaveAsToOpenFile(short refN, MessHandle messH);
 bool SaveAsFilter(void *dgPtr, void *event, short *item, char *userData);
 short SaveAsHook(short item, void *dgPtr, char *userData);
-void NextMess(TOCHandle tocH, MessHandle messH, short whichWay, long modifiers,
+void NextMess(TOCType * tocH, MessHandle messH, short whichWay, long modifiers,
               bool ezOpen);
 bool MessFind(MyWindowPtr win, unsigned char *what);
 void MessClick(MyWindowPtr win, void *event);
@@ -66,10 +66,10 @@ short PriorityMenu(MyWindowPtr win);
 void ShowMessageSeparator(GtkWidget *pte, bool center);
 int UnwrapSave(unsigned char *text, long length, long offset, short refN);
 bool MessApp1(MyWindowPtr win, void *event);
-void SetSubject(TOCHandle tocH, short sumNum, unsigned char *sub);
-void SetSender(TOCHandle tocH, short sumNum, unsigned char *sender);
-void SetFlag(TOCHandle tocH, short sumNum, long flag, bool on);
-void SetOpt(TOCHandle tocH, short sumNum, long flag, bool on);
+void SetSubject(TOCType * tocH, short sumNum, unsigned char *sub);
+void SetSender(TOCType * tocH, short sumNum, unsigned char *sender);
+void SetFlag(TOCType * tocH, short sumNum, long flag, bool on);
+void SetOpt(TOCType * tocH, short sumNum, long flag, bool on);
 void MessIBarUpdate(MessHandle messH);
 bool CheckAddNotifyControls(MyWindowPtr win, MessHandle messH);
 #define attColor 1
@@ -85,23 +85,23 @@ void PlaceMessErrNote(MessHandle messH);
 bool SaveMessHi(MyWindowPtr win, bool closing);
 bool AttIsSelected(MyWindowPtr win, PETEHandle pte, long startWith,
                    long endWith, short what, long *start, long *stop);
-bool TransferMenuChoice(short menu, short item, TOCHandle tocH, short sumNum,
+bool TransferMenuChoice(short menu, short item, TOCType * tocH, short sumNum,
                         long modifiers, bool fcc);
 int AttLine2Spec(unsigned char *line, FSSpecPtr spec, bool wantToOpen);
 int RelLine2Spec(unsigned char *line, FSSpecPtr spec, uLong *cid, uLong *relURL,
                  uLong *absURL);
 short AddXlateTables(bool isOut, short nowId, bool ph, void **pmh);
-void SetMessTable(TOCHandle tocH, short sumNum, short tableId);
+void SetMessTable(TOCType * tocH, short sumNum, short tableId);
 RgnHandle MessBuildDragRgn(MessHandle messH);
-bool Menu2TableId(TOCHandle tocH, void **pmh, short item, short *tableId);
-void SetMessTable(TOCHandle tocH, short sumNum, short newId);
-int ExportHTMLSum(TOCHandle tocH, short sumNum);
+bool Menu2TableId(TOCType * tocH, void **pmh, short item, short *tableId);
+void SetMessTable(TOCType * tocH, short sumNum, short newId);
+int ExportHTMLSum(TOCType * tocH, short sumNum);
 int ExportHTML(MessHandle messH);
 #ifdef TWO
 bool GetServerRect(MyWindowPtr win, short which, Rect *r);
 #endif
-short EzOpenFind(TOCHandle tocH, short origSum);
-void EzOpen(TOCHandle tocH, short sumNum, uLong uidHash, long modifiers,
+short EzOpenFind(TOCType * tocH, short origSum);
+void EzOpen(TOCType * tocH, short sumNum, uLong uidHash, long modifiers,
             bool hideFront, bool willDelete);
 void Fcc(MessHandle messH, FSSpecPtr box);
 short MessWi(MyWindowPtr win);

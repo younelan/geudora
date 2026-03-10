@@ -58,7 +58,7 @@ void gtk_mailbox_create_default(void) {
         FSSpec spec;
         memset(&spec, 0, sizeof(FSSpec));
         strncpy(spec.path, mbx_path, sizeof(spec.path) - 1);
-        TOCHandle toc = BuildTOC(&spec);
+        TOCType * toc = BuildTOC(&spec);
         if (toc) {
           toc_save(toc);
           toc_free(toc);
@@ -98,7 +98,7 @@ gboolean gtk_mailbox_create(const gchar *name, gboolean is_folder) {
       FSSpec spec;
       memset(&spec, 0, sizeof(FSSpec));
       strncpy(spec.path, mailbox_path, sizeof(spec.path) - 1);
-      TOCHandle toc = BuildTOC(&spec);
+      TOCType * toc = BuildTOC(&spec);
       if (toc) {
         toc_save(toc);
         toc_free(toc);
@@ -211,7 +211,7 @@ int gtk_mailbox_get_message_count(const gchar *mailbox_path) {
     return 0;
 
   /* Load TOC and get message count */
-  TOCHandle toc = toc_load(mailbox_path);
+  TOCType * toc = toc_load(mailbox_path);
   if (!toc)
     return 0;
 
@@ -227,7 +227,7 @@ int gtk_mailbox_get_unread_count(const gchar *mailbox_path) {
     return 0;
 
   /* Load TOC and get unread count */
-  TOCHandle toc = toc_load(mailbox_path);
+  TOCType * toc = toc_load(mailbox_path);
   if (!toc)
     return 0;
 
@@ -267,7 +267,7 @@ void gtk_mailbox_add_message(const gchar *mailbox_path,
   FSSpec spec;
   memset(&spec, 0, sizeof(FSSpec));
   strncpy(spec.path, mailbox_path, sizeof(spec.path) - 1);
-  TOCHandle toc = BuildTOC(&spec);
+  TOCType * toc = BuildTOC(&spec);
   if (toc) {
     toc_save(toc);
     toc_free(toc);
@@ -282,7 +282,7 @@ void gtk_mailbox_delete_message(const gchar *mailbox_path, int message_id) {
     return;
 
   /* Load TOC, mark message as deleted, and save */
-  TOCHandle toc = toc_load(mailbox_path);
+  TOCType * toc = toc_load(mailbox_path);
   if (!toc)
     return;
 
@@ -304,7 +304,7 @@ void gtk_mailbox_transfer_message(const gchar *from_path, const gchar *to_path,
     return;
 
   /* Load source TOC to get message data */
-  TOCHandle from_toc = toc_load(from_path);
+  TOCType * from_toc = toc_load(from_path);
   if (!from_toc)
     return;
 
@@ -483,10 +483,7 @@ void gtk_mailbox_tree_load(GtkWidget *tree) {
         gchar *toc_path = g_strdup_printf("%s.toc", mailbox_path);
         if (!g_file_test(toc_path, G_FILE_TEST_EXISTS)) {
           g_print("Building TOC for mailbox: %s\n", mailbox_path);
-          FSSpec spec;
-          memset(&spec, 0, sizeof(FSSpec));
-          strncpy(spec.path, mailbox_path, sizeof(spec.path) - 1);
-          TOCHandle toc = BuildTOC(&spec);
+          TOCType * toc = BuildTOC(mailbox_path);
           if (toc) {
             toc_save(toc);
             toc_free(toc);

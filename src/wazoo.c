@@ -334,11 +334,18 @@ void WazooPreUpdate(MyWindowPtr win) { (void)win; }
 void SetTabBackColor(MyWindowPtr win) { (void)win; }
 bool WazooHelp(MyWindowPtr win) { (void)win; return false; }
 
+/* Declared in mbwin.c */
+extern void OpenMBWin(void);
+
 void SetupDefaultWazoos(void)
 {
-	/* Saved wazoo configuration is not yet implemented for GTK.
-	 * Windows open standalone; PromoteToWazoo() combines them. */
 	InitWazoos();
+
+	/* Open the default wazoo windows — matching original Eudora startup.
+	 * The original opened: MB_WIN (mailbox browser), plus optionally
+	 * PH_WIN, ALIAS_WIN, FILT_WIN, PERS_WIN, STA_WIN, SIG_WIN, LINK_WIN, STAT_WIN.
+	 * For now, open the mailbox browser which is the primary wazoo. */
+	OpenMBWin();
 }
 
 void SetWinMinSize(MyWindowPtr win, short h, short v)

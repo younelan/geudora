@@ -78,16 +78,16 @@ bool IsAdwareMode(void) { return false; }
 
 // IMAP functions implemented in imapdownload.c
 extern int DoFetchNewMessages(FSSpec *spec, bool a, bool b);
-extern int DoDownloadMessages(TOCHandle toc, void *uids, bool attach);
-extern int DoDeleteMessage(TOCHandle toc, void *uids, bool nuke, bool expunge,
+extern int DoDownloadMessages(TOCType * toc, void *uids, bool attach);
+extern int DoDeleteMessage(TOCType * toc, void *uids, bool nuke, bool expunge,
                     bool undelete);
-extern int DoTransferMessages(TOCHandle src, TOCHandle dst, void *uids, bool copy);
-extern int DoExpungeMailbox(TOCHandle toc);
+extern int DoTransferMessages(TOCType * src, TOCType * dst, void *uids, bool copy);
+extern int DoExpungeMailbox(TOCType * toc);
 extern int DoDownloadIMAPAttachments(void *att, FSSpec box);
-extern int DoIMAPServerSearch(TOCHandle toc, void *boxes, void *search, short c,
+extern int DoIMAPServerSearch(TOCType * toc, void *boxes, void *search, short c,
                        bool match, long uid);
 extern int DoIMAPProcessMailboxes(void *list, short cmd);
-extern int DoTransferMessagesToServer(TOCHandle toc, void *data, bool copy, bool b);
+extern int DoTransferMessagesToServer(TOCType * toc, void *data, bool copy, bool b);
 extern void IMAPPollMailboxes(FSSpec spec);
 // #include "filters.h" // already included via mailxfer.h/filters.h
 // #include "junk.h" // Removed to avoid conflicts
@@ -113,17 +113,17 @@ extern bool AttentionNeeded;
 #define eMailArrive 1 // Stub enum if not found
 extern void ReZoomMyWindow(WindowPtr win);
 extern void UpdateMyWindow(WindowPtr win);
-extern long CountFlaggedMessages(TOCHandle toc);
+extern long CountFlaggedMessages(TOCType * toc);
 struct NMRec;
 extern struct NMRec *MyNMRec;
 
 /* Legacy Mac Externs */
 extern WindowPtr GetNextWindow(WindowPtr w);
 extern void *GetWindowPrivateData(WindowPtr w);
-extern void SelectBoxRange(TOCHandle toc, short a, short b, bool c, short d,
+extern void SelectBoxRange(TOCType * toc, short a, short b, bool c, short d,
                            short e);
 extern void ScrollIt(WindowPtr w, short a, long b);
-extern bool SortedDescending(TOCHandle toc);
+extern bool SortedDescending(TOCType * toc);
 extern void SendBehind(WindowPtr a, WindowPtr b);
 extern void ShowMyWindowBehind(WindowPtr a, WindowPtr b);
 extern void GetResName(unsigned char *name, uint32_t type, short id);
@@ -175,8 +175,8 @@ void **SingleSpec = NULL;
 // CheckingTask and SendingTask are defined in threading.h - don't redefine
 
 // Helper Stubs - these are macros in toc.h, don't define as functions
-// TOCHandle GetRealInTOC(void) is a macro
-// TOCHandle GetRealOutTOC(void) is a macro
+// TOCType * GetRealInTOC(void) is a macro
+// TOCType * GetRealOutTOC(void) is a macro
 void NotifyHelpers(int a, int b, void *c) {}
 void PhKill(void) {}
 
@@ -252,7 +252,7 @@ long TotalQueuedSize = 0;
 // ByteProgress is defined in progress.h - don't redefine
 bool RegenerateFilters(void) { return false; }
 bool EjectBuckaroo = false;
-bool IsQueued(TOCHandle toc, int sum) { return false; }
+bool IsQueued(TOCType * toc, int sum) { return false; }
 // ProgressR(NoChange,count--,0,LEFT_TO_TRANSFER,nil);
 #define NoChange 0
 #undef LEFT_TO_TRANSFER
@@ -262,8 +262,8 @@ extern short EffectiveTID(short id);
 #define NO_TABLE 0
 /* GrabSignature stub removed */
 // GetProgressBytes is defined in progress.h - don't redefine
-int UUPCSendMessage(TOCHandle toc, int sum, CSpecHandle list) { return 0; }
-extern int MySendMessage(TransStream stream, TOCHandle toc, int sum,
+int UUPCSendMessage(TOCType * toc, int sum, CSpecHandle list) { return 0; }
+extern int MySendMessage(TransStream stream, TOCType * toc, int sum,
                   CSpecHandle list);
 #define OUT_FORWARD 1
 #define OUT_REPLY 2
@@ -302,30 +302,23 @@ extern int POPrror(void);
 // signature
 long ApproxMessageSize(MessHandle messH) { return 100; }
 // ByteProgressExcess is defined in progress.h - don't redefine
-extern void SetState(TOCHandle toc, int sum, int state);
-extern bool WriteTOC(TOCHandle toc);
+extern void SetState(TOCType * toc, int sum, int state);
+extern bool WriteTOC(TOCType * toc);
 #define flkOutgoing 1
 /* FilterMessage stub removed */
 #define FLAG_KEEP_COPY 0x100
 #define OPT_ATT_DEL 0x200
 // MessOptIsSet is a macro in message.h - don't define as function
-// CloseMyWindow is defined in legacy_shim.h - don't redefine with different
-// return type
-WindowPtr GetMyWindowWindowPtr(MyWindowPtr win) {
-  return win ? win->window : NULL;
-}
-/* IsWindowVisible provided by mailbox.h as static inline */
-void UsingWindow(GtkWidget *win) { /* GTK: no-op */ }
-void NotUsingWindow(GtkWidget *win) { /* GTK: no-op */ }
-extern void DeleteMessage(TOCHandle toc, int sum, bool nuke);
-extern void RedoTOC(TOCHandle toc);
+// GetMyWindowWindowPtr, UsingWindow, NotUsingWindow defined in mywindow.c
+extern void DeleteMessage(TOCType * toc, int sum, bool nuke);
+extern void RedoTOC(TOCType * toc);
 /* BoxSelectAfter declared in message.h */
 // Win2MessH is a macro in message.h - don't define as function
 extern void FSpTrash(FSSpec *spec);
 // MoveMessageLo implemented in message.c
-extern int MoveMessageLo(TOCHandle tocH, int sumNum, FSSpecPtr dest, bool copy,
+extern int MoveMessageLo(TOCType * tocH, int sumNum, FSSpecPtr dest, bool copy,
                   bool queue, bool open);
-extern void TOCSetDirty(TOCHandle toc, bool dirty);
+extern void TOCSetDirty(TOCType * toc, bool dirty);
 /* SetHandleBig provided by util.c/util.h */
 // LocalDateTimeShortStr is defined in util.h - don't redefine
 extern int VolumeMargin(short vRef, int margin);
@@ -363,8 +356,8 @@ long GetDblTime(void) { return 0; }
 bool UseCTB = false;
 bool IsIMAPPers(PersHandle pers) { return false; }
 extern MailboxNodeHandle LocateInboxForPers(PersHandle pers);
-extern TOCHandle TOCBySpec(FSSpec *spec);
-extern int FetchNewMessages(TOCHandle toc, bool a, bool b, bool c, bool d);
+extern TOCType * TOCBySpec(FSSpec *spec);
+extern int FetchNewMessages(TOCType * toc, bool a, bool b, bool c, bool d);
 bool gWasManualIMAPCheck = false;
 extern void ResyncOpenMailboxes(void *pers);
 extern void IMAPPoll(void *pers);
@@ -416,7 +409,7 @@ void ETLIdle(long mode) {} // Fixed signature and non-static
 // Stub junk mail functions
 // JunkPrefBoxArchive is a macro in junk.h
 extern bool JunkTrimOK(void);
-extern OSErr ArchiveJunk(TOCHandle toc);
+extern OSErr ArchiveJunk(TOCType * toc);
 // static void *GetJunkTOC(void) { return NULL; } // Removed to use macro
 
 // Stub missing functions
@@ -452,7 +445,7 @@ bool NeedPassword(bool check, bool send);
 void ResetPersCheckTime(bool force);
 #ifdef THREADING_ON
 bool OKToThread(bool check, bool send, bool manual, bool ae);
-long FindTotalQueuedSize(TOCHandle tocH, long gmtSecs);
+long FindTotalQueuedSize(TOCType * tocH, long gmtSecs);
 bool AddSigIntro(GtkWidget *pte, void **text);
 bool RemoveSigIntro(GtkWidget *pte, void **text);
 bool SpecialXferFilter(DialogPtr dgPtr, EventRecord *event, short *item);
@@ -917,8 +910,8 @@ short XferMailRun(bool check, bool send, bool manual, bool ae, XferFlags flags,
     if (send)
       SetNeedToFilterOut();
     if (check) {
-      TOCHandle tempInTocH = GetTempInTOC();
-      TempInCount = tempInTocH ? (*tempInTocH)->count : 0;
+      TOCType * tempInTocH = GetTempInTOC();
+      TempInCount = tempInTocH ? tempInTocH->count : 0;
       if (TempInCount)
         AddFilterTask();
     }
@@ -1070,7 +1063,7 @@ short XferMailLo(bool check, bool send, bool manual, XferFlags flags,
       if (IsIMAPPers(CurPers)) {
         // checking mail on IMAP server
         MailboxNodeHandle imapNode;
-        TOCHandle tocH;
+        TOCType * tocH;
 
         // locate the inbox, and resync it.
         if ((imapNode = LocateInboxForPers(CurPers))) {
@@ -1433,7 +1426,7 @@ OSErr SpecialXfer(struct XferFlags *flags) {
  ************************************************************************/
 short SendTheQueue(TransStream stream, XferFlags flags) {
   WindowPtr tocMessWinWP;
-  TOCHandle tocH = nil;
+  TOCType * tocH = nil;
   int sumNum = -1;
   Str255 server;
   long port;
@@ -1451,7 +1444,7 @@ short SendTheQueue(TransStream stream, XferFlags flags) {
   CSpecHandle fccList = (CSpecHandle)NuHandle(0);
   bool openedFilters = False;
 #ifdef THREADING_ON
-  TOCHandle realTocH = nil;
+  TOCType * realTocH = nil;
   bool inThread = InAThread();
   short realSumNum = -1;
 #endif
@@ -1556,12 +1549,12 @@ short SendTheQueue(TransStream stream, XferFlags flags) {
 #else
     if (openedFilters = !RegenerateFilters())
 #endif
-    for (sumNum = 0; sumNum < (*tocH)->count && code < 600 && !CommandPeriod &&
+    for (sumNum = 0; sumNum < tocH->count && code < 600 && !CommandPeriod &&
                      !EjectBuckaroo;
          sumNum++)
-      if (!(*tocH)->sums[sumNum].messH && IsQueued(tocH, sumNum) &&
-          (*tocH)->sums[sumNum].persId == (*CurPers)->persId &&
-          (*tocH)->sums[sumNum].seconds <= gmtSecs) {
+      if (!tocH->sums[sumNum].messH && IsQueued(tocH, sumNum) &&
+          tocH->sums[sumNum].persId == (*CurPers)->persId &&
+          tocH->sums[sumNum].seconds <= gmtSecs) {
         // TimeStamp(tocH,sumNum,0,0);
         //			  ProgressR(NoBar,count--,0,LEFT_TO_TRANSFER,nil);
         ProgressR(NoChange, count--, 0, LEFT_TO_TRANSFER, nil); // clarence
@@ -1569,7 +1562,7 @@ short SendTheQueue(TransStream stream, XferFlags flags) {
         /*
          * ready a translation table, if needed
          */
-        tableId = EffectiveTID((*tocH)->sums[sumNum].tableId);
+        tableId = EffectiveTID(tocH->sums[sumNum].tableId);
         if (tableId != lastId) {
           if (tableId != NO_TABLE && tablePtr &&
               (table = GetResource_('taBL', tableId))) {
@@ -1583,8 +1576,8 @@ short SendTheQueue(TransStream stream, XferFlags flags) {
         /*
          * signature
          */
-        if (lastSig != (*tocH)->sums[sumNum].sigId)
-          GrabSignature(lastSig = (*tocH)->sums[sumNum].sigId);
+        if (lastSig != tocH->sums[sumNum].sigId)
+          GrabSignature(lastSig = tocH->sums[sumNum].sigId);
 
         beforeBytes = GetProgressBytes();
         beforeTicks = TickCount();
@@ -1601,9 +1594,9 @@ short SendTheQueue(TransStream stream, XferFlags flags) {
             RegisterSuccess(1); // note success in registration
 #endif
           numSent++;
-          messH = (*tocH)->sums[sumNum].messH;
+          messH = tocH->sums[sumNum].messH;
 
-          // if ((outType = (*tocH)->sums[sumNum].outType))
+          // if ((outType = tocH->sums[sumNum].outType))
           // 	UpdateNumStat(outType==OUT_FORWARD?kStatForwardMsg:outType==OUT_REPLY?kStatReplyMsg:kStatRedirectMsg,1);
 
           // adjust progress bar
@@ -1649,9 +1642,9 @@ short SendTheQueue(TransStream stream, XferFlags flags) {
 #ifdef THREADING_ON
           /* don't delete message if we're in a thread. we'll do that from the
            * main thread. */
-          if (!inThread && ((*tocH)->sums[sumNum].flags & FLAG_KEEP_COPY) == 0)
+          if (!inThread && (tocH->sums[sumNum].flags & FLAG_KEEP_COPY) == 0)
 #else
-            if (((*tocH)->sums[sumNum].flags & FLAG_KEEP_COPY) == 0)
+            if ((tocH->sums[sumNum].flags & FLAG_KEEP_COPY) == 0)
 #endif
           {
             if (messH && MessOptIsSet(messH, OPT_ATT_DEL))
@@ -1666,14 +1659,14 @@ short SendTheQueue(TransStream stream, XferFlags flags) {
           } else if (messH && (*messH)->win)
             CloseMyWindow(GetMyWindowWindowPtr((*messH)->win));
         } else {
-          if ((*tocH)->sums[sumNum].messH) {
+          if (tocH->sums[sumNum].messH) {
             tocMessWinWP =
-                GetMyWindowWindowPtr((*(*tocH)->sums[sumNum].messH)->win);
+                GetMyWindowWindowPtr((*tocH->sums[sumNum].messH)->win);
             if (tocMessWinWP && !IsWindowVisible(tocMessWinWP))
               CloseMyWindow(tocMessWinWP);
           }
           if (IsAddrErr(code)) {
-            (*tocH)->sums[sumNum].flags |= FLAG_ADDRERR;
+            tocH->sums[sumNum].flags |= FLAG_ADDRERR;
             OpenAddrErrs = true;
           }
         }
@@ -1681,14 +1674,14 @@ short SendTheQueue(TransStream stream, XferFlags flags) {
         // update outgoing message status if we're in a thread
         if (inThread) {
           if (realTocH = GetRealOutTOC()) {
-            realSumNum = FindSumByHash(realTocH, (*tocH)->sums[sumNum].uidHash);
+            realSumNum = FindSumByHash(realTocH, tocH->sums[sumNum].uidHash);
             if (realSumNum != -1) {
-              SetState(realTocH, realSumNum, (*tocH)->sums[sumNum].state);
-              if ((*tocH)->sums[sumNum].state == MESG_ERR) {
-                (*realTocH)->sums[realSumNum].flags |= FLAG_ADDRERR;
+              SetState(realTocH, realSumNum, tocH->sums[sumNum].state);
+              if (tocH->sums[sumNum].state == MESG_ERR) {
+                realTocH->sums[realSumNum].flags |= FLAG_ADDRERR;
                 OpenAddrErrs = true;
               }
-              (*realTocH)->sums[realSumNum].flags |= FLAG_UNFILTERED;
+              realTocH->sums[realSumNum].flags |= FLAG_UNFILTERED;
 #ifdef BATCH_DELIVERY_ON
               NeedToFilterOut++;
 #endif
@@ -1722,8 +1715,8 @@ done:
     (void)EndPOP(stream);
   } else
     (void)EndSMTP(stream);
-  // if (tocH && (*tocH)->win && sumNum>=0)
-  // 	BoxSelectAfter((*tocH)->win,sumNum);
+  // if (tocH && tocH->win && sumNum>=0)
+  // 	BoxSelectAfter(tocH->win,sumNum);
 
   FlushTOCs(
       True,
@@ -1737,15 +1730,15 @@ done:
 /************************************************************************
  * FindTotalQueuedSize - find out how big all the messages are
  ************************************************************************/
-long FindTotalQueuedSize(TOCHandle tocH, long gmtSecs) {
+long FindTotalQueuedSize(TOCType * tocH, long gmtSecs) {
   short sumNum;
   long size = 0;
   MyWindowPtr win;
 
-  for (sumNum = 0; sumNum < (*tocH)->count; sumNum++)
-    if (!(*tocH)->sums[sumNum].messH && IsQueued(tocH, sumNum) &&
-        (*tocH)->sums[sumNum].persId == (*CurPers)->persId &&
-        (*tocH)->sums[sumNum].seconds <= gmtSecs) {
+  for (sumNum = 0; sumNum < tocH->count; sumNum++)
+    if (!tocH->sums[sumNum].messH && IsQueued(tocH, sumNum) &&
+        tocH->sums[sumNum].persId == (*CurPers)->persId &&
+        tocH->sums[sumNum].seconds <= gmtSecs) {
       if ((win = GetAMessage(tocH, sumNum, nil, nil, false))) {
         size += ApproxMessageSize(Win2MessH(win)) K;
         CloseMyWindow(GetMyWindowWindowPtr(win));
@@ -1769,7 +1762,7 @@ void CompAttDel(MessHandle messH) {
 /**********************************************************************
  * DoFcc - do the fcc's for a message
  **********************************************************************/
-OSErr DoFcc(TOCHandle tocH, short sumNum, CSpecHandle list) {
+OSErr DoFcc(TOCType * tocH, short sumNum, CSpecHandle list) {
   CSpec spec;
   short n = HandleCount(list);
   OSErr err = noErr;
@@ -1779,7 +1772,7 @@ OSErr DoFcc(TOCHandle tocH, short sumNum, CSpecHandle list) {
   while (n--) {
     spec = (*list)[n];
     if ((oneErr = MoveMessageLo(tocH, sumNum, &spec.spec, True, false, true))) {
-      (*tocH)->sums[sumNum].flags |= FLAG_KEEP_COPY;
+      tocH->sums[sumNum].flags |= FLAG_KEEP_COPY;
       TOCSetDirty(tocH, true);
       if (!err)
         err = oneErr;
@@ -1933,12 +1926,12 @@ void ResetPersCheckTime(bool force) {
 // IF IT MUST BE FIXED, THROW IT AWAY AND REWRITE IT & ALL RELATED TO IT
 // SD 8/20/02
 
-void NotifyNewMail(short gotSome, bool noXfer, TOCHandle tocH,
+void NotifyNewMail(short gotSome, bool noXfer, TOCType * tocH,
                    FilterPB *fpbDelivery) {
   NotifyNewMailLo(gotSome, noXfer, tocH, fpbDelivery, true);
 }
 
-void NotifyNewMailLo(short gotSome, bool noXfer, TOCHandle tocH,
+void NotifyNewMailLo(short gotSome, bool noXfer, TOCType * tocH,
                      FilterPB *fpbDelivery, bool OpenIn) {
   bool justTrash = False;
   bool soundAnyway = False;
@@ -1963,7 +1956,7 @@ void NotifyNewMailLo(short gotSome, bool noXfer, TOCHandle tocH,
       gotSome = fpbDelivery->notify;
       soundAnyway = fpbDelivery->doNotifyThing > 0;
     } else if (tocH && !InitFPB(&fpb, false, true)) {
-      if ((*tocH)->imapTOC) // filter flagged messages only if this is an IMAP
+      if (tocH->imapTOC) // filter flagged messages only if this is an IMAP
                             // mailbox
       {
         // Score the incoming mail all at once.
@@ -1999,7 +1992,7 @@ void NotifyNewMailLo(short gotSome, bool noXfer, TOCHandle tocH,
           NoNewMailMe = true;
         }
       } else
-        FilterMessagesFrom(flkIncoming, tocH, (*tocH)->count - gotSome, &fpb,
+        FilterMessagesFrom(flkIncoming, tocH, tocH->count - gotSome, &fpb,
                            noXfer);
 
       FilterPostprocess(flkIncoming, &fpb);
@@ -2024,12 +2017,12 @@ void NotifyNewMailLo(short gotSome, bool noXfer, TOCHandle tocH,
      * let the helper apps know
      */
     if (gotSome) {
-      if ((tocH && (*tocH)->imapTOC) || (tocH = GetRealInTOC())) {
+      if ((tocH && tocH->imapTOC) || (tocH = GetRealInTOC())) {
         NotifyHelpers(gotSome, eMailArrive, nil);
 
         if (OpenIn && !PrefIsSet(PREF_NO_OPEN_IN)) {
-          WindowPtr tocWinWP = GetMyWindowWindowPtr((*tocH)->win);
-          ShowBoxAt(tocH, (*tocH)->previewPTE ? -1 : FumLub(tocH),
+          WindowPtr tocWinWP = GetMyWindowWindowPtr(tocH->win);
+          ShowBoxAt(tocH, tocH->previewPTE ? -1 : FumLub(tocH),
                     OpenBehindMePlease());
           if (PrefIsSet(PREF_ZOOM_OPEN))
             ReZoomMyWindow(tocWinWP);
@@ -2078,7 +2071,7 @@ WindowPtr OpenBehindMePlease(void) {
     for (winWP = frontWP; winWP; winWP = GetNextWindow(winWP))
       if (IsWindowVisible(winWP))
         if (GetWindowKind(winWP) == MBOX_WIN)
-          if ((*(TOCHandle)GetWindowPrivateData(winWP))->which == IN) {
+          if (((TOCType *)GetWindowPrivateData(winWP))->which == IN) {
             returnWinWP = winWP;
             break;
           }
@@ -2097,7 +2090,7 @@ WindowPtr OpenBehindMePlease(void) {
     } else if (GetWindowKind(winWP) == MESS_WIN ||
                GetWindowKind(winWP) == COMP_WIN) {
       returnWinWP = winWP; // just in case the toc's not visible
-      win = (*(*Win2MessH(win))->tocH)->win;
+      win = (*Win2MessH(win))->tocH->win;
       winWP = GetMyWindowWindowPtr(win);
       if (IsWindowVisible(winWP)) {
         returnWinWP = winWP;
@@ -2136,13 +2129,13 @@ WindowPtr OpenBehindMePlease(void) {
 /************************************************************************
  * ShowBoxSel - show the mailbox with a selection
  ************************************************************************/
-void ShowBoxAt(TOCHandle tocH, short selectMe, WindowPtr behindWin) {
-  WindowPtr tocWinWP = GetMyWindowWindowPtr((*tocH)->win);
+void ShowBoxAt(TOCType * tocH, short selectMe, WindowPtr behindWin) {
+  WindowPtr tocWinWP = GetMyWindowWindowPtr(tocH->win);
 
   if (selectMe >= 0)
     SelectBoxRange(tocH, selectMe, selectMe, False, -1, -1);
   RedoTOC(tocH);
-  ScrollIt((*tocH)->win, 0, SortedDescending(tocH) ? REAL_BIG : -REAL_BIG);
+  ScrollIt(tocH->win, 0, SortedDescending(tocH) ? REAL_BIG : -REAL_BIG);
   if (IsWindowVisible(tocWinWP)) {
     if (behindWin) {
       if (behindWin != tocWinWP)
@@ -2156,7 +2149,7 @@ void ShowBoxAt(TOCHandle tocH, short selectMe, WindowPtr behindWin) {
 /************************************************************************
  * FumLub - find the FumLub
  ************************************************************************/
-short FumLub(TOCHandle tocH) {
+short FumLub(TOCType * tocH) {
   short i;
   if (!tocH)
     return (-1);
@@ -2166,12 +2159,12 @@ short FumLub(TOCHandle tocH) {
   if (SortedDescending(tocH))
     return (0);
 
-  for (i = (*tocH)->count - 1; i >= 0; i--)
-    if ((*tocH)->sums[i].state != UNREAD) {
+  for (i = tocH->count - 1; i >= 0; i--)
+    if (tocH->sums[i].state != UNREAD) {
       i++;
       break;
     }
-  return (i < (*tocH)->count ? MAX(i, 0) : (*tocH)->count - 1);
+  return (i < tocH->count ? MAX(i, 0) : tocH->count - 1);
 }
 
 /************************************************************************

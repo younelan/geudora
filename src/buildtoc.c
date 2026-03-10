@@ -31,117 +31,868 @@ ADVISED OF THE POSSIBILITY OF SUCH DAMAGE. */
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+#include <strings.h>
 #include <sys/stat.h>
 #include <time.h>
 #include <unistd.h>
 
-#include "StringDefs.h"
-#include "StringUtil.h"
 #include "buildtoc.h"
 #include "fileutil.h"
 #include "mailbox.h"
+#include "mydefs.h"
+#include "StringDefs.h"
 #include "util.h"
 
-#include "mydefs.h"
+#ifndef OPT_BULK
+#define OPT_BULK 0x0010
+#endif
 
 #define FILE_NUM 45
 
-/* Macros defined in mailbox.h */
-
-#ifdef __APPLE__
-#include <malloc/malloc.h>
-#define malloc_usable_size malloc_size
-#endif
-
-/* GetHandleSize_ defined in mailbox.h */
-
-/* NewHandle, SetHandleBig_, ZapHandle defined/stubbed in mailbox.h */
-
 #define fnfErr (-43)
 #define noErr 0
-/* Constants defined in mailbox.h/toc.h */
-/* Logging Stubs */
-#define LOG_MOVE 0
-#define LOG_PLUG 0
-void ComposeLogS(int type, void *p, unsigned char *fmt, ...);
 
-#ifndef LOG_TOC
-#define LOG_TOC 0
-#endif
-#ifndef OPEN_MBOX
-#define OPEN_MBOX 0
-#endif
-#ifndef NOT_MAILBOX
-#define NOT_MAILBOX 0
-#endif
-#ifndef READ_MBOX
-#define READ_MBOX 0
-#endif
-#ifndef CREATING_MAILBOX
-#define CREATING_MAILBOX 0
-#endif
-
-/* NewZH clashing macro resolution - ensure it uses the project's NewHandle if
- * available */
-#ifndef NewZH
-#define NewZH(aType) ((aType **)ZeroHandle(NewHandle(sizeof(aType))))
-static void *ZeroHandle(Handle h) {
-  if (h && *h)
-    memset(*h, 0, malloc_usable_size(*h));
-  return h;
-}
-#endif
-
-/* Use Personality struct from schizo.h */
-static Personality dummyPers = {1};
-static PersPtr dummyPersPtr = &dummyPers;
-#define CurPers (&dummyPersPtr)
-#define PERS_FORCE(p) (p)
-
-/* Stub implementations for functions that need real porting */
-void BeautifySum(MSumPtr sum) {}
-int SumToFrom(MSumPtr sum, unsigned char *fromLine) { return 0; }
-void CopyHeaderLine(unsigned char *to, int size, unsigned char *from) {}
-
-void BeautifyFrom(unsigned char *fromStr) {}
-uint32_t BeautifyDate(unsigned char *dateStr, long *zoneSecs) { return 0; }
-/* PtrTimeStamp is implemented in sendmail.c */
-extern void PtrTimeStamp(MSumPtr sum, uint32_t seconds, long offset);
-uint32_t UnixDate2Secs(const char *date);
-short MonthNum(const char *cp);
-long CStr2Zone(const char *s);
-
-bool IsFromLine(unsigned char *line) { return false; }
-/* static bool IsSpool(const char *path) { return false; } */
-/* static void CreateTempBox(int which) {} */
-
-/* SaveMessageSum declared in mailbox.h, use it from there */
-static int DefaultOutFlags() { return 0; }
-
-static bool IsRootPath(const char *path) { return true; }
-
-/* IsWhite clashing macro resolution */
 #ifndef IsWhite
 #define IsWhite(c) ((c) == ' ' || (c) == '\t')
 #endif
 
-/*
-static bool SuckPtrAddresses(Handle *h, char *s, int len, bool b1, bool b2,
-                             bool b3, void *p) {
-  return true;
-}
-static bool IsNickname(char *s, int i) { return false; }
-static void SuckAddresses(Handle *h1, Handle h2, bool b1, bool b2, bool b3,
-                          void *p) {}
-*/
-
-bool ExpandAliasesLow(Handle *h1, Handle h2, int i, bool b1, void *p1, int i2) {
-  return true;
+/* Allocate a TOCType directly with malloc (no Mac Handle indirection) */
+static TOCType *AllocTOC(void) {
+  TOCType *toc = calloc(1, sizeof(TOCType));
+  return toc;
 }
 
-#define EAL_VARS_DECL
-#define EAL_VARS 0
+/* Grow a TOCType to hold `count` message summaries using realloc */
+static TOCType *GrowTOC(TOCType *toc, short newCount) {
+  size_t need = sizeof(TOCType) + (newCount > 0 ? newCount - 1 : 0) * sizeof(MSumType);
+  TOCType *grown = realloc(toc, need);
+  return grown;
+}
 
+/* Simple hash for Message-ID strings */
+static uint32_t HashString(const char *s, long len) {
+  uint32_t hash = 5381;
+  for (long i = 0; i < len; i++)
+    hash = ((hash << 5) + hash) + (unsigned char)s[i];
+  return hash ? hash : 1; /* never return 0, that means "no hash" */
+}
+
+#define ValidHash(h) ((h) != 0)
+
+/* PtrTimeStamp is in sendmail.c */
+extern void PtrTimeStamp(MSumPtr sum, uint32_t seconds, long offset);
+
+/* ZoneSecs is in util.c */
+extern long ZoneSecs(void);
+
+/* CleanseTOC is in toc.c */
+extern void CleanseTOC(TOCType * toc);
+
+/* IsIMAPMailboxFileLo is in imapmailboxes.c */
+extern bool IsIMAPMailboxFileLo(FSSpecPtr spec, MailboxNodeHandle *node);
+
+static int DefaultOutFlags(void) { return 0; }
+
+/************************************************************************
+ * IsFromLine - determine whether or not a given line is a sendmail From
+ * line.  Ported from original Eudora — validates the date portion.
+ ************************************************************************/
+bool IsFromLine(unsigned char *line) {
+  int num, len;
+  int quote = 0;
+  char scratch[256];
+  char *cp;
+  short weekDay, year, tym, day, month, other, remote, from;
+
+#define isdig(c) ('0' <= (c) && (c) <= '9')
+
+  if (line[0] != 'F' || line[1] != 'r' || line[2] != 'o' || line[3] != 'm')
+    return false;
+
+  /* check for the space after "From" */
+  unsigned char *lp = line + 4;
+  if (*lp++ != ' ')
+    return false;
+
+  /* skip the return address (may contain quoted strings) */
+  while (*lp && (quote || *lp != ' ')) {
+    if (*lp == '"')
+      quote = !quote;
+    lp++;
+  }
+  if (!*lp++)
+    return false;
+  while (*lp == ' ')
+    lp++;
+
+  remote = from = weekDay = day = year = tym = month = other = 0;
+  len = strlen((char *)lp);
+  if (len > (int)sizeof(scratch) - 1)
+    return false;
+  strcpy(scratch, (char *)lp);
+
+  for (cp = strtok(scratch, " \t\r\n,"); cp; cp = strtok(NULL, " \t\r\n,")) {
+    len = strlen(cp);
+    num = atoi(cp);
+
+    if (num < 24 && len >= 5 && cp[2] == ':' &&
+        (len == 5 || (len == 8 && cp[5] == ':'))) {
+      if (tym++)
+        return false;
+    } else if (!year && day && len == 2 && isdig(cp[len - 1])) {
+      if (year++)
+        return false;
+    } else if (len <= 2 && num && num < 32) {
+      if (day++)
+        return false;
+    } else if (len == 4 && num > 1900) {
+      if (year++)
+        return false;
+    } else if (len == 6 && !strcasecmp(cp, "remote")) {
+      if (remote++ || from)
+        return false;
+    } else if (len == 4 && !strcasecmp(cp, "from")) {
+      if (!remote || from++)
+        return false;
+    } else if (len == 3 &&
+               !(strcasecmp(cp, "mon") && strcasecmp(cp, "tue") &&
+                 strcasecmp(cp, "wed") && strcasecmp(cp, "thu") &&
+                 strcasecmp(cp, "fri") && strcasecmp(cp, "sat") &&
+                 strcasecmp(cp, "sun"))) {
+      if (weekDay++)
+        return false;
+    } else if (len == 3 &&
+               !(strcasecmp(cp, "jan") && strcasecmp(cp, "feb") &&
+                 strcasecmp(cp, "mar") && strcasecmp(cp, "apr") &&
+                 strcasecmp(cp, "may") && strcasecmp(cp, "jun") &&
+                 strcasecmp(cp, "jul") && strcasecmp(cp, "aug") &&
+                 strcasecmp(cp, "sep") && strcasecmp(cp, "oct") &&
+                 strcasecmp(cp, "nov") && strcasecmp(cp, "dec"))) {
+      if (month++)
+        return false;
+    } else {
+      other++;
+    }
+  }
+  return (day && year && month && tym && other <= 2);
+}
+
+/************************************************************************
+ * MonthNum - get the month number from a month name
+ ************************************************************************/
+short MonthNum(const char *cp) {
+  char m[4];
+  memcpy(m, cp, 3);
+  m[3] = 0;
+  for (int i = 0; i < 3; i++)
+    m[i] = tolower(m[i]);
+
+  switch (m[0]) {
+  case 'j':
+    return m[1] == 'a' ? 1 : (m[2] == 'n' ? 6 : 7);
+  case 'f':
+    return 2;
+  case 'm':
+    return m[2] == 'r' ? 3 : 5;
+  case 'a':
+    return m[1] == 'p' ? 4 : 8;
+  case 's':
+    return 9;
+  case 'o':
+    return 10;
+  case 'n':
+    return 11;
+  case 'd':
+    return 12;
+  }
+  return 0;
+}
+
+/************************************************************************
+ * CStr2Zone - convert a timezone string like "+0100" or "-0500" to seconds
+ ************************************************************************/
+long CStr2Zone(const char *s) {
+  long offset = atoi(s);
+  if (offset > 2400 || offset < -2400)
+    return ZoneSecs();
+  bool neg = (*s == '-');
+  if (neg)
+    offset = -offset;
+  offset = 60 * ((offset / 100) * 60 + offset % 100);
+  if (neg)
+    offset = -offset;
+  return offset;
+}
+
+/************************************************************************
+ * UnixDate2Secs - convert a UNIX mbox "From " date into seconds
+ * Handles format: "Wed Jun 14 12:36:18 1989" and variations
+ ************************************************************************/
+uint32_t UnixDate2Secs(const char *date) {
+  struct tm tm;
+  memset(&tm, 0, sizeof(tm));
+
+  /* Try various strptime formats */
+  if (strptime(date, "%a %b %d %H:%M:%S %Y", &tm) ||
+      strptime(date, "%d %b %Y %H:%M:%S", &tm) ||
+      strptime(date, "%a, %d %b %Y %H:%M:%S", &tm) ||
+      strptime(date, "%b %d %H:%M:%S %Y", &tm)) {
+    return (uint32_t)mktime(&tm);
+  }
+  return 0;
+}
+
+/************************************************************************
+ * BeautifyDate - parse an RFC 2822 date header value and return seconds.
+ * Sets *origZone to the timezone offset in seconds.
+ * The dateStr is a C string (header value after "Date: ").
+ ************************************************************************/
+uint32_t BeautifyDate(unsigned char *dateStr, long *zoneSecs) {
+  struct tm tm;
+  const char *rest;
+
+  *zoneSecs = ZoneSecs(); /* default to local zone */
+  if (!dateStr || !*dateStr)
+    return 0;
+
+  memset(&tm, 0, sizeof(tm));
+
+  /* Try RFC 2822: "Wed, 21 Jan 2026 17:23:50 +0100" */
+  rest = strptime((char *)dateStr, "%a, %d %b %Y %H:%M:%S", &tm);
+  if (!rest)
+    rest = strptime((char *)dateStr, "%d %b %Y %H:%M:%S", &tm);
+  if (!rest)
+    rest = strptime((char *)dateStr, "%a %b %d %H:%M:%S %Y", &tm);
+
+  if (rest) {
+    /* Try to parse timezone from remainder */
+    while (*rest && (*rest == ' ' || *rest == '\t'))
+      rest++;
+    if (*rest == '+' || *rest == '-' || isdigit(*rest)) {
+      *zoneSecs = CStr2Zone(rest);
+    } else if (!strncasecmp(rest, "GMT", 3) || !strncasecmp(rest, "UTC", 3) ||
+               !strncasecmp(rest, "UT", 2)) {
+      *zoneSecs = 0;
+    } else if (strlen(rest) >= 3 && isalpha(rest[0])) {
+      /* Named timezone — common ones */
+      if (!strncasecmp(rest, "EST", 3))
+        *zoneSecs = -5 * 3600;
+      else if (!strncasecmp(rest, "EDT", 3))
+        *zoneSecs = -4 * 3600;
+      else if (!strncasecmp(rest, "CST", 3))
+        *zoneSecs = -6 * 3600;
+      else if (!strncasecmp(rest, "CDT", 3))
+        *zoneSecs = -5 * 3600;
+      else if (!strncasecmp(rest, "MST", 3))
+        *zoneSecs = -7 * 3600;
+      else if (!strncasecmp(rest, "MDT", 3))
+        *zoneSecs = -6 * 3600;
+      else if (!strncasecmp(rest, "PST", 3))
+        *zoneSecs = -8 * 3600;
+      else if (!strncasecmp(rest, "PDT", 3))
+        *zoneSecs = -7 * 3600;
+      else if (!strncasecmp(rest, "CET", 3))
+        *zoneSecs = 1 * 3600;
+      else if (!strncasecmp(rest, "CEST", 4))
+        *zoneSecs = 2 * 3600;
+    }
+
+    /* Convert to UTC seconds: mktime gives local time, adjust */
+    tm.tm_isdst = -1;
+    time_t secs = mktime(&tm);
+    if (secs == (time_t)-1)
+      return 0;
+
+    /* mktime interpreted tm as local time; we want UTC interpretation
+       adjusted by the parsed zone. Result = UTC seconds. */
+    long localOffset = ZoneSecs();
+    uint32_t utcSecs = (uint32_t)(secs + localOffset - *zoneSecs);
+    return utcSecs;
+  }
+
+  /* Couldn't parse — return current time */
+  *zoneSecs = ZoneSecs();
+  return (uint32_t)time(NULL);
+}
+
+/************************************************************************
+ * CopyHeaderLine - extract the value portion of a header line.
+ * Given "Subject: Hello World\r\n", copies "Hello World" into `to`.
+ * Strips leading whitespace after the colon.
+ ************************************************************************/
+void CopyHeaderLine(unsigned char *to, int size, unsigned char *from) {
+  unsigned char *colon;
+  int len;
+
+  if (!to || size <= 0)
+    return;
+  to[0] = '\0';
+
+  if (!from)
+    return;
+
+  /* Find the colon */
+  colon = (unsigned char *)strchr((char *)from, ':');
+  if (!colon) {
+    /* No colon — copy whole line */
+    colon = from;
+  } else {
+    colon++; /* skip colon */
+  }
+
+  /* Skip leading whitespace */
+  while (*colon && IsWhite(*colon))
+    colon++;
+
+  /* Copy, stripping trailing CR/LF */
+  len = strlen((char *)colon);
+  while (len > 0 && (colon[len - 1] == '\r' || colon[len - 1] == '\n'))
+    len--;
+  if (len >= size)
+    len = size - 1;
+  memcpy(to, colon, len);
+  to[len] = '\0';
+}
+
+/************************************************************************
+ * BeautifyFrom - clean up a from/to address string.
+ * Strips angle brackets, quotes, and extracts the display name or bare
+ * address. Input and output are C strings.
+ ************************************************************************/
+void BeautifyFrom(unsigned char *fromStr) {
+  char *s = (char *)fromStr;
+  char *lt, *gt, *start;
+  char buf[256];
+  int len;
+
+  if (!s || !*s)
+    return;
+
+  /* Strip leading/trailing whitespace */
+  while (*s && IsWhite(*s))
+    s++;
+  len = strlen(s);
+  while (len > 0 && IsWhite(s[len - 1]))
+    len--;
+  s[len] = '\0';
+
+  /* If there's a display name with angle brackets: "Name <addr>" → "Name" */
+  lt = strchr(s, '<');
+  gt = lt ? strchr(lt, '>') : NULL;
+
+  if (lt && gt) {
+    /* Check if there's a display name before the < */
+    char *nameEnd = lt;
+    while (nameEnd > s && IsWhite(nameEnd[-1]))
+      nameEnd--;
+    if (nameEnd > s) {
+      /* Use the display name */
+      start = s;
+      /* Strip surrounding quotes from display name */
+      if (*start == '"' && nameEnd > start + 1 && nameEnd[-1] == '"') {
+        start++;
+        nameEnd--;
+      }
+      len = nameEnd - start;
+      if (len > 0 && len < (int)sizeof(buf)) {
+        memcpy(buf, start, len);
+        buf[len] = '\0';
+        strcpy((char *)fromStr, buf);
+        return;
+      }
+    }
+    /* No display name — use the address inside <> */
+    start = lt + 1;
+    len = gt - start;
+    if (len > 0 && len < (int)sizeof(buf)) {
+      memcpy(buf, start, len);
+      buf[len] = '\0';
+      strcpy((char *)fromStr, buf);
+      return;
+    }
+  }
+
+  /* If wrapped in quotes, strip them */
+  if (s[0] == '"' && len > 1 && s[len - 1] == '"') {
+    memmove(s, s + 1, len - 2);
+    s[len - 2] = '\0';
+  }
+
+  /* If input was shifted, move back to start of fromStr */
+  if (s != (char *)fromStr) {
+    memmove(fromStr, s, strlen(s) + 1);
+  }
+}
+
+/************************************************************************
+ * BeautifySubj - clean up a subject line.
+ * Removes common Outlook-style reply/forward prefixes.
+ ************************************************************************/
+void BeautifySubj(unsigned char *subject, short size) {
+  char *s = (char *)subject;
+  if (!s || !*s)
+    return;
+
+  /* Strip leading whitespace */
+  while (*s && IsWhite(*s))
+    s++;
+
+  /* Remove "Re: ", "Fwd: ", "FW: " prefixes that Outlook localizes.
+     We keep it simple: strip leading "Re: " and "Fwd: " / "Fw: " */
+  /* (The original used resource-based pattern matching for localized
+     Outlook prefixes; we just leave subjects as-is for now since
+     stripping prefixes is cosmetic) */
+
+  if (s != (char *)subject)
+    memmove(subject, s, strlen(s) + 1);
+}
+
+/************************************************************************
+ * BeautifySum - beautify a message summary.
+ * Calls PtrTimeStamp and BeautifyFrom.
+ ************************************************************************/
+void BeautifySum(MSumPtr sum) {
+  if (sum->seconds)
+    PtrTimeStamp(sum, sum->seconds, ZoneSecs());
+  BeautifyFrom((unsigned char *)sum->from);
+}
+
+/************************************************************************
+ * GleanFrom - extract sender address and date from mbox "From " line.
+ * Input: "From user@example.com Wed Jun 14 12:36:18 2023"
+ * Sets sum->from and calls PtrTimeStamp with parsed date.
+ ************************************************************************/
+void GleanFrom(unsigned char *line, MSumPtr sum) {
+  char copy[512];
+  char *cp, *ep;
+  long seconds;
+  long offset = ZoneSecs();
+
+  strncpy(copy, (char *)line, sizeof(copy) - 1);
+  copy[sizeof(copy) - 1] = '\0';
+
+  /* Skip "From " */
+  cp = copy;
+  while (*cp && *cp != ' ')
+    cp++;
+  if (*cp)
+    cp++;
+
+  /* Extract address (up to next space) */
+  for (ep = cp; *ep && *ep != ' '; ep++)
+    ;
+
+  {
+    int addrLen = ep - cp;
+    if (addrLen >= (int)sizeof(sum->from))
+      addrLen = sizeof(sum->from) - 1;
+    memcpy(sum->from, cp, addrLen);
+    sum->from[addrLen] = '\0';
+  }
+
+  /* Extract date (rest of line) */
+  if (*ep)
+    ep++;
+  /* Strip trailing CR/LF */
+  {
+    char *end = ep + strlen(ep);
+    while (end > ep && (end[-1] == '\r' || end[-1] == '\n'))
+      end--;
+    *end = '\0';
+  }
+
+  seconds = UnixDate2Secs(ep) - offset;
+  PtrTimeStamp(sum, seconds, offset);
+  sum->arrivalSeconds = seconds + offset;
+}
+
+/************************************************************************
+ * IsBulk - does this header line represent an automated mailer?
+ * Simplified: checks for common daemon/mailer-daemon patterns.
+ ************************************************************************/
+bool IsBulk(unsigned char *line) {
+  char *s = (char *)line;
+  /* Look for common automated sender patterns after the colon */
+  char *colon = strchr(s, ':');
+  if (colon)
+    s = colon + 1;
+  while (*s && IsWhite(*s))
+    s++;
+
+  if (strcasestr(s, "mailer-daemon") || strcasestr(s, "postmaster") ||
+      strcasestr(s, "mail delivery") || strcasestr(s, "noreply") ||
+      strcasestr(s, "no-reply") || strcasestr(s, "auto-reply"))
+    return true;
+  return false;
+}
+
+/************************************************************************
+ * SumToFrom - determine if a summary is addressed to or from.
+ * Returns nonzero if the fromLine matches the outgoing personality.
+ * Simplified for the port.
+ ************************************************************************/
+int SumToFrom(MSumPtr sum, unsigned char *fromLine) {
+  (void)sum;
+  (void)fromLine;
+  return 0;
+}
+
+/************************************************************************
+ * FindTOCSpot - find the spot for a new message in a TOC.
+ * Returns the index. Currently unused in the port.
+ ************************************************************************/
+long FindTOCSpot(TOCType * tocH, long length) {
+  (void)tocH;
+  (void)length;
+  return 0;
+}
+
+/************************************************************************
+ * TrimWrap - trim wrapping characters from a string
+ ************************************************************************/
+PStr TrimWrap(unsigned char *str, int openC, int closeC) {
+  (void)str;
+  (void)openC;
+  (void)closeC;
+  return str;
+}
+
+/************************************************************************
+ * TrimNonWord - trim non-word characters
+ ************************************************************************/
+PStr TrimNonWord(PStr str) { return str; }
+
+/************************************************************************
+ * MatchHeader - match a header name (case-insensitive).
+ * Returns the header index (tchDate, tchSubject, etc.) or 0.
+ * Replaces the original FindSTRNIndex(TOCHeaderStrn, headerName).
+ ************************************************************************/
+static short MatchHeader(const char *headerName) {
+  /* Header name includes the trailing colon, e.g. "Date:" "Subject:" */
+  if (!strcasecmp(headerName, "Date:"))
+    return 1; /* tchDate */
+  if (!strcasecmp(headerName, "Status:"))
+    return 3; /* tchStatus */
+  if (!strcasecmp(headerName, "To:"))
+    return 4; /* tchTo */
+  if (!strcasecmp(headerName, "X-Priority:"))
+    return 5; /* tchXPrior */
+  if (!strcasecmp(headerName, "Bcc:"))
+    return 6; /* tchBcc */
+  if (!strcasecmp(headerName, "Subject:"))
+    return 7; /* tchSubject */
+  if (!strcasecmp(headerName, "Importance:"))
+    return 8; /* tchImportance */
+  if (!strcasecmp(headerName, "Precedence:"))
+    return 9; /* tchPrecedence */
+  if (!strcasecmp(headerName, "Message-ID:") ||
+      !strcasecmp(headerName, "Message-Id:"))
+    return 10; /* tchMessageId */
+  return 0;
+}
+
+/* Header indices (from StrnDefs.h) */
+#define tchDate 1
+#define tchStatus 3
+#define tchTo 4
+#define tchXPrior 5
+#define tchBcc 6
+#define tchSubject 7
+#define tchImportance 8
+#define tchPrecedence 9
+#define tchMessageId 10
+
+/************************************************************************
+ * MatchSenderHeader - check if this is a From/Sender/Reply-To/Return-Path
+ * header. Returns priority (lower = higher priority) or 0 for no match.
+ ************************************************************************/
+static short MatchSenderHeader(const char *headerName) {
+  if (!strcasecmp(headerName, "From:"))
+    return 1;
+  if (!strcasecmp(headerName, "Sender:"))
+    return 2;
+  if (!strcasecmp(headerName, "Reply-To:"))
+    return 3;
+  if (!strcasecmp(headerName, "Return-Path:"))
+    return 4;
+  return 0;
+}
+
+/************************************************************************
+ * ReadSum - read a message summary from the current position in the
+ * line I/O routines.  This is the state machine that parses mbox files.
+ *
+ * Pass sum=NULL to reset internal state.
+ * Returns noErr on success, fnfErr at EOF, or an error code.
+ ************************************************************************/
+OSErr ReadSum(MSumPtr sum, bool isOut, LineIOP lip, bool lookEnvelope) {
+  static int type;
+  unsigned char line[1024];
+  static unsigned char *oldLineData = NULL;
+  static long oldLineLen = 0;
+  enum { BEGIN, IN_BODY, IN_HEADER, ERROR } state;
+  unsigned char duck[256];
+  char headerName[64];
+  short headerIndex;
+  unsigned char *spot;
+  long secs;
+  long origZone;
+  short senderHead = 32767; /* REAL_BIG */
+  short outFlags = DefaultOutFlags();
+  long len;
+
+  if (!sum) {
+    if (oldLineData) {
+      free(oldLineData);
+      oldLineData = NULL;
+      oldLineLen = 0;
+    }
+    return noErr;
+  }
+
+  state = BEGIN;
+  memset(sum, 0, sizeof(MSumType));
+  sum->state = UNREAD;
+  sum->spamScore = -1;
+
+  if (isOut)
+    sum->flags = outFlags;
+
+  /* UTF-8 flag — always set on GTK port */
+  outFlags |= FLAG_UTF8;
+  sum->flags |= FLAG_UTF8;
+
+  while (oldLineData || (type = GetLine(line, sizeof(line), &len, lip))) {
+    if (oldLineData) {
+      if (oldLineLen > 0 && oldLineLen < (long)sizeof(line)) {
+        memcpy(line, oldLineData, oldLineLen + 1);
+        len = oldLineLen;
+      }
+      free(oldLineData);
+      oldLineData = NULL;
+      oldLineLen = 0;
+    }
+
+    switch (type) {
+    case LINE_START:
+      if ((state == BEGIN || lookEnvelope) && IsFromLine(line)) {
+        if (state != BEGIN) {
+          /* We hit the next message's "From " line — save it and return */
+          oldLineData = malloc(len + 1);
+          if (!oldLineData) {
+            g_warning("ReadSum: out of memory saving From line");
+            return -108;
+          }
+          memcpy(oldLineData, line, len + 1);
+          oldLineLen = len;
+          goto done;
+        }
+
+        /* Start of a new message */
+        memset(sum, 0, sizeof(MSumType));
+        sum->spamScore = -1;
+        GleanFrom(line, sum);
+        sum->offset = TellLine(lip);
+        sum->state = isOut ? SENT : UNREAD;
+        state = IN_HEADER;
+        if (isOut)
+          sum->flags = outFlags;
+        sum->flags |= FLAG_UTF8;
+        senderHead = 32767;
+      } else if (state == IN_HEADER) {
+        /* Inside headers — parse header lines */
+        if (*line == '\r' || *line == '\n' || *line == '\0') {
+          /* Blank line = end of headers, start of body */
+          state = IN_BODY;
+          sum->bodyOffset = TellLine(lip) - sum->offset;
+        } else if (!IsWhite(*line)) {
+          /* New header line — extract header name */
+          spot = line;
+          while (*spot && *spot != ':')
+            spot++;
+
+          if (*spot == ':' && spot > line + 1) {
+            int nameLen = spot + 1 - line;
+            if (nameLen >= (int)sizeof(headerName))
+              nameLen = sizeof(headerName) - 1;
+            memcpy(headerName, line, nameLen);
+            headerName[nameLen] = '\0';
+            headerIndex = MatchHeader(headerName);
+          } else {
+            headerName[0] = '\0';
+            headerIndex = 0;
+          }
+
+          switch (headerIndex) {
+          case tchDate:
+            CopyHeaderLine(duck, sizeof(duck), line);
+            secs = BeautifyDate(duck, &origZone);
+            if (secs)
+              PtrTimeStamp(sum, secs, origZone);
+            break;
+
+          case tchTo:
+            if (isOut) {
+              CopyHeaderLine(duck, sizeof(duck), line);
+              BeautifyFrom(duck);
+              strncpy(sum->from, (char *)duck, sizeof(sum->from) - 1);
+              sum->from[sizeof(sum->from) - 1] = '\0';
+              if (sum->from[0])
+                sum->state = SENT;
+            }
+            break;
+
+          case tchBcc:
+            if (isOut && (!sum->from[0] || sum->from[0] == '?')) {
+              CopyHeaderLine(duck, sizeof(duck), line);
+              BeautifyFrom(duck);
+              strncpy(sum->from, (char *)duck, sizeof(sum->from) - 1);
+              sum->from[sizeof(sum->from) - 1] = '\0';
+              if (sum->from[0])
+                sum->state = SENT;
+            }
+            break;
+
+          case tchSubject:
+            CopyHeaderLine(duck, sizeof(duck), line);
+            BeautifySubj(duck, sizeof(sum->subj));
+            strncpy(sum->subj, (char *)duck, sizeof(sum->subj) - 1);
+            sum->subj[sizeof(sum->subj) - 1] = '\0';
+            break;
+
+          case tchStatus:
+            /* Check for "R" or "RO" meaning read */
+            {
+              char val[64];
+              CopyHeaderLine((unsigned char *)val, sizeof(val), line);
+              if (strchr(val, 'R'))
+                sum->state = READ;
+            }
+            break;
+
+          case tchXPrior:
+            CopyHeaderLine(duck, sizeof(duck), line);
+            {
+              int pri = atoi((char *)duck);
+              if (pri >= 1 && pri <= 5)
+                sum->priority = pri;
+            }
+            break;
+
+          case tchMessageId:
+            if (!ValidHash(sum->msgIdHash)) {
+              CopyHeaderLine(duck, sizeof(duck), line);
+              (void)0;
+              /* Strip angle brackets */
+              char *idStart = (char *)duck;
+              if (*idStart == '<')
+                idStart++;
+              char *idEnd = idStart + strlen(idStart);
+              if (idEnd > idStart && idEnd[-1] == '>')
+                idEnd--;
+              sum->msgIdHash = HashString(idStart, idEnd - idStart);
+              if (!ValidHash(sum->uidHash))
+                sum->uidHash = sum->msgIdHash;
+            }
+            break;
+
+          case tchPrecedence:
+            CopyHeaderLine(duck, sizeof(duck), line);
+            if (strcasestr((char *)duck, "bulk") ||
+                strcasestr((char *)duck, "list") ||
+                strcasestr((char *)duck, "junk"))
+              sum->opts |= OPT_BULK;
+            break;
+
+          case tchImportance:
+            if (sum->priority == 0) {
+              CopyHeaderLine(duck, sizeof(duck), line);
+              /* Map importance to priority: Low=5, Normal=3, High=1 */
+              if (strcasestr((char *)duck, "high"))
+                sum->priority = 1;
+              else if (strcasestr((char *)duck, "low"))
+                sum->priority = 5;
+              else
+                sum->priority = 3;
+            }
+            break;
+
+          default:
+            /* Check if this is a From/Sender/Reply-To header */
+            if (!isOut && headerName[0]) {
+              short sIdx = MatchSenderHeader(headerName);
+              if (sIdx && !(sum->opts & OPT_BULK) && IsBulk(line))
+                sum->opts |= OPT_BULK;
+              if (sIdx && sIdx <= senderHead) {
+                CopyHeaderLine(duck, sizeof(duck), line);
+                BeautifyFrom(duck);
+                strncpy(sum->from, (char *)duck, sizeof(sum->from) - 1);
+                sum->from[sizeof(sum->from) - 1] = '\0';
+                senderHead = sIdx;
+              }
+            }
+            /* Check for bulk headers (X-Mailer, X-Mailing-List, etc.) */
+            if (!strcasecmp(headerName, "X-Mailing-List:") ||
+                !strcasecmp(headerName, "List-Id:") ||
+                !strcasecmp(headerName, "List-Post:") ||
+                !strcasecmp(headerName, "Mailing-List:"))
+              sum->opts |= OPT_BULK;
+            break;
+          }
+        } else if (headerIndex == tchSubject) {
+          /* Continuation line for Subject — append */
+          char *cont = (char *)line;
+          while (*cont && IsWhite(*cont))
+            cont++;
+          /* Replace tabs with spaces */
+          for (char *t = cont; *t; t++)
+            if (*t == '\t')
+              *t = ' ';
+          /* Strip trailing CR/LF */
+          int cLen = strlen(cont);
+          while (cLen > 0 && (cont[cLen - 1] == '\r' || cont[cLen - 1] == '\n'))
+            cLen--;
+          cont[cLen] = '\0';
+
+          int curLen = strlen(sum->subj);
+          if (curLen < (int)sizeof(sum->subj) - 2) {
+            sum->subj[curLen] = ' ';
+            strncpy(sum->subj + curLen + 1, cont,
+                    sizeof(sum->subj) - curLen - 2);
+            sum->subj[sizeof(sum->subj) - 1] = '\0';
+          }
+        }
+        /* In body: check for HTML tags, etc. */
+      } else if (state == IN_BODY && len > 1 && *line == '<') {
+        char *tag = (char *)line + 1;
+        if (!strncasecmp(tag, "html", 4))
+          sum->opts |= OPT_HTML;
+        else if (!strncasecmp(tag, "!doctype", 8))
+          sum->opts |= OPT_HTML;
+      }
+      break;
+
+    case LINE_MIDDLE:
+      break;
+
+    default:
+      return -36; /* I/O error */
+    }
+
+    if (state == BEGIN)
+      state = IN_HEADER;
+  }
+
+done:
+  if (state != BEGIN) {
+    sum->length = TellLine(lip) - sum->offset;
+  }
+  return (state == BEGIN) ? fnfErr : noErr;
+}
+
+/************************************************************************
+ * IsMailbox - check if path is a regular file (i.e., a mailbox)
+ ************************************************************************/
 static bool IsMailbox(const char *path) {
   if (!path || !*path)
     return false;
@@ -149,247 +900,20 @@ static bool IsMailbox(const char *path) {
   return (stat(path, &st) == 0 && S_ISREG(st.st_mode));
 }
 
-static void CleanseTOC(TOCHandle toc) {}
-
-TOCHandle BuildTOC_Path(const char *path) { return BuildTOC(path); }
-
-void GleanFrom(unsigned char *line, MSumPtr sum) {
-  Str255 copy;
-  char *cp = (char *)copy;
-  char *ep;
-  long seconds;
-  long offset = ZoneSecs();
-  Str31 dateStr;
-
-  strcpy((char *)copy, (char *)line);
-  /*
-   * from address
-   */
-  while (*cp && *cp++ != ' ')
-    ;
-  for (ep = cp; *ep && *ep != ' '; ep++)
-    ;
-  *ep = '\0';
-  MakePStr(sum->from, cp, ep - cp);
-
-  /*
-   * date
-   */
-  for (cp = ++ep; *ep && *ep != '\r' && *ep != '\n'; ep++)
-    ;
-  *ep = '\0';
-  MakePStr(dateStr, cp, ep - cp);
-
-  /*
-   * TimeStamp
-   */
-  seconds = UnixDate2Secs((const char *)dateStr) - offset;
-  PtrTimeStamp(sum, seconds, offset);
-  /* sum->arrivalSeconds = seconds+offset; // Field might not exist in current
-   * MessageSummary */
-}
-
-short MonthNum(const char *cp) {
-  char monthStr[4];
-  short month = 0;
-
-  memcpy(monthStr, cp, 3);
-  monthStr[3] = 0;
-  for (int i = 0; i < 3; i++)
-    monthStr[i] = tolower(monthStr[i]);
-
-  char *c = monthStr;
-  switch (c[0]) {
-  case 'j':
-    month = c[1] == 'a' ? 1 : (c[2] == 'n' ? 6 : 7);
-    break;
-  case 'f':
-    month = 2;
-    break;
-  case 'm':
-    month = c[2] == 'r' ? 3 : 5;
-    break;
-  case 'a':
-    month = c[1] == 'p' ? 4 : 8;
-    break;
-  case 's':
-    month = 9;
-    break;
-  case 'o':
-    month = 10;
-    break;
-  case 'n':
-    month = 11;
-    break;
-  case 'd':
-    month = 12;
-    break;
-  }
-  return month;
-}
-
-long CStr2Zone(const char *s) {
-  long offset;
-  offset = atoi(s);
-  if (offset > 2400 || offset < -2400)
-    offset = ZoneSecs();
-  else {
-    bool neg = (*s == '-');
-    if (neg)
-      offset *= -1;
-    offset = 60 * ((offset / 100) * 60 + offset % 100);
-    if (neg)
-      offset *= -1;
-  }
-  return (offset);
-}
-
-uint32_t UnixDate2Secs(const char *date) {
-  struct tm tm;
-  memset(&tm, 0, sizeof(struct tm));
-  /* Example: Wed, 21 Jan 2026 17:23:50 +0100 or 21 Jan 2026 17:23:50 +0100 */
-  if (strptime(date, "%d %b %Y %H:%M:%S", &tm) ||
-      strptime(date, "%a, %d %b %Y %H:%M:%S", &tm)) {
-    return (uint32_t)mktime(&tm);
-  }
-  return 0;
-}
-
-/* Copyright (c) 1991-1992 by the University of Illinois Board of Trustees */
-
-/* Forward declarations are in buildtoc.h, but we provide local logic here as
- * needed */
-
-/************************************************************************
- * RebuildTOC - rebuild a corrupt or out-of-date toc, salvaging what we
- * can.
- ************************************************************************/
-TOCHandle RebuildTOC(const char *path, TOCHandle oldTocH, bool resource,
-                     bool tempBox) {
-  TOCHandle newTocH = NULL;
-  short oldCount, newCount;
-
-  if (oldTocH) {
-    /* Try to salvage old TOC */
-    if ((newTocH = BuildTOC(path)) && oldTocH) {
-      oldCount = (*oldTocH)->count;
-      newCount = (*newTocH)->count;
-      if (oldCount && newCount) {
-        SalvageTOC(oldTocH, newTocH);
-
-        /* Copy over preserved fields */
-        memcpy((*newTocH)->sorts, (*oldTocH)->sorts, sizeof((*newTocH)->sorts));
-        (*newTocH)->lastSort = (*oldTocH)->lastSort;
-        (*newTocH)->pluginKey = (*oldTocH)->pluginKey;
-        (*newTocH)->pluginValue = (*oldTocH)->pluginValue;
-        (*newTocH)->previewHi = (*oldTocH)->previewHi;
-        (*newTocH)->nextSerialNum = (*oldTocH)->nextSerialNum;
-        (*newTocH)->unreadBase = (*oldTocH)->unreadBase;
-      }
-    }
-  } else {
-    /* Build new TOC from scratch */
-    newTocH = BuildTOC(path);
-  }
-
-  if (newTocH) {
-    (*newTocH)->reallyDirty = true;
-  }
-
-  return newTocH;
-}
-
-/************************************************************************
- * SalvageTOC - reconcile and old a new TOC
- ************************************************************************/
-short SalvageTOC(TOCHandle old, TOCHandle new) {
-  short first, last, mid;
-  MSumPtr oldSum;
-  long offset;
-  short salvaged = 0;
-  long bo;
-  long seconds;
-
-  LDRef(old);
-  LDRef(new);
-  (*old)->count = (GetHandleSize_(old) - (sizeof(TOCType) - sizeof(MSumType))) /
-                  sizeof(MSumType);
-
-  for (mid = (*new)->count - 1; mid >= 0; mid--)
-    (*new)->sums[mid].state = REBUILT; // set state to rebuilt
-
-  for (oldSum = (*old)->sums; oldSum < (*old)->sums + (*old)->count; oldSum++) {
-    offset = oldSum->offset;
-#ifdef IMAP
-    if ((*old)->imapTOC && (offset < 0))
-      continue; // skip minimal headers
-#endif
-    first = 0;
-    last = (*new)->count - 1;
-    for (mid = (first + last) / 2; first <= last; mid = (first + last) / 2)
-      if (offset < (*new)->sums[mid].offset)
-        last = mid - 1;
-      else if (offset == (*new)->sums[mid].offset)
-        break;
-      else
-        first = mid + 1;
-    if (first <= last && (*new)->sums[mid].length == oldSum->length) {
-      salvaged++;
-      bo = (*new)->sums[mid].bodyOffset;   // preserve new bodyOffset
-      seconds = (*new)->sums[mid].seconds; // preserve new seconds
-      (*new)->sums[mid] = *oldSum;
-      (*new)->sums[mid].bodyOffset =
-          bo; // and restore it--old one might be trash
-      // overwrite old seconds unless the message is timed queue.  If it's timed
-      // queue, the old seconds is a much more precious commodity, and we'll
-      // take the risk that it might be off.
-      if ((*new)->sums[mid].state != TIMED)
-        (*new)->sums[mid].seconds =
-            seconds; // and restore it--old one might be trash
-    }
-#ifdef RESYNC_MID
-    else if (oldSum->msgIdHash) {
-      for (first = 0; first < (*new)->count; first++)
-        if (oldSum->msgIdHash == (*new)->sums[first].msgIdHash &&
-            oldSum->length == (*new)->sums[first].length) {
-          salvaged++;
-          bo = (*new)->sums[first].bodyOffset; // preserve new bodyOffset
-          offset = (*new)->sums[first].offset;
-          seconds = (*new)->sums[first].seconds;
-          (*new)->sums[first] = *oldSum;
-          (*new)->sums[first].bodyOffset =
-              bo; // and restore it--old one might be trash
-          (*new)->sums[first].offset =
-              offset; // and restore it--old one might be different
-          (*new)->sums[first].seconds =
-              seconds; // and restore it--old one might be different
-        }
-    }
-#endif
-  }
-
-  UL(old);
-  UL(new);
-  CleanseTOC(new);
-  return (salvaged);
-}
-
 /**********************************************************************
  * BuildTOC - build a table of contents for a file.  The TOC is built
- * in memory.  This gets a little hairy in spots because the routine is
- * used both for received messages and messages under composition; but
- * the complication does not substantially affect the flow of the
- * function, so I let it stand.
+ * in memory using plain malloc/realloc.  Only wrapped into a TOCType *
+ * at the very end for API compatibility with the rest of the codebase.
  **********************************************************************/
-TOCHandle BuildTOC(const char *path) {
-  TOCHandle tocH = nil;
+TOCType * BuildTOC(const char *path) {
+  TOCType *toc = NULL;
   MSumType sum;
   bool isOut;
-  Str255 scratch;
   LineIOD lid;
   OSErr err;
   short which = 0;
   const char *filename;
+  short capacity = 0;
 
   if (!path)
     return NULL;
@@ -400,130 +924,199 @@ TOCHandle BuildTOC(const char *path) {
   else
     filename = path;
 
-  ComposeLogS(LOG_TOC, nil, (unsigned char *)"BuildTOC(%s)", filename);
+  g_debug("BuildTOC(%s)", filename);
 
-  Zero(lid);
+  memset(&lid, 0, sizeof(lid));
 
   if (!IsMailbox(path)) {
-    FileSystemError(NOT_MAILBOX, (const char *)filename, 0);
-    return (nil);
+    g_warning("BuildTOC: not a mailbox: %s", filename);
+    return NULL;
   }
 
-  if ((tocH = NewZH(TOCType)) == nil) {
-    WarnUser(READ_MBOX, MemError());
-    goto failure;
-  }
-
-  /*
-   * figure out for once and for all if we are an in or an out box
-   */
-  isOut = False;
-  if (!which && IsRootPath(path)) {
-
-    GetRString(scratch, IN);
-    if (StringSame((char *)filename, (char *)scratch))
-      which = IN;
-    else {
-      GetRString(scratch, OUT);
-      if (StringSame((char *)filename, (char *)scratch)) {
-        which = OUT;
-        isOut = True;
-      } else {
-        GetRString(scratch, TRASH);
-        if (StringSame((char *)filename, (char *)scratch))
-          which = TRASH;
-      }
-    }
-  }
-
-  /*
-   * first, try opening the file
-   */
   if ((err = OpenLineDirect(path, fsRdWrPerm, &lid))) {
-    FileSystemError(OPEN_MBOX, (const char *)filename, err);
-    return (nil);
+    g_warning("BuildTOC: cannot open mailbox %s: error %d", filename, err);
+    return NULL;
   }
 
-  /*
-   * now, we skip through the messages, reading summaries
-   */
-  while (true) {
-    long diskPos = TellLine(&lid);
-    long len;
-    int gErr;
+  toc = AllocTOC();
+  if (!toc) {
+    g_warning("BuildTOC: out of memory");
+    CloseLine(&lid);
+    return NULL;
+  }
 
-    gErr = GetLine((unsigned char *)scratch, sizeof(scratch), &len, &lid);
-    if (gErr == -1 || len == 0)
-      break;
+  /* Determine mailbox type by filename */
+  isOut = false;
+  if (!strcasecmp(filename, "Out")) {
+    which = OUT;
+    isOut = true;
+  } else if (!strcasecmp(filename, "In")) {
+    which = IN;
+  } else if (!strcasecmp(filename, "Trash")) {
+    which = TRASH;
+  } else if (!strcasecmp(filename, "Junk")) {
+    which = JUNK;
+  }
 
-    if (len > 5 && !strncmp((char *)scratch, "From ", 5)) {
-      Zero(sum);
-      sum.offset = diskPos;
-      sum.state = UNREAD;
-      if (isOut) {
-        sum.state = SENT;
-        sum.flags = DefaultOutFlags();
-      }
+  toc->which = which;
+  toc->nextSerialNum = 1;
 
-      /*
-       * we use GleanFrom to find out what personality this message
-       * belongs to.
-       */
-      GleanFrom((unsigned char *)scratch, &sum);
+  /* Initialize ReadSum state */
+  ReadSum(NULL, false, &lid, true);
 
-      /*
-       * if it's the default personality, use the personality
-       * from the current context.
-       */
-      if (!sum.persId) {
-        sum.persId = sum.popPersId = (*PERS_FORCE(CurPers))->persId;
-      }
-
-      /*
-       * now, we skip ahead to the next message
-       */
-      while (true) {
-        diskPos = TellLine(&lid);
-        gErr = GetLine((unsigned char *)scratch, sizeof(scratch), &len, &lid);
-        if (gErr == -1 || len == 0)
-          break;
-        if (len > 5 && !strncmp((char *)scratch, "From ", 5)) {
-          /* Back up to start of next message */
-          SeekLine(diskPos, &lid);
-          break;
-        }
-
-        /* Collect info from header if we haven't already */
-        if (!sum.length) {
-          /* This is a simplification; real logic would parse headers */
-        }
-      }
-
-      sum.length = diskPos - sum.offset;
-      if (!SaveMessageSum(&sum, &tocH))
+  /* Read messages — grow toc with realloc, no handles */
+  while (!(err = ReadSum(&sum, isOut, &lid, true))) {
+    if (toc->count >= capacity) {
+      capacity = capacity ? capacity * 2 : 16;
+      TOCType *grown = GrowTOC(toc, capacity);
+      if (!grown) {
+        g_warning("BuildTOC: out of memory growing TOC");
         goto failure;
+      }
+      toc = grown;
     }
+    sum.serialNum = toc->nextSerialNum++;
+    toc->sums[toc->count++] = sum;
+  }
+  if (err != fnfErr)
+    goto failure;
+
+  /* Clean up ReadSum state */
+  ReadSum(NULL, false, &lid, true);
+
+  /* Trim to exact size */
+  {
+    TOCType *trimmed = GrowTOC(toc, toc->count);
+    if (trimmed)
+      toc = trimmed;
   }
 
   CloseLine(&lid);
-  return (tocH);
+
+  /* Fill in TOC metadata */
+  toc->refN = 0;
+  strncpy(toc->mailbox.spec.path, path, sizeof(toc->mailbox.spec.path) - 1);
+  toc->mailbox.spec.path[sizeof(toc->mailbox.spec.path) - 1] = '\0';
+  strncpy((char *)toc->mailbox.spec.name, filename,
+          sizeof(toc->mailbox.spec.name) - 1);
+  ((char *)toc->mailbox.spec.name)[sizeof(toc->mailbox.spec.name) - 1] = '\0';
+  toc->majorVersion = 1;
+  toc->minorVersion = 9;
+  toc->durty = true;
+  toc->reallyDirty = true;
+
+  /* Check if this is an IMAP mailbox */
+  IsIMAPMailboxFileLo(&toc->mailbox.spec, &toc->imapMBH);
+
+  return toc;
 
 failure:
+  free(toc);
   CloseLine(&lid);
-  ZapHandle(tocH);
-  return (nil);
+  return NULL;
+}
+
+/************************************************************************
+ * BuildTOC_Path - wrapper that takes a path string
+ ************************************************************************/
+TOCType * BuildTOC_Path(const char *path) { return BuildTOC(path); }
+
+/************************************************************************
+ * RebuildTOC - rebuild a corrupt or out-of-date TOC, salvaging what
+ * we can from the old one.
+ ************************************************************************/
+TOCType * RebuildTOC(const char *path, TOCType * oldTocH, bool resource,
+                     bool tempBox) {
+  TOCType * newTocH = NULL;
+
+  if (oldTocH) {
+    if ((newTocH = BuildTOC(path))) {
+      if (oldTocH->count && newTocH->count) {
+        SalvageTOC(oldTocH, newTocH);
+        memcpy(newTocH->sorts, oldTocH->sorts, sizeof(newTocH->sorts));
+        newTocH->lastSort = oldTocH->lastSort;
+        newTocH->pluginKey = oldTocH->pluginKey;
+        newTocH->pluginValue = oldTocH->pluginValue;
+        newTocH->previewHi = oldTocH->previewHi;
+        newTocH->nextSerialNum = oldTocH->nextSerialNum;
+        newTocH->unreadBase = oldTocH->unreadBase;
+      }
+    }
+  } else {
+    newTocH = BuildTOC(path);
+  }
+
+  if (newTocH)
+    newTocH->reallyDirty = true;
+
+  return newTocH;
+}
+
+/************************************************************************
+ * SalvageTOC - reconcile an old and new TOC.
+ * Uses binary search on offset to match messages.
+ ************************************************************************/
+short SalvageTOC(TOCType *oldToc, TOCType *newToc) {
+  short first, last, mid;
+  MSumPtr oldSum;
+  long offset;
+  short salvaged = 0;
+  long bo;
+  long seconds;
+
+  /* Mark all new sums as REBUILT */
+  for (mid = newToc->count - 1; mid >= 0; mid--)
+    newToc->sums[mid].state = REBUILT;
+
+  for (oldSum = oldToc->sums; oldSum < oldToc->sums + oldToc->count; oldSum++) {
+    offset = oldSum->offset;
+
+    /* Binary search for matching offset in new TOC */
+    first = 0;
+    last = newToc->count - 1;
+    for (mid = (first + last) / 2; first <= last; mid = (first + last) / 2) {
+      if (offset < newToc->sums[mid].offset)
+        last = mid - 1;
+      else if (offset == newToc->sums[mid].offset)
+        break;
+      else
+        first = mid + 1;
+    }
+
+    if (first <= last && newToc->sums[mid].length == oldSum->length) {
+      salvaged++;
+      bo = newToc->sums[mid].bodyOffset;
+      seconds = newToc->sums[mid].seconds;
+      newToc->sums[mid] = *oldSum;
+      newToc->sums[mid].bodyOffset = bo;
+      if (newToc->sums[mid].state != TIMED)
+        newToc->sums[mid].seconds = seconds;
+    } else if (oldSum->msgIdHash) {
+      for (first = 0; first < newToc->count; first++) {
+        if (oldSum->msgIdHash == newToc->sums[first].msgIdHash &&
+            oldSum->length == newToc->sums[first].length) {
+          salvaged++;
+          bo = newToc->sums[first].bodyOffset;
+          offset = newToc->sums[first].offset;
+          seconds = newToc->sums[first].seconds;
+          newToc->sums[first] = *oldSum;
+          newToc->sums[first].bodyOffset = bo;
+          newToc->sums[first].offset = offset;
+          newToc->sums[first].seconds = seconds;
+        }
+      }
+    }
+  }
+
+  CleanseTOC(newToc);
+  return salvaged;
 }
 
 /* HasUnicode - always true on GLib/GTK (UTF-8 native) */
-bool HasUnicode(void)
-{
-  return true;
-}
+bool HasUnicode(void) { return true; }
 
-/* GoodUTF8Len - find longest valid UTF-8 prefix of bufLen bytes.
- * Ported directly from MAC624/unicode.c (pure C, no Mac APIs). */
-ByteCount GoodUTF8Len(BytePtr utf8, ByteCount bufLen)
-{
+/* GoodUTF8Len - find longest valid UTF-8 prefix of bufLen bytes. */
+ByteCount GoodUTF8Len(BytePtr utf8, ByteCount bufLen) {
   unsigned char b;
   ByteCount newLen = 0, tempLen;
 
@@ -542,30 +1135,30 @@ ByteCount GoodUTF8Len(BytePtr utf8, ByteCount bufLen)
   return newLen;
 }
 
-/* HeaderToUTF8 - decode RFC 2047 encoded words in a Pascal string header.
- * Uses GLib's g_convert for charset conversion. Falls back to no-op if
- * the header is already valid UTF-8 (most modern IMAP servers send UTF-8). */
-OSStatus HeaderToUTF8(unsigned char *head)
-{
-  if (!head || head[0] == 0)
+/* HeaderToUTF8 - validate/convert a C string header to valid UTF-8.
+ * Unlike the original which used Pascal strings, this operates on
+ * null-terminated C strings in-place. */
+OSStatus HeaderToUTF8(unsigned char *head) {
+  if (!head || !*head)
     return 0;
 
-  /* If already valid UTF-8, just trim to a valid boundary and return */
-  if (g_utf8_validate((const gchar *)(head + 1), head[0], NULL)) {
-    head[0] = (unsigned char)GoodUTF8Len(head + 1, head[0]);
+  int len = strlen((char *)head);
+
+  /* If already valid UTF-8, just return */
+  if (g_utf8_validate((const gchar *)head, len, NULL))
     return 0;
-  }
 
   /* Try converting from Latin-1 to UTF-8 as a fallback */
   gsize bytes_written = 0;
-  gchar *utf8 = g_convert((const gchar *)(head + 1), head[0],
-                           "UTF-8", "ISO-8859-1",
-                           NULL, &bytes_written, NULL);
+  gchar *utf8 =
+      g_convert((const gchar *)head, len, "UTF-8", "ISO-8859-1", NULL,
+                &bytes_written, NULL);
   if (utf8) {
+    /* Don't overflow the buffer — assume 255 max like original */
     if (bytes_written > 255)
       bytes_written = (gsize)GoodUTF8Len((BytePtr)utf8, 255);
-    head[0] = (unsigned char)bytes_written;
-    memcpy(head + 1, utf8, bytes_written);
+    memcpy(head, utf8, bytes_written);
+    head[bytes_written] = '\0';
     g_free(utf8);
   }
   return 0;

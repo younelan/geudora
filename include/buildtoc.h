@@ -42,14 +42,14 @@ ADVISED OF THE POSSIBILITY OF SUCH DAMAGE. */
 
 /* Function prototypes */
 void BeautifySum(MSumPtr sum);
-TOCHandle BuildTOC(const char *path);
-TOCHandle BuildTOC_Path(const char *path);
-TOCHandle RebuildTOC(const char *path, TOCHandle oldTocH, bool resource,
+TOCType * BuildTOC(const char *path);
+TOCType * BuildTOC_Path(const char *path);
+TOCType * RebuildTOC(const char *path, TOCType * oldTocH, bool resource,
                      bool tempToc);
 OSErr ReadSum(MSumPtr sum, bool isOut, LineIOP lip, bool lookEnvelope);
 int SumToFrom(MSumPtr sum, unsigned char * fromLine);
 void CopyHeaderLine(unsigned char * to, int size, unsigned char * from);
-long FindTOCSpot(TOCHandle tocH, long length);
+long FindTOCSpot(TOCType * tocH, long length);
 void BeautifyFrom(unsigned char * fromStr);
 uint32_t BeautifyDate(unsigned char * dateStr, long *zoneSecs);
 uint32_t UnixDate2Secs(const char *date);
@@ -61,7 +61,7 @@ short MonthNum(const char *cp);
 long CStr2Zone(const char *s);
 PStr TrimWrap(unsigned char * str, int openC, int closeC);
 PStr TrimNonWord(PStr str);
-short SalvageTOC(TOCHandle oldToc, TOCHandle newToc);
+short SalvageTOC(TOCType * oldToc, TOCType * newToc);
 
 /* Unicode / UTF-8 helpers (GLib-based portable implementations) */
 bool HasUnicode(void);

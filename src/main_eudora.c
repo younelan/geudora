@@ -16,6 +16,7 @@
 #include "mailbox.h" /* For MessageSummary */
 #include "message.h"
 #include "toc.h"
+#include "wazoo.h"
 #include <gtk/gtk.h>
 
 /* Application state */
@@ -89,6 +90,7 @@ static void bind_size_cb(GtkSignalListItemFactory *self, GtkListItem *list_item,
 
 /* Mailbox selection callback */
 static void on_mailbox_selected(GtkTreeView *tree_view, gpointer user_data) {
+  (void)user_data;
   GtkTreeSelection *selection = gtk_tree_view_get_selection(tree_view);
   GtkTreeModel *model;
   GtkTreeIter iter;
@@ -100,34 +102,18 @@ static void on_mailbox_selected(GtkTreeView *tree_view, gpointer user_data) {
     gtk_tree_model_get(model, &iter, 0, &name, 1, &path, -1);
     g_print("Selected mailbox: %s (%s)\n", name, path);
 
-    /* Update current mailbox path */
     if (app_state.current_mailbox_path) {
       g_free(app_state.current_mailbox_path);
     }
     app_state.current_mailbox_path = g_strdup(path);
 
-    /* Load messages for this mailbox */
-    /* Clear existing */
-    g_list_store_remove_all(app_state.message_store);
-
-    /* Construct TOC path */
-    gchar *toc_path = g_strconcat(path, ".toc", NULL);
-    TOCHandle toc = toc_load(toc_path);
-    g_free(toc_path);
-
-    if (toc) {
-      int count = 0;
-      MessageSummary *summaries = toc_get_summaries(toc, &count);
-
-      for (int i = 0; i < count; i++) {
-        GtkMessageListItem *msg = gtk_messagelist_item_new(&summaries[i], i);
-        g_list_store_append(app_state.message_store, msg);
-        g_object_unref(msg);
-      }
-      /* toc_free(toc); don't free yet as summaries rely on it? No, summaries
-       * are copied in eudora_message_new */
-      /* Actually eudora_message_new copies strings, so we can free toc if we
-       * wanted to, but let's be safe */
+    /* Build an FSSpec from the path and call the real OpenMailbox */
+    if (path && *path) {
+      FSSpec spec;
+      memset(&spec, 0, sizeof(spec));
+      strncpy(spec.path, path, sizeof(spec.path) - 1);
+      strncpy(spec.name, name ? name : "", sizeof(spec.name) - 1);
+      OpenMailbox(&spec, true, NULL);
     }
 
     g_free(name);
@@ -666,6 +652,9 @@ static void activate(GtkApplication *app, gpointer user_data) {
     g_object_unref(action);
   }
 
+  /* Initialize Eudora wazoo (tabbed window) system */
+  SetupDefaultWazoos();
+
   /* Create main layout */
   app_state.main_box = create_main_layout();
   gtk_window_set_child(GTK_WINDOW(app_state.window), app_state.main_box);
@@ -674,6 +663,19 @@ static void activate(GtkApplication *app, gpointer user_data) {
   create_menu_bar(app_state.window);
 
   gtk_window_present(GTK_WINDOW(app_state.window));
+
+  /* Try to open the In mailbox at startup */
+  {
+    FSSpec inSpec;
+    memset(&inSpec, 0, sizeof(inSpec));
+    const char *home = g_get_home_dir();
+    snprintf(inSpec.path, sizeof(inSpec.path), "%s/.eudora/In", home);
+    strncpy(inSpec.name, "In", sizeof(inSpec.name) - 1);
+    /* Only open if the mailbox file exists */
+    if (g_file_test(inSpec.path, G_FILE_TEST_EXISTS)) {
+      OpenMailbox(&inSpec, true, NULL);
+    }
+  }
 }
 
 int main(int argc, char **argv) {

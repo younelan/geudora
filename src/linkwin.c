@@ -79,22 +79,15 @@ static inline int PeteCursorList(void *list, void *mouse) { return 0; }
 
 /* GTK port: forward declarations for Mac UI APIs not found in project headers
  */
-MyWindowPtr GetNewMyWindow(short id, void *a, void *b, void *behind, int c,
-                           int d, short kind);
+/* GetNewMyWindow, ShowMyWindow, CloseMyWindow, etc. — declared in mailbox.h */
 void *GetMyWindowWindowPtr(MyWindowPtr win);
-/* GetMyWindowCGrafPtr - in mailbox.h */
 void SetWinMinSize(MyWindowPtr win, short w, short h);
 void ConfigFontSetup(MyWindowPtr win);
 void MySetThemeWindowBackground(MyWindowPtr win, int brush, int b);
-/* SetRect is provided by legacy_shim.h */
-/* PositionPrefsTitle - in mailbox.h */
 void MyWindowDidResize(MyWindowPtr win, void *r);
-void ShowMyWindow(void *winPtr);
-/* CloseMyWindow - in mailbox.h */
 void SelectWindow_(void *winPtr);
 void UpdateMyWindow(void *winPtr);
 void UserSelectWindow(void *winPtr);
-/* InvalContent - in mailbox.h */
 void InvalidListView(void *list);
 int LVNewWithDetails(void *list, MyWindowPtr win, void *r, int n, void *cb,
                      int flavor, DrawDetailsStruct *details);

@@ -125,7 +125,7 @@ typedef void **FSSpecHandle;
 typedef void *ControlHandle;
 typedef struct MyWindow *MyWindowPtr;
 typedef void *WindowPtr;
-typedef struct TOCType TOCType, *TOCPtr, **TOCHandle;
+typedef struct TOCType TOCType, *TOCPtr;
 
 #ifndef RECT_DEFINED
 #define RECT_DEFINED
@@ -671,20 +671,43 @@ void SetWindowMyWindowPtr(void *winWP, MyWindowPtr win);
 void *GetMyWindowPrivateData(MyWindowPtr win);
 void SetMyWindowPrivateData(MyWindowPtr win, void *data);
 
+/* Window management (mywindow.c) */
+MyWindowPtr GetNewMyWindow(short resId, void *wStorage, MyWindowPtr win,
+                           void *behind, bool hBar, bool vBar,
+                           short windowKind);
+bool ShowMyWindow(void *winWP);
+void ShowMyWindowBehind(void *winWP, void *behindWP);
+void MySelectWindow(void *winWP);
+void UserSelectWindow(void *winWP);
+void UpdateMyWindow(void *winWP);
+void InvalContent(MyWindowPtr win);
+void MyDisposeWindow(void *winWP);
+void ZeroWinFuncs(MyWindowPtr win);
+bool IsMyWindow(void *winWP);
+void SetTopMargin(MyWindowPtr win, short h);
+void SetBotMargin(MyWindowPtr win, short h);
+void MyWindowDidResize(MyWindowPtr win, void *oldContR);
+void SetWTitle(void *winWP, unsigned char *title);
+
+/* Mailbox open/close */
+int OpenMailbox(FSSpecPtr spec, bool showIt, TOCType * toc);
+void InitMailboxWin(MyWindowPtr win, TOCType * toc, bool showIt);
+void OpenMBWin(void);
+
 /* Mailbox function prototypes */
-short FirstMsgSelected(TOCHandle tocH);
-unsigned char *GetMailboxName(TOCHandle tocH, short sum, unsigned char *name);
-int BoxFOpenLo(TOCHandle tocH, short sumNum);
-int BoxFOpen(TOCHandle tocH);
-void BoxFClose(TOCHandle tocH, bool flush);
-int AddMesgError(TOCHandle tocH, short sum, unsigned char *errorStr,
+short FirstMsgSelected(TOCType * tocH);
+unsigned char *GetMailboxName(TOCType * tocH, short sum, unsigned char *name);
+int BoxFOpenLo(TOCType * tocH, short sumNum);
+int BoxFOpen(TOCType * tocH);
+void BoxFClose(TOCType * tocH, bool flush);
+int AddMesgError(TOCType * tocH, short sum, unsigned char *errorStr,
                  int errorCode);
-void NoteFreeSpace(TOCHandle tocH);
-short CountSelectedMessages(TOCHandle tocH);
-OSErr UpdateIMAPMailbox(TOCHandle tocH);
+void NoteFreeSpace(TOCType * tocH);
+short CountSelectedMessages(TOCType * tocH);
+OSErr UpdateIMAPMailbox(TOCType * tocH);
 void UsingWindow(GtkWidget *win);
 void NotUsingWindow(GtkWidget *win);
-TOCHandle FindTOC(FSSpecPtr spec);
+TOCType * FindTOC(FSSpecPtr spec);
 
 /* IsWindowVisible: GTK4 portable check — true if widget is non-null and visible
  */
@@ -692,32 +715,25 @@ static inline bool IsWindowVisible(void *win) {
   return win != NULL && gtk_widget_is_visible(GTK_WIDGET(win));
 }
 
-/* Search window stubs — not yet ported to GTK */
-static inline bool IsSearchWindow(void *win) {
-  (void)win;
-  return false;
-}
-static inline void GetSearchTOC(MyWindowPtr win, TOCHandle *tocH) {
-  (void)win;
-  if (tocH)
-    *tocH = NULL;
-}
+/* Search window — declared in searchwin.h */
+bool IsSearchWindow(void *win);
+void GetSearchTOC(MyWindowPtr win, TOCType * *tocH);
 
 /* Mailbox/message utilities */
-short FindSumBySerialNum(TOCHandle tocH, long serialNum);
+short FindSumBySerialNum(TOCType * tocH, long serialNum);
 int GetMailbox(FSSpecPtr spec, bool showIt);
-void DeleteMessageLo(TOCHandle tocH, int sumNum, bool nuke);
+void DeleteMessageLo(TOCType * tocH, int sumNum, bool nuke);
 OSErr HandPlusHand(Handle h1, Handle h2);
 short FindDirLevel(short vRefNum, long dirID);
 char *MailboxMenuFile(short mid, short item, char *name);
-long CountFlaggedMessages(TOCHandle tocH);
-short GetSumColor(TOCHandle tocH, short sumNum);
+long CountFlaggedMessages(TOCType * tocH);
+short GetSumColor(TOCType * tocH, short sumNum);
 #ifndef SumColor
 #define SumColor(sum) (((sum)->flags >> 14) & 0xf)
 #endif
-void SetSumColor(TOCHandle tocH, short sumNum, short color);
-int DeleteMesgError(TOCHandle tocH, short sum);
+void SetSumColor(TOCType * tocH, short sumNum, short color);
+int DeleteMesgError(TOCType * tocH, short sum);
 void FixSpecUnread(FSSpecPtr spec, bool unread);
-bool SaveMessageSum(void *sum, TOCHandle *tocH);
+bool SaveMessageSum(void *sum, TOCType * *tocH);
 
 #endif /* MAILBOX_H */

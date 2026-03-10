@@ -367,7 +367,7 @@ OSErr PGPOpenEncrypted(FSSpecPtr spec)
 	ProcessSerialNumber psn;
 	FSSpec tempSpec;
 	short howMany = 0;
-	TOCHandle tocH;
+	TOCType * tocH;
 	
 	NullADList(&reply,nil);
 	
@@ -391,8 +391,8 @@ OSErr PGPOpenEncrypted(FSSpecPtr spec)
 					if (tocH = GetInTOC())
 						while (howMany--)
 						{
-							(*tocH)->sums[(*tocH)->count-1-howMany].opts |= OPT_WIPE;
-							GetAMessage(tocH,(*tocH)->count-1-howMany,nil,nil,True);
+							tocH->sums[tocH->count-1-howMany].opts |= OPT_WIPE;
+							GetAMessage(tocH,tocH->count-1-howMany,nil,nil,True);
 						}
 				}
 				else

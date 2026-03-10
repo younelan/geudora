@@ -593,7 +593,7 @@ OSErr AEPersObj(PersHandle pers,AEDescPtr obj)
 /************************************************************************
  * AESetPers - set a personality to an object
  ************************************************************************/
-OSErr AESetPers(TOCHandle tocH,short sumNum,AEDescPtr descP)
+OSErr AESetPers(TOCType * tocH,short sumNum,AEDescPtr descP)
 {
 	AEDesc token;
 	OSErr err;
@@ -644,31 +644,31 @@ void DisposePersonalities(void)
 /**********************************************************************
  * SetPers - set the personality of a message
  **********************************************************************/
-OSErr SetPers(TOCHandle tocH,short sumNum,PersHandle pers,bool stationery)
+OSErr SetPers(TOCType * tocH,short sumNum,PersHandle pers,bool stationery)
 {
 	WindowPtr	messWinWP;
-	MessHandle messH = (*tocH)->sums[sumNum].messH;
+	MessHandle messH = tocH->sums[sumNum].messH;
 	bool opened = messH==nil;
 	Str255 addr;
 	OSErr err = noErr;
 	uint32_t sigId;
 	ControlHandle cntl;
-	bool redirected = ((*tocH)->sums[sumNum].opts & OPT_REDIRECTED)!=0;
+	bool redirected = (tocH->sums[sumNum].opts & OPT_REDIRECTED)!=0;
 	
-	if ((*tocH)->sums[sumNum].persId==(*pers)->persId) return(noErr);	// nothing to do
+	if (tocH->sums[sumNum].persId==(*pers)->persId) return(noErr);	// nothing to do
 
 	if (pers!=PersList)
 		UseFeature (featureMultiplePersonalities);
 	
-	(*tocH)->sums[sumNum].persId = (*pers)->persId;
+	tocH->sums[sumNum].persId = (*pers)->persId;
 	TOCSetDirty(tocH,true);
 	
 	SetBGColorsByPers(messH);
 	
 #ifdef THREADING_ON
-	if ((*tocH)->which==OUT && ((*tocH)->sums[sumNum].state!=SENT && (*tocH)->sums[sumNum].state!=BUSY_SENDING))
+	if (tocH->which==OUT && (tocH->sums[sumNum].state!=SENT && tocH->sums[sumNum].state!=BUSY_SENDING))
 #else
-	if ((*tocH)->which==OUT && (*tocH)->sums[sumNum].state!=SENT)
+	if (tocH->which==OUT && tocH->sums[sumNum].state!=SENT)
 #endif
 	{
 		if (stationery && !redirected)  // if stationery not allowed, don't copy sig
@@ -682,7 +682,7 @@ OSErr SetPers(TOCHandle tocH,short sumNum,PersHandle pers,bool stationery)
 		if (opened)
 		{
 			(void) OpenComp(tocH,sumNum,nil,nil,False,False);
-			messH = (*tocH)->sums[sumNum].messH;
+			messH = tocH->sums[sumNum].messH;
 		}
 		if (!messH) return(errAENoSuchObject);
 		messWinWP = GetMyWindowWindowPtr((*messH)->win);
@@ -856,7 +856,7 @@ void CheckPers(MyWindowPtr win,bool all)
 	WindowPtr	winWP = GetMyWindowWindowPtr(win);
 	MenuHandle mh;
 	MessHandle messH;
-	TOCHandle tocH;
+	TOCType * tocH;
 	short n;
 	bool out;
 	short kind;
@@ -868,7 +868,7 @@ void CheckPers(MyWindowPtr win,bool all)
 	
 	mh = GetMHandle(PERS_HIER_MENU);
 	messH = win?(MessHandle) GetMyWindowPrivateData(win):nil;
-	tocH = win?(TOCHandle) GetMyWindowPrivateData(win):nil;
+	tocH = win?(TOCType *) GetMyWindowPrivateData(win):nil;
 	out=False;
 	kind = winWP ? GetWindowKind(winWP) : 0;
 	
@@ -892,7 +892,7 @@ void CheckPers(MyWindowPtr win,bool all)
 		}
 		else if ((kind==MBOX_WIN || kind==CBOX_WIN) && win->hasSelection)
 		{
-			messPers = PERS_FORCE(FindPersById((*tocH)->sums[FirstMsgSelected(tocH)].persId));
+			messPers = PERS_FORCE(FindPersById(tocH->sums[FirstMsgSelected(tocH)].persId));
 			out = kind==CBOX_WIN;
 		}
 		else

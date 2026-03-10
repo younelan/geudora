@@ -42,8 +42,8 @@ extern int PeteGetTextAndSelection(void *pte, void **text, long *start, long *en
 extern void ReplyDefaults(short modifiers, bool *all, bool *self, bool *quote);
 extern void *DoReplyMessage(void *win, bool all, bool self, bool f1, bool f2, int i,
                      bool f3, bool f4, bool f5);
-extern void JunkSetScore(TOCHandle tocH, short sumNum, int score, int reason);
-extern void EnsureFromHash(TOCHandle tocH, short sumNum);
+extern void JunkSetScore(TOCType * tocH, short sumNum, int score, int reason);
+extern void EnsureFromHash(TOCType * tocH, short sumNum);
 extern void **DupHandle(void **h);
 extern short ComposeStdAlert(int alertType, int msgResId, ...);
 /* HGetState/HSetState provided by legacy_shim.h */
@@ -2513,14 +2513,14 @@ int GatherCompAddresses(MyWindowPtr win, char *addrList) {
 void MakeMessNick(MyWindowPtr win, short modifiers) {
 #ifdef VCARD
   MessHandle messH = (MessHandle)GetMyWindowPrivateData(win);
-  TOCHandle tocH = (*messH)->tocH;
+  TOCType * tocH = (*messH)->tocH;
   int sumNum = (*messH)->sumNum;
   FSSpec attSpec;
   Handle text;
   long offset;
   Boolean foundVCard;
 #endif
-  TOCHandle out = GetOutTOC();
+  TOCType * out = GetOutTOC();
   bool all, quote, self;
 
 #ifdef VCARD
@@ -2528,10 +2528,10 @@ void MakeMessNick(MyWindowPtr win, short modifiers) {
   foundVCard = false;
   if (IsVCardAvailable()) {
     CacheMessage(tocH, sumNum);
-    if (!(text = (*tocH)->sums[sumNum].cache))
+    if (!(text = tocH->sums[sumNum].cache))
       return;
     HNoPurge(text);
-    offset = (*tocH)->sums[sumNum].bodyOffset - 1;
+    offset = tocH->sums[sumNum].bodyOffset - 1;
     while (!foundVCard &&
            (0 <= (offset = FindAnAttachment(text, offset + 1, &attSpec, true,
                                             nil, nil, nil)))) {
@@ -2543,7 +2543,7 @@ void MakeMessNick(MyWindowPtr win, short modifiers) {
   ReplyDefaults(modifiers, &all, &self, &quote);
 
   if (out) {
-    bool wasDirty = (*out)->win->isDirty;
+    bool wasDirty = out->win->isDirty;
     win = DoReplyMessage(win, all, self, False, False, 0, False, False, False);
     if (!win)
       return;
@@ -2553,7 +2553,7 @@ void MakeMessNick(MyWindowPtr win, short modifiers) {
     MakeCompNick(win);
 #endif
     CloseMyWindow(GetMyWindowWindowPtr(win));
-    (*out)->win->isDirty = wasDirty;
+    out->win->isDirty = wasDirty;
   }
 }
 
@@ -2562,7 +2562,7 @@ void MakeMessNick(MyWindowPtr win, short modifiers) {
  ************************************************************************/
 void MakeMboxNick(MyWindowPtr win, short modifiers) {
   TextAddrHandle addresses = nil;
-  TOCHandle tocH = (TOCHandle)GetMyWindowPrivateData(win);
+  TOCType * tocH = (TOCType *)GetMyWindowPrivateData(win);
   OSErr err =
       GatherBoxAddresses(tocH, modifiers, -1, -1, (void ***)&addresses, false);
 
@@ -2580,7 +2580,7 @@ void MakeMboxNick(MyWindowPtr win, short modifiers) {
 /************************************************************************
  * GatherBoxAddresses - gather addresses from the selected messages in an mbox
  ************************************************************************/
-int GatherBoxAddresses(TOCHandle tocH, short modifiers, short from, short to,
+int GatherBoxAddresses(TOCType * tocH, short modifiers, short from, short to,
                        void ***addresses, bool caching) {
   MyWindowPtr messWin, compWin;
   short sumNum;
@@ -2590,7 +2590,7 @@ int GatherBoxAddresses(TOCHandle tocH, short modifiers, short from, short to,
 
   if (selected) {
     from = 0;
-    to = (*tocH)->count - 1;
+    to = tocH->count - 1;
   }
 
   ReplyDefaults(modifiers, &all, &self, &quote);
@@ -2601,10 +2601,10 @@ int GatherBoxAddresses(TOCHandle tocH, short modifiers, short from, short to,
     MiniEvents();
     if (CommandPeriod)
       break;
-    if (!selected || (*tocH)->sums[sumNum].selected) {
+    if (!selected || tocH->sums[sumNum].selected) {
 #ifdef IMAP
       // if this is an IMAP message, make sure it's been fully fetched.
-      if (tocH && (*tocH)->imapTOC && !EnsureMsgDownloaded(tocH, sumNum, false))
+      if (tocH && tocH->imapTOC && !EnsureMsgDownloaded(tocH, sumNum, false))
         return (err = 1);
 #endif
       if (messWin = GetAMessage(tocH, sumNum, nil, nil, False)) {
@@ -2637,18 +2637,18 @@ int GatherBoxAddresses(TOCHandle tocH, short modifiers, short from, short to,
  ************************************************************************/
 void MakeCboxNick(MyWindowPtr win) {
   Handle addresses = NuHTempOK(0);
-  TOCHandle tocH = (TOCHandle)GetMyWindowPrivateData(win);
+  TOCType * tocH = (TOCType *)GetMyWindowPrivateData(win);
   MyWindowPtr compWin;
   short sumNum;
   short err = 0;
 
   if (!addresses)
     return;
-  for (sumNum = 0; !err && sumNum < (*tocH)->count; sumNum++) {
+  for (sumNum = 0; !err && sumNum < tocH->count; sumNum++) {
     MiniEvents();
     if (CommandPeriod)
       break;
-    if ((*tocH)->sums[sumNum].selected)
+    if (tocH->sums[sumNum].selected)
       if (compWin = GetAMessage(tocH, sumNum, nil, nil, False)) {
         WindowPtr compWinWP = GetMyWindowWindowPtr(compWin);
         err = GatherCompAddresses(compWin, addresses);
@@ -4078,61 +4078,16 @@ OSErr NickBackup(FSSpecPtr spec) {
 
 OSErr GetNicknameTagMap(PStr service, PStr server,
                         NicknameTagMapRecPtr tagMapPtr)
-
 {
-  Handle resource;
-  Ptr from;
-  Str255 scratch;
-  OSErr theError;
-  short i;
-
-  // First, find a 'TGMP' resource
-  resource = nil;
-  if (*server)
-    resource = GetNamedResource(TAG_MAP_TYPE, server);
-  if (!resource && *service)
-    resource = GetNamedResource(TAG_MAP_TYPE, service);
-  if (!resource)
-    return (ResError());
-
-  // Create handles for service and nickname tags
-  tagMapPtr->serviceTags = NuHandle(0);
-  tagMapPtr->nicknameTags = NuHandle(0);
-  theError = MemError();
-
-  if (!theError) {
-    // Read the information out of the 'TGMP' resource
-    from = LDRef(resource);
-
-    // Service
-    from = CopyBytesAndMovePtr(from, &tagMapPtr->service, *from + 1);
-    // Server
-    from = CopyBytesAndMovePtr(from, &tagMapPtr->server, *from + 1);
-    // Count
-    from =
-        CopyBytesAndMovePtr(from, &tagMapPtr->count, sizeof(tagMapPtr->count));
-    // The tags
-    for (i = 0; i < tagMapPtr->count && !theError; ++i) {
-      from = CopyBytesAndMovePtr(from, scratch, *from + 1);
-      if (!PtrPlusHand(scratch, tagMapPtr->serviceTags, *scratch + 1))
-        theError = memFullErr;
-      if (!theError) {
-        from = CopyBytesAndMovePtr(from, scratch, *from + 1);
-        if (!PtrPlusHand(scratch, tagMapPtr->nicknameTags, *scratch + 1))
-          theError = memFullErr;
-      }
-    }
-
-    UL(resource);
+  (void)service;
+  (void)server;
+  /* Mac Resource Manager 'TGMP' resources don't exist on GTK.
+     Tag maps would need to come from a config file or GResource
+     if this feature is ever needed. */
+  if (tagMapPtr) {
+    memset(tagMapPtr, 0, sizeof(*tagMapPtr));
   }
-
-  ReleaseResource(resource);
-
-  // Get rid of any memory we've allocated if trouble is brewing
-  if (theError)
-    DisposeNicknameTagMap(tagMapPtr);
-
-  return (theError);
+  return fnfErr;
 }
 
 void DisposeNicknameTagMap(NicknameTagMapRecPtr tagMapPtr)
@@ -4286,7 +4241,7 @@ bool AnyPersonalNicknames(void)
 /************************************************************************
  * WhiteListTS - add a message's sender to the whitelist
  ************************************************************************/
-OSErr WhiteListTS(TOCHandle tocH, short sumNum) {
+OSErr WhiteListTS(TOCType * tocH, short sumNum) {
   Str255 scratch;
   struct HeadSpec hs;
   TextAddrHandle addr = nil;
@@ -4297,21 +4252,21 @@ OSErr WhiteListTS(TOCHandle tocH, short sumNum) {
     Zero(a);
 
     // Examine all the selected messages
-    for (sumNum = (*tocH)->count - 1; sumNum >= 0; sumNum--) {
-      if ((*tocH)->sums[sumNum].selected) {
+    for (sumNum = tocH->count - 1; sumNum >= 0; sumNum--) {
+      if (tocH->sums[sumNum].selected) {
         WhiteListTS(tocH, sumNum);
         EnsureFromHash(tocH, sumNum);
-        hash = (*tocH)->sums[sumNum].fromHash;
+        hash = tocH->sums[sumNum].fromHash;
         if (ValidHash(hash) && 0 > AccuFindPtr(&a, &hash, sizeof(hash)))
           AccuAddPtr(&a, &hash, sizeof(hash));
       }
     }
 
     // select everything with the same hash
-    for (sumNum = (*tocH)->count; sumNum--;)
-      if (!(*tocH)->sums[sumNum].selected) {
+    for (sumNum = tocH->count; sumNum--;)
+      if (!tocH->sums[sumNum].selected) {
         EnsureFromHash(tocH, sumNum);
-        hash = (*tocH)->sums[sumNum].fromHash;
+        hash = tocH->sums[sumNum].fromHash;
         if (ValidHash(hash) && 0 <= AccuFindPtr(&a, &hash, sizeof(hash)))
           BoxSetSummarySelected(tocH, sumNum, true);
       }
@@ -4328,18 +4283,18 @@ OSErr WhiteListTS(TOCHandle tocH, short sumNum) {
     } while (0);
   } else {
     if (!CacheMessage(tocH, sumNum)) {
-      HNoPurge((*tocH)->sums[sumNum].cache);
+      HNoPurge(tocH->sums[sumNum].cache);
 
       HeaderName(FROM_HEAD); // weird--goes into scratch
       TrimWhite(scratch);
-      if (HandleHeadFindStr((*tocH)->sums[sumNum].cache, scratch, &hs)) {
-        HandleHeadGetText((*tocH)->sums[sumNum].cache, &hs, &addr);
+      if (HandleHeadFindStr(tocH->sums[sumNum].cache, scratch, &hs)) {
+        HandleHeadGetText(tocH->sums[sumNum].cache, &hs, &addr);
         if (addr)
           WhiteListAddr(addr);
         ZapHandle(addr);
       }
 
-      HPurge((*tocH)->sums[sumNum].cache);
+      HPurge(tocH->sums[sumNum].cache);
 
       // Now that we've whitelisted the message, bop its junk score
       JunkSetScore(tocH, sumNum, JUNK_BECAUSE_WHITE, 0);
