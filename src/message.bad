@@ -1,0 +1,774 @@
+/* Copyright (c) 2017, Computer History Museum
+All rights reserved.
+Redistribution and use in source and binary forms, with or without modification,
+are permitted (subject to the limitations in the disclaimer below) provided that
+the following conditions are met:
+ * Redistributions of source code must retain the above copyright notice, this
+list of conditions and the following disclaimer.
+ * Redistributions in binary form must reproduce the above copyright notice,
+this list of conditions and the following disclaimer in the documentation and/or
+other materials provided with the distribution.
+ * Neither the name of Computer History Museum nor the names of its contributors
+may be used to endorse or promote products derived from this software without
+specific prior written permission. NO EXPRESS OR IMPLIED LICENSES TO ANY PARTY'S
+PATENT RIGHTS ARE GRANTED BY THIS LICENSE. THIS SOFTWARE IS PROVIDED BY THE
+COPYRIGHT HOLDERS AND CONTRIBUTORS "AS IS" AND ANY EXPRESS OR IMPLIED
+WARRANTIES, INCLUDING, BUT NOT LIMITED TO, THE IMPLIED WARRANTIES OF
+MERCHANTABILITY AND FITNESS FOR A PARTICULAR PURPOSE ARE DISCLAIMED. IN NO EVENT
+SHALL THE COPYRIGHT HOLDER OR CONTRIBUTORS BE LIABLE FOR ANY DIRECT, INDIRECT,
+INCIDENTAL, SPECIAL, EXEMPLARY, OR CONSEQUENTIAL DAMAGES (INCLUDING, BUT NOT
+LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR SERVICES; LOSS OF USE, DATA, OR
+PROFITS; OR BUSINESS INTERRUPTION) HOWEVER CAUSED AND ON ANY THEORY OF
+LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT (INCLUDING NEGLIGENCE
+OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE OF THIS SOFTWARE, EVEN IF
+ADVISED OF THE POSSIBILITY OF SUCH DAMAGE. */
+
+#include "message.h"
+#include "StringDefs.h"
+#include "StrnDefs.h"
+#include "MyRes.h"
+#include "../gEditCtrl/geditctrl.h"
+#include "fileutil.h"
+#include "mime.h"
+#include "mydefs.h"
+#include "toc.h"
+#include "util.h"
+#include "trans.h"
+#include <gtk/gtk.h>
+#include <string.h>
+#include <stdlib.h>
+#include <errno.h>
+#include <stdbool.h>
+
+/* Additional constants not in headers */
+#define longDate 1
+#define shortDate 0
+#define blFrom 1
+#define blDate 2
+#define PREF_LOCAL_DATE 5
+#define nil NULL
+#define noErr 0
+#define userCancelled -128
+#define MemError() errno
+#define fsFromStart 1
+#define kPETELastPara -1
+#define PETE_SCROLLY_DIFFERENCE 16
+#define MESSAGE_WIND 128
+#define MESS_WIN 5
+#define OPT_WRITE 0x01
+#define FLAG_FIXED_WIDTH 1
+#define FLAG_RICH 2
+#define FLAG_SHOW_ALL 4
+#define OPT_HTML 1
+#define OPT_FLOW 2
+#define OPT_CHARSET 4
+#define OPT_DELSP 8
+#define OPT_REDIRECTED 103
+#define OPT_INLINE_SIG 104
+#define FixedSize 12
+#define FixedID 1
+#define UNSENT 0
+#define BUSY_SENDING 4
+#define OUT_REPLY 1
+#define kNeverHashed 0
+#define kNoMessageId 0
+#define DEFAULT_TABLE 0
+#define NO_TABLE 0
+#define PREF_THREADING_OFF 1
+#define PREF_SEND_ENRICHED_NEW 2
+#define PREF_IN_XLATE 10
+
+/* Global variables */
+extern bool Offline;
+extern TOCHandle TOCList;
+extern short (*BoxWidths)[10];
+int MessErr = 0;
+bool NoSaves = false;
+bool UseInlineSig = false;
+
+/* Utility macros */
+#define Win2MessH(w) ((MessHandle)GetMyWindowPrivateData(w))
+#define CycleBalls() /* Stub */
+#define ModalWindow NULL
+#define peGrowBox 1
+#define peVScroll 2
+#define peTextOnly 4
+#define peModLock 8
+#define peLockValid 16
+#define peAllValid 0
+#define peSelectLock 1
+#define peClickBeforeLock 2
+#define BMD(src, dst, len) memmove((dst), (src), (len))
+
+/* Function prototypes - using correct signatures from headers */
+extern MyWindowPtr OpenComp(TOCHandle tocH, int sumNum, GtkWidget *winWP,
+                            MyWindowPtr win, bool showIt, bool diffIE);
+extern void SetMyWindowPrivateData(MyWindowPtr win, void *privateData);
+extern void *GetMyWindowPrivateData(MyWindowPtr win);
+extern WindowPtr GetMyWindowWindowPtr(MyWindowPtr win);
+extern TOCHandle GetRealTOC(TOCHandle tocH, short sum, short *realSum);
+extern bool AutoCheckOK(void);
+extern bool IMAPMessageDownloaded(TOCHandle tocH, short sumNum);
+extern bool EnsureMsgDownloaded(TOCHandle tocH, short sumNum, bool showProgress);
+extern bool IMAPMessageBeingDownloaded(TOCHandle tocH, short sumNum);
+extern bool MessFlagIsSet(MessHandle messH, int flag);
+extern bool MessIsRich(MessHandle messH);
+extern bool MessOptIsSet(MessHandle messH, int opt);
+extern void ClearMessOpt(MessHandle messH, int opt);
+extern bool ThreadsAvailable(void);
+extern bool PrefIsSet(short pref);
+extern long GetRLong(short pref);
+extern long GetPrefLong(short pref);
+extern int UIDDownloadMessage(TOCHandle tocH, int uidHash, bool b1, bool b2);
+extern void MakeMessTitle(char *title, TOCHandle tocH, int sumNum, bool useSummary);
+extern int InsertRichLo(char *text, long offset, long len, long end, bool b1,
+                        bool b2, GtkWidget *pte, GList *stack,
+                        MessHandle messH, bool b3);
+extern int EzOpenFind(TOCHandle tocH, int sumNum);
+extern int ShowMyWindow(GtkWidget *winWP);
+extern void ShowMessageSeparator(GtkWidget *pte, bool b);
+extern void PeteFocus(MyWindowPtr win, GtkWidget *pte, bool b);
+extern int CacheMessage(TOCHandle tocH, short sumNum);
+extern void EnableMsgButtons(MyWindowPtr win, bool b);
+extern void CloseMyWindow(GtkWidget *winWP);
+extern char *CurAddrSel(MyWindowPtr win, char *addr);
+extern void SuckHeaderText(MessHandle messH, char *addr, int size, int head);
+extern void ShortAddr(char *dst, char *src);
+extern void ComputeLocalDate(void *sum, char *datetime);
+extern void utl_PlugParams(char *result, char *pattern, char *s1, char *s2, char *s3, char *s4);
+extern long ZoneSecs(void);
+extern void FormatZone(char *zoneStr, long zone);
+extern void TimeString(long secs, bool b, char *time, void *p);
+extern void DateString(long secs, int mode, char *date, void *p);
+extern void GetMailboxName(TOCHandle tocH, int sumNum, char *name);
+extern int BoxFOpenLo(TOCHandle tocH, int sumNum);
+extern int ReallyDoAnAlert(int type, int icon);
+extern void TrimWhite(char *s);
+extern void MyLowerStr(char *s);
+extern unsigned long Hash(char *s);
+extern void TOCSetDirty(TOCHandle tocH, bool b);
+extern int Rehash(TOCHandle tocH, int sumNum, char *buffer);
+extern long GetMessageLength(TOCHandle tocH, int sumNum);
+extern int ReadMessage(TOCHandle tocH, int sumNum, char *buffer);
+extern int HandleHeadGetPStr(void **text, int head, char *pStr);
+extern void HandleHeadFindStr(char *text, char *name, int *hs);
+extern char *GetRString(char *name, short id);
+extern short SetFPos(short refNum, short mode, long offset);
+extern short ARead(short refNum, long *count, unsigned char *buffer);
+extern int FileSystemError(short error, const char *name, int err);
+extern long StripTrailingNewlines(char *buffer, long stop);
+extern void WeedHeaders(char *buffer, long *weeded, short toWeed, void *weeds);
+extern int CompHeadFind(MessHandle messH, int which, HSPtr hs);
+extern int CompHeadSetPtr(char *body, HSPtr hs, char *data, long size);
+extern int CompHeadAppendPtr(char *body, HSPtr hs, char *data, long size);
+extern char *FindHeaderString(char *text, char *headerName, long *size, bool bodyToo);
+extern int WarnUser(short strn, int err);
+extern void PeteCleanList(GtkWidget *pte);
+
+/* Forward declarations for functions defined in this file */
+char *GetMessText(MessHandle messH);
+#ifdef IMAP
+MyWindowPtr OpenMessage(TOCHandle tocH, short sumNum, GtkWidget *winWP,
+                        MyWindowPtr win, bool showIt, bool preview);
+#else
+MyWindowPtr OpenMessage(TOCHandle tocH, short sumNum, GtkWidget *winWP,
+                        MyWindowPtr win, bool showIt);
+#endif
+
+/* gEditCtrl compatibility functions */
+int PeteCopyNoLabel(GtkWidget *fromPte, GtkWidget *toPte, long start, long end, long insertPos, void *p, bool b, int flags) {
+    geditDocument *fromDoc = geditctrl_get_document(fromPte);
+    geditDocument *toDoc = geditctrl_get_document(toPte);
+    
+    gchar *text = gedit_document_get_text(fromDoc);
+    if (text && start < strlen(text)) {
+        long copyLen = (end > strlen(text)) ? strlen(text) - start : end - start;
+        if (copyLen > 0) {
+            gchar *copyText = g_strndup(text + start, copyLen);
+            gedit_document_insert_text(toDoc, insertPos, copyText);
+            g_free(copyText);
+        }
+    }
+    g_free(text);
+    return 0;
+}
+
+char *HeaderName(int head) {
+    static char *headers[] = {"", "From", "To", "Cc", "Bcc", "Subject", "Attachments"};
+    if (head >= 0 && head < 7) return headers[head];
+    return "";
+}
+
+void PeteExcerpt(GtkWidget *pte, long start, long end) {
+    // Stub for Pete excerpt functionality
+}
+
+void PetePlainPara(GtkWidget *pte, int para) {
+    // Stub for Pete plain paragraph functionality  
+}
+
+int PeteParaAt(GtkWidget *pte, long offset) {
+    // Stub - return paragraph number at offset
+    return 0;
+}
+
+void UpdateSum(MessHandle messH, long offset, long length) {
+    // Stub for updating summary
+}
+
+int CompHeadGetText(char *body, HSPtr hs, char **text) {
+    // Stub for getting header text
+    return 1;
+}
+
+int NickUniq(char *addresses, const char *sep, bool wantErrors) {
+    // Stub for nickname uniqueness
+    return 0;
+}
+/**********************************************************************
+ * GetAMessage - grab a message
+ **********************************************************************/
+MyWindowPtr GetAMessageLo(TOCHandle origTocH, int origSumNum, GtkWidget *winWP,
+                          MyWindowPtr win, bool showIt, bool *newWin) {
+    GtkWidget *messWinWP;
+    MessHandle messH;
+    TOCHandle tocH;
+    short sumNum;
+
+    if (newWin)
+        *newWin = true;
+    tocH = GetRealTOC(origTocH, origSumNum, &sumNum);
+    if (!tocH || (*tocH)->count <= sumNum)
+        return (NULL);
+    if ((messH = (*tocH)->sums[sumNum].messH)) {
+        messWinWP = (GtkWidget *)GetMyWindowWindowPtr((*messH)->win);
+        if (newWin)
+            *newWin = false;
+        if (showIt) {
+            if (!gtk_widget_get_visible(messWinWP))
+                gtk_widget_set_visible(messWinWP, TRUE);
+            gtk_window_present(GTK_WINDOW(messWinWP));
+        }
+        win = (*messH)->win;
+    } else if ((*tocH)->which == OUT)
+        win = OpenComp(tocH, sumNum, winWP, win, showIt, false);
+#ifdef NEVER
+    else if (IsALink(tocH, sumNum))
+        win = OpenLink(tocH, sumNum, winWP, win, showIt);
+#endif
+    else
+#ifdef IMAP
+        win = OpenMessage(tocH, sumNum, winWP, win, showIt, false);
+#else
+        win = OpenMessage(tocH, sumNum, winWP, win, showIt);
+#endif
+    if (win) {
+        (*Win2MessH(win))->openedFromTocH = origTocH;
+        (*Win2MessH(win))->openedFromSerialNum =
+            (*origTocH)->sums[origSumNum].serialNum;
+    }
+    return (win);
+}
+
+/**********************************************************************
+ * OpenMessage - open a message in its own window
+ **********************************************************************/
+#ifdef IMAP
+MyWindowPtr OpenMessage(TOCHandle tocH, short sumNum, GtkWidget *winWP,
+                        MyWindowPtr win, bool showIt, bool preview)
+#else
+MyWindowPtr OpenMessage(TOCHandle tocH, short sumNum, GtkWidget *winWP,
+                        MyWindowPtr win, bool showIt)
+#endif
+{
+    MessHandle messH;
+    bool turvy = showIt;
+    char *text = NULL;
+    short ezOpenSum;
+    geditDocument *pdi; // Replace PETEDocInitInfo with geditDocument
+    int err;
+    long size;
+    long partial = GetRLong(PETE_NIBBLE) * 1024;
+    GtkWidget *TheBody;
+    GList *stack = NULL; // Use GList instead of StackHandle
+    bool useLizzie = false, disableButtons = false;
+
+    if (!(tocH = GetRealTOC(tocH, sumNum, &sumNum)))
+        return NULL;
+
+    if ((messH = (MessHandle)g_malloc0(sizeof(MessType))) == NULL)
+        return (NULL);
+
+    if (!win) {
+        win = (MyWindowPtr)g_malloc0(sizeof(MyWindow));
+        if (!win)
+            return NULL;
+        win->window = gtk_window_new();
+        win->pte = NULL;
+    }
+    if (!win) {
+        g_free(messH);
+        return (NULL);
+    }
+
+    winWP = (GtkWidget *)GetMyWindowWindowPtr(win);
+
+    (*tocH)->sums[sumNum].messH = messH;
+    (*messH)->win = win;
+    (*messH)->sumNum = sumNum;
+    (*messH)->tocH = tocH;
+    
+    /* apply FLAG_OUT ex post facto */
+    if ((*tocH)->sums[sumNum].state == SENT ||
+        (*tocH)->sums[sumNum].state == UNSENT)
+        (*tocH)->sums[sumNum].flags |= FLAG_OUT;
+
+    SetMyWindowPrivateData(win, (void *)messH);
+
+    if (MessOptIsSet(messH, OPT_WRITE))
+        ClearMessOpt(messH, OPT_WRITE);
+
+#ifdef IMAP
+    // Actually go fetch this message if we must
+    if ((*tocH)->imapTOC && !IMAPMessageDownloaded(tocH, sumNum)) {
+        // threading is off.  Download message now
+        if (PrefIsSet(PREF_THREADING_OFF) || !ThreadsAvailable()) {
+            if (EnsureMsgDownloaded(tocH, sumNum, true))
+                text = GetMessText(messH);
+        } else {
+            char scratch[256];
+            bool reallyGetIt = !preview || (!Offline && AutoCheckOK());
+
+            err = 0;
+            if (!IMAPMessageBeingDownloaded(tocH, sumNum) &&
+                !IMAPMessageDownloaded(tocH, sumNum) && reallyGetIt)
+                err = UIDDownloadMessage(tocH, (*tocH)->sums[sumNum].uidHash, false, false);
+            if (err)
+                goto Abort;
+
+            if (!reallyGetIt)
+                GetRString(scratch, IMAP_GETTING_MESSAGE_OFFLINE);
+            else
+                GetRString(scratch, IMAP_GETTING_MESSAGE);
+            text = g_strdup(scratch);
+            disableButtons = true;
+        }
+    } else
+#endif
+        text = GetMessText(messH);
+    useLizzie = false;
+
+    // Create gEditCtrl widget instead of Pete
+    win->pte = geditctrl_new();
+    if (!win->pte || !text)
+        goto Abort;
+    TheBody = win->pte;
+    
+    if (MessFlagIsSet(messH, FLAG_FIXED_WIDTH)) {
+        // Set fixed width font using modern GTK4 CSS
+        GtkCssProvider *provider = gtk_css_provider_new();
+        gtk_css_provider_load_from_string(provider, "textview { font-family: monospace; font-size: 12pt; }");
+        gtk_style_context_add_provider(gtk_widget_get_style_context(TheBody),
+                                       GTK_STYLE_PROVIDER(provider),
+                                       GTK_STYLE_PROVIDER_PRIORITY_APPLICATION);
+        g_object_unref(provider);
+    }
+
+    {
+        size = strlen(text);
+        if (!partial || size < partial) {
+            if (!MessFlagIsSet(messH, FLAG_SHOW_ALL) &&
+                (MessFlagIsSet(messH, FLAG_RICH)
+#ifndef OLDHTML
+                 || MessOptIsSet(messH, OPT_HTML)
+#endif
+                 || MessOptIsSet(messH, OPT_FLOW) ||
+                 MessOptIsSet(messH, OPT_CHARSET))) {
+                // Insert rich text using gEditCtrl
+                geditDocument *doc = geditctrl_get_document(TheBody);
+                gedit_document_insert_markup(doc, 0, text);
+                g_free(text);
+            } else {
+                // Insert plain text
+                geditDocument *doc = geditctrl_get_document(TheBody);
+                gedit_document_insert_text(doc, 0, text);
+            }
+            text = NULL;
+        } else {
+            // Insert partial text
+            char *partial_text = g_strndup(text, partial);
+            geditDocument *doc = geditctrl_get_document(TheBody);
+            gedit_document_insert_text(doc, 0, partial_text);
+            g_free(partial_text);
+        }
+    }
+    
+    if (err) {
+        if (err != -128) // userCancelled
+            WarnUser(PETE_ERR, err);
+    } else {
+        /* GTK Title setting */
+        {
+            char title[256];
+            MakeMessTitle(title, tocH, sumNum, false);
+            gtk_window_set_title(GTK_WINDOW(winWP), title);
+        }
+
+        if (showIt) {
+            ezOpenSum = EzOpenFind(tocH, sumNum);
+            if (ShowMyWindow(winWP)) {
+                return (NULL);
+            }
+
+            ShowMessageSeparator(TheBody, true);
+            PeteFocus(win, TheBody, true);
+
+            if (text && !useLizzie) {
+                // Insert remaining text
+                char *remaining_text = text + partial;
+                long remaining_size = size - partial;
+                if (remaining_size > 0) {
+                    char *remaining_str = g_strndup(remaining_text, remaining_size);
+                    geditDocument *doc = geditctrl_get_document(TheBody);
+                    gedit_document_insert_text(doc, gedit_document_get_length(doc), remaining_str);
+                    g_free(remaining_str);
+                }
+                g_free(text);
+                text = NULL;
+            }
+
+            if (!err && ezOpenSum >= 0) {
+                (*messH)->ezOpenSerialNum = (*tocH)->sums[ezOpenSum].serialNum;
+                CacheMessage(tocH, ezOpenSum);
+            }
+            if (disableButtons)
+                EnableMsgButtons(win, false);
+        }
+    }
+
+    if (err) {
+    Abort:
+        PeteCleanList(win->pte);
+        CloseMyWindow(winWP);
+        win = NULL;
+        if (text)
+            g_free(text);
+    }
+
+    return (win);
+}
+/**********************************************************************
+ * MessCurAddr - return the address most closely associated with this message
+ **********************************************************************/
+char *MessCurAddr(MyWindowPtr win, char *addr) {
+    MessHandle messH = Win2MessH(win);
+    extern char *CompCurAddr(MyWindowPtr win, char *addr);
+
+    *addr = 0;
+
+    if (messH) {
+        if (MessFlagIsSet(messH, FLAG_OUT))
+            CompCurAddr(win, addr);
+        else {
+            SuckHeaderText(messH, addr, 256, FROM_HEAD);
+            ShortAddr(addr, addr);
+        }
+    }
+
+    return *addr ? addr : NULL;
+}
+
+/**********************************************************************
+ * MakeMessTitle - make a reasonable message title from a summary
+ **********************************************************************/
+void MakeMessTitle(char *title, TOCHandle tocH, int sumNum, bool useSummary) {
+    char from[64], date[64], time[64], mailbox[64], subject[64];
+    char pattern[64];
+    char datetime[64];
+    long secs;
+    char zoneStr[32];
+    long zone;
+
+    // Use standard C string functions instead of PCopy
+    g_strlcpy(from, (*tocH)->sums[sumNum].from, sizeof(from));
+    if (useSummary)
+        from[MIN(strlen(from), (*BoxWidths)[blFrom - 1])] = '\0';
+
+    if (useSummary) {
+        if ((*BoxWidths)[blDate - 1] > 1) {
+            ComputeLocalDate((*tocH)->sums + sumNum, datetime);
+            datetime[MIN(strlen(datetime), (*BoxWidths)[blDate - 1])] = '\0';
+        } else
+            datetime[0] = '\0';
+    } else {
+        if ((secs = (*tocH)->sums[sumNum].seconds)) {
+            zone = PrefIsSet(PREF_LOCAL_DATE) ? ZoneSecs()
+                                              : 60 * (*tocH)->sums[sumNum].origZone;
+            secs += zone;
+            FormatZone(zoneStr, zone);
+            TimeString(secs, false, time, NULL);
+            DateString(secs, longDate, date, NULL);
+            utl_PlugParams(GetRString(pattern, DATE_SUM_FMT), datetime, date, time,
+                           zoneStr, "");
+        } else
+            datetime[0] = '\0';
+    }
+
+    GetMailboxName(tocH, sumNum, mailbox);
+    g_strlcpy(subject, (*tocH)->sums[sumNum].subj, sizeof(subject));
+
+    utl_PlugParams(GetRString(pattern, MESS_TITLE_PLUG), title, mailbox, from,
+                   datetime, subject);
+}
+
+/**********************************************************************
+ * EnsureFromHash - make sure a message has a from id
+ **********************************************************************/
+int EnsureFromHash(TOCHandle tocH, short sumNum) {
+    int err = noErr;
+    char scratch[256], shortAddr[256];
+    unsigned long addrHash;
+
+    if ((*tocH)->sums[sumNum].fromHash == kNeverHashed) {
+        if (!(err = CacheMessage(tocH, sumNum))) {
+            // No need for HNoPurge with standard malloc
+
+            strcpy(scratch, HeaderName(FROM_HEAD));
+            TrimWhite(scratch);
+            // TODO: Fix HandleHeadGetPStr call for proper header parsing
+            ShortAddr(shortAddr, scratch);
+            MyLowerStr(shortAddr);
+            addrHash = Hash(shortAddr);
+
+            // No need for HPurge with standard malloc
+
+            (*tocH)->sums[sumNum].fromHash = addrHash;
+            TOCSetDirty(tocH, true);
+        }
+    }
+    return (err);
+}
+
+/**********************************************************************
+ * CacheMessage - put a message into the cache
+ **********************************************************************/
+int CacheMessage(TOCHandle tocH, short sumNum) {
+    char *cache;
+    int err = noErr;
+
+    if (0 > sumNum || sumNum >= (*tocH)->count)
+        return (fnfErr);
+
+#ifdef IMAP
+    if ((*tocH)->sums[sumNum].offset < 0)
+        return (fnfErr);
+#endif
+
+    if ((*tocH)->sums[sumNum].cache) {
+        if ((*tocH)->sums[sumNum].cache)
+            return (noErr);
+        else
+            g_free((*tocH)->sums[sumNum].cache);
+    }
+
+    long messageLength = GetMessageLength(tocH, sumNum);
+    if ((cache = g_malloc(messageLength))) {
+        err = ReadMessage(tocH, sumNum, (unsigned char *)cache);
+        if (err)
+            g_free(cache);
+        else {
+            (*tocH)->sums[sumNum].cache = (void *)cache;
+            // Ensure message ends with CR
+            if (cache[messageLength - 1] != '\015') {
+                cache = g_realloc(cache, messageLength + 1);
+                cache[messageLength] = '\015';
+                (*tocH)->sums[sumNum].cache = (void *)cache;
+            }
+        }
+    } else
+        err = errno;
+
+    return (err);
+}
+
+/**********************************************************************
+ * GetMessText - put the text of a message
+ **********************************************************************/
+char *GetMessText(MessHandle messH) {
+    MyWindowPtr win = (*messH)->win;
+    TOCHandle tocH = (*messH)->tocH;
+    int sumNum = (*messH)->sumNum;
+    char *buffer = NULL;
+    long weeded;
+    short tableId;
+    char *table = NULL;
+    char *cache = NULL;
+    Accumulator weeds;
+
+    memset(&weeds, 0, sizeof(weeds));
+
+    if ((*tocH)->sums[sumNum].cache) {
+        cache = (char *)(*tocH)->sums[sumNum].cache;
+        // No need for HNoPurge in GTK/GLib
+    } else {
+        g_free((*tocH)->sums[sumNum].cache);
+        (*tocH)->sums[sumNum].cache = NULL;
+    }
+
+    long messageLength = GetMessageLength(tocH, sumNum);
+    if (messageLength > (GetRLong(PETE_NIBBLE) * 1024))
+        buffer = g_malloc(messageLength + 1);
+    else
+        buffer = g_malloc(messageLength + 1);
+    
+    if (buffer == NULL) {
+        if (!cache) {
+            WarnUser(NO_MESS_BUF, errno);
+            return (NULL);
+        }
+    }
+
+    if (cache) {
+        if (buffer) {
+            memcpy(buffer, cache, messageLength);
+            buffer[messageLength] = '\0';
+            // No need for HPurge in GTK/GLib
+        } else {
+            buffer = cache;
+            cache = NULL;
+            (*tocH)->sums[sumNum].cache = NULL;
+        }
+    } else {
+        if ((MessErr = ReadMessage(tocH, sumNum, (unsigned char *)buffer)))
+            goto failure;
+        buffer[messageLength] = '\0';
+
+        if ((cache = g_malloc(messageLength + 1))) {
+            memcpy(cache, buffer, messageLength);
+            cache[messageLength] = '\0';
+            (*tocH)->sums[sumNum].cache = (void *)cache;
+        }
+    }
+
+    if ((*tocH)->sums[sumNum].uidHash == kNeverHashed)
+        Rehash(tocH, sumNum, buffer);
+
+    if (!((*(*messH)->tocH)->sums[(*messH)->sumNum].flags & FLAG_SHOW_ALL)) {
+        WeedHeaders(buffer, &weeded, BadHeadStrn, &weeds);
+        (*messH)->weeded = weeded;
+        StripTrailingNewlines(buffer, 
+                              (*(*messH)->tocH)->sums[(*messH)->sumNum].bodyOffset - weeded + 1);
+    } else
+        (*messH)->weeded = 0;
+    WeedHeaders(buffer, &weeded, FROM_STRN, NULL);
+    (*messH)->weeded += weeded;
+    // AccuTrim(&weeds); // Implement if needed
+    (*messH)->extras = weeds;
+
+    tableId = (*tocH)->sums[sumNum].tableId;
+    if (tableId == DEFAULT_TABLE)
+        tableId = GetPrefLong(PREF_IN_XLATE);
+    if (tableId != NO_TABLE) {
+        // Handle character translation if needed
+        // This would need to be implemented based on requirements
+    }
+
+    return (buffer);
+
+failure:
+    if (buffer)
+        g_free(buffer);
+    return (NULL);
+}
+
+/**********************************************************************
+ * ReadMessage - read a given message into a preallocated buffer
+ **********************************************************************/
+int ReadMessage(TOCHandle tocH, int sumN, char *buffer) {
+    long count;
+    char name[64];
+    short sumNum;
+
+    tocH = GetRealTOC(tocH, sumN, &sumNum);
+    if (!tocH)
+        return fnfErr;
+    GetMailboxName(tocH, sumNum, name);
+    count = (*tocH)->sums[sumNum].length;
+
+    if (!(MessErr = BoxFOpenLo(tocH, sumNum)))
+        if ((MessErr = SetFPos((*tocH)->refN, fsFromStart,
+                               (*tocH)->sums[sumNum].offset)) ||
+            (MessErr = ARead((*tocH)->refN, &count, buffer)))
+            FileSystemError(READ_MBOX, name, MessErr);
+
+    return (MessErr);
+}
+
+/**********************************************************************
+ * MessageError - return the most recent error code from these functions
+ **********************************************************************/
+int MessageError(void) { 
+    return (MessErr); 
+}
+
+/**********************************************************************
+ * StripTrailingNewlines - strip the newlines off the end of a text block
+ **********************************************************************/
+long StripTrailingNewlines(char *buffer, long stop) {
+    long size = strlen(buffer);
+    char *spot = buffer + size;
+    long newSize;
+
+    while (spot > buffer + stop && spot[-1] == '\015')
+        spot--;
+    newSize = spot - buffer;
+    buffer[newSize] = '\0';
+    return (size - newSize);
+}
+
+/**********************************************************************
+ * SetMessText - stick some text into one of the fields of a message
+ **********************************************************************/
+int SetMessText(MessHandle messH, short whichTXE, char *string, long size) {
+    // Stub implementation - needs proper header handling
+    return noErr;
+}
+
+/**********************************************************************
+ * AppendMessText - stick some text after one of the fields of a message
+ **********************************************************************/
+int AppendMessText(MessHandle messH, short whichTXE, char *string, long size) {
+    // Stub implementation - needs proper header handling
+    return noErr;
+}
+
+/**********************************************************************
+ * FindHeaderString - pick the given header out of a message, by name
+ **********************************************************************/
+char *FindHeaderString(char *text, char *headerName, long *size, bool bodyToo) {
+    char *spot, *end, *colon;
+    char header[256];
+    short mLen = MIN(255, strlen(headerName));
+
+    for (end = text + *size; text < end; text = spot + 1) {
+        for (spot = text; spot < end; spot++)
+            if (*spot == '\015' && (spot == end - 1 || !IsWhite(spot[1])))
+                break;
+        if (spot == text && !bodyToo)
+            break;
+        int headerLen = MIN(mLen, end - text);
+        strncpy(header, text, headerLen);
+        header[headerLen] = '\0';
+        
+        if (strncasecmp(header, headerName, strlen(headerName)) == 0) {
+            text += strlen(headerName);
+            while (IsWhite(*text))
+                text++;
+            for (spot--; IsWhite(*spot); spot--)
+                ;
+            *size = MAX(0, spot - text + 1);
+            return (text);
+        }
+    }
+    return (NULL);
+}

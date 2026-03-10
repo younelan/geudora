@@ -3,7 +3,7 @@ SRCS = imap4r1.c mail.c misc.c netmsg.c rfc822.c smanager.c os_unix.c
 OBJS = $(SRCS:.c=.o)
 LIB = libc-client.a
 
-CFLAGS = -std=gnu89 -O2 -IInclude -I../include
+CFLAGS = -std=gnu89 -O2 -IInclude -I../include -DIMAP $(shell pkg-config --cflags gtk4)
 
 all: $(LIB)
 

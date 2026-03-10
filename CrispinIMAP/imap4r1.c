@@ -2323,7 +2323,7 @@ void imap_parse_flags(MAILSTREAM *stream, MESSAGECACHE *elt, char **txtptr) {
     // write the line to the spool file
     if (count) {
       AWrite(stream->flagsRefN, &count, *txtptr);
-      FSWriteP(stream->flagsRefN, Cr);
+      FSWriteP(stream->flagsRefN, (unsigned char *)"\p\r");
     }
   }
 #endif

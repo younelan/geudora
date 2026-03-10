@@ -1,0 +1,157 @@
+/*
+ * TOC (Table of Contents) Management for gEudora
+ * Portable C implementation for GTK4 - Legacy Handle Compatible
+ */
+
+#include "toc.h"
+#include <glib.h>
+#include <stdio.h>
+#include <stdlib.h>
+#include <string.h>
+
+/* Helper to allocate TOCHandle */
+static TOCHandle NewTOCHandle(size_t size) {
+  TOCType *ptr = g_malloc0(size);
+  TOCHandle h = g_malloc0(sizeof(TOCType *));
+  *h = ptr;
+  return h;
+}
+
+/* Helper to resize TOCHandle */
+static void ResizeTOCHandle(TOCHandle tocH, size_t new_size) {
+  if (!tocH)
+    return;
+  *tocH = g_realloc(*tocH, new_size);
+}
+
+/* Create a new TOC structure */
+TOCHandle toc_create(const char *mailbox_path) {
+  if (!mailbox_path)
+    return NULL;
+
+  /* Initial capacity: 100 messages */
+  size_t initial_capacity = 100;
+  size_t size = sizeof(TOCType) + (initial_capacity * sizeof(MessageSummary));
+
+  TOCHandle toc = NewTOCHandle(size);
+
+  strncpy((*toc)->path, mailbox_path, PATH_MAX - 1);
+  (*toc)->path[PATH_MAX - 1] = '\0';
+  (*toc)->count = 0;
+  (*toc)->dirty = true;
+  (*toc)->durty = true;
+
+  /* Initialize magic for updateID to indicate capacity?
+     Legacy code often used these fields differently.
+     For now, we just rely on reallocating when adding.
+  */
+
+  return toc;
+}
+
+/* Load TOC from disk - Stub for now */
+TOCHandle toc_load(const char *mailbox_path) {
+  /* Simply create an empty one for the stub logic,
+     real loading needs legacy format parsing */
+  TOCHandle toc = toc_create(mailbox_path);
+  /* Add some dummy messages for UI testing if needed */
+  return toc;
+}
+
+/* Save TOC to disk */
+int toc_save(TOCHandle toc) {
+  if (!toc || !*toc)
+    return -1;
+  (*toc)->dirty = false;
+  (*toc)->durty = false;
+  return 0;
+}
+
+/* Free TOC structure */
+void toc_free(TOCHandle toc) {
+  if (!toc)
+    return;
+  if (*toc)
+    g_free(*toc);
+  g_free(toc);
+}
+
+/* Add a message to TOC */
+int toc_add_message(TOCHandle toc, const MessageSummary *msg) {
+  if (!toc || !*toc || !msg)
+    return -1;
+
+  /* Naive reallocation logic - in real legacy code this is more complex */
+  short current_count = (*toc)->count;
+  /* Resize to fit one more + buffer (inefficient realloc every time for now) */
+  size_t new_size =
+      sizeof(TOCType) + ((current_count + 1) * sizeof(MessageSummary));
+  ResizeTOCHandle(toc, new_size);
+
+  memcpy(&(*toc)->sums[current_count], msg, sizeof(MessageSummary));
+  (*toc)->count++;
+  (*toc)->dirty = true;
+
+  return (*toc)->count - 1;
+}
+
+/* Get message summaries array */
+MessageSummary *toc_get_summaries(TOCHandle toc, int *count) {
+  if (!toc || !*toc) {
+    if (count)
+      *count = 0;
+    return NULL;
+  }
+  if (count)
+    *count = (*toc)->count;
+  return (*toc)->sums;
+}
+
+/* Get message from TOC */
+MessageSummary *toc_get_message(TOCHandle toc, uint32_t index) {
+  if (!toc || !*toc || index >= (uint32_t)(*toc)->count)
+    return NULL;
+  return &(*toc)->sums[index];
+}
+
+/* Get message count */
+uint32_t toc_get_message_count(TOCHandle toc) {
+  if (!toc || !*toc)
+    return 0;
+  return (uint32_t)(*toc)->count;
+}
+
+/* Get unread message count */
+int toc_get_unread_count(TOCHandle toc) {
+  if (!toc || !*toc)
+    return 0;
+
+  int count = 0;
+  for (int i = 0; i < (*toc)->count; i++) {
+    if (!((*toc)->sums[i].flags & FLAG_READ)) {
+      count++;
+    }
+  }
+  return count;
+}
+
+/* Legacy stubs */
+long GetMessageLength(TOCHandle tocH, short sumNum) { return 0; }
+OSErr ReadMessage(TOCHandle tocH, int sumNum, unsigned char * buffer) { return 0; }
+short EzOpenFind(TOCHandle tocH, short sumNum) { return -1; }
+TOCHandle GetRealTOC(TOCHandle tocH, short sumNum, short *realSumNum) {
+  return tocH;
+}
+void TOCSetDirty(TOCHandle tocH, bool dirty) {
+  if (tocH && *tocH)
+    (*tocH)->durty = dirty;
+}
+void GetMailboxName(TOCHandle tocH, int sumNum, unsigned char * name) {
+  if (tocH && *tocH)
+    strcpy((char *)name, (*tocH)->path);
+}
+int toc_flush_all(void) { return 0; }
+void toc_cleanse(TOCHandle toc) {}
+int toc_remove_message(TOCHandle toc, uint32_t index) { return 0; }
+bool toc_has_unread(TOCHandle toc) { return toc_get_unread_count(toc) > 0; }
+int toc_get_mailbox_type(const char *mailbox_path) { return 0; }

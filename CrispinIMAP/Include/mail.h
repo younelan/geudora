@@ -841,10 +841,10 @@ struct mail_stream {
   short flagsRefN; // refNum of file to save flags to.
 
   // ALERT status responses
-  Str255 alertStr; // string containing text returned from the IMAP server in an
-                   // ALERT response.
+  char alertStr[256]; // string containing text returned from the IMAP server in an
+                      // ALERT response.
 
-  Accumulator UIDPLUSResponse; // uids returned in a UIDPLUS response
+  IMAPAccumulator UIDPLUSResponse; // uids returned in a UIDPLUS response
   long UIDPLUSuv; // the uidvalidity noted during a series of UIDPLUS responses.
                   // if this changes before messages are transferred, the
                   // responses are discarded.

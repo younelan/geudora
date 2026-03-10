@@ -65,7 +65,9 @@ ADVISED OF THE POSSIBILITY OF SUCH DAMAGE. */
 #include "misc.h"
 #include "osdep.h"
 #include "rfc822.h"
+#include <ctype.h>
 #include <time.h>
+#include <unistd.h>
 
 /* allow ucase(NULL) */
 #define ucase MyUpperCase
@@ -278,7 +280,7 @@ void *mail_parameters(MAILSTREAM *stream, long function, void *value) {
     if (stream)
       ret = (void *)stream->mailgets;
     else
-      ret = nil;
+      ret = NIL;
     break;
 
   case SET_READPROGRESS:
@@ -701,7 +703,7 @@ bool mail_fetch_flags(MAILSTREAM *stream, char *sequence, long flags) {
 bool mail_fetch_overview(MAILSTREAM *stream, char *sequence, overview_t ofn) {
 
   // JOK - This should be re-written to go get the info from IMAP.
-  return FALSE;
+  return false;
 }
 
 /* Mail fetch message structure
@@ -3189,8 +3191,8 @@ void mail_free_body_data(IMAPBODY *body) {
     body->description = NULL;
   }
   if (body->disposition.type) {
-    free(body->disposition);
-    body->disposition = NULL;
+    free(body->disposition.type);
+    body->disposition.type = NULL;
   }
   if (body->disposition.parameter)
     mail_free_body_parameter(&body->disposition.parameter);
@@ -3492,14 +3494,7 @@ AUTHENTICATOR *mail_lookup_auth(unsigned long i) {
 unsigned int mail_lookup_auth_name(char *mechanism) {
   char tmp[MAILTMPLEN];
   int i, index;
-  AUTHENTICATOR *auth = *mailauthenticators;
-  Str31 service;
-  Str31 mechStr;
-
-  GetRString(service, KERBEROS_IMAP_SERVICE);
-  CtoPCpy(mechStr, mechanism);
-  if (!SASLFind(service, mechStr, 0))
-    return 0; // This checks the SASL_DONT string
+  AUTHENTICATOR *auth;
 
   /* make upper case copy of mechanism name */
   ucase(strcpy(tmp, mechanism));
@@ -3511,7 +3506,7 @@ unsigned int mail_lookup_auth_name(char *mechanism) {
     if (!auth)
       break;
     if (!strcmp(auth->name, tmp)) {
-      if (auth == &gssapi && (!PrefIsSet(PREF_KERBEROS) || !gss_import_name))
+      if (auth == &gssapi && !PrefIsSet(PREF_KERBEROS))
         continue;
       index = i + 1;
       break;
@@ -3535,59 +3530,42 @@ unsigned int mail_lookup_auth_name(char *mechanism) {
 
 long net_getbuffer(void *st, unsigned long size, char *buffer) {
   TransStream stream = st;
-  OSErr err = noErr;
-  long count = size;
+  int err = 0;
+  long count;
   char *scan;
-  long RcvBufferSize;
   long chunk = 0;
 
-  //
-  // first grab characters out of the receive buffer
-  //
-
-  // if there is a RcvBuffer with something in it ...
-  if ((stream->RcvBuffer) && (*stream->RcvBuffer) &&
-      (RcvBufferSize = GetHandleSize_(stream->RcvBuffer))) {
-    // and there are some buffered characters ...
-    if (stream->RcvSpot >= 0) {
-      chunk = MIN(size, (stream->RcvSize - stream->RcvSpot));
-      BMD((*(stream->RcvBuffer) + stream->RcvSpot), buffer, chunk);
-      stream->RcvSpot += chunk;
-
-      if (stream->RcvSpot >= stream->RcvSize) {
-        stream->RcvSize = 0;
-        stream->RcvSpot = -1;
-      }
-
-      // filled our buffer?
-      if (chunk == size) {
-        buffer[size] = nil;
-        return (true);
-      }
+  /* drain any pre-buffered receive data first */
+  if (stream->RcvBuffer && stream->RcvSize > 0 && stream->RcvSpot >= 0) {
+    chunk = MIN((long)size, (long)(stream->RcvSize - stream->RcvSpot));
+    memcpy(buffer, stream->RcvBuffer + stream->RcvSpot, chunk);
+    stream->RcvSpot += chunk;
+    if (stream->RcvSpot >= stream->RcvSize) {
+      stream->RcvSize = 0;
+      stream->RcvSpot = -1;
+    }
+    if ((unsigned long)chunk == size) {
+      buffer[size] = '\0';
+      return 1;
     }
   }
 
-  //
-  // now grab characters off the network until the buffer is filled.
-  //
-
-  // start filling the buffer where we left off ...
-  scan = buffer + chunk;
-  chunk = size - chunk;
-
-  // receive characters until we're full, or we encoutner some error
-  while (chunk > 0) {
-    count = chunk;
-    err = RecvTrans(stream, scan, &count);
-    if (err == noErr) {
-      scan = scan + count;
-      chunk -= count;
-    } else
+  /* read from network until the buffer is full */
+  scan  = buffer + chunk;
+  count = (long)size - chunk;
+  while (count > 0) {
+    long n = count;
+    err = RecvTrans(stream, (unsigned char *)scan, &n);
+    if (err == 0) {
+      scan  += n;
+      count -= n;
+    } else {
       break;
+    }
   }
-  *scan = nil; // null terminate buffer
+  *scan = '\0';
 
-  return (err == noErr);
+  return (err == 0);
 }
 
 /* Network send null-terminated string
@@ -3597,7 +3575,7 @@ long net_getbuffer(void *st, unsigned long size, char *buffer) {
  */
 
 long net_soutr(TransStream stream, char *string) {
-  return (SendTrans(stream, string, strlen(string), nil) ? nil : true);
+  return (SendTrans(stream, (unsigned char *)string, strlen(string), NULL) ? NIL : T);
 }
 
 /* Network close
@@ -3605,8 +3583,7 @@ long net_soutr(TransStream stream, char *string) {
  */
 
 void net_close(TransStream stream) {
-  DestroyTrans(stream);    // destroy the connection
-  ZapTransStream(&stream); // kill the transstream completely
+  ZapTransStream(&stream);
 }
 
 /* Network get local host name
@@ -3614,7 +3591,7 @@ void net_close(TransStream stream) {
  * Returns: local host name
  */
 
-char *net_localhost(TransStream stream) { return (stream->localHostName); }
+char *net_localhost(TransStream stream) { return (char *)(stream->localHostName); }
 
 /* Network send string
  * Accepts: Network stream
@@ -3624,8 +3601,7 @@ char *net_localhost(TransStream stream) { return (stream->localHostName); }
  */
 
 long net_sout(TransStream stream, char *string, unsigned long size) {
-  return (SendTrans(stream, string, size, nil) ? false : true);
-  ;
+  return (SendTrans(stream, (unsigned char *)string, size, NULL) ? NIL : T);
 }
 
 /* Network receive line
@@ -3634,60 +3610,49 @@ long net_sout(TransStream stream, char *string, unsigned long size) {
  * Crispin's code wants everything back in a single char*.
  */
 char *net_getline(TransStream stream) {
-  Handle received = nil;
-  char scratch[256];
-  long scratchSize;
-  OSErr err = noErr;
-  char *linePtr = 0;
-  long lineSize = 0;
-  char *line = 0;
-  bool data = true;
+  char *line = NULL;
+  size_t lineSize = 0;
+  char ch;
+  long n;
+  int err = 0;
 
-  while (data && (scratchSize = sizeof(scratch)) &&
-         ((err = RecvLine(stream, scratch, &scratchSize)) == noErr)) {
-    if (!received) {
-      received = NuHandle(MAX(stream->RcvSize, scratchSize));
-      if (!received || (err = MemError()))
-        return (NULL);
-      LDRef(received);
-      linePtr = *received;
-    } else {
-      UL(received);
-      if (GetHandleSize_(received) <= (lineSize + scratchSize)) {
-        SetHandleSize(received, lineSize + scratchSize);
-        // make sure we were able to size our buffer bigger before we go write
-        // to it.
-        if (err = MemError()) {
-          ZapHandle(received);
-          return (NULL);
-        }
-      }
-      LDRef(received);
-
-      linePtr = *received + lineSize;
+  /* read byte-by-byte until \r (or \r\n) — lines in IMAP are short */
+  while (1) {
+    n = 1;
+    err = RecvTrans(stream, (unsigned char *)&ch, &n);
+    if (err != 0 || n == 0)
+      break;
+    if (ch == '\r') {
+      /* consume optional trailing \n */
+      unsigned char lf;
+      n = 1;
+      RecvTrans(stream, &lf, &n);
+      break;
     }
-
-    BMD(scratch, linePtr, scratchSize);
-    lineSize += scratchSize;
-
-    // overwrite the last character, which is a \r
-    if ((*received)[lineSize - 1] == '\r') {
-      (*received)[lineSize - 1] = nil;
-      data = false; // finished receiving a line
+    /* grow buffer */
+    char *tmp = (char *)realloc(line, lineSize + 2);
+    if (!tmp) {
+      free(line);
+      return NULL;
     }
-  }
-  if (received)
-    UL(received);
-
-  if (err == noErr) {
-    line = NuPtrClear(GetHandleSize(received));
-    if (((err = MemError()) == noErr) && line && GetPtrSize(line)) {
-      BMD(*received, line, GetPtrSize(line));
-    }
-    ZapHandle(received);
+    line = tmp;
+    line[lineSize++] = ch;
+    line[lineSize] = '\0';
   }
 
-  return (line);
+  /* on error with no data return NULL */
+  if (err != 0 && lineSize == 0) {
+    free(line);
+    return NULL;
+  }
+
+  /* return empty string (not NULL) if we got a bare \r\n line */
+  if (!line) {
+    line = (char *)malloc(1);
+    if (line) line[0] = '\0';
+  }
+
+  return line;
 }
 
 /* Mail validate network mailbox name
@@ -3699,13 +3664,8 @@ char *net_getline(TransStream stream) {
 long mail_valid_net_parse(char *name, NETMBX *mb) {
   short i;
   char c, *s, *t, *v;
-  Str255 pInbox, cInbox;
 
-  // initialize structure
-  mb->port = 0;
-  *mb->host = *mb->user = *mb->mailbox = *mb->service = NULL;
-  // initialize flags
-  mb->anoflag = mb->dbgflag = NULL;
+  memset(mb, 0, sizeof(*mb));
 
   // have host specification?
   if (!(*name == '{' && (t = strchr(s = name + 1, '}')) && (i = t - s) &&
@@ -3714,7 +3674,7 @@ long mail_valid_net_parse(char *name, NETMBX *mb) {
 
   // set host name
   strncpy(mb->host, s, i);
-  mb->host[i] = NULL;
+  mb->host[i] = '\0';
 
   // set mailbox name
   strcpy(mb->mailbox, t + 1);
@@ -3722,7 +3682,7 @@ long mail_valid_net_parse(char *name, NETMBX *mb) {
   // any switches or port specification?
   if (t = strpbrk(mb->host, "/:")) {
     c = *t; // yes, remember delimiter
-    *t++ = NULL;
+    *t++ = '\0';
     do
       switch (c) // act based upon the character
       {
@@ -3736,7 +3696,7 @@ long mail_valid_net_parse(char *name, NETMBX *mb) {
         if (t = strpbrk(s = t, "/:=")) // find delimiter
         {
           c = *t;
-          *t++ = NULL;
+          *t++ = '\0';
         } else
           c = '\0'; // no delimiter
 
@@ -3745,9 +3705,9 @@ long mail_valid_net_parse(char *name, NETMBX *mb) {
         {
           if (t = strpbrk(v = t, "/:")) {
             c = *t; // remember delimiter for later */
-            *t++ = NULL;
+            *t++ = '\0';
           } else
-            c = NULL;    // no delimiter
+            c = '\0';    // no delimiter
           i = strlen(v); // length of argument
           if (!strcmp(s, "service") && (i < NETMAXSRV)) {
             if (*mb->service)
@@ -3787,10 +3747,8 @@ long mail_valid_net_parse(char *name, NETMBX *mb) {
   }
 
   // default mailbox name
-  GetRString(pInbox, IMAP_INBOX_NAME);
-  PtoCcpy(cInbox, pInbox);
   if (!*mb->mailbox)
-    strcpy(mb->mailbox, cInbox);
+    strcpy(mb->mailbox, "INBOX");
 
   // default service name
   if (!*mb->service)
@@ -3807,40 +3765,36 @@ long mail_valid_net_parse(char *name, NETMBX *mb) {
 TransStream net_open(MAILSTREAM *stream, char *cHost, char *service,
                      unsigned long prt) {
   TransStream imapStream;
-  Str255 scratch;
-  Str255 host;
-  OSErr err = noErr;
+  char host[256];
   char *s;
 
-  // the host we were passed came from is a char *.  Convert it to a p string
-  host[0] = MIN(strlen(cHost), 255);
-  BlockMoveData(cHost, &host[1], host[0]);
+  strncpy(host, cHost, sizeof(host) - 1);
+  host[sizeof(host) - 1] = '\0';
 
-  if (NewTransStream(&imapStream) == noErr) {
-    // port number specified?
-    host[host[0] + 1] = 0;
-    if (s = PPtrFindSub("\p:", host, *host)) {
-      host[0] = s - host - 1;
-      *s++ = '\0'; // yes, tie off port
-
-      prt = strtoul(s, &s, 10); // parse port
-      if (s && *s)
+  if (NewTransStream(&imapStream) == 0) {
+    /* strip optional ":port" from host if present */
+    if ((s = strchr(host, ':'))) {
+      *s++ = '\0';
+      prt = strtoul(s, &s, 10);
+      if (s && *s) {
+        ZapTransStream(&imapStream);
         return NIL;
+      }
     }
 
     imapStream->ESSLSetting = GetPrefLong(PREF_SSL_IMAP_SETTING);
-    // Open a connection to the server
-    if (ConnectTrans(imapStream, host, prt, false, GetRLong(OPEN_TIMEOUT)) ==
-        noErr) {
+    if (ConnectTrans(imapStream, (unsigned char *)host, (long)prt, 0,
+                     (unsigned long)GetRLong(OPEN_TIMEOUT)) == 0) {
       imapStream->port = prt;
-      PtoCcpy(imapStream->serverName, host);
-      WhoAmI(imapStream, scratch);
-      PtoCcpy(imapStream->localHostName, scratch);
-      stream->bConnected = TRUE;
+      strncpy((char *)imapStream->serverName, host,
+              sizeof(imapStream->serverName) - 1);
+      gethostname((char *)imapStream->localHostName,
+                  sizeof(imapStream->localHostName) - 1);
+      stream->bConnected = true;
       stream->transStream = imapStream;
     } else {
-      stream->errorred = true; // we just displayed a network error message
-      stream->bConnected = FALSE;
+      stream->errorred = true;
+      stream->bConnected = false;
       ZapTransStream(&imapStream);
     }
   }
@@ -3925,7 +3879,7 @@ void *tcp_parameters(long function, void *value) {
     break;
 
   case GET_TIMEOUT:
-    value = nil;
+    value = NULL;
     break;
 
   case SET_OPENTIMEOUT:
@@ -3960,7 +3914,7 @@ void *tcp_parameters(long function, void *value) {
     break;
 
   default:
-    value = NIL; /* error case */
+    value = NULL;
     break;
   }
   return value;
@@ -3982,8 +3936,7 @@ unsigned long net_port(TransStream stream) {
  */
 
 char *net_host(TransStream stream) {
-  // Return the host name.
-  return (stream->serverName);
+  return (char *)(stream->serverName);
 }
 
 // JDB
@@ -4006,34 +3959,35 @@ OSErr mail_new_stream(MAILSTREAM **stream, unsigned char *host,
   if (*stream = (MAILSTREAM *)malloc(sizeof(MAILSTREAM)))
     memset(*stream, 0, sizeof(MAILSTREAM));
   else
-    return (MemError());
+    return errIMAPNoServer;
 
   if (*stream) {
     // Set driver to be imap.  Left over from Crispin code.
     (*stream)->dtb = &imapdriver;
 
-    // Set host.
-    PSCopy((*stream)->pHost, host);
+    // Set host (C string).
+    strncpy((char *)(*stream)->pHost, (char *)host, NETMAXHOST);
+    (*stream)->pHost[NETMAXHOST] = '\0';
 
     // set port.
     if (port)
       (*stream)->port = *port;
 
     // Not yet connected, authenticated or selected.
-    (*stream)->bConnected = FALSE;
-    (*stream)->bAuthenticated = FALSE;
-    (*stream)->bSelected = FALSE;
+    (*stream)->bConnected = false;
+    (*stream)->bAuthenticated = false;
+    (*stream)->bSelected = false;
 
     // set list result handle to 0
-    (*stream)->fListResultsHandle = nil;
+    (*stream)->fListResultsHandle = NULL;
     (*stream)->fIncludeInbox = false;
     (*stream)->fProgress = false;
 
     // set the flag result handle to 0
-    (*stream)->fUIDResults = nil;
+    (*stream)->fUIDResults = NULL;
 
     // set the network traffic data handle to 0
-    (*stream)->fNetData = nil;
+    (*stream)->fNetData = NULL;
     (*stream)->chunkHeaders = false;
     (*stream)->headerUID = 0;
 
@@ -4141,11 +4095,11 @@ long imapmail_valid_net_parse(MAILSTREAM *stream, NETMBX *mb) {
   mb->anoflag = mb->dbgflag = NIL;
 
   /* have host specification in stream? */
-  if (stream->pHost) {
-    if (stream->pHost[0] > NETMAXHOST)
+  if (stream->pHost[0]) {
+    if (strlen((char *)stream->pHost) > NETMAXHOST)
       return NIL;
     else
-      PtoCcpy(mb->host, stream->pHost); /* set host name */
+      strncpy(mb->host, (char *)stream->pHost, NETMAXHOST);
   }
 
   /* have port specification in stream? */
@@ -4158,21 +4112,21 @@ long imapmail_valid_net_parse(MAILSTREAM *stream, NETMBX *mb) {
     if (strlen(stream->mailbox) > NETMAXMBX)
       return NIL;
     else
-      strcpy(mb->mailbox, stream->mailbox); /* set host name */
+      strcpy(mb->mailbox, stream->mailbox); /* set mailbox name */
   }
 
   // If name is anonymous, set anoflag.
-  if (strcmp(mb->mailbox, "\panonymous") == 0)
+  if (strcmp(mb->mailbox, "anonymous") == 0)
     mb->anoflag = T;
 
   /* default mailbox name */
   if (!*mb->mailbox)
-    strcpy(mb->mailbox, "\pINBOX");
+    strcpy(mb->mailbox, "INBOX");
 
   /* Always IMAP. */
   strcpy(mb->service, "imap");
 
-  return true;
+  return T;
 }
 
 // this was in the source JOK is using.
@@ -4196,28 +4150,28 @@ unsigned long mail_fetch_rfc822size(MAILSTREAM *stream, unsigned long msgno,
 // Callback to read data from a string.
 // st is a pointer to a "ParenStrData" data structure.
 //
-bool str_getbuffer(void *st, unsigned long size, char *buffer) {
+long str_getbuffer(void *st, unsigned long size, char *buffer) {
   ParenStrData *pStr = (ParenStrData *)st;
   unsigned long len;
 
   // Must have a ParenStrData structure.
   if (!pStr)
-    return false;
+    return NIL;
 
   // Must have a buffer.
   if (!buffer)
-    return false;
+    return NIL;
 
   // Must have a string pointer.
   if (!pStr->s)
-    return false;
+    return NIL;
 
   // Initialize this:
   *buffer = 0;
 
   // Internal size must be positive.
   if (pStr->size == 0)
-    return true;
+    return T;
 
   len = min(pStr->size, size);
 
@@ -4230,7 +4184,7 @@ bool str_getbuffer(void *st, unsigned long size, char *buffer) {
   pStr->s += len;
   pStr->size -= len;
 
-  return true;
+  return T;
 }
 
 // MyUpperCase

@@ -151,30 +151,18 @@ unsigned long strcrlflen(STRING *s) {
 #include "auth_log.c"
 
 /* Eudora-specific stubs for library compatibility */
-int RunType = 0;
+short RunType = 0;
 
 void DebugStr(unsigned char *s) {}
-unsigned char *ComposeString(unsigned char *dst, const char *fmt, ...) {
-  return dst;
-}
-char *GetRString(void *dst, int id) {
-  if (dst)
-    ((char *)dst)[0] = '\0';
-  return (char *)dst;
-}
+/* ComposeString is implemented in stringutil.c */
 
-long GetPrefLong(int id) { return 0; }
-long GetRLong(int id) { return 0; }
-void ComposeStdAlert(int type, int id) {}
+extern long GetPrefLong(short id);
+extern long GetRLong(int id);
 
-void DisposeHandle(Handle h) {}
-void DisposeMailboxTree(void *tree) {}
-void UID_LL_Zap(void *list) {}
+extern void DisposeHandle(Handle h);
 
-void AWrite(short refNum, long *count, void *buffer) {}
-void FSWriteP(short refNum, unsigned char *str) {}
-unsigned char *Cr = (unsigned char *)"\r";
+/* GetRString, FSWriteP, pstrincmp, Cr, UID_LL_Zap, and SaveMinimalHeader
+ * have real implementations in main Eudora source - not stubbed here.
+ * CramMD5Authenticator, KrbV4Authenticator, GssapiAuthenticator
+ * are implemented in src/imapauth.c and linked from the main binary. */
 
-int pstrincmp(unsigned char *s1, const char *s2, int n) {
-  return strncmp((char *)s1 + 1, s2, n);
-}

@@ -65,6 +65,8 @@ DAMAGE. */
 #include "osdep.h"
 #include "rfc822.h"
 #include "misc.h"
+#include "nl.h"
+#include <ctype.h>
 
 /* RFC-822 static data */
 

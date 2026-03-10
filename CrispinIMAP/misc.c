@@ -65,6 +65,7 @@ DAMAGE. */
 #include "mail.h"
 #include "osdep.h"
 #include "misc.h"
+#include <ctype.h>
 
 
 /* Convert string to all uppercase
