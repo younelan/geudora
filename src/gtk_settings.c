@@ -73,8 +73,7 @@ static void sync_all_pages(SettingsDialog *dialog)
             break;
 
         case SETTINGS_CHECKING_MAIL:
-            GET_TEXT("cm-user", pop_username);
-            GET_TEXT("cm-server", pop_server);
+            /* pop_username and pop_server are synced from Getting Started page */
             GET_CHECK("cm-pop", use_pop);
             GET_CHECK("cm-imap", use_imap);
             GET_CHECK("cm-pwd", use_passwords);
@@ -90,9 +89,8 @@ static void sync_all_pages(SettingsDialog *dialog)
             break;
 
         case SETTINGS_SENDING_MAIL:
-            GET_TEXT("sm-email", email_address);
+            /* email_address and smtp_server are synced from Getting Started page */
             GET_TEXT("sm-domain", default_domain);
-            GET_TEXT("sm-smtp", smtp_server);
             GET_CHECK("sm-subport", use_submission_port);
             GET_CHECK("sm-smtpauth", allow_smtp_auth);
             GET_CHECK("sm-immediate", send_immediately);
@@ -450,6 +448,46 @@ SettingsDialog* create_settings_dialog(GtkWindow *parent, AppSettings *settings)
         gtk_widget_set_vexpand(scroll, TRUE);
         gtk_box_append(GTK_BOX(dialog->content_area), scroll);
         dialog->section_widgets[i] = scroll;
+    }
+
+    /* Share GtkEntryBuffers between Getting Started and Checking/Sending pages
+       so editing in either place keeps both in sync automatically. */
+    {
+        /* Helper to unwrap scrolled-window → viewport → page */
+        #define UNWRAP_PAGE(idx) ({ \
+            GtkWidget *_s = dialog->section_widgets[idx]; \
+            GtkWidget *_p = gtk_scrolled_window_get_child(GTK_SCROLLED_WINDOW(_s)); \
+            if (_p && GTK_IS_VIEWPORT(_p)) _p = gtk_viewport_get_child(GTK_VIEWPORT(_p)); \
+            _p; \
+        })
+        GtkWidget *gs_page = UNWRAP_PAGE(SETTINGS_GETTING_STARTED);
+        GtkWidget *cm_page = UNWRAP_PAGE(SETTINGS_CHECKING_MAIL);
+        GtkWidget *sm_page = UNWRAP_PAGE(SETTINGS_SENDING_MAIL);
+        #undef UNWRAP_PAGE
+
+        /* Share pop_username buffer: gs-user ↔ cm-user */
+        GtkWidget *gs_user = g_object_get_data(G_OBJECT(gs_page), "gs-user");
+        GtkWidget *cm_user = g_object_get_data(G_OBJECT(cm_page), "cm-user");
+        if (gs_user && cm_user)
+            gtk_entry_set_buffer(GTK_ENTRY(cm_user), gtk_entry_get_buffer(GTK_ENTRY(gs_user)));
+
+        /* Share pop_server buffer: gs-server ↔ cm-server */
+        GtkWidget *gs_server = g_object_get_data(G_OBJECT(gs_page), "gs-server");
+        GtkWidget *cm_server = g_object_get_data(G_OBJECT(cm_page), "cm-server");
+        if (gs_server && cm_server)
+            gtk_entry_set_buffer(GTK_ENTRY(cm_server), gtk_entry_get_buffer(GTK_ENTRY(gs_server)));
+
+        /* Share email_address buffer: gs-email ↔ sm-email */
+        GtkWidget *gs_email = g_object_get_data(G_OBJECT(gs_page), "gs-email");
+        GtkWidget *sm_email = g_object_get_data(G_OBJECT(sm_page), "sm-email");
+        if (gs_email && sm_email)
+            gtk_entry_set_buffer(GTK_ENTRY(sm_email), gtk_entry_get_buffer(GTK_ENTRY(gs_email)));
+
+        /* Share smtp_server buffer: gs-smtp ↔ sm-smtp */
+        GtkWidget *gs_smtp = g_object_get_data(G_OBJECT(gs_page), "gs-smtp");
+        GtkWidget *sm_smtp = g_object_get_data(G_OBJECT(sm_page), "sm-smtp");
+        if (gs_smtp && sm_smtp)
+            gtk_entry_set_buffer(GTK_ENTRY(sm_smtp), gtk_entry_get_buffer(GTK_ENTRY(gs_smtp)));
     }
 
     gtk_paned_set_end_child(GTK_PANED(hpaned), dialog->content_area);
