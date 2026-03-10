@@ -1,0 +1,36 @@
+{
+  "controls": {
+    "CTEXT": {
+      "count": 10,
+      "mapped": "wxStaticText"
+    },
+    "DEFPUSHBUTTON": {
+      "count": 98,
+      "mapped": "wxButton"
+    },
+    "PUSHBUTTON": {
+      "count": 191,
+      "mapped": "wxButton"
+    },
+    "LTEXT": {
+      "count": 460,
+      "mapped": "wxStaticText"
+    },
+    "ICON": {
+      "count": 87,
+      "mapped": "wxStaticBitmap"
+    },
+    "CONTROL": {
+      "count": 315,
+      "mapped": "wxButton"
+    },
+    "UNKNOWN": {
+      "count": 38,
+      "mapped": "wxWindow"
+    },
+    "RTEXT": {
+      "count": 11,
+      "mapped": "wxStaticText"
+    }
+  }
+}

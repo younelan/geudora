@@ -1,0 +1,7 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<gresources>
+  <gresource prefix="/org/eudora/resources">
+    <file compressed="true">features.xml</file>
+    <file compressed="true">strings.json</file>
+  </gresource>
+</gresources>

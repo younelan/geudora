@@ -1,0 +1,67 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<features>
+  <feature id="anal" paid="true">
+    <name>Mood Watch</name>
+    <description>Eudora will warn you of potentially inflammatory email</description>
+  </feature>
+  
+  <feature id="stcs" paid="true">
+    <name>Statistics</name>
+    <description>Display statistics about received and sent mail, usage time, attachments, etc.</description>
+  </feature>
+  
+  <feature id="scpt" paid="true">
+    <name>Scripts Menu</name>
+    <description>Run AppleScript scripts from a menu</description>
+  </feature>
+  
+  <feature id="isig" paid="true">
+    <name>Inline Signatures</name>
+    <description>Show &amp; edit signature text in messages</description>
+  </feature>
+  
+  <feature id="vcrd" paid="true">
+    <name>Business Cards</name>
+    <description>Create and import electronic Business Cards (vCards)</description>
+  </feature>
+  
+  <feature id="imap" paid="true">
+    <name>IMAP Support</name>
+    <description>Access mail from multiple computers with synchronized mailboxes</description>
+  </feature>
+  
+  <feature id="filt" paid="true">
+    <name>Advanced Filtering</name>
+    <description>Powerful server-side and local mail filtering rules</description>
+  </feature>
+  
+  <feature id="pers" paid="true">
+    <name>Multiple Personalities</name>
+    <description>Send mail from multiple email addresses and identities</description>
+  </feature>
+  
+  <feature id="html" paid="true">
+    <name>HTML Composition</name>
+    <description>Create rich HTML formatted messages with images and styles</description>
+  </feature>
+  
+  <feature id="sssl" paid="true">
+    <name>SSL/TLS Security</name>
+    <description>Encrypted connections for secure mail transfer</description>
+  </feature>
+  
+  <feature id="ldap" paid="true">
+    <name>Directory Services</name>
+    <description>LDAP address book integration and search capabilities</description>
+  </feature>
+  
+  <feature id="noad" paid="true">
+    <name>Ad-Free Experience</name>
+    <description>No advertisement windows or sponsored content</description>
+  </feature>
+  
+  <feature id="supp" paid="true">
+    <name>Priority Support</name>
+    <description>Fast response technical support and priority updates</description>
+  </feature>
+</features>
