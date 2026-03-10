@@ -30,36 +30,37 @@ ADVISED OF THE POSSIBILITY OF SUCH DAMAGE. */
 #include "mailbox.h"
 #include <stdbool.h>
 
-/* Forward declaration - uLong defined in trans.h */
 #ifndef uLong
 typedef unsigned long uLong;
 #endif
 
-int FilterSelectedMessages(FilterKeywordEnum fType, TOCType * tocH,
+/* Global filter array — defined in filtwin.c, used by filtrun.c */
+extern int gNFilters;
+extern FilterRecord *gFilterArray;
+
+int FilterSelectedMessages(FilterKeywordEnum fType, TOCType *tocH,
                            FilterPBPtr fpb);
-int FilterMessagesFrom(FilterKeywordEnum fType, TOCType * tocH, short startWith,
+int FilterMessagesFrom(FilterKeywordEnum fType, TOCType *tocH, short startWith,
                        FilterPBPtr fpb, bool noXfer);
-int FilterFlaggedMessages(FilterKeywordEnum fType, TOCType * tocH,
+int FilterFlaggedMessages(FilterKeywordEnum fType, TOCType *tocH,
                           FilterPBPtr fpb);
-int FilterIMAPTocIncrementally(TOCType * tocH, FilterPBPtr fpb, bool noXfer);
-int FilterMessage(FilterKeywordEnum fType, TOCType * tocH, short sumNum);
+int FilterIMAPTocIncrementally(TOCType *tocH, FilterPBPtr fpb, bool noXfer);
+int FilterMessage(FilterKeywordEnum fType, TOCType *tocH, short sumNum);
 void GenSpecWindow(CSpecHandle specList);
 int FilterNoteMatch(short filter, long secs);
 uLong FilterLastMatchHi(short filter);
-void NonSequitur(unsigned char *subject, TOCType * tocH, short sumNum);
+void NonSequitur(unsigned char *subject, TOCType *tocH, short sumNum);
 void FilterPostprocess(FilterKeywordEnum fType, FilterPBPtr fpb);
-/* Note: AddSpecToList has different signatures in filtrun vs toc - this is the
- * filtrun version */
 void AddSpecToList(FSSpecPtr spec, CSpecHandle specList);
-bool FilterMatchHi(short f, TOCType * tocH, short sumNum);
+bool FilterMatchHi(short f, TOCType *tocH, short sumNum);
 #define FU_TYPE 'FU  '
 #define FU_ID 1001
 bool HaveManualFilters(void);
-
-#ifdef BATCH_DELIVERY_ON
+bool RegenerateFilters(void);
+int ReadFilters(void);
+int SaveFilters(void);
 int InitFPB(FilterPBPtr fpb, bool zapAddrs, bool listsToo);
-int FilterMessageLo(FilterKeywordEnum fType, TOCType * tocH, short sumNum,
+int FilterMessageLo(FilterKeywordEnum fType, TOCType *tocH, short sumNum,
                     FilterPBPtr fpb, bool noXfer);
-#endif
 
 #endif

@@ -94,9 +94,9 @@ typedef enum {
 typedef enum { cjIgnore = 1, cjAnd, cjOr, cjUnless, cjLimit } ConjunctionEnum;
 
 typedef struct {
-  Str63 header;
+  char header[64];
   short headerID; // 0 or FILTER_BODY|FILTER_ADDRESSEE|FILTER_ANY
-  Str127 value;
+  char value[128];
   MatchEnum verb;
   void **nickExpanded;
   void **nickAddresses;
@@ -109,7 +109,7 @@ typedef struct {
 } FilterUse, *FUPtr, **FUHandle;
 
 typedef struct {
-  Str31 name;
+  char name[32];
   FSSpec transferSpec;
   bool incoming;
   bool outgoing;
@@ -142,9 +142,9 @@ typedef struct {
   CSpecHandle message;
   short **sounds;
   short notify;
-  Str15 to;
-  Str15 cc;
-  Str15 bcc;
+  char to[16];
+  char cc[16];
+  char bcc[16];
   BinAddrHandle toAddresses;
   BinAddrHandle ccAddresses;
   BinAddrHandle bccAddresses;
@@ -157,9 +157,4 @@ typedef struct {
 #define afbTrash 1
 #define afbFetch 2
 
-#else
-/* Minimal fallbacks when the filter LDEF system (TWO) is not enabled.
-   CSpecHandle is already defined in mailbox.h */
-/* FilterPB typedef from TWO section is used for both cases */
-
-#endif
+#endif /* FILTERS_H */
