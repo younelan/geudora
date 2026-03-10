@@ -230,6 +230,18 @@ GtkWidget *create_menu_bar(GtkWidget *window) {
   g_menu_append(window_menu, "_Drawer", "app.drawer");
   g_menu_append_submenu(main_menu, "_Window", G_MENU_MODEL(window_menu));
 
+  /* Tools menu — wazoo windows */
+  GMenu *tools_menu = g_menu_new();
+  g_menu_append(tools_menu, "_Address Book", "app.address-book");
+  g_menu_append(tools_menu, "_Filters", "app.filters");
+  g_menu_append(tools_menu, "_Personalities", "app.personalities");
+  g_menu_append(tools_menu, "Si_gnatures", "app.signatures");
+  g_menu_append(tools_menu, "_Statistics", "app.statistics");
+  g_menu_append_section(tools_menu, NULL, G_MENU_MODEL(g_menu_new()));
+  g_menu_append(tools_menu, "_Check Mail", "app.check-mail");
+  g_menu_append(tools_menu, "_Send Queued", "app.send-queued");
+  g_menu_append_submenu(main_menu, "_Tools", G_MENU_MODEL(tools_menu));
+
   /* Scripts menu */
   GMenu *scripts_menu = g_menu_new();
   g_menu_append(scripts_menu, "_Open Scripts Folder", "app.open-scripts");
@@ -247,6 +259,7 @@ GtkWidget *create_menu_bar(GtkWidget *window) {
   g_object_unref(edit_menu);
   g_object_unref(message_menu);
   g_object_unref(transfer_menu);
+  g_object_unref(tools_menu);
   g_object_unref(window_menu);
   g_object_unref(scripts_menu);
   g_object_unref(prefs_menu);

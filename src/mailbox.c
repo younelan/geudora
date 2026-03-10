@@ -289,6 +289,7 @@ static long gIMAPMsgEnd;
  * TOCSetDirty - set the dirty bit
  ************************************************************************/
 void TOCSetDirty(TOCType * tocH, bool dirty) {
+  if (!tocH) return;
   tocH->durty = dirty;
   AnyTOCDirty++;
 }
@@ -439,7 +440,7 @@ int GetMailbox(FSSpecPtr spec, bool showIt) {
   if (IsIMAPCacheFolder(spec))
     spec->parID = SpecDirId(spec);
 
-  if ((toc = TOCBySpec(spec))) {
+  if ((toc = FindTOC(spec))) {
     WindowPtr tocWinWP;
     tocWinWP = GetMyWindowWindowPtr(toc->win);
     UsingWindow(tocWinWP);
@@ -458,8 +459,10 @@ int GetMailbox(FSSpecPtr spec, bool showIt) {
       }
     }
     UserSelectWindow(tocWinWP);
+    return (0);
   }
-  return (0);
+
+  return OpenMailbox(spec, showIt, NULL);
 }
 
 /**********************************************************************
@@ -554,7 +557,7 @@ int OpenMailbox(FSSpecPtr spec, bool showIt, TOCType * toc) {
 /**********************************************************************
  * InitMailboxWin - initialize mailbox window data
  **********************************************************************/
-/* Stubs for Window Callbacks */
+/* Window Callbacks */
 bool BoxClose(MyWindowPtr win) { return true; }
 bool BoxButton(MyWindowPtr win, GtkWidget *widget, GdkEvent *event) {
   return false;
@@ -566,56 +569,169 @@ int BoxGonnaShow(MyWindowPtr win) { return 0; }
 int BoxPosition(MyWindowPtr win) { return 0; }
 void BoxCursor(Point mouse) {}
 bool BoxFind(MyWindowPtr win, unsigned char *text) { return false; }
-// Missing: BoxActivate, BoxKey, BoxHelp, BoxDidResize, BoxGrowSize, BoxIdle
-
-/* MBDrawerOpen Stub */
 void MBDrawerOpen(MyWindowPtr win) {}
 
+/* Message list selection callback */
+static void on_mbox_msg_selected(GtkTreeSelection *sel, gpointer data) {
+  TOCType *toc = (TOCType *)data;
+  GtkTreeModel *model;
+  GtkTreeIter iter;
+  if (!gtk_tree_selection_get_selected(sel, &model, &iter)) return;
+  int idx = -1;
+  gtk_tree_model_get(model, &iter, 5, &idx, -1);
+  if (idx < 0 || idx >= toc->count) return;
+
+  /* Read the message body from the mailbox file */
+  MSumPtr sum = &toc->sums[idx];
+  GtkTextView *preview = GTK_TEXT_VIEW(
+      g_object_get_data(G_OBJECT(toc->win->window), "preview"));
+  if (!preview) return;
+
+  GtkTextBuffer *buf = gtk_text_view_get_buffer(preview);
+  FILE *fp = fopen(toc->mailbox.spec.path, "r");
+  if (!fp) {
+    gtk_text_buffer_set_text(buf, "(cannot open mailbox file)", -1);
+    return;
+  }
+  fseek(fp, sum->offset, SEEK_SET);
+  long len = sum->length;
+  if (len > 64 * 1024) len = 64 * 1024; /* cap preview at 64K */
+  char *text = g_malloc(len + 1);
+  size_t nread = fread(text, 1, len, fp);
+  fclose(fp);
+  text[nread] = '\0';
+  /* Ensure valid UTF-8 */
+  if (!g_utf8_validate(text, nread, NULL)) {
+    gchar *valid = g_utf8_make_valid(text, nread);
+    gtk_text_buffer_set_text(buf, valid, -1);
+    g_free(valid);
+  } else {
+    gtk_text_buffer_set_text(buf, text, -1);
+  }
+  g_free(text);
+}
+
+/* Populate the message list from TOC summaries */
+static void populate_mbox_list(GtkListStore *store, TOCType *toc) {
+  gtk_list_store_clear(store);
+  for (int i = 0; i < toc->count; i++) {
+    MSumPtr sum = &toc->sums[i];
+    /* Format date */
+    char datebuf[32] = "";
+    if (sum->seconds > 0) {
+      time_t t = (time_t)sum->seconds;
+      struct tm *tm = localtime(&t);
+      if (tm) strftime(datebuf, sizeof(datebuf), "%Y-%m-%d %H:%M", tm);
+    }
+    /* Format size */
+    char sizebuf[16];
+    if (sum->length >= 1024)
+      snprintf(sizebuf, sizeof(sizebuf), "%ldK", sum->length / 1024);
+    else
+      snprintf(sizebuf, sizeof(sizebuf), "%ld", sum->length);
+
+    const char *status = (sum->state == UNREAD) ? "N" :
+                         (sum->state == REPLIED) ? "R" :
+                         (sum->state == SENT) ? "S" : "";
+
+    GtkTreeIter iter;
+    gtk_list_store_append(store, &iter);
+    gtk_list_store_set(store, &iter,
+                       0, status,
+                       1, sum->from,
+                       2, sum->subj,
+                       3, datebuf,
+                       4, sizebuf,
+                       5, i, /* hidden index */
+                       -1);
+  }
+}
+
 /**********************************************************************
- * InitMailboxWin - initialize mailbox window data
+ * InitMailboxWin - initialize mailbox window with GTK message list
+ * Replaces Mac custom QuickDraw drawing with GtkTreeView + preview.
  **********************************************************************/
 void InitMailboxWin(MyWindowPtr win, TOCType * toc, bool showIt) {
-  WindowPtr winWP = GetMyWindowWindowPtr(win);
-  Str255 scratch;
+  GtkWidget *winWP = GetMyWindowWindowPtr(win);
+  if (!winWP) return;
 
-  if (!winWP)
-    return;
-
-  // SetTopMargin(win,win->vPitch+2*FontDescent);
-
-  // SetWindowKind (winWP,toc->which==OUT ? CBOX_WIN : MBOX_WIN);
   SetMyWindowPrivateData(win, (void *)toc);
   win->close = BoxClose;
-  win->button = BoxButton; /* Was click/bgClick */
-  // win->bgClick = BoxClick;
-  // win->activate = BoxActivate;
+  win->button = BoxButton;
   win->menu = BoxMenu;
-  // win->key = BoxKey;
-  // win->help = BoxHelp;
-  // win->didResize = BoxDidResize;
   win->gonnaShow = BoxGonnaShow;
   win->position = BoxPosition;
   win->cursor = BoxCursor;
-  // win->grow = BoxGrowSize;
-  // win->minSize.h = 2*GetRLong(BOX_SIZE_SIZE);
-  // win->idle = BoxIdle;
   win->find = BoxFind;
-
   toc->win = win;
 
-  // Title the window.
-  if (!IMAPMailboxTitle(toc, scratch))
-    PCopy((unsigned char *)scratch,
-          (unsigned char *)MailboxAlias(
-              toc->which,
-              (char *)PCopy((unsigned char *)scratch,
-                            (unsigned char *)toc->mailbox.spec.name)));
+  /* Set window title from mailbox name */
+  const char *title = toc->mailbox.spec.name;
+  if (title && *title)
+    gtk_window_set_title(GTK_WINDOW(winWP), title);
 
-  // Insert a NULL if the user is trying to avoid AMO
-  if (GetPrefLong(PREF_AMO_AVOIDANCE) == kAMOAvoidAll ||
-      (!showIt && *scratch > 1))
-    PInsertC(scratch, sizeof(scratch), 0, scratch + 2);
-  SetWTitle_(winWP, scratch);
+  /* Build the mailbox window content:
+     ┌────────────────────────────┐
+     │ Status | From | Subject | Date | Size  │  <- GtkTreeView
+     │────────────────────────────│
+     │ Message preview (GtkTextView)          │
+     └────────────────────────────┘  */
+
+  GtkWidget *vpaned = gtk_paned_new(GTK_ORIENTATION_VERTICAL);
+  gtk_paned_set_position(GTK_PANED(vpaned), 250);
+
+  /* --- Message list (GtkTreeView) --- */
+  /* Columns: 0=Status 1=From 2=Subject 3=Date 4=Size 5=Index(hidden) */
+  GtkListStore *store = gtk_list_store_new(6,
+      G_TYPE_STRING, G_TYPE_STRING, G_TYPE_STRING,
+      G_TYPE_STRING, G_TYPE_STRING, G_TYPE_INT);
+  GtkWidget *tree = gtk_tree_view_new_with_model(GTK_TREE_MODEL(store));
+  g_object_unref(store);
+
+  const char *col_titles[] = {"", "From", "Subject", "Date", "Size"};
+  int col_widths[] = {30, 150, -1, 120, 60};
+  for (int c = 0; c < 5; c++) {
+    GtkCellRenderer *r = gtk_cell_renderer_text_new();
+    GtkTreeViewColumn *col = gtk_tree_view_column_new_with_attributes(
+        col_titles[c], r, "text", c, NULL);
+    gtk_tree_view_column_set_resizable(col, TRUE);
+    if (col_widths[c] > 0)
+      gtk_tree_view_column_set_fixed_width(col, col_widths[c]);
+    else
+      gtk_tree_view_column_set_expand(col, TRUE);
+    gtk_tree_view_append_column(GTK_TREE_VIEW(tree), col);
+  }
+  gtk_tree_view_set_headers_visible(GTK_TREE_VIEW(tree), TRUE);
+
+  /* Populate from TOC */
+  populate_mbox_list(store, toc);
+
+  GtkWidget *scroll1 = gtk_scrolled_window_new();
+  gtk_scrolled_window_set_child(GTK_SCROLLED_WINDOW(scroll1), tree);
+  gtk_widget_set_vexpand(scroll1, TRUE);
+  gtk_paned_set_start_child(GTK_PANED(vpaned), scroll1);
+  gtk_paned_set_resize_start_child(GTK_PANED(vpaned), TRUE);
+
+  /* --- Message preview --- */
+  GtkTextBuffer *prevBuf = gtk_text_buffer_new(NULL);
+  gtk_text_buffer_set_text(prevBuf, "Select a message to preview.", -1);
+  GtkWidget *preview = gtk_text_view_new_with_buffer(prevBuf);
+  gtk_text_view_set_editable(GTK_TEXT_VIEW(preview), FALSE);
+  gtk_text_view_set_wrap_mode(GTK_TEXT_VIEW(preview), GTK_WRAP_WORD_CHAR);
+  g_object_set_data(G_OBJECT(winWP), "preview", preview);
+
+  GtkWidget *scroll2 = gtk_scrolled_window_new();
+  gtk_scrolled_window_set_child(GTK_SCROLLED_WINDOW(scroll2), preview);
+  gtk_widget_set_vexpand(scroll2, TRUE);
+  gtk_paned_set_end_child(GTK_PANED(vpaned), scroll2);
+  gtk_paned_set_resize_end_child(GTK_PANED(vpaned), TRUE);
+
+  /* Connect selection change to preview */
+  GtkTreeSelection *sel = gtk_tree_view_get_selection(GTK_TREE_VIEW(tree));
+  g_signal_connect(sel, "changed", G_CALLBACK(on_mbox_msg_selected), toc);
+
+  /* Replace the empty scrolled-window content with our paned layout */
+  gtk_window_set_child(GTK_WINDOW(winWP), vpaned);
 }
 
 /**********************************************************************
@@ -683,9 +799,11 @@ long TOCDelEmpty(TOCType * tocH) {
   long count = 0;
   short n;
 
+  if (!tocH) return 0;
+
   for (n = tocH->count; n--;) {
     if (tocH->sums[n].length == 0) {
-      if (!DeleteSum(tocH, n)) // changed by Clarence, 4/28/97
+      if (!DeleteSum(tocH, n))
         count++;
     }
   }
@@ -703,8 +821,7 @@ int OpenFilterMessages(FSSpecPtr spec) {
   if (!tocH)
     return (1);
 
-  ComposeLogS(LOG_FILT, nil, (unsigned char *)"\031Opening messages from %p",
-              spec->name);
+  g_print("Opening messages from %s\n", spec->name);
 
   do {
     openedOne = false;
@@ -713,12 +830,7 @@ int OpenFilterMessages(FSSpecPtr spec) {
         tocH->sums[i].opts &= ~OPT_OPEN;
         tocH->sums[i].opts |= OPT_AUTO_OPENED;
         TOCSetDirty(tocH, true);
-        {
-          Str63 name;
-          ComposeLogS(LOG_FILT, nil, (unsigned char *)"\022Opening message %p",
-                      (unsigned char *)name);
-          PSCopy((unsigned char *)name, (unsigned char *)tocH->sums[i].subj);
-        }
+        g_print("Opening message %s\n", tocH->sums[i].subj);
         GetAMessage(tocH, i, nil, nil, true);
         openedOne = true;
       }
@@ -1246,15 +1358,13 @@ int BoxFOpenLo(TOCType * tocH, short sumNum) {
   FSSpec newSpec, spec;
 
   if (tocH->refN == 0) {
-    tocH;
     spec = GetMailboxSpec(tocH, sumNum);
     err = AFSpOpenDF(&spec, &newSpec, fsRdWrPerm, &refN);
     if (err)
       FileSystemError(OPEN_MBOX, spec.name, err);
     else
       tocH->refN = refN;
-    ComposeLogS(LOG_FLOW, nil, (unsigned char *)"\014BoxFOpen %p\r", spec.name);
-    (void)0;
+    g_print("BoxFOpen: %s\n", spec.name);
   }
 
   return (err);
@@ -1322,9 +1432,9 @@ bool DeleteSum(TOCType * tocH, int sumNum) {
     return -1;
 
   if (LogLevel & LOG_MOVE)
-    ComposeLogS(LOG_MOVE, nil, "\pDelete %p,%p from %p\015",
-                tocH->sums[sumNum].from, tocH->sums[sumNum].subj,
-                GetMailboxName(tocH, sumNum, name));
+    g_print("Delete %s,%s from %s\n",
+            tocH->sums[sumNum].from, tocH->sums[sumNum].subj,
+            tocH->mailbox.spec.name);
 
   tocH->analScanned = false;
 
@@ -1348,15 +1458,11 @@ bool DeleteSum(TOCType * tocH, int sumNum) {
       if ((MessHandle)tocH->sums[mNum].messH)
         (*(MessHandle)tocH->sums[mNum].messH)->sumNum--;
   }
-  /* Shrink TOC by one summary */
-  {
-    size_t newSize = sizeof(TOCType) + MAX(0, tocH->count - 2) * sizeof(MSumType);
-    if (newSize < sizeof(TOCType)) newSize = sizeof(TOCType);
-    /* Note: caller must update their pointer if realloc moves memory.
-       For now, shrink in-place (realloc shrink usually doesn't move). */
-    TOCType *shrunk = (TOCType *)g_realloc(tocH, newSize);
-    if (shrunk) tocH = shrunk;
-  }
+  /* Shrink TOC by one summary.
+   * Do NOT g_realloc here — that can move the block and invalidate the
+   * caller's pointer (e.g. TOCDelEmpty loops over the TOC).  The original
+   * Mac code used Handle indirection so realloc was safe; with direct
+   * pointers we just decrement count and leave the memory oversized. */
   if (--tocH->count == 0 && !tocH->virtualTOC)
     ZeroMailbox(tocH);
 

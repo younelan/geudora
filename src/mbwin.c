@@ -35,9 +35,13 @@ ADVISED OF THE POSSIBILITY OF SUCH DAMAGE. */
 #include "message.h"
 #include "mydefs.h"
 #include "wazoo.h"
+
+extern const char *prefs_get_mailboxes_path(void);
 #include <gtk/gtk.h>
+#include <glib/gstdio.h>
 #include <sys/stat.h>
 #include <dirent.h>
+#include <stdio.h>
 
 /* First items in list (matching original) */
 enum {
@@ -77,6 +81,10 @@ static bool MBClose(MyWindowPtr win);
 static void MBDidResize(MyWindowPtr win, Rect *oldContR);
 static bool MBMenu(MyWindowPtr win, int menu, int item, short modifiers);
 static void MBActivate(MyWindowPtr win);
+static void on_new_mailbox_clicked(GtkButton *button, gpointer user_data);
+static void on_new_folder_clicked(GtkButton *button, gpointer user_data);
+static void on_remove_clicked(GtkButton *button, gpointer user_data);
+void MBRefill(void);
 
 /* Eudora mail directory */
 static void ensure_mailbox_file(const char *path) {
@@ -89,8 +97,14 @@ static void ensure_mailbox_file(const char *path) {
 static const char *get_eudora_mail_dir(void) {
   static char mail_dir[1024] = {0};
   if (!mail_dir[0]) {
-    const char *home = g_get_home_dir();
-    snprintf(mail_dir, sizeof(mail_dir), "%s/.eudora", home);
+    /* Use same directory as gtk_mailbox.c so both views show the same mailboxes */
+    const char *prefs_path = prefs_get_mailboxes_path();
+    if (prefs_path && prefs_path[0]) {
+      snprintf(mail_dir, sizeof(mail_dir), "%s", prefs_path);
+    } else {
+      const char *home = g_get_home_dir();
+      snprintf(mail_dir, sizeof(mail_dir), "%s/.local/share/geudora/mailboxes", home);
+    }
     g_mkdir_with_parents(mail_dir, 0755);
 
     /* Create standard mailbox files if they don't exist (like original Eudora) */
@@ -102,6 +116,8 @@ static const char *get_eudora_mail_dir(void) {
     snprintf(path, sizeof(path), "%s/Trash", mail_dir);
     ensure_mailbox_file(path);
     snprintf(path, sizeof(path), "%s/Junk", mail_dir);
+    ensure_mailbox_file(path);
+    snprintf(path, sizeof(path), "%s/Drafts", mail_dir);
     ensure_mailbox_file(path);
   }
   return mail_dir;
@@ -272,6 +288,302 @@ static void mb_fill(GtkTreeStore *store) {
 }
 
 /**********************************************************************
+ * get_selected_parent_path - get the directory path for inserting new items.
+ * If a folder is selected, returns its path. If a mailbox is selected,
+ * returns its parent directory. Otherwise returns the mail root.
+ **********************************************************************/
+static const char *get_selected_parent_path(GtkTreeIter *out_parent,
+                                             gboolean *have_parent) {
+  static char parent_path[1024];
+  GtkTreeSelection *sel =
+      gtk_tree_view_get_selection(GTK_TREE_VIEW(MB.tree_view));
+  GtkTreeIter iter;
+  GtkTreeModel *model = GTK_TREE_MODEL(MB.store);
+
+  *have_parent = FALSE;
+
+  if (gtk_tree_selection_get_selected(sel, &model, &iter)) {
+    gboolean is_folder;
+    gchar *path;
+    gtk_tree_model_get(model, &iter, COL_PATH, &path, COL_IS_FOLDER,
+                       &is_folder, -1);
+
+    if (is_folder) {
+      snprintf(parent_path, sizeof(parent_path), "%s", path);
+      *out_parent = iter;
+      *have_parent = TRUE;
+    } else {
+      GtkTreeIter parent_iter;
+      if (gtk_tree_model_iter_parent(model, &parent_iter, &iter)) {
+        gchar *pp;
+        gtk_tree_model_get(model, &parent_iter, COL_PATH, &pp, -1);
+        snprintf(parent_path, sizeof(parent_path), "%s", pp);
+        g_free(pp);
+        *out_parent = parent_iter;
+        *have_parent = TRUE;
+      } else {
+        snprintf(parent_path, sizeof(parent_path), "%s",
+                 get_eudora_mail_dir());
+      }
+    }
+    g_free(path);
+  } else {
+    snprintf(parent_path, sizeof(parent_path), "%s", get_eudora_mail_dir());
+  }
+
+  return parent_path;
+}
+
+/**********************************************************************
+ * make_unique_untitled - generate a unique "Untitled Mailbox" or
+ * "Untitled Folder" name, matching the original Eudora behavior.
+ **********************************************************************/
+static void make_unique_untitled(const char *dir, bool folder,
+                                  char *out_name, size_t out_len,
+                                  char *out_path, size_t path_len) {
+  const char *base = folder ? "Untitled Folder" : "Untitled Mailbox";
+  snprintf(out_name, out_len, "%s", base);
+  snprintf(out_path, path_len, "%s/%s", dir, base);
+
+  int n = 1;
+  while (g_file_test(out_path, G_FILE_TEST_EXISTS)) {
+    n++;
+    snprintf(out_name, out_len, "%s %d", base, n);
+    snprintf(out_path, path_len, "%s/%s %d", dir, base, n);
+  }
+}
+
+/**********************************************************************
+ * on_name_edited - inline rename callback for the tree view
+ **********************************************************************/
+static void on_name_edited(GtkCellRendererText *cell, const char *path_str,
+                           const char *new_name, gpointer user_data) {
+  (void)cell;
+  (void)user_data;
+
+  if (!new_name || !new_name[0])
+    return;
+
+  GtkTreePath *tree_path = gtk_tree_path_new_from_string(path_str);
+  GtkTreeIter iter;
+  if (!gtk_tree_model_get_iter(GTK_TREE_MODEL(MB.store), &iter, tree_path)) {
+    gtk_tree_path_free(tree_path);
+    return;
+  }
+  gtk_tree_path_free(tree_path);
+
+  gchar *old_path;
+  gtk_tree_model_get(GTK_TREE_MODEL(MB.store), &iter, COL_PATH, &old_path, -1);
+
+  /* Build new path by replacing the filename component */
+  char *slash = strrchr(old_path, '/');
+  char new_path[1024];
+  if (slash) {
+    size_t dir_len = slash - old_path;
+    snprintf(new_path, sizeof(new_path), "%.*s/%s", (int)dir_len, old_path,
+             new_name);
+  } else {
+    snprintf(new_path, sizeof(new_path), "%s", new_name);
+  }
+
+  /* Rename on disk */
+  if (rename(old_path, new_path) == 0) {
+    /* Also rename .toc file if it exists */
+    char old_toc[1024], new_toc[1024];
+    snprintf(old_toc, sizeof(old_toc), "%s.toc", old_path);
+    snprintf(new_toc, sizeof(new_toc), "%s.toc", new_path);
+    rename(old_toc, new_toc); /* ignore error — toc may not exist */
+
+    gtk_tree_store_set(MB.store, &iter, COL_NAME, new_name, COL_PATH, new_path,
+                       -1);
+  }
+
+  g_free(old_path);
+}
+
+/**********************************************************************
+ * DoNewMailbox - create a new mailbox or folder, matching original
+ * Eudora behavior: creates an "Untitled" item under the selected
+ * folder and starts inline renaming.
+ **********************************************************************/
+static void DoNewMailbox(bool folder) {
+  GtkTreeIter parent_iter;
+  gboolean have_parent;
+  const char *dir = get_selected_parent_path(&parent_iter, &have_parent);
+
+  char name[256], full_path[1024];
+  make_unique_untitled(dir, folder, name, sizeof(name), full_path,
+                       sizeof(full_path));
+
+  if (folder) {
+    if (g_mkdir_with_parents(full_path, 0755) != 0)
+      return;
+  } else {
+    FILE *f = fopen(full_path, "w");
+    if (!f)
+      return;
+    fclose(f);
+  }
+
+  /* Add to tree store */
+  GtkTreeIter new_iter;
+  gtk_tree_store_append(MB.store, &new_iter,
+                        have_parent ? &parent_iter : NULL);
+  gtk_tree_store_set(MB.store, &new_iter, COL_ICON_NAME,
+                     folder ? "folder" : "mail-unread", COL_NAME, name,
+                     COL_PATH, full_path, COL_IS_FOLDER, folder ? TRUE : FALSE,
+                     COL_UNREAD, 0, -1);
+
+  /* Expand parent so the new item is visible */
+  if (have_parent) {
+    GtkTreePath *pp =
+        gtk_tree_model_get_path(GTK_TREE_MODEL(MB.store), &parent_iter);
+    gtk_tree_view_expand_row(GTK_TREE_VIEW(MB.tree_view), pp, FALSE);
+    gtk_tree_path_free(pp);
+  }
+
+  /* Select and start inline rename — like original Eudora's LVRename() */
+  GtkTreePath *new_path =
+      gtk_tree_model_get_path(GTK_TREE_MODEL(MB.store), &new_iter);
+  GtkTreeViewColumn *col =
+      gtk_tree_view_get_column(GTK_TREE_VIEW(MB.tree_view), 0);
+  gtk_tree_view_set_cursor(GTK_TREE_VIEW(MB.tree_view), new_path, col, TRUE);
+  gtk_tree_path_free(new_path);
+}
+
+/**********************************************************************
+ * on_new_mailbox_clicked - create a new mailbox
+ **********************************************************************/
+static void on_new_mailbox_clicked(GtkButton *button, gpointer user_data) {
+  (void)button;
+  (void)user_data;
+  DoNewMailbox(false);
+}
+
+/**********************************************************************
+ * on_new_folder_clicked - create a new folder
+ **********************************************************************/
+static void on_new_folder_clicked(GtkButton *button, gpointer user_data) {
+  (void)button;
+  (void)user_data;
+  DoNewMailbox(true);
+}
+
+/**********************************************************************
+ * on_remove_response - handle confirmation dialog response
+ **********************************************************************/
+static void on_remove_response(GtkDialog *dlg, int response,
+                                gpointer user_data) {
+  (void)user_data;
+  if (response == GTK_RESPONSE_OK) {
+    const char *rm_path =
+        (const char *)g_object_get_data(G_OBJECT(dlg), "rm-path");
+    gboolean rm_folder =
+        GPOINTER_TO_INT(g_object_get_data(G_OBJECT(dlg), "rm-is-folder"));
+
+    if (rm_path) {
+      if (rm_folder) {
+        /* Remove directory (only if empty, like original) */
+        g_rmdir(rm_path);
+      } else {
+        /* Remove mailbox file and its .toc */
+        g_unlink(rm_path);
+        char toc_path[1024];
+        snprintf(toc_path, sizeof(toc_path), "%s.toc", rm_path);
+        g_unlink(toc_path);
+      }
+    }
+    MBRefill();
+  }
+  gtk_window_destroy(GTK_WINDOW(dlg));
+}
+
+/**********************************************************************
+ * on_remove_clicked - remove selected mailbox or folder
+ * Shows confirmation dialog matching original Eudora's DoRemoveBox.
+ **********************************************************************/
+static void on_remove_clicked(GtkButton *button, gpointer user_data) {
+  (void)button;
+  (void)user_data;
+
+  GtkTreeSelection *sel =
+      gtk_tree_view_get_selection(GTK_TREE_VIEW(MB.tree_view));
+  GtkTreeIter iter;
+  GtkTreeModel *model = GTK_TREE_MODEL(MB.store);
+
+  if (!gtk_tree_selection_get_selected(sel, &model, &iter))
+    return;
+
+  gchar *name, *path;
+  gboolean is_folder;
+  gtk_tree_model_get(model, &iter, COL_NAME, &name, COL_PATH, &path,
+                     COL_IS_FOLDER, &is_folder, -1);
+
+  /* Don't allow removing standard mailboxes (like original IsSpecialBox) */
+  if (name && (strcmp(name, "In") == 0 || strcmp(name, "Out") == 0 ||
+               strcmp(name, "Trash") == 0 || strcmp(name, "Junk") == 0 ||
+               strcmp(name, "Eudora") == 0)) {
+    g_free(name);
+    g_free(path);
+    return;
+  }
+
+  /* Check if empty (like original DoRemoveBox) */
+  bool is_empty = true;
+  if (is_folder) {
+    DIR *d = opendir(path);
+    if (d) {
+      struct dirent *ent;
+      while ((ent = readdir(d)) != NULL) {
+        if (ent->d_name[0] != '.') {
+          is_empty = false;
+          break;
+        }
+      }
+      closedir(d);
+    }
+  } else {
+    struct stat st;
+    if (stat(path, &st) == 0 && st.st_size > 0)
+      is_empty = false;
+  }
+
+  /* Show confirmation — different message for empty vs non-empty
+   * like original Eudora's DELETE_EMPTY_SINGLE_ASTR / DELETE_NON_EMPTY_SINGLE_ASTR */
+  char msg[512];
+  if (is_empty)
+    snprintf(msg, sizeof(msg), "Remove the empty %s \"%s\"?",
+             is_folder ? "folder" : "mailbox", name ? name : "");
+  else
+    snprintf(msg, sizeof(msg),
+             "The %s \"%s\" is not empty. Remove it anyway?",
+             is_folder ? "folder" : "mailbox", name ? name : "");
+
+  GtkWidget *dialog = gtk_dialog_new_with_buttons(
+      "Remove", GTK_WINDOW(gtk_widget_get_root(MB.tree_view)),
+      GTK_DIALOG_MODAL | GTK_DIALOG_DESTROY_WITH_PARENT, "_Remove",
+      GTK_RESPONSE_OK, "_Cancel", GTK_RESPONSE_CANCEL, NULL);
+
+  GtkWidget *content = gtk_dialog_get_content_area(GTK_DIALOG(dialog));
+  GtkWidget *label = gtk_label_new(msg);
+  gtk_widget_set_margin_start(label, 12);
+  gtk_widget_set_margin_end(label, 12);
+  gtk_widget_set_margin_top(label, 12);
+  gtk_widget_set_margin_bottom(label, 12);
+  gtk_box_append(GTK_BOX(content), label);
+
+  g_object_set_data_full(G_OBJECT(dialog), "rm-path", g_strdup(path), g_free);
+  g_object_set_data(G_OBJECT(dialog), "rm-is-folder",
+                    GINT_TO_POINTER(is_folder));
+
+  g_signal_connect(dialog, "response", G_CALLBACK(on_remove_response), NULL);
+
+  g_free(name);
+  g_free(path);
+  gtk_window_present(GTK_WINDOW(dialog));
+}
+
+/**********************************************************************
  * on_mb_row_activated - double-click or Enter on a mailbox row
  **********************************************************************/
 static void on_mb_row_activated(GtkTreeView *tree_view, GtkTreePath *path,
@@ -354,6 +666,8 @@ void OpenMBWin(void) {
                                        COL_ICON_NAME);
 
     GtkCellRenderer *text_renderer = gtk_cell_renderer_text_new();
+    g_object_set(text_renderer, "editable", TRUE, NULL);
+    g_signal_connect(text_renderer, "edited", G_CALLBACK(on_name_edited), NULL);
     gtk_tree_view_column_pack_start(col, text_renderer, TRUE);
     gtk_tree_view_column_add_attribute(col, text_renderer, "text", COL_NAME);
 
@@ -393,6 +707,13 @@ void OpenMBWin(void) {
     MB.btn_new_mb = gtk_button_new_with_label("New Mailbox");
     MB.btn_new_folder = gtk_button_new_with_label("New Folder");
     MB.btn_remove = gtk_button_new_with_label("Remove");
+
+    g_signal_connect(MB.btn_new_mb, "clicked",
+                     G_CALLBACK(on_new_mailbox_clicked), NULL);
+    g_signal_connect(MB.btn_new_folder, "clicked",
+                     G_CALLBACK(on_new_folder_clicked), NULL);
+    g_signal_connect(MB.btn_remove, "clicked",
+                     G_CALLBACK(on_remove_clicked), NULL);
 
     gtk_box_append(GTK_BOX(toolbar), MB.btn_new_mb);
     gtk_box_append(GTK_BOX(toolbar), MB.btn_new_folder);

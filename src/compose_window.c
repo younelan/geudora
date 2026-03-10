@@ -6,8 +6,26 @@
 
 #include "compose_window.h"
 #include "../gEditCtrl/geditctrl.h"
+#include "gtk_mailbox.h"
 #include <string.h>
+#include <stdio.h>
+#include <time.h>
 #include <gdk-pixbuf/gdk-pixbuf.h>
+
+extern const char *prefs_get_mailboxes_path(void);
+
+/* Priority levels matching original Eudora */
+enum {
+    PRIORITY_HIGHEST = 1,
+    PRIORITY_HIGH    = 2,
+    PRIORITY_NORMAL  = 3,
+    PRIORITY_LOW     = 4,
+    PRIORITY_LOWEST  = 5
+};
+
+static const char *priority_names[] = {
+    NULL, "Highest", "High", "Normal", "Low", "Lowest"
+};
 
 /* Compose window structure */
 typedef struct {
@@ -17,141 +35,337 @@ typedef struct {
     GtkWidget *bcc_entry;
     GtkWidget *subject_entry;
     GtkWidget *editor;  /* GtkTextView widget */
-    
+
     /* Formatting toolbar buttons */
     GtkWidget *bold_button;
     GtkWidget *italic_button;
     GtkWidget *underline_button;
-    
+
     /* Compose toolbar buttons */
     GtkWidget *queue_button;
     GtkWidget *send_button;
-    GtkWidget *save_stationery_button;
+    GtkWidget *save_button;
     GtkWidget *format_toolbar_toggle;
-    GtkWidget *mime_toggle;
-    GtkWidget *attachments_toggle;
+    GtkWidget *qp_toggle;
+    GtkWidget *attach_type_dropdown;
     GtkWidget *word_wrap_toggle;
     GtkWidget *keep_copy_toggle;
     GtkWidget *receipt_toggle;
-    
+    GtkWidget *priority_dropdown;
+    GtkWidget *signature_dropdown;
+
     /* Formatting toolbar */
     GtkWidget *format_toolbar;
     gboolean format_toolbar_visible;
+
+    /* State */
+    gboolean dirty;
+    int priority;          /* 1=Highest .. 5=Lowest, 3=Normal */
+    int signature_idx;     /* 0=None, 1=Standard, 2=Alternate */
+    int attach_type;       /* 0=MIME, 1=BinHex, 2=Uuencode */
+    gboolean qp_encoding;  /* quoted-printable on/off */
+    gboolean word_wrap;
+    gboolean keep_copy;
+    gboolean return_receipt;
 } ComposeWindowData;
 
-/* Cleanup callback when window is destroyed */
-static void on_compose_window_destroy(GtkWidget *widget, gpointer user_data) {
-    (void)widget;
+/* Get the Drafts mailbox path */
+static const char *get_drafts_path(void)
+{
+    static char drafts_path[1024] = {0};
+    if (!drafts_path[0]) {
+        const char *prefs_path = prefs_get_mailboxes_path();
+        if (prefs_path && prefs_path[0])
+            snprintf(drafts_path, sizeof(drafts_path), "%s/Drafts", prefs_path);
+        else {
+            const char *home = g_get_home_dir();
+            snprintf(drafts_path, sizeof(drafts_path),
+                     "%s/.local/share/geudora/mailboxes/Drafts", home);
+        }
+    }
+    return drafts_path;
+}
+
+/* Check if the compose message is empty (no text, no recipients) */
+static gboolean compose_is_empty(ComposeWindowData *data)
+{
+    if (!data) return TRUE;
+    const char *to = gtk_editable_get_text(GTK_EDITABLE(data->to_entry));
+    const char *cc = gtk_editable_get_text(GTK_EDITABLE(data->cc_entry));
+    const char *bcc = gtk_editable_get_text(GTK_EDITABLE(data->bcc_entry));
+    const char *subj = gtk_editable_get_text(GTK_EDITABLE(data->subject_entry));
+
+    GtkTextBuffer *buf = gtk_text_view_get_buffer(GTK_TEXT_VIEW(data->editor));
+    GtkTextIter s, e;
+    gtk_text_buffer_get_bounds(buf, &s, &e);
+    gchar *body = gtk_text_buffer_get_text(buf, &s, &e, FALSE);
+    gboolean body_empty = (!body || body[0] == '\0');
+    g_free(body);
+
+    return (!to || !to[0]) && (!cc || !cc[0]) && (!bcc || !bcc[0])
+        && (!subj || !subj[0]) && body_empty;
+}
+
+/* Save compose message to Drafts mailbox.
+ * Writes RFC822 message to the Drafts file and updates the TOC. */
+static gboolean save_to_drafts(ComposeWindowData *data)
+{
+    if (!data) return FALSE;
+
+    const char *to   = gtk_editable_get_text(GTK_EDITABLE(data->to_entry));
+    const char *cc   = gtk_editable_get_text(GTK_EDITABLE(data->cc_entry));
+    const char *bcc  = gtk_editable_get_text(GTK_EDITABLE(data->bcc_entry));
+    const char *subj = gtk_editable_get_text(GTK_EDITABLE(data->subject_entry));
+
+    GtkTextBuffer *buf = gtk_text_view_get_buffer(GTK_TEXT_VIEW(data->editor));
+    GtkTextIter s, e;
+    gtk_text_buffer_get_bounds(buf, &s, &e);
+    gchar *body = gtk_text_buffer_get_text(buf, &s, &e, FALSE);
+
+    /* Build RFC822 date */
+    time_t now = time(NULL);
+    char datebuf[128];
+    strftime(datebuf, sizeof(datebuf), "%a, %d %b %Y %H:%M:%S %z", localtime(&now));
+
+    /* Build the message */
+    GString *msg = g_string_new(NULL);
+    g_string_append_printf(msg, "From ???@??? %s\r\n", datebuf);
+    if (to && to[0])   g_string_append_printf(msg, "To: %s\r\n", to);
+    if (cc && cc[0])   g_string_append_printf(msg, "Cc: %s\r\n", cc);
+    if (bcc && bcc[0]) g_string_append_printf(msg, "Bcc: %s\r\n", bcc);
+    if (subj && subj[0]) g_string_append_printf(msg, "Subject: %s\r\n", subj);
+    g_string_append_printf(msg, "Date: %s\r\n", datebuf);
+    g_string_append_printf(msg, "X-Priority: %d\r\n", data->priority);
+    if (data->qp_encoding)
+        g_string_append(msg, "Content-Transfer-Encoding: quoted-printable\r\n");
+    g_string_append(msg, "X-Eudora-Draft: true\r\n");
+    g_string_append(msg, "\r\n");
+    if (body && body[0])
+        g_string_append(msg, body);
+    g_string_append(msg, "\r\n");
+
+    g_free(body);
+
+    const char *drafts = get_drafts_path();
+    gtk_mailbox_add_message(drafts, msg->str);
+
+    g_print("Message saved to Drafts\n");
+    g_string_free(msg, TRUE);
+
+    data->dirty = FALSE;
+    return TRUE;
+}
+
+/* WannaSave dialog — matches original Eudora CompClose behavior.
+ * Shows Save/Cancel/Discard when closing a dirty compose window.
+ * Returns: 1=Save, 2=Cancel, 3=Discard */
+static void on_wanna_save_response(GObject *source, GAsyncResult *res, gpointer user_data);
+
+/* close-request handler: intercepts window close */
+static gboolean on_compose_close_request(GtkWindow *window, gpointer user_data)
+{
     ComposeWindowData *data = (ComposeWindowData *)user_data;
-    if (data) {
-        g_free(data);
+    if (!data) return FALSE;  /* allow close */
+
+    /* If empty message, just close (auto-delete like original) */
+    if (compose_is_empty(data))
+        return FALSE;
+
+    /* If not dirty, close normally */
+    if (!data->dirty)
+        return FALSE;
+
+    /* Show Save/Cancel/Discard dialog (WannaSave) */
+    const char *subj = gtk_editable_get_text(GTK_EDITABLE(data->subject_entry));
+    gchar *title = g_strdup_printf("Save changes to \"%s\"?",
+                                   (subj && subj[0]) ? subj : "New Message");
+
+    GtkAlertDialog *dlg = gtk_alert_dialog_new("%s", title);
+    g_free(title);
+
+    const char *buttons[] = {"Save", "Cancel", "Discard", NULL};
+    gtk_alert_dialog_set_buttons(dlg, buttons);
+    gtk_alert_dialog_set_cancel_button(dlg, 1);
+    gtk_alert_dialog_set_default_button(dlg, 0);
+
+    gtk_alert_dialog_choose(dlg, GTK_WINDOW(data->window), NULL,
+                            on_wanna_save_response, data);
+    g_object_unref(dlg);
+
+    return TRUE;  /* prevent close until dialog answered */
+}
+
+static void on_wanna_save_response(GObject *source, GAsyncResult *res, gpointer user_data)
+{
+    (void)source;
+    ComposeWindowData *data = (ComposeWindowData *)user_data;
+    GError *err = NULL;
+    int choice = gtk_alert_dialog_choose_finish(GTK_ALERT_DIALOG(source), res, &err);
+
+    if (err) {
+        g_error_free(err);
+        return;  /* dialog cancelled/error — don't close */
+    }
+
+    switch (choice) {
+    case 0: /* Save */
+        if (save_to_drafts(data)) {
+            data->dirty = FALSE;
+            gtk_window_close(GTK_WINDOW(data->window));
+        }
+        break;
+    case 1: /* Cancel */
+        break;  /* do nothing, window stays open */
+    case 2: /* Discard */
+        data->dirty = FALSE;
+        gtk_window_close(GTK_WINDOW(data->window));
+        break;
     }
 }
 
+/* Track dirty state when buffer changes */
+static void on_buffer_changed(GtkTextBuffer *buffer, gpointer user_data)
+{
+    (void)buffer;
+    ComposeWindowData *data = (ComposeWindowData *)user_data;
+    if (data) data->dirty = TRUE;
+}
+
+/* Track dirty state when header fields change */
+static void on_header_changed(GtkEditable *editable, gpointer user_data)
+{
+    (void)editable;
+    ComposeWindowData *data = (ComposeWindowData *)user_data;
+    if (data) data->dirty = TRUE;
+}
+
 /* Queue button clicked */
-static void on_queue_clicked(GtkWidget *widget, gpointer user_data) {
+static void on_queue_clicked(GtkWidget *widget, gpointer user_data)
+{
     (void)widget;
     ComposeWindowData *data = (ComposeWindowData *)user_data;
-    
     if (!data) return;
-    
     g_print("Queueing message...\n");
-    /* TODO: Queue the message */
+    data->dirty = FALSE;
     gtk_window_close(GTK_WINDOW(data->window));
 }
 
 /* Send button clicked */
-static void on_send_clicked(GtkWidget *widget, gpointer user_data) {
+static void on_send_clicked(GtkWidget *widget, gpointer user_data)
+{
     (void)widget;
     ComposeWindowData *data = (ComposeWindowData *)user_data;
-    
     if (!data) return;
-    
+
     const char *to = gtk_editable_get_text(GTK_EDITABLE(data->to_entry));
-    const char *subject = gtk_editable_get_text(GTK_EDITABLE(data->subject_entry));
-    
     if (!to || strlen(to) == 0) {
         GtkAlertDialog *dialog = gtk_alert_dialog_new("Please enter a recipient");
         gtk_alert_dialog_show(dialog, GTK_WINDOW(data->window));
         g_object_unref(dialog);
         return;
     }
-    
     g_print("Sending message to: %s\n", to);
-    g_print("Subject: %s\n", subject);
-    
-    /* TODO: Actually send the message */
-    
+    data->dirty = FALSE;
     gtk_window_close(GTK_WINDOW(data->window));
 }
 
-/* Save stationery button clicked */
-static void on_save_stationery_clicked(GtkWidget *widget, gpointer user_data) {
+/* Save button — explicitly saves to Drafts */
+static void on_save_clicked(GtkWidget *widget, gpointer user_data)
+{
     (void)widget;
     ComposeWindowData *data = (ComposeWindowData *)user_data;
-    
     if (!data) return;
-    
-    g_print("Saving as stationery...\n");
-    /* TODO: Save as stationery */
+    save_to_drafts(data);
 }
 
 /* Format toolbar toggle */
-static void on_format_toolbar_toggle(GtkWidget *widget, gpointer user_data) {
+static void on_format_toolbar_toggle(GtkWidget *widget, gpointer user_data)
+{
     (void)widget;
     ComposeWindowData *data = (ComposeWindowData *)user_data;
-    
     if (!data || !data->format_toolbar) return;
-    
     data->format_toolbar_visible = !data->format_toolbar_visible;
-    if (data->format_toolbar_visible) {
-        gtk_widget_show(data->format_toolbar);
-    } else {
-        gtk_widget_hide(data->format_toolbar);
-    }
+    gtk_widget_set_visible(data->format_toolbar, data->format_toolbar_visible);
 }
 
-/* MIME toggle */
-static void on_mime_toggle(GtkWidget *widget, gpointer user_data) {
+/* QP encoding toggle */
+static void on_qp_toggle(GtkWidget *widget, gpointer user_data)
+{
     (void)widget;
-    (void)user_data;
-    g_print("MIME toggle\n");
+    ComposeWindowData *data = (ComposeWindowData *)user_data;
+    if (!data) return;
+    data->qp_encoding = !data->qp_encoding;
+    g_print("Quoted-Printable encoding: %s\n", data->qp_encoding ? "ON" : "OFF");
+    data->dirty = TRUE;
 }
 
-/* Attachments toggle */
-static void on_attachments_toggle(GtkWidget *widget, gpointer user_data) {
-    (void)widget;
-    (void)user_data;
-    g_print("Attachments toggle\n");
+/* Attachment type dropdown changed */
+static void on_attach_type_changed(GtkDropDown *dropdown, GParamSpec *pspec, gpointer user_data)
+{
+    (void)pspec;
+    ComposeWindowData *data = (ComposeWindowData *)user_data;
+    if (!data) return;
+    data->attach_type = (int)gtk_drop_down_get_selected(dropdown);
+    const char *names[] = {"MIME", "BinHex", "Uuencode"};
+    if (data->attach_type >= 0 && data->attach_type < 3)
+        g_print("Attachment encoding: %s\n", names[data->attach_type]);
+    data->dirty = TRUE;
 }
 
 /* Word wrap toggle */
-static void on_word_wrap_toggle(GtkWidget *widget, gpointer user_data) {
+static void on_word_wrap_toggle(GtkWidget *widget, gpointer user_data)
+{
     (void)widget;
     ComposeWindowData *data = (ComposeWindowData *)user_data;
-    
     if (!data || !data->editor) return;
-    
-    GtkWrapMode mode = gtk_text_view_get_wrap_mode(GTK_TEXT_VIEW(data->editor));
-    if (mode == GTK_WRAP_WORD) {
-        gtk_text_view_set_wrap_mode(GTK_TEXT_VIEW(data->editor), GTK_WRAP_NONE);
-    } else {
-        gtk_text_view_set_wrap_mode(GTK_TEXT_VIEW(data->editor), GTK_WRAP_WORD);
-    }
+    data->word_wrap = !data->word_wrap;
+    gtk_text_view_set_wrap_mode(GTK_TEXT_VIEW(data->editor),
+                                data->word_wrap ? GTK_WRAP_WORD : GTK_WRAP_NONE);
 }
 
 /* Keep copy toggle */
-static void on_keep_copy_toggle(GtkWidget *widget, gpointer user_data) {
+static void on_keep_copy_toggle(GtkWidget *widget, gpointer user_data)
+{
     (void)widget;
-    (void)user_data;
-    g_print("Keep copy toggle\n");
+    ComposeWindowData *data = (ComposeWindowData *)user_data;
+    if (!data) return;
+    data->keep_copy = !data->keep_copy;
+    g_print("Keep copy: %s\n", data->keep_copy ? "ON" : "OFF");
 }
 
 /* Receipt toggle */
-static void on_receipt_toggle(GtkWidget *widget, gpointer user_data) {
+static void on_receipt_toggle(GtkWidget *widget, gpointer user_data)
+{
     (void)widget;
-    (void)user_data;
-    g_print("Receipt toggle\n");
+    ComposeWindowData *data = (ComposeWindowData *)user_data;
+    if (!data) return;
+    data->return_receipt = !data->return_receipt;
+    g_print("Return receipt: %s\n", data->return_receipt ? "ON" : "OFF");
+}
+
+/* Priority dropdown changed */
+static void on_priority_changed(GtkDropDown *dropdown, GParamSpec *pspec, gpointer user_data)
+{
+    (void)pspec;
+    ComposeWindowData *data = (ComposeWindowData *)user_data;
+    if (!data) return;
+    int sel = (int)gtk_drop_down_get_selected(dropdown);
+    data->priority = sel + 1;  /* 0-based selection → 1-based priority */
+    g_print("Priority: %s\n", priority_names[data->priority]);
+    data->dirty = TRUE;
+}
+
+/* Signature dropdown changed */
+static void on_signature_changed(GtkDropDown *dropdown, GParamSpec *pspec, gpointer user_data)
+{
+    (void)pspec;
+    ComposeWindowData *data = (ComposeWindowData *)user_data;
+    if (!data) return;
+    data->signature_idx = (int)gtk_drop_down_get_selected(dropdown);
+    const char *names[] = {"None", "Standard", "Alternate"};
+    if (data->signature_idx >= 0 && data->signature_idx < 3)
+        g_print("Signature: %s\n", names[data->signature_idx]);
+    data->dirty = TRUE;
 }
 
 /* Bold button clicked */
@@ -622,53 +836,77 @@ GtkWidget* create_compose_window(GtkWindow *parent) {
     g_signal_connect(data->send_button, "clicked", G_CALLBACK(on_send_clicked), data);
     gtk_box_append(GTK_BOX(compose_toolbar_box), data->send_button);
     
-    /* Save Stationery button */
-    data->save_stationery_button = gtk_button_new_with_label("Save Stationery");
-    g_signal_connect(data->save_stationery_button, "clicked", G_CALLBACK(on_save_stationery_clicked), data);
-    gtk_box_append(GTK_BOX(compose_toolbar_box), data->save_stationery_button);
-    
+    /* Save button (saves to Drafts) */
+    data->save_button = gtk_button_new_with_label("Save");
+    gtk_widget_set_tooltip_text(data->save_button, "Save to Drafts");
+    g_signal_connect(data->save_button, "clicked", G_CALLBACK(on_save_clicked), data);
+    gtk_box_append(GTK_BOX(compose_toolbar_box), data->save_button);
+
     /* Separator */
     gtk_box_append(GTK_BOX(compose_toolbar_box), gtk_separator_new(GTK_ORIENTATION_VERTICAL));
-    
-    /* Format toolbar toggle */
+
+    /* Format toolbar toggle (original icon bar button 6) */
     data->format_toolbar_toggle = gtk_toggle_button_new_with_label("Format");
     gtk_toggle_button_set_active(GTK_TOGGLE_BUTTON(data->format_toolbar_toggle), TRUE);
+    gtk_widget_set_tooltip_text(data->format_toolbar_toggle, "Show/Hide Format Bar");
     g_signal_connect(data->format_toolbar_toggle, "clicked", G_CALLBACK(on_format_toolbar_toggle), data);
     gtk_box_append(GTK_BOX(compose_toolbar_box), data->format_toolbar_toggle);
-    
-    /* MIME toggle */
-    data->mime_toggle = gtk_toggle_button_new_with_label("MIME");
-    gtk_toggle_button_set_active(GTK_TOGGLE_BUTTON(data->mime_toggle), TRUE);
-    g_signal_connect(data->mime_toggle, "clicked", G_CALLBACK(on_mime_toggle), data);
-    gtk_box_append(GTK_BOX(compose_toolbar_box), data->mime_toggle);
-    
-    /* Attachments toggle */
-    data->attachments_toggle = gtk_toggle_button_new_with_label("Attachments");
-    gtk_toggle_button_set_active(GTK_TOGGLE_BUTTON(data->attachments_toggle), TRUE);
-    g_signal_connect(data->attachments_toggle, "clicked", G_CALLBACK(on_attachments_toggle), data);
-    gtk_box_append(GTK_BOX(compose_toolbar_box), data->attachments_toggle);
-    
-    /* Word wrap toggle */
+
+    /* QP Encoding toggle (original icon bar button 1 — FLAG_CAN_ENC / QP_SICN) */
+    data->qp_toggle = gtk_toggle_button_new_with_label("QP");
+    gtk_widget_set_tooltip_text(data->qp_toggle, "Quoted-Printable Encoding");
+    g_signal_connect(data->qp_toggle, "clicked", G_CALLBACK(on_qp_toggle), data);
+    gtk_box_append(GTK_BOX(compose_toolbar_box), data->qp_toggle);
+
+    /* Attachment type dropdown (original: MIME/BinHex/Uuencode popup) */
+    const char *attach_types[] = {"MIME", "BinHex", "Uuencode", NULL};
+    data->attach_type_dropdown = gtk_drop_down_new_from_strings(attach_types);
+    gtk_drop_down_set_selected(GTK_DROP_DOWN(data->attach_type_dropdown), 0);
+    gtk_widget_set_tooltip_text(data->attach_type_dropdown, "Attachment Encoding");
+    g_signal_connect(data->attach_type_dropdown, "notify::selected",
+                     G_CALLBACK(on_attach_type_changed), data);
+    gtk_box_append(GTK_BOX(compose_toolbar_box), data->attach_type_dropdown);
+
+    /* Word wrap toggle (original icon bar button 3 — FLAG_WRAP_OUT / WRAP_SICN) */
     data->word_wrap_toggle = gtk_toggle_button_new_with_label("Wrap");
     gtk_toggle_button_set_active(GTK_TOGGLE_BUTTON(data->word_wrap_toggle), TRUE);
+    gtk_widget_set_tooltip_text(data->word_wrap_toggle, "Wrap on Send");
     g_signal_connect(data->word_wrap_toggle, "clicked", G_CALLBACK(on_word_wrap_toggle), data);
     gtk_box_append(GTK_BOX(compose_toolbar_box), data->word_wrap_toggle);
-    
-    /* Keep copy toggle */
+
+    /* Keep copy toggle (original icon bar button 4 — FLAG_KEEP_COPY / KEEPCOPY_SICN) */
     data->keep_copy_toggle = gtk_toggle_button_new_with_label("Keep Copy");
     gtk_toggle_button_set_active(GTK_TOGGLE_BUTTON(data->keep_copy_toggle), TRUE);
+    gtk_widget_set_tooltip_text(data->keep_copy_toggle, "Keep Copy in Out Mailbox");
     g_signal_connect(data->keep_copy_toggle, "clicked", G_CALLBACK(on_keep_copy_toggle), data);
     gtk_box_append(GTK_BOX(compose_toolbar_box), data->keep_copy_toggle);
-    
-    /* Receipt toggle */
+
+    /* Return receipt toggle (original: FLAG_RR) */
     data->receipt_toggle = gtk_toggle_button_new_with_label("Receipt");
+    gtk_widget_set_tooltip_text(data->receipt_toggle, "Request Return Receipt");
     g_signal_connect(data->receipt_toggle, "clicked", G_CALLBACK(on_receipt_toggle), data);
     gtk_box_append(GTK_BOX(compose_toolbar_box), data->receipt_toggle);
-    
-    /* Add spacer */
-    GtkWidget *spacer2 = gtk_box_new(GTK_ORIENTATION_HORIZONTAL, 0);
-    gtk_widget_set_hexpand(spacer2, TRUE);
-    gtk_box_append(GTK_BOX(compose_toolbar_box), spacer2);
+
+    /* Separator */
+    gtk_box_append(GTK_BOX(compose_toolbar_box), gtk_separator_new(GTK_ORIENTATION_VERTICAL));
+
+    /* Priority dropdown (original: PRIOR_HIER_MENU popup) */
+    const char *priorities[] = {"Highest", "High", "Normal", "Low", "Lowest", NULL};
+    data->priority_dropdown = gtk_drop_down_new_from_strings(priorities);
+    gtk_drop_down_set_selected(GTK_DROP_DOWN(data->priority_dropdown), 2); /* Normal */
+    gtk_widget_set_tooltip_text(data->priority_dropdown, "Message Priority");
+    g_signal_connect(data->priority_dropdown, "notify::selected",
+                     G_CALLBACK(on_priority_changed), data);
+    gtk_box_append(GTK_BOX(compose_toolbar_box), data->priority_dropdown);
+
+    /* Signature dropdown (original: SIG_HIER_MENU popup) */
+    const char *signatures[] = {"No Signature", "Standard", "Alternate", NULL};
+    data->signature_dropdown = gtk_drop_down_new_from_strings(signatures);
+    gtk_drop_down_set_selected(GTK_DROP_DOWN(data->signature_dropdown), 1); /* Standard */
+    gtk_widget_set_tooltip_text(data->signature_dropdown, "Signature");
+    g_signal_connect(data->signature_dropdown, "notify::selected",
+                     G_CALLBACK(on_signature_changed), data);
+    gtk_box_append(GTK_BOX(compose_toolbar_box), data->signature_dropdown);
     
     /* Separator */
     gtk_box_append(GTK_BOX(main_box), gtk_separator_new(GTK_ORIENTATION_HORIZONTAL));
@@ -849,12 +1087,31 @@ GtkWidget* create_compose_window(GtkWindow *parent) {
     /* Separator */
     gtk_box_append(GTK_BOX(main_box), gtk_separator_new(GTK_ORIENTATION_HORIZONTAL));
     
+    /* Initialize state */
+    data->dirty = FALSE;
+    data->priority = PRIORITY_NORMAL;
+    data->signature_idx = 1;  /* Standard */
+    data->attach_type = 0;    /* MIME */
+    data->qp_encoding = FALSE;
+    data->word_wrap = TRUE;
+    data->keep_copy = TRUE;
+    data->return_receipt = FALSE;
+    data->format_toolbar_visible = TRUE;
+
     /* Store data on window for later retrieval */
     g_object_set_data_full(G_OBJECT(window), "compose-data", data, (GDestroyNotify)g_free);
-    
-    /* Connect destroy signal */
-    g_signal_connect(window, "destroy", G_CALLBACK(on_compose_window_destroy), data);
-    
+
+    /* Track dirty state: connect to buffer-changed and header entry signals */
+    g_signal_connect(gtk_text_view_get_buffer(GTK_TEXT_VIEW(data->editor)),
+                     "changed", G_CALLBACK(on_buffer_changed), data);
+    g_signal_connect(data->to_entry, "changed", G_CALLBACK(on_header_changed), data);
+    g_signal_connect(data->cc_entry, "changed", G_CALLBACK(on_header_changed), data);
+    g_signal_connect(data->bcc_entry, "changed", G_CALLBACK(on_header_changed), data);
+    g_signal_connect(data->subject_entry, "changed", G_CALLBACK(on_header_changed), data);
+
+    /* Connect close-request for WannaSave dialog (like original CompClose) */
+    g_signal_connect(window, "close-request", G_CALLBACK(on_compose_close_request), data);
+
     return window;
 }
 

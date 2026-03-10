@@ -45,6 +45,9 @@ MERCHANTABILITY AND FITNESS FOR A PARTICULAR PURPOSE ARE DISCLAIMED. */
 /* External globals */
 extern TOCType * TOCList;
 
+/* Forward declaration — WriteTOC defined below */
+int WriteTOC(TOCType * tocH);
+
 /* TOC version constants */
 #ifndef CURRENT_TOC_MINOR
 #define CURRENT_TOC_MINOR 9
@@ -186,14 +189,29 @@ TOCType * CheckTOC(FSSpecPtr spec) {
   if (err && err != fnfErr)
     return NULL;
 
-  /* No .toc file → build from mailbox */
+  /* No .toc file → build from mailbox and write the .toc */
   if (!file) {
     g_debug("CheckTOC: no .toc for %s, building", spec->name);
-    return BuildTOC_Path(spec->path);
+    TOCType *built = BuildTOC_Path(spec->path);
+    if (built) {
+      built->mailbox.spec = *spec;
+      WriteTOC(built);
+    }
+    return built;
   }
 
   /* Read the data-fork .toc */
-  return ReadTOC(spec);
+  TOCType *toc = ReadTOC(spec);
+  if (!toc) {
+    /* .toc file exists but is corrupt or too small — rebuild from mailbox */
+    g_debug("CheckTOC: .toc for %s is corrupt, rebuilding", spec->name);
+    toc = BuildTOC_Path(spec->path);
+    if (toc) {
+      toc->mailbox.spec = *spec;
+      WriteTOC(toc);
+    }
+  }
+  return toc;
 }
 
 /************************************************************************

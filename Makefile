@@ -1,0 +1,67 @@
+CC = cc
+KRB5_PREFIX = $(shell brew --prefix krb5 2>/dev/null)
+CFLAGS = $(shell pkg-config --cflags gtk4 json-glib-1.0 libxml-2.0) -Wall -Iinclude -ICrispinIMAP/Include -DIMAP -DTHREADING_ON -pthread \
+         -I$(KRB5_PREFIX)/include
+KRB5_PREFIX = $(shell brew --prefix krb5 2>/dev/null)
+LIBS = $(shell pkg-config --libs gtk4 json-glib-1.0 libxml-2.0) -pthread \
+       $(shell pkg-config --libs libcurl 2>/dev/null || echo -lcurl) \
+       -L$(KRB5_PREFIX)/lib -lgssapi_krb5 -lkrb5 -lk5crypto \
+       -lresolv
+TARGET = geudora
+
+# Resource compilation
+RESOURCE_XML = resources/eudora.gresource.xml
+RESOURCE_C = resources/eudora_resources.c
+RESOURCE_H = resources/eudora_resources.h
+
+# Source files in src/ directory
+SRC = $(wildcard src/*.c) $(RESOURCE_C)
+OBJ = $(SRC:.c=.o)
+
+# geditCtrl library
+gedit_LIB = geditCtrl/libgedit.a
+gedit_SRC = $(wildcard geditCtrl/*.c)
+gedit_OBJ = $(gedit_SRC:.c=.o)
+
+# CrispinIMAP library
+crispin_LIB = CrispinIMAP/libc-client.a
+
+all: $(RESOURCE_C) $(gedit_LIB) $(crispin_LIB) $(TARGET)
+
+# Compile GResource
+$(RESOURCE_C): $(RESOURCE_XML) resources/features.xml resources/strings.json
+	glib-compile-resources --target=$@ --sourcedir=resources --generate-source $(RESOURCE_XML)
+	glib-compile-resources --target=$(RESOURCE_H) --sourcedir=resources --generate-header $(RESOURCE_XML)
+	@echo "✓ Compiled GResource bundle"
+
+# Build geditCtrl library
+$(gedit_LIB): $(gedit_OBJ)
+	ar rcs $@ $^
+	@echo "✓ Built geditCtrl library"
+
+# Build CrispinIMAP library
+$(crispin_LIB):
+	$(MAKE) -C CrispinIMAP
+	@echo "✓ Built CrispinIMAP library"
+
+# Build main application
+STUB_OBJS = $(wildcard src/*.o.stub) src/mailbox_stub.o
+
+$(TARGET): $(OBJ) $(gedit_LIB) $(crispin_LIB)
+	$(CC) $(CFLAGS) -o $(TARGET) $(OBJ) $(if $(wildcard src/mailbox_stub.o),src/mailbox_stub.o,) $(gedit_LIB) $(crispin_LIB) $(LIBS)
+	@echo "✓ Built $(TARGET)"
+
+# Compile source files
+src/%.o: src/%.c
+	$(CC) $(CFLAGS) -c $< -o $@
+
+# Compile geditCtrl files
+geditCtrl/%.o: geditCtrl/%.c
+	$(CC) $(CFLAGS) -c $< -o $@
+
+clean:
+	rm -f $(TARGET) $(OBJ) $(gedit_OBJ) $(gedit_LIB) $(RESOURCE_C) $(RESOURCE_H)
+	$(MAKE) -C CrispinIMAP clean
+	@echo "✓ Cleaned build artifacts"
+
+.PHONY: all clean
