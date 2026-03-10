@@ -85,7 +85,7 @@ enum {
 #ifndef ACCUMULATOR_DEFINED
 #define ACCUMULATOR_DEFINED
 typedef struct Accumulator {
-  void **data;
+  unsigned char **data;  /* Handle — pointer-to-pointer to byte buffer */
   long size;
   long offset;
   int err;
@@ -121,6 +121,11 @@ typedef short ScriptCode;
 #define FLAG_HUE4 (1 << 17)
 #define FLAG_UTF8 (1 << 31)     /* summary is UTF-8 */
 #define OPT_IMAP_SENT (1 << 26) /* This is a sent IMAP message */
+#define OPT_OPEN         (1 << 0)  /* Open after transfer */
+#define OPT_AUTO_OPENED  (1 << 14) /* Was auto-opened */
+#define OPT_BULK      (1 << 10) /* Bulk/list mail */
+#define FLAG_HAS_ATT  (1 << 8)  /* Message has attachments */
+#define FLAG_SKIPWARN  (1 << 9)  /* Skip delete warning */
 typedef void **FSSpecHandle;
 typedef void *ControlHandle;
 typedef struct MyWindow *MyWindowPtr;
@@ -167,6 +172,9 @@ typedef struct FSSpec {
   char path[1024];
 } FSSpec, *FSSpecPtr;
 #endif
+
+/* VDId: Volume/Directory ID pair — used for folder references */
+typedef struct { short vRef; long dirId; } VDId, *VDIdPtr, **VDIdHandle;
 
 /* CSpec: Counted file specification for tracking file references */
 typedef struct CountedSpecStruct {
@@ -516,7 +524,7 @@ short FlushVol(unsigned char *name, short vRefNum);
 int FSpRename(FSSpecPtr spec, const char *newName);
 int UniqueSpec(FSSpecPtr spec, short max);
 uint32_t LocalDateTime(void);
-int utl_RFSanity(FSSpecPtr spec, bool *sane);
+int utl_RFSanity(const char *spec, bool *sane);
 
 typedef struct GetVolParmsInfoBuffer {
   long vMVersion;

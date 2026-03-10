@@ -29,6 +29,7 @@ DAMAGE. */
 #include "threading.h"   /* For CurPers, GlobalTemp, DealingWithIdiotIMail */
 #include "schizo.h"      /* For personality management */
 #include "util.h"        /* For MIN macro and utility functions */
+#include "utl.h"         /* For utl_PlugParams */
 
 /* Use standard GSSAPI headers on all platforms - no Carbon! */
 #include <gssapi/gssapi.h>

@@ -31,6 +31,7 @@ ADVISED OF THE POSSIBILITY OF SUCH DAMAGE. */
 #include "lineio.h"
 #include "sort.h"
 #include "util.h"
+#include "imapdownload.h"
 #include <gtk/gtk.h>
 #define FILE_NUM 2
 

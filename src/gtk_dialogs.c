@@ -3,6 +3,7 @@
 #include "mailbox.h"
 #include "prefdefs.h"
 #include "gtk_dialogs.h"
+#include "gtk_prefs.h"
 #include <gtk/gtk.h>
 #include <stdarg.h>
 #include <string.h>
@@ -139,6 +140,14 @@ static void ensure_prefs_loaded(void) {
 }
 
 long GetPrefLong(short prefId) {
+  /* Bridge critical prefs to INI settings */
+  switch (prefId) {
+    case PREF_INTERVAL:
+      return (long)prefs_get_int(PREFS_GROUP_CHECKING_MAIL, "check_interval", 5);
+    default:
+      break;
+  }
+
   ensure_prefs_loaded();
 
   char key[64];
@@ -181,31 +190,83 @@ void SetPref(int prefId, const char *value) {
   }
 }
 
-/* GetPref - fill dest with preference string, return dest */
+/* Helper: fill Pascal string dest from a C string, return dest */
+static unsigned char *fill_pstr(unsigned char *dest, const char *cstr) {
+  if (!dest) return dest;
+  if (cstr && cstr[0]) {
+    size_t len = strlen(cstr);
+    if (len > 255) len = 255;
+    dest[0] = (unsigned char)len;
+    memcpy(dest + 1, cstr, len);
+  } else {
+    dest[0] = 0;
+  }
+  return dest;
+}
+
+/* GetPref - fill dest with preference string, return dest.
+ * Bridges critical mail pref IDs to the INI settings system. */
 unsigned char *GetPref(unsigned char *dest, short prefId) {
+  if (!dest) return dest;
+
+  /* Bridge critical prefs to INI settings (geudora.ini) */
+  gchar *ini_val = NULL;
+  switch (prefId) {
+    case PREF_STUPID_USER:
+      ini_val = prefs_get_string(PREFS_GROUP_CHECKING_MAIL, "pop_username", "");
+      break;
+    case PREF_STUPID_HOST:
+      ini_val = prefs_get_string(PREFS_GROUP_CHECKING_MAIL, "pop_server", "");
+      break;
+    case PREF_SMTP:
+      ini_val = prefs_get_string(PREFS_GROUP_SENDING_MAIL, "smtp_server", "");
+      break;
+    case PREF_RETURN:
+      ini_val = prefs_get_string(PREFS_GROUP_SENDING_MAIL, "email_address", "");
+      break;
+    case PREF_POP_SIGH:
+      ini_val = prefs_get_string(PREFS_GROUP_SENDING_MAIL, "real_name", "");
+      break;
+    default:
+      break;
+  }
+
+  if (ini_val) {
+    fill_pstr(dest, ini_val);
+    g_free(ini_val);
+    if (dest[0] > 0) return dest;  /* Got a value from INI */
+  }
+
+  /* Fall back to legacy preferences.ini */
   ensure_prefs_loaded();
 
   char key[64];
   snprintf(key, sizeof(key), "pref_%d", prefId);
 
   gchar *val = g_key_file_get_string(prefs_keyfile, "preferences", key, NULL);
-  if (dest) {
-    if (val) {
-      size_t len = strlen(val);
-      if (len > 255) len = 255;
-      /* Store as Pascal string (length byte + data) */
-      dest[0] = (unsigned char)len;
-      memcpy(dest + 1, val, len);
-      g_free(val);
-    } else {
-      dest[0] = 0;
-    }
+  if (val) {
+    fill_pstr(dest, val);
+    g_free(val);
+  } else {
+    dest[0] = 0;
   }
   return dest;
 }
 
 /* PrefIsSet - check if boolean preference is set */
 bool PrefIsSet(short prefId) {
+  /* Bridge critical prefs to INI settings */
+  switch (prefId) {
+    case PREF_KERBEROS:
+      return (bool)prefs_get_bool(PREFS_GROUP_CHECKING_MAIL, "use_kerberos", FALSE);
+    case PREF_SEND_CHECK:
+      return (bool)prefs_get_bool(PREFS_GROUP_CHECKING_MAIL, "send_on_check", FALSE);
+    case PREF_AUTO_EMPTY:
+      return (bool)prefs_get_bool(PREFS_GROUP_MISCELLANEOUS, "empty_trash_on_quit", FALSE);
+    default:
+      break;
+  }
+
   ensure_prefs_loaded();
 
   char key[64];

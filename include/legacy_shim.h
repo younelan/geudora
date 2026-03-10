@@ -109,7 +109,7 @@ static inline void *NuPtrClear(size_t size) { return calloc(1, size); }
 /* static inline void SetSumColor(void *tocH, int sumNum, int color) {} */
 /* BoxSelectAfter provided by message.c or other modules */
 /* static inline void BoxSelectAfter(void *tocH, int sumNum) {} */
-static inline void MBResort(void *tocH) {}
+/* MBResort — real implementation in boxact.c */
 static inline void AddIMAPXfUndoUIDs(void *tocH, void *toTocH, void *h,
                                      bool flag) {}
 
@@ -146,7 +146,7 @@ static inline long PopUpMenuSelect(void *mh, short top, short left,
 /* PtrAndHand: append ptr[0..size-1] to a Handle; Hand must be malloc'd */
 /* Declared here; implementation forward-declared so compilers find it */
 int PtrAndHand(const void *ptr, void **hand, long size);
-static inline void BoxSelectSame(void *tocH, int item, int sum) {}
+/* BoxSelectSame — real implementation in boxact.c */
 /* MBOpenFolder - real impl in mbwin.c */
 void MBOpenFolder(void *hStringList, bool isIMAP);
 
@@ -286,7 +286,7 @@ static inline unsigned char *CompCurAddr(void *win, unsigned char *addr) {
 }
 */
 
-#define peModLock 1
+/* peModLock — now in pete_portable.h */
 #define shortDate 1
 
 static inline void DateString(long secs, int fmt, unsigned char *str, void *p) {
@@ -296,7 +296,7 @@ static inline void DateString(long secs, int fmt, unsigned char *str, void *p) {
   }
 }
 
-static inline void utl_PlugParams(unsigned char *result, ...) { /* stub */ }
+/* utl_PlugParams declared in utl.h — real implementation */
 #ifndef BMD
 #define BMD(s, d, l) memmove(d, s, l)
 #endif
@@ -335,21 +335,11 @@ int ReallyDoAnAlert(int templ, int which);
 #endif
 
 /* PETE Stubs */
-#ifndef PETE_SHIM_H
-typedef void *PETEHandle;
-#endif
-#define kPETECurrentStyle -1
-#define kPETELastPara -1
-/* peAllValid defined in pete_portable.h */
+/* PETEHandle, kPETELastPara, peModLock etc. — all in pete_portable.h now */
 
-static inline bool PeteIsDirty(void *pte) { return false; }
-static inline int PeteGetStyle(void *pte, long offset, long *len, void *style) {
-  return 0;
-}
-static inline void PeteSetTextPtr(void *pte, void *text, long len) {}
+/* Pete functions now declared in pete_portable.h, implemented in peteglue.c.
+ * Only functions NOT yet in pete_portable.h or peteglue.h stay as stubs here: */
 static inline void PeteKillUndo(void *pte) {}
-static inline void PeteCalcOff(void *pte) {}
-static inline void PeteCalcOn(void *pte) {}
 static inline void PetePlain(void *pte, long start, long end, long flags) {}
 static inline void PetePlainPara(void *pte, long para) {}
 static inline int PETEInsertPara(void *glob, void *pte, long para, void *style,
@@ -358,23 +348,6 @@ static inline int PETEInsertPara(void *glob, void *pte, long para, void *style,
 }
 static inline void PeteSmallParas(void *pte) {}
 static inline void PeteTrimTrailingReturns(void *pte, bool b) {}
-static inline void PETEMarkDocDirty(void *glob, void *pte, bool b) {}
-static inline void PeteSetURLRescan(void *pte, long flags) {}
-static inline int InsertRichLo(void *text, long start, long end, long flags,
-                               bool b1, bool b2, void *pte, void *style,
-                               void *messH, long unknown) {
-  return 0;
-}
-static inline int PETEGetRawText(void *glob, void *pte, void *h) { return 0; }
-static inline int PeteInsertChar(void *pte, long offset, int c, void *style) {
-  return 0;
-}
-static inline int PeteInsertPtr(void *pte, long offset, void *ptr, long len) {
-  return 0;
-}
-static inline void PETESetTextStyle(void *glob, void *pte, long start, long end,
-                                    void *style, long flags) {}
-static inline void PeteWrap(void *win, void *pte, bool b) {}
 
 /* Color/Graphics Stubs */
 
@@ -455,7 +428,7 @@ typedef MesgErrorType **mesgErrorHandle;
 /* AWrite, AlertStr, CopyFBytes provided by fileutil.h - no shim here. */
 
 #define MAX_MESSAGES_PER_MAILBOX 10000
-#define FLAG_SKIPWARN 0x0100 /* Dummy value */
+/* FLAG_SKIPWARN defined in mailbox.h */
 /* #define Stop 1 */
 
 /* Comp.c Stubs */

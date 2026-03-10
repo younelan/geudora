@@ -43,7 +43,7 @@ void MessZoomSize(MyWindowPtr win, Rect *zoom);
 void HiliteOddReply(MessHandle messH);
 // void AlignHeaders(MessHandle messH);
 void SaveMessageAs(MessHandle messH);
-bool MessKey(MyWindowPtr win, EventRecord *event);
+bool MessKey(MyWindowPtr win, void *event);
 short SaveAsToOpenFile(short refN, MessHandle messH);
 bool SaveAsFilter(void *dgPtr, void *event, short *item, char *userData);
 short SaveAsHook(short item, void *dgPtr, char *userData);

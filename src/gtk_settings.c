@@ -28,17 +28,30 @@ static void sync_all_pages(SettingsDialog *dialog)
 
     for (int i = 0; i < SETTINGS_COUNT; i++) {
         GtkWidget *scroll = dialog->section_widgets[i];
-        GtkWidget *page = gtk_scrolled_window_get_child(GTK_SCROLLED_WINDOW(scroll));
-        if (!page) continue;
+        GtkWidget *raw = gtk_scrolled_window_get_child(GTK_SCROLLED_WINDOW(scroll));
+        if (!raw) { g_print("DEBUG sync: page %d raw=NULL\n", i); continue; }
+        GtkWidget *page = raw;
+        g_print("DEBUG sync: page %d type=%s\n", i, G_OBJECT_TYPE_NAME(raw));
+        /* GTK4 wraps non-scrollable children in a GtkViewport — unwrap it */
+        if (GTK_IS_VIEWPORT(page))
+            page = gtk_viewport_get_child(GTK_VIEWPORT(page));
+        if (!page) { g_print("DEBUG sync: page %d viewport child=NULL\n", i); continue; }
+        if (page != raw)
+            g_print("DEBUG sync: page %d unwrapped to %s\n", i, G_OBJECT_TYPE_NAME(page));
 
         /* Helper macros to reduce boilerplate */
         #define GET_CHECK(key, field) do { \
             GtkWidget *w = g_object_get_data(G_OBJECT(page), key); \
             if (w) s->field = gtk_check_button_get_active(GTK_CHECK_BUTTON(w)); \
+            else g_print("DEBUG sync: key '%s' not found on page %d\n", key, i); \
         } while(0)
         #define GET_TEXT(key, field) do { \
             GtkWidget *w = g_object_get_data(G_OBJECT(page), key); \
-            if (w) strncpy(s->field, gtk_editable_get_text(GTK_EDITABLE(w)), sizeof(s->field) - 1); \
+            if (w) { \
+                const char *_t = gtk_editable_get_text(GTK_EDITABLE(w)); \
+                g_print("DEBUG sync: %s = '%s'\n", key, _t ? _t : "(null)"); \
+                strncpy(s->field, _t ? _t : "", sizeof(s->field) - 1); \
+            } else g_print("DEBUG sync: key '%s' not found on page %d\n", key, i); \
         } while(0)
         #define GET_SPIN(key, field) do { \
             GtkWidget *w = g_object_get_data(G_OBJECT(page), key); \
@@ -303,6 +316,8 @@ static void on_ok_clicked(GtkWidget *widget, gpointer user_data)
     /* Save accounts */
     GtkWidget *acct_scroll = dialog->section_widgets[SETTINGS_ACCOUNTS];
     GtkWidget *acct_page = gtk_scrolled_window_get_child(GTK_SCROLLED_WINDOW(acct_scroll));
+    if (acct_page && GTK_IS_VIEWPORT(acct_page))
+        acct_page = gtk_viewport_get_child(GTK_VIEWPORT(acct_page));
     if (acct_page) {
         int *count = g_object_get_data(G_OBJECT(acct_page), "acct-count");
         PrefsAccount *accounts = g_object_get_data(G_OBJECT(acct_page), "acct-array");

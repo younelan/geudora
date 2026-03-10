@@ -34,6 +34,8 @@ ADVISED OF THE POSSIBILITY OF SUCH DAMAGE. */
 #include "gtk_dialogs.h" /* For ComposeStdAlert, SetPrefLong */
 #include "lex822.h"      /* For EndOfHeader */
 #include "log.h"
+#include "statmng.h"
+#include "utl.h"
 #include <stdbool.h>
 #include <stddef.h>
 #include <stdint.h>

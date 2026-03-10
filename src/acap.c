@@ -17,6 +17,8 @@ NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE OF THIS SOFTWARE, EVE
 DAMAGE. */
 
 #include "acap.h"
+#include "gtk_prefs.h"
+#include <string.h>
 
 /************************************************************************
  * ACAP STUB IMPLEMENTATION
@@ -57,22 +59,56 @@ OSErr ACAPLogin(PStr server, PStr user, PStr password, ACAPStateHandle state) {
 }
 
 /************************************************************************
- * GetPOPInfo - get POP server info (STUB)
+ * GetPOPInfo - get POP username and server from INI settings
+ * Populates Pascal strings: user = pop_username, host = pop_server
  ************************************************************************/
-void GetPOPInfo(void *user, void *password) {
-    // TODO: Implement POP info retrieval
-    // For now, do nothing
+void GetPOPInfo(void *user, void *host) {
+    PStr u = (PStr)user;
+    PStr h = (PStr)host;
+
+    gchar *username = prefs_get_string(PREFS_GROUP_CHECKING_MAIL, "pop_username", "");
+    gchar *server = prefs_get_string(PREFS_GROUP_CHECKING_MAIL, "pop_server", "");
+
+    if (u) {
+        size_t len = strlen(username);
+        if (len > 255) len = 255;
+        u[0] = (unsigned char)len;
+        memcpy(u + 1, username, len);
+    }
+    if (h) {
+        size_t len = strlen(server);
+        if (len > 255) len = 255;
+        h[0] = (unsigned char)len;
+        memcpy(h + 1, server, len);
+    }
+
+    g_free(username);
+    g_free(server);
 }
 
 /************************************************************************
- * GetPOPPref - get POP preference string (STUB)
+ * GetPOPPref - get POP account string "username@server" as Pascal string
+ * Used by mail engine to identify the POP account
  ************************************************************************/
 PStr GetPOPPref(PStr dest) {
-    // TODO: Implement POP preference retrieval
-    // For now, return empty string
-    if (dest) {
+    if (!dest) return dest;
+
+    gchar *username = prefs_get_string(PREFS_GROUP_CHECKING_MAIL, "pop_username", "");
+    gchar *server = prefs_get_string(PREFS_GROUP_CHECKING_MAIL, "pop_server", "");
+
+    if (username[0] && server[0]) {
+        gchar *combined = g_strdup_printf("%s@%s", username, server);
+        size_t len = strlen(combined);
+        if (len > 255) len = 255;
+        dest[0] = (unsigned char)len;
+        memcpy(dest + 1, combined, len);
+        g_free(combined);
+    } else {
         dest[0] = 0;
     }
+
+    g_free(username);
+    g_free(server);
     return dest;
 }
 

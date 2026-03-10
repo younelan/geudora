@@ -398,7 +398,7 @@ bool HasBeenProcessed(FSSpec *spec);
 void SearchUpdateSum(TOCType * toc, short sum, TOCType * newToc,
                      long newSerial, bool b1, bool b2);
 
-static inline void InvalTocBox(TOCType * toc, short sum, int col) {}
+/* InvalTocBox declared in boxact.h */
 
 #ifndef STATMNG_H /* statmng.c provides the real UpdateNumStatWithTime */
 static inline void UpdateNumStatWithTime(int stat, long count,

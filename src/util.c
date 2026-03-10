@@ -234,11 +234,124 @@ void WhiteRect(Rect *r) {}
 
 int WannaSave(MyWindowPtr win) { return CANCEL_ITEM; }
 
+#define PASSWORD_OK 0
 #define PASSWORD_CANCEL 1
+
+/* GTK4 password dialog — modal, blocks until user enters password or cancels */
+typedef struct {
+  GMainLoop *loop;
+  int result;
+  GtkWidget *entry;
+  UPtr word;
+  int size;
+} PwDialogData;
+
+static void pw_on_ok(GtkWidget *btn, gpointer user_data) {
+  (void)btn;
+  PwDialogData *d = (PwDialogData *)user_data;
+  const char *text = gtk_editable_get_text(GTK_EDITABLE(d->entry));
+  if (text && d->word && d->size > 0) {
+    int len = strlen(text);
+    if (len >= d->size) len = d->size - 1;
+    /* Store as Pascal string: length byte + chars */
+    d->word[0] = (unsigned char)len;
+    memcpy(d->word + 1, text, len);
+  }
+  d->result = PASSWORD_OK;
+  g_main_loop_quit(d->loop);
+}
+
+static void pw_on_cancel(GtkWidget *btn, gpointer user_data) {
+  (void)btn;
+  PwDialogData *d = (PwDialogData *)user_data;
+  d->result = PASSWORD_CANCEL;
+  g_main_loop_quit(d->loop);
+}
+
+static gboolean pw_on_close(GtkWindow *win, gpointer user_data) {
+  (void)win;
+  PwDialogData *d = (PwDialogData *)user_data;
+  d->result = PASSWORD_CANCEL;
+  g_main_loop_quit(d->loop);
+  return TRUE;
+}
 
 int GetPassword(PStr personality, PStr userName, PStr serverName, UPtr word,
                 int size, short prompt) {
-  return PASSWORD_CANCEL;
+  (void)prompt;
+
+  /* Build display strings from Pascal strings */
+  char pers_str[256] = "", user_str[256] = "", server_str[256] = "";
+  if (personality && personality[0])
+    snprintf(pers_str, sizeof(pers_str), "%.*s", personality[0], personality + 1);
+  if (userName && userName[0])
+    snprintf(user_str, sizeof(user_str), "%.*s", userName[0], userName + 1);
+  if (serverName && serverName[0])
+    snprintf(server_str, sizeof(server_str), "%.*s", serverName[0], serverName + 1);
+
+  /* Create modal password dialog */
+  GtkWidget *dlg = gtk_window_new();
+  gtk_window_set_title(GTK_WINDOW(dlg), "Enter Password");
+  gtk_window_set_modal(GTK_WINDOW(dlg), TRUE);
+  gtk_window_set_default_size(GTK_WINDOW(dlg), 380, -1);
+  gtk_window_set_resizable(GTK_WINDOW(dlg), FALSE);
+
+  GtkWidget *vbox = gtk_box_new(GTK_ORIENTATION_VERTICAL, 8);
+  gtk_widget_set_margin_start(vbox, 20);
+  gtk_widget_set_margin_end(vbox, 20);
+  gtk_widget_set_margin_top(vbox, 16);
+  gtk_widget_set_margin_bottom(vbox, 16);
+  gtk_window_set_child(GTK_WINDOW(dlg), vbox);
+
+  /* Info label */
+  char info[512];
+  if (pers_str[0])
+    snprintf(info, sizeof(info), "Password for %s\n(%s on %s)", pers_str, user_str, server_str);
+  else
+    snprintf(info, sizeof(info), "Password for %s on %s", user_str, server_str);
+  GtkWidget *label = gtk_label_new(info);
+  gtk_label_set_xalign(GTK_LABEL(label), 0);
+  gtk_label_set_wrap(GTK_LABEL(label), TRUE);
+  gtk_box_append(GTK_BOX(vbox), label);
+
+  /* Password entry */
+  GtkWidget *entry = gtk_password_entry_new();
+  gtk_password_entry_set_show_peek_icon(GTK_PASSWORD_ENTRY(entry), TRUE);
+  gtk_box_append(GTK_BOX(vbox), entry);
+
+  /* Buttons */
+  GtkWidget *btn_box = gtk_box_new(GTK_ORIENTATION_HORIZONTAL, 8);
+  gtk_widget_set_halign(btn_box, GTK_ALIGN_END);
+  gtk_widget_set_margin_top(btn_box, 8);
+  GtkWidget *cancel_btn = gtk_button_new_with_label("Cancel");
+  GtkWidget *ok_btn = gtk_button_new_with_label("OK");
+  gtk_widget_add_css_class(ok_btn, "suggested-action");
+  gtk_box_append(GTK_BOX(btn_box), cancel_btn);
+  gtk_box_append(GTK_BOX(btn_box), ok_btn);
+  gtk_box_append(GTK_BOX(vbox), btn_box);
+
+  /* Run a nested main loop for modal behavior */
+  PwDialogData data = {0};
+  data.loop = g_main_loop_new(NULL, FALSE);
+  data.result = PASSWORD_CANCEL;
+  data.entry = entry;
+  data.word = word;
+  data.size = size;
+
+  g_signal_connect(ok_btn, "clicked", G_CALLBACK(pw_on_ok), &data);
+  g_signal_connect(cancel_btn, "clicked", G_CALLBACK(pw_on_cancel), &data);
+  g_signal_connect(dlg, "close-request", G_CALLBACK(pw_on_close), &data);
+
+  /* Also accept Enter key in the entry */
+  g_signal_connect_swapped(entry, "activate", G_CALLBACK(pw_on_ok), &data);
+
+  gtk_window_present(GTK_WINDOW(dlg));
+  g_main_loop_run(data.loop);
+  g_main_loop_unref(data.loop);
+
+  gtk_window_destroy(GTK_WINDOW(dlg));
+
+  return data.result;
 }
 
 bool PasswordFilter(void *dgPtr, void *event, short *item) { return false; }

@@ -42,6 +42,7 @@ ADVISED OF THE POSSIBILITY OF SUCH DAMAGE. */
 #include "sasl.h"
 #include "util.h"
 #include "uudecode.h"
+#include "peteglue.h"
 #include <time.h>
 
 #define FILE_NUM 34
@@ -59,7 +60,7 @@ extern void UUPCDry(TransStream stream);
 #ifndef LOG_SEND
 #define LOG_SEND 0
 #endif
-extern long ApproxMessageSize(MessHandle messH);
+/* ApproxMessageSize declared in compact.h */
 extern bool ShouldSMTPAuth(void);
 extern void OffsetWindow(void *winWP);
 extern void MyParamText(unsigned char *p1, unsigned char *p2, unsigned char *p3,
@@ -82,7 +83,7 @@ extern OSErr BuildEnriched(void *acc, GtkWidget *pte, void *p, long stop,
                            long val, void *p2, bool b);
 extern void ConvertExcerpt(GtkWidget *pte, long start, long stop, void *p1,
                            void *p2);
-extern long PETEGetTextLen(void *pete, GtkWidget *pte);
+/* PETEGetTextLen declared in peteglue.h */
 extern void PeteCleanList(GtkWidget *pte);
 extern short Prior2Display(short priority);
 extern OSErr HTMLPostamble(void *acc, bool b);
@@ -98,7 +99,8 @@ extern void SecondsToDate(uint32_t secs, DateTimeRec *dtr);
 extern void GetTime(DateTimeRec *dtr);
 extern void GetResInfo(Handle res, short *id, unsigned int *type,
                        unsigned char *name);
-extern short AttachOptNumber(long flags);
+/* AttachOptNumber is a macro in compact.h */
+#include "compact.h"
 extern void UpdateNumStat(int type, int val);
 extern bool IsMailbox(FSSpecPtr spec);
 extern MyWindowPtr GetAMessageLo(TOCType * tocH, int sumNum, GtkWidget *winWP,

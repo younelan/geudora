@@ -48,6 +48,7 @@ char gIMAPErrorString[256] = {0};
 #include "log.h"
 #include "MyRes.h"
 #include "sort.h"
+#include "boxact.h"
 #include "uudecode.h"
 #include "../include/acap.h"
 

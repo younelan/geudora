@@ -33,6 +33,7 @@ DAMAGE. */
 #include "comp.h"
 #include "sendmail.h"
 #include "pop.h"
+#include "peteglue.h"
 #include "gtk_menus.h"
 #define FILE_NUM 82
 /* Copyright (c) 1996 by QUALCOMM Incorporated */

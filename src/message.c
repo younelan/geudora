@@ -53,6 +53,9 @@ ADVISED OF THE POSSIBILITY OF SUCH DAMAGE. */
 #include "junk.h"
 #include "legacy_shim.h"
 #include "messact.h"
+#include "boxact.h"
+#include "peteglue.h"
+#include "rich.h"
 
 #include "lineio.h"
 
@@ -65,6 +68,7 @@ ADVISED OF THE POSSIBILITY OF SUCH DAMAGE. */
 #include "toc.h"
 #include "trans.h"
 #include "util.h"
+#include "utl.h"
 #ifndef LOG_PLUG
 #define LOG_PLUG 0x100
 #endif
@@ -96,13 +100,12 @@ void CompDelAttachment(MessHandle messH, HeadSpec *where);
 void AttachSelect(MessHandle messH);
 int SigValidate(short sigId);
 #define ValidHash(h) 1
-void SelectBoxRange(TOCType * tocH, short from, short to, bool extend,
-                    short oFrom, short oTo);
+/* SelectBoxRange declared in boxact.h */
 void *FindRealSummary(TOCType * tocH, long serialNum, short *realSum);
 int ConConMess(MessHandle messH, GtkWidget *pte, void *profile, void *a,
                void *b);
 void *BoxPreviewProfile(void *name, TOCType * tocH, int which);
-void BeenThereDoneThat(TOCType * tocH, short sumNum);
+/* BeenThereDoneThat declared in boxact.h */
 OSErr MakeAttSubFolder(MessHandle messH, unsigned long uidHash,
                        FSSpecPtr folder);
 void ConConMultiple(TOCType * tocH, GtkWidget *pte, void *profile, int rule,
@@ -323,12 +326,8 @@ bool DoMessageMenu(short item, TOCType * tocH, short sumNum, short toWhom,
                    void *addr, long modifiers, bool nuke, bool *busy);
 void SetState(TOCType * tocH, short sumNum, int state);
 
-/* More Missing Prototypes */
-/* SetSumColor declared in mailbox.h */
+/* ServerMenuChoice, SetPriority, BoxSelectAfter, BeenThereDoneThat — in boxact.h */
 int Menu2Label(short menu);
-void ServerMenuChoice(TOCType * tocH, short sumNum, int choice, bool shift);
-void SetPriority(TOCType * tocH, short sumNum, int priority);
-
 MyWindowPtr GetAMessage(TOCType * tocH, short sumNum, void *u1, void *u2,
                         bool b1);
 void NotUsingWindow(GtkWidget *win);
@@ -337,9 +336,7 @@ OSErr SavePtrAsMessage(UPtr preText, long preSize, UPtr text, long size,
 OSErr PutOutFromLine(short refN, long *len);
 OSErr TruncAtMark(short refN);
 int ReadSum(void *u1, bool b1, LineIOP lip, bool b2);
-/* SaveMessageSum declared in mailbox.h (void* param) */
 void NicknameWatcherFocusChange(GtkWidget *pte);
-// #define MESS_TO_PERS(mh) (NULL) /* Stub - conflicts with pop.h */
 MyWindowPtr DoComposeNew(int type);
 #ifndef DELETE_ID
 #define DELETE_ID 1003
@@ -355,17 +352,9 @@ void MakeMessTitle(unsigned char *title, TOCType * tocH, int sumNum,
 void DoGStringGlobalReplace(GString *theString, const char *stringToFind,
                             const char *replacement);
 
-/* Prototypes */
-#ifndef schizo_h
-typedef struct Personality **PersHandle;
-#endif
-extern threadGlobalsPtr CurThreadGlobals;
-/* extern PersHandle PersList; Removed to avoid macro conflict */
-Handle PeteExtra(GtkWidget *pete); /* Prototype */
-/* PtrAndHand declared in legacy_shim.h */
+/* PeteExtra declared in peteglue.h */
 void RehashLo(TOCType * tocH, short sumNum, UHandle text, bool soft);
 bool IsIMAPMessageProcessed(TOCType * tocH, short sumNum);
-void BoxSelectAfter(MyWindowPtr win, short sumNum);
 void ShowBoxSizes(MyWindowPtr win);
 bool Mom(short button, short item, short pref, short warning, short verb);
 bool IsQueued(TOCType * tocH, short sumNum);
@@ -1496,6 +1485,7 @@ int ReallyDoAnAlert(int templ, int which);
 #endif
 
 
+#define DELETE_ID 1003
   extern threadGlobalsPtr CurThreadGlobals;
 #define MINI_MASK 0
 
@@ -1654,12 +1644,8 @@ int ReallyDoAnAlert(int templ, int which);
                      void *addr, long modifiers, bool nuke, bool *busy);
   void SetState(TOCType * tocH, short sumNum, int state);
 
-  /* More Missing Prototypes */
-  /* SetSumColor declared in mailbox.h */
+  /* ServerMenuChoice, SetPriority, BoxSelectAfter — in boxact.h */
   int Menu2Label(short menu);
-  void ServerMenuChoice(TOCType * tocH, short sumNum, int choice, bool shift);
-  void SetPriority(TOCType * tocH, short sumNum, int priority);
-
   MyWindowPtr GetAMessage(TOCType * tocH, short sumNum, void *u1, void *u2,
                           bool b1);
   void NotUsingWindow(GtkWidget * win);
@@ -1668,15 +1654,9 @@ int ReallyDoAnAlert(int templ, int which);
   OSErr PutOutFromLine(short refN, long *len);
   OSErr TruncAtMark(short refN);
   int ReadSum(void *u1, bool b1, LineIOP lip, bool b2);
-  /* SaveMessageSum declared in mailbox.h (void* param) */
   void NicknameWatcherFocusChange(GtkWidget * pte);
-  // #define MESS_TO_PERS(mh) (NULL) /* Stub - conflicts with pop.h */
   MyWindowPtr DoComposeNew(int type);
-#ifndef DELETE_ID
-#define DELETE_ID 1003
-#endif
 
-#define mLoPlain 1
   int CopyNewsgroups(MessHandle origMH, MessHandle newMH);
   bool AttStillInFolder(FSSpecPtr att, FSSpecPtr folder);
   unsigned char *MessCurAddr(MyWindowPtr win, unsigned char *addr);
@@ -1686,17 +1666,9 @@ int ReallyDoAnAlert(int templ, int which);
   void DoGStringGlobalReplace(GString * theString, const char *stringToFind,
                               const char *replacement);
 
-/* Prototypes */
-#ifndef schizo_h
-  typedef struct Personality **PersHandle;
-#endif
-  extern threadGlobalsPtr CurThreadGlobals;
-  /* extern PersHandle PersList; Removed to avoid macro conflict */
-  Handle PeteExtra(GtkWidget * pete); /* Prototype */
-  /* PtrAndHand declared in legacy_shim.h */
+  /* PeteExtra declared in peteglue.h */
   void RehashLo(TOCType * tocH, short sumNum, UHandle text, bool soft);
   bool IsIMAPMessageProcessed(TOCType * tocH, short sumNum);
-  void BoxSelectAfter(MyWindowPtr win, short sumNum);
   void ShowBoxSizes(MyWindowPtr win);
   bool Mom(short button, short item, short pref, short warning, short verb);
   bool IsQueued(TOCType * tocH, short sumNum);

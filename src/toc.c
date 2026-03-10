@@ -35,6 +35,7 @@ MERCHANTABILITY AND FITNESS FOR A PARTICULAR PURPOSE ARE DISCLAIMED. */
 #include "junk.h"
 #include "mydefs.h"
 #include "StringDefs.h"
+#include "gtk_prefs.h"
 
 #include <errno.h>
 #include <string.h>
@@ -103,19 +104,51 @@ MenuHandle GetMHandle(short menuId);
 TOCType * RebuildTOC(const char *path, TOCType * oldTocH, bool resource,
                      bool autoRebuild);
 
-/* Mail directory */
+/* Mail directory — use the same path as prefs_get_mailboxes_path() */
 static const char *get_mail_dir(void) {
+  const char *mb = prefs_get_mailboxes_path();
+  if (mb && mb[0])
+    return mb;
+  /* Fallback before prefs_init() has been called */
   static char dir[1024] = {0};
   if (!dir[0]) {
     const char *home = g_get_home_dir();
-    snprintf(dir, sizeof(dir), "%s/.eudora", home);
+    snprintf(dir, sizeof(dir), "%s/.local/share/geudora/mailboxes", home);
   }
   return dir;
 }
 
 #define CURRENT_TOC_VERS 1
+
+/*
+ * On-disk TOC format: a compact header followed by the sums array.
+ * We do NOT serialize the entire in-memory TOCType (it has pointers,
+ * PATH_MAX path, etc. that are meaningless on disk).
+ */
+typedef struct {
+  long majorVersion;
+  long minorVersion;
+  short count;
+  short which;
+  long boxSize;
+  long writeDate;
+  long nextSerialNum;
+  long sort;
+  long lastSort;
+  long pluginKey;
+  long pluginValue;
+  long previewHi;
+  long unreadBase;
+  long sorts[6];
+  long needsCompact;
+} TOCDiskHeader;
+
+#define TOCDiskSize(count) \
+  (sizeof(TOCDiskHeader) + (count) * sizeof(MSumType))
+
+/* Legacy macro kept for compat — but we use TOCDiskSize for actual I/O */
 #define TOCSizeShouldBe(tocH) \
-  (sizeof(TOCType) + MAX(0, (tocH)->count - 1) * sizeof(MSumType))
+  TOCDiskSize((tocH)->count)
 
 /************************************************************************
  * TOCBySpec - take a spec, return a TOC
@@ -324,31 +357,79 @@ static OSErr ReadDForkTOC(FSSpecPtr aSpec, TOCType * *inTOC) {
   long fileSize = ftell(fp);
   fseek(fp, 0, SEEK_SET);
 
-  if (fileSize < (long)sizeof(TOCType)) {
+  if (fileSize < (long)sizeof(TOCDiskHeader)) {
     g_warning("ReadDForkTOC: %s too small (%ld < %lu)", tocSpec.path, fileSize,
-              (unsigned long)sizeof(TOCType));
+              (unsigned long)sizeof(TOCDiskHeader));
     fclose(fp);
     return -1;
   }
 
-  /* Allocate TOC */
-  TOCType *toc = (TOCType *)g_malloc0(fileSize);
+  /* Read disk header */
+  TOCDiskHeader hdr;
+  if (fread(&hdr, 1, sizeof(hdr), fp) != sizeof(hdr)) {
+    g_warning("ReadDForkTOC(%s): header read failed", aSpec->name);
+    fclose(fp);
+    return -1;
+  }
+
+  if (hdr.count < 0 || hdr.count > 100000) {
+    g_warning("ReadDForkTOC(%s): bad count %d", aSpec->name, hdr.count);
+    fclose(fp);
+    return euCorruptTOC;
+  }
+
+  /* Verify file has enough data for all summaries */
+  long expectedSize = (long)TOCDiskSize(hdr.count);
+  if (fileSize < expectedSize) {
+    g_warning("ReadDForkTOC(%s): truncated (%ld < %ld, count=%d)",
+              aSpec->name, fileSize, expectedSize, hdr.count);
+    fclose(fp);
+    return -1;
+  }
+
+  /* Allocate full in-memory TOC */
+  long tocMemSize = (long)(sizeof(TOCType) + MAX(0, hdr.count - 1) * sizeof(MSumType));
+  TOCType *toc = (TOCType *)g_malloc0(tocMemSize);
   if (!toc) {
-    g_warning("ReadDForkTOC: cannot allocate %ld bytes for %s", fileSize,
-              tocSpec.path);
     fclose(fp);
     return memFullErr;
   }
 
-  /* Read the entire TOC */
-  size_t nread = fread(toc, 1, fileSize, fp);
+  /* Copy header fields into TOC struct */
+  toc->majorVersion = hdr.majorVersion;
+  toc->minorVersion = hdr.minorVersion;
+  toc->count = hdr.count;
+  toc->which = hdr.which;
+  toc->boxSize = hdr.boxSize;
+  toc->writeDate = hdr.writeDate;
+  toc->nextSerialNum = hdr.nextSerialNum;
+  toc->sort = hdr.sort;
+  toc->lastSort = hdr.lastSort;
+  toc->pluginKey = hdr.pluginKey;
+  toc->pluginValue = hdr.pluginValue;
+  toc->previewHi = hdr.previewHi;
+  toc->unreadBase = hdr.unreadBase;
+  memcpy(toc->sorts, hdr.sorts, sizeof(toc->sorts));
+  toc->needsCompact = hdr.needsCompact;
+
+  /* Read message summaries */
+  if (hdr.count > 0) {
+    size_t sumsSize = hdr.count * sizeof(MSumType);
+    if (fread(toc->sums, 1, sumsSize, fp) != sumsSize) {
+      g_warning("ReadDForkTOC(%s): sums read failed", aSpec->name);
+      g_free(toc);
+      fclose(fp);
+      return -1;
+    }
+  }
+
   fclose(fp);
 
-  if ((long)nread != fileSize) {
-    g_warning("ReadDForkTOC(%s): short read (%zu/%ld)", aSpec->name, nread,
-              fileSize);
-    g_free(toc);
-    return -1;
+  /* Clear runtime-only pointer fields in each summary */
+  for (int i = 0; i < toc->count; i++) {
+    toc->sums[i].messH = NULL;
+    toc->sums[i].cache = NULL;
+    toc->sums[i].mesgErrH = NULL;
   }
 
   g_debug("ReadDForkTOC(%s): %d messages, %ld bytes", aSpec->name, toc->count,
@@ -387,9 +468,6 @@ int WriteTOC(TOCType * tocH) {
   tocH->writeDate = (uLong)time(NULL);
   tocH->unreadBase = tocH->count;
 
-  /* Calculate TOC size and write */
-  long tocSize = (long)TOCSizeShouldBe(tocH);
-
   FILE *fp = fopen(tocSpec.path, "wb");
   if (!fp) {
     g_warning("WriteTOC(%s): %s", tocSpec.name, strerror(errno));
@@ -397,20 +475,52 @@ int WriteTOC(TOCType * tocH) {
     return -1;
   }
 
-  size_t written = fwrite(tocH, 1, tocSize, fp);
-  fclose(fp);
+  /* Write compact disk header (no pointers, no path) */
+  TOCDiskHeader hdr;
+  memset(&hdr, 0, sizeof(hdr));
+  hdr.majorVersion = tocH->majorVersion;
+  hdr.minorVersion = tocH->minorVersion;
+  hdr.count = tocH->count;
+  hdr.which = tocH->which;
+  hdr.boxSize = tocH->boxSize;
+  hdr.writeDate = tocH->writeDate;
+  hdr.nextSerialNum = tocH->nextSerialNum;
+  hdr.sort = tocH->sort;
+  hdr.lastSort = tocH->lastSort;
+  hdr.pluginKey = tocH->pluginKey;
+  hdr.pluginValue = tocH->pluginValue;
+  hdr.previewHi = tocH->previewHi;
+  hdr.unreadBase = tocH->unreadBase;
+  memcpy(hdr.sorts, tocH->sorts, sizeof(hdr.sorts));
+  hdr.needsCompact = tocH->needsCompact;
 
-  if ((long)written != tocSize) {
-    g_warning("WriteTOC(%s): short write (%zu/%ld)", tocSpec.name, written,
-              tocSize);
-    unlink(tocSpec.path); /* remove partial file */
+  size_t written = fwrite(&hdr, 1, sizeof(hdr), fp);
+  if (written != sizeof(hdr)) {
+    g_warning("WriteTOC(%s): header write failed", tocSpec.name);
+    fclose(fp);
+    unlink(tocSpec.path);
     tocH->beingWritten--;
     return -1;
   }
 
+  /* Write message summaries */
+  if (tocH->count > 0) {
+    size_t sumsSize = tocH->count * sizeof(MSumType);
+    written = fwrite(tocH->sums, 1, sumsSize, fp);
+    if (written != sumsSize) {
+      g_warning("WriteTOC(%s): sums write failed", tocSpec.name);
+      fclose(fp);
+      unlink(tocSpec.path);
+      tocH->beingWritten--;
+      return -1;
+    }
+  }
+
+  fclose(fp);
+
   tocH->durty = tocH->reallyDirty = false;
   g_debug("WriteTOC(%s): %d messages, %ld bytes", tocSpec.name,
-          tocH->count, tocSize);
+          tocH->count, (long)TOCDiskSize(tocH->count));
 
   /* Fix up menu items */
   FixBoxUnread(tocH);
@@ -657,7 +767,7 @@ OSErr PeekTOC(FSSpecPtr spec, TOCType *tocPart) {
   if (!file)
     return fnfErr;
 
-  /* Read from .toc file (data fork) */
+  /* Read from .toc file (data fork) using disk header format */
   FSSpec tocSpec;
   Box2TOCSpec(spec, &tocSpec);
 
@@ -665,11 +775,22 @@ OSErr PeekTOC(FSSpecPtr spec, TOCType *tocPart) {
   if (!fp)
     return fnfErr;
 
-  size_t nread = fread(tocPart, 1, sizeof(TOCType), fp);
+  TOCDiskHeader hdr;
+  size_t nread = fread(&hdr, 1, sizeof(hdr), fp);
   fclose(fp);
 
-  if (nread < sizeof(TOCType))
+  if (nread < sizeof(hdr))
     return fnfErr;
+
+  /* Fill in the relevant fields */
+  memset(tocPart, 0, sizeof(TOCType));
+  tocPart->majorVersion = hdr.majorVersion;
+  tocPart->minorVersion = hdr.minorVersion;
+  tocPart->count = hdr.count;
+  tocPart->which = hdr.which;
+  tocPart->boxSize = hdr.boxSize;
+  tocPart->writeDate = hdr.writeDate;
+  tocPart->unreadBase = hdr.unreadBase;
 
   return noErr;
 }

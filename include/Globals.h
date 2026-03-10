@@ -1,283 +1,266 @@
 /* Copyright (c) 2017, Computer History Museum
 All rights reserved.
-Redistribution and use in source and binary forms, with or without modification,
-are permitted (subject to the limitations in the disclaimer below) provided that
-the following conditions are met:
- * Redistributions of source code must retain the above copyright notice, this
-list of conditions and the following disclaimer.
- * Redistributions in binary form must reproduce the above copyright notice,
-this list of conditions and the following disclaimer in the documentation and/or
-other materials provided with the distribution.
- * Neither the name of Computer History Museum nor the names of its contributors
-may be used to endorse or promote products derived from this software without
-specific prior written permission. NO EXPRESS OR IMPLIED LICENSES TO ANY PARTY'S
-PATENT RIGHTS ARE GRANTED BY THIS LICENSE. THIS SOFTWARE IS PROVIDED BY THE
-COPYRIGHT HOLDERS AND CONTRIBUTORS "AS IS" AND ANY EXPRESS OR IMPLIED
-WARRANTIES, INCLUDING, BUT NOT LIMITED TO, THE IMPLIED WARRANTIES OF
-MERCHANTABILITY AND FITNESS FOR A PARTICULAR PURPOSE ARE DISCLAIMED. IN NO EVENT
-SHALL THE COPYRIGHT HOLDER OR CONTRIBUTORS BE LIABLE FOR ANY DIRECT, INDIRECT,
-INCIDENTAL, SPECIAL, EXEMPLARY, OR CONSEQUENTIAL DAMAGES (INCLUDING, BUT NOT
-LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR SERVICES; LOSS OF USE, DATA, OR
-PROFITS; OR BUSINESS INTERRUPTION) HOWEVER CAUSED AND ON ANY THEORY OF
-LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT (INCLUDING NEGLIGENCE
-OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE OF THIS SOFTWARE, EVEN IF
-ADVISED OF THE POSSIBILITY OF SUCH DAMAGE. */
+Redistribution and use in source and binary forms, with or without modification, are permitted (subject to
+the limitations in the disclaimer below) provided that the following conditions are met:
+ * Redistributions of source code must retain the above copyright notice, this list of conditions and the following disclaimer.
+ * Redistributions in binary form must reproduce the above copyright notice, this list of conditions and the following
+   disclaimer in the documentation and/or other materials provided with the distribution.
+ * Neither the name of Computer History Museum nor the names of its contributors may be used to endorse or promote products
+   derived from this software without specific prior written permission.
+NO EXPRESS OR IMPLIED LICENSES TO ANY PARTY'S PATENT RIGHTS ARE GRANTED BY THIS LICENSE. THIS SOFTWARE IS PROVIDED BY THE
+COPYRIGHT HOLDERS AND CONTRIBUTORS "AS IS" AND ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED TO, THE
+IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR PURPOSE ARE DISCLAIMED. IN NO EVENT SHALL THE COPYRIGHT
+HOLDER OR CONTRIBUTORS BE LIABLE FOR ANY DIRECT, INDIRECT, INCIDENTAL, SPECIAL, EXEMPLARY, OR CONSEQUENTIAL DAMAGES
+(INCLUDING, BUT NOT LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR SERVICES; LOSS OF USE, DATA, OR PROFITS; OR BUSINESS
+INTERRUPTION) HOWEVER CAUSED AND ON ANY THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT (INCLUDING
+NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH
+DAMAGE. */
+
+#ifndef GLOBALS_H
+#define GLOBALS_H
+
+#include <stdbool.h>
+#include <stdint.h>
+#include "mailbox.h"
+#include "message.h"
+#include "pete_portable.h"
+#include "threading.h"
+#include "features.h"
+#include "trans.h"
 
 /**********************************************************************
- * Global variables for POP mail
+ * Global variables — ported from Mac original.
+ * Mac-specific types replaced with portable equivalents:
+ *   TOCHandle    -> TOCType *
+ *   Handle       -> void *  (or typed pointer)
+ *   GrafPtr      -> void *
+ *   WindowPtr    -> void *
+ *   MyWindowPtr  -> void *
+ *   MenuHandle   -> void *
+ *   RgnHandle    -> void *
+ *   Boolean      -> bool
+ *   Byte         -> unsigned char
+ *   OSErr        -> int
+ *   ProcessSerialNumber -> void *
+ *   EventRecord  -> void *  (unused in GTK)
+ *   Style        -> unsigned char
+ *   Rect         -> struct { short top, left, bottom, right; }
  **********************************************************************/
-#include "StrnDefs.h"
-#include "imapconnections.h"
-#include "mime.h"
-#include "mydefs.h"
-#include "pete_portable.h"
-#include "portable-compat.h"
-#include "tcp.h" /* For MyOTTCPStreamHandle */
-#include "threading.h"
 
-extern int FontID; /* font parameters */
-
+/* ---- Font parameters ---- */
+extern int FontID;
 extern int FontSize;
-extern int FixedID; /* fixed font parameters */
+extern int FixedID;
 extern int FixedSize;
-extern int FontWidth; /* width of average char in font */
+extern int FontWidth;
 extern int FontLead;
 extern int FontDescent;
 extern int FontAscent;
-extern bool Done;          /* set to True when we're done processing */
-extern bool DontTranslate; /* don't use translation tables */
-extern bool FontIsFixed;   /* is font fixed-width? */
-extern short InBG;         /* whether or not we're in the background */
-extern bool NoSaves;       /* don't prompt user to save documents */
-extern bool SFWTC;         /* Somebody Fooled With The Cursor */
-extern bool ScrapFull;     /* is there stuff on the scrap? */
-extern bool UseCTB;        /* are we using the CTB? */
-extern bool Offline;       /* are we Offline (don't send or check)? */
-extern bool Stationery;    /* Stationery on Save As? */
-extern bool AmQuitting;    /* are we quitting? */
-extern bool WrapWrong;     /* wrap the wrong way */
-extern bool HasHelp;       /* do we have balloon help? */
-extern bool HasPM;         /* Do we have the process manager? */
-extern bool NewTables;     /* using new translation table scheme */
-extern bool LockCode;      /* lock all code resources? */
-extern bool CantLock;      /* the above failed */
-extern bool Toshiba;       /* toshiba hard drive? */
-extern bool LooseTrans;    /* is there a translator with loose morals? */
-extern bool
-    QTMoviesInited;     /* has QuickTime been initialized for playing movies? */
-extern void **BoxCount; /* list of mailboxes for find */
-extern void **XfUndoH;  /* for undoing transfers */
-extern void *InsurancePort; /* a port for use when no others are available */
-#if TARGET_RT_MAC_CFM
-extern ICMPReport ICMPMessage; /* the last such report */
-#endif
-extern MessHandle MessList;            /* list of open messages */
-extern struct MyWindow *HandyMyWindow; /* spare private window record */
-extern void *MousePen;                 /* a pen for the mouse */
-extern bool TBTurnedOnBalloons;        /* the toolbar forced balloon help on */
-extern Byte NewLine[4];                /* current newline string */
-extern Byte CheckOnIdle;               /* check next time we're idle? */
-extern Str15 Type2SelString;           /* current type-2-select string */
-extern uint32_t Type2SelTicks; /* ticks for last key for type-2-select */
-extern short DragSumNum;       /* sumNum for finishing a drag */
-extern TOCType * DragTOCFrom;  /* window drag came from */
-extern TOCType * DragTOCTo;    /* window drag went into */
-extern short DragModsWere;     /* what the flags were */
-extern uint32_t DragSequence;  // sequence number for drag
-extern short StationVRef;      /* vref for stationery folder */
-extern long StationDirId;      /* dirid for stationery folder */
-extern void *PETE;             /* magic cookie for pete's editor */
+
+/* ---- Application state ---- */
+extern bool Done;
+extern bool DontTranslate;
+extern bool FontIsFixed;
+extern short InBG;
+extern bool NoSaves;
+extern bool SFWTC;
+extern bool ScrapFull;
+extern bool UseCTB;
+extern bool Offline;
+extern bool Stationery;
+extern bool AmQuitting;
+extern bool WrapWrong;
+extern bool HasHelp;
+extern bool HasPM;
+extern bool NewTables;
+extern bool LockCode;
+extern bool CantLock;
+extern bool Toshiba;
+extern bool LooseTrans;
+extern bool QTMoviesInited;
+
+/* ---- Mailbox/message lists ---- */
+extern void *BoxCount;              /* BoxCountHandle — list of mailboxes for find */
+extern void *XfUndoH;              /* XfUndoHandle — for undoing transfers */
+extern void *InsurancePort;        /* GrafPtr — fallback port (unused in GTK) */
+extern MessHandle MessList;
+extern void *HandyMyWindow;        /* MyWindow * — spare window record */
+extern void *MousePen;             /* RgnHandle — pen for mouse */
+extern bool TBTurnedOnBalloons;
+extern unsigned char NewLine[4];
+extern unsigned char CheckOnIdle;
+extern Str15 Type2SelString;
+extern uLong Type2SelTicks;
+extern short DragSumNum;
+extern TOCType *DragTOCFrom;
+extern TOCType *DragTOCTo;
+extern short DragModsWere;
+extern uLong DragSequence;
+extern short StationVRef;
+extern long StationDirId;
+/* PETE — now a macro in pete_portable.h: #define PETE ((PETEInst)NULL) */
+
 #ifdef DEBUG
-extern long ____RandomFailThresh; // random memory failure threshhold.  set this
-                                  // to nonzero at your peril
+extern long ____RandomFailThresh;
 #endif
+
 #define kCheck 0x02
 #define kSend 0x01
-extern TOCType * TOCList; /* list of open TOC's */
-#ifndef NICKATNIGHT
-extern struct AliasDStruct **Aliases; /* list of alias files */
-#endif
-extern void **eSignature;       /* signature text */
-extern void **RichSignature;    /* richtext signature */
-extern void **HTMLSignature;    /* richtext signature */
-extern bool SigStyled;          /* was the signature per se styled? */
-extern unsigned char *TransIn;  /* Translation table for incoming characters */
-extern unsigned char *TransOut; /* Translation table for outgoing characters */
-extern unsigned char *Flatten;  /* Translation table to flatten smart quotes */
-extern int CTBTimeout;          /* current timeout for use with CTB */
-extern void **HIQ;              /* queue of pending DNS lookups */
+extern TOCType *TOCList;
+
+extern struct AliasDStruct **Aliases;
+
+extern UHandle eSignature;
+extern UHandle RichSignature;
+extern UHandle HTMLSignature;
+extern bool SigStyled;
+extern UPtr TransIn;
+extern UPtr TransOut;
+extern UPtr Flatten;
+extern int CTBTimeout;
+extern void *HIQ;                   /* HostInfoQHandle */
 extern bool NoPreflight;
-extern bool NoNewMailMe; // put up no new mail alert, please
-extern short Dragging;   /* are we in the drag manager? */
+extern bool NoNewMailMe;
+extern short Dragging;
 extern PETEStyleListHandle Pslh;
-extern int SendQueue;                /* # of messages waiting to be sent */
-extern uint32_t ForceSend;           /* next delayed queue */
-extern short **StdSizes;             // standard font sizes
-extern short **FixedSizes;           // standard fixed-width font sizes
-extern struct BoxMapStruct **BoxMap; /* map of menu id's to dirId's */
-extern short **BoxWidths;         /* where the lines go in a mailbox window */
-extern short AliasRefCount;       /* how many subsystems are using aliases? */
-extern short ICMPAvail;           /* there is an ICMP report available */
-extern short RunType;             /* Production, Debugging, or Steve */
-extern struct NMRec *MyNMRec;     /* notification record */
-extern MenuHandle CheckedMenu;    /* currently checked mailbox menu */
-extern short CheckedItem;         /* currently checked mailbox item */
-extern Handle SpareSpace[NSpare]; /* extra memory for emergencies */
-extern bool DoMonitor;            // run the grow-zone monitor
-extern bool EjectBuckaroo;        /* out of memory; die at next opportunity */
-extern bool GrowZoning;           /* we are executing the grow zone proc */
-extern unsigned short WhyTCPTerminated; /* why the ctp connection died */
-extern EventRecord MainEvent; /* the event currently being processed */
-extern bool NoInitialCheck;   /* don't check at startup */
-extern long YieldTicks;       /* last CPU yield */
-extern bool HesOK;            // Is the Hesiod info OK, or should we refetch?
-extern uint32_t GlobalIdleTicks;
-extern bool NoAnalDictionary; // we didn't find a moodmail dictionary
-extern bool WashMe;           // we have dirt on our windows
-#ifdef CTB
-extern short CTBHasChars;
-#endif
-extern WindowPtr ModalWindow; /* run modally for this window */
-#ifdef CTB
-extern ConnHandle CnH;
-#endif
-/* extern uint32_t Root; */ // Root of the Eudora Folder (defined in mailbox.h)
-extern RootSpec MailRoot;   // Root of the Mail Folder within the Eudora Folder
-extern RootSpec IMAPMailRoot;   // Root of the world's problems
-extern uint32_t ItemsFolder;    // Items folder
-/* extern Style UnreadStyle; */ /* style for a mailbox with unread items in it
-                                   (defined in mailbox.h) */
-
-extern short LogRefN;          /* ref number of open log file */
-extern long LogLevel;          /* current logging level */
-extern long LogTicks;          /* time log was opened */
-extern Accumulator AuditAccu;  // accumulator for audit data
-extern FMBHandle FMBMain;      // Face measurement block for entire app run
-/* extern short AppResFile; */ /* application resource file (defined in
-                                  mailbox.h) */
-extern short HelpResFile;      /* help resource file */
-
-extern Handle Filters;        /* filter rules */
-extern short FiltersRefCount; /* reference count for same */
-extern Handle PreFilters;  /* filter rules generated externally (most likely by
-                              plug-in), run before normal filters */
-extern Handle PostFilters; /* filter rules generated externally (most likely by
-                              plug-in), run after normal filters */
-extern ProcessSerialNumber **WordServices;
-extern short OriginalHelpCount; /* # of items in the help menu */
-extern short EndHelpCount;      /* # of items after we got done with it */
-extern Str255 IsWordChar;       /* are these things words? */
-extern short
-    PrefPlugEnd; /* last Plug-In file from Prefs folder, or app itself */
+extern int SendQueue;
+extern uLong ForceSend;
+extern short **StdSizes;
+extern short **FixedSizes;
+extern struct BoxMapStruct **BoxMap;
+extern short **BoxWidths;
+extern short AliasRefCount;
+extern short ICMPAvail;
+extern short RunType;
+extern void *MyNMRec;              /* NMRec * */
+extern void *CheckedMenu;          /* MenuHandle */
+extern short CheckedItem;
+extern void *SpareSpace[4];        /* NSpare = 4 in original */
+extern bool DoMonitor;
+extern bool EjectBuckaroo;
+extern bool GrowZoning;
+extern unsigned short WhyTCPTerminated;
+extern void *MainEvent;            /* EventRecord — unused in GTK */
+extern bool NoInitialCheck;
+extern long YieldTicks;
+extern bool HesOK;
+extern uLong GlobalIdleTicks;
+extern bool NoAnalDictionary;
+extern bool WashMe;
+extern void *ModalWindow;          /* WindowPtr */
+/* Root is declared as RootSpec in mailbox.h */
+extern VDId MailRoot;
+extern VDId IMAPMailRoot;
+extern VDId ItemsFolder;
+#define UnreadStyle fontItalic      /* also in mailbox.h */
+extern short LogRefN;
+extern long LogLevel;
+extern long LogTicks;
+extern Accumulator AuditAccu;
+extern void *FMBMain;              /* FMBHandle */
+#define AppResFile 0               /* also in mailbox.h */
+extern short HelpResFile;
+extern void *Filters;              /* Handle — filter rules */
+extern short FiltersRefCount;
+extern void *PreFilters;
+extern void *PostFilters;
+extern void *WordServices;         /* ProcessSerialNumber ** */
+extern short OriginalHelpCount;
+extern short EndHelpCount;
+extern Str255 IsWordChar;
+extern short PrefPlugEnd;
 extern long TypeToOpen;
-extern WindowPtr UglyHackFrontWindow; // used for easy-open
-extern Str127 MyHostname;             /* our hostname, if we know it */
-extern TOCType * DamagedTOC;
+extern void *UglyHackFrontWindow;  /* WindowPtr */
+extern Str127 MyHostname;
+extern TOCType *DamagedTOC;
 extern bool ThereIsColor;
-extern bool NoDominant; // don't inherit setting from dominant, just this once
-extern ICacheHandle ICache;
+extern bool NoDominant;
+extern void *ICache;               /* ICacheHandle */
 extern bool VM;
 extern bool BreakMe;
-extern uint32_t Yesterday; /* seconds yesterday */
-extern bool MemCanFail;    /* is it ok for this request to fail? */
-extern short FakeTabs;     /* cache this pref for performance reasons */
-extern Handle WrapHandle;
-extern short ClickType; /* single, double, or triple */
-extern short Windex;    /* window index */
-extern short SysRefN;   /* system file reference number */
+extern uLong Yesterday;
+extern bool MemCanFail;
+extern short FakeTabs;
+extern void *WrapHandle;           /* Handle */
+extern short ClickType;
+extern short Windex;
+extern short SysRefN;
 extern bool StartingUp;
 extern bool SyncRW;
 extern bool AutoDoubler;
 extern bool PrefsPlugIns;
-extern bool TBarHasChanged;    // we changed something that affects the toolbar
-extern bool D3;                /* 3d look? */
-extern bool Typing;            // are we typing?
-extern bool TypingRecently;    // have we typed recently?
-extern short PlaylistNagCount; // how many nags does the playlist manager want
-                               // us to give?
-extern short NewClientModePlusOne; // the client mode the playlist server wants
-                                   // us in, plus one
-extern long TypingTicks;           // last tickcount we noticed a keystroke
-extern long ActiveTicks;           // last time user hit key or mouse
-extern long NonNullTicks; // last time we got an even other than a null event
+extern bool TBarHasChanged;
+extern bool D3;
+extern bool Typing;
+extern bool TypingRecently;
+extern short PlaylistNagCount;
+extern short NewClientModePlusOne;
+extern long TypingTicks;
+extern long ActiveTicks;
+extern long NonNullTicks;
 extern bool OpenedMacSLIP;
 extern Str15 Re;
 extern Str15 Fwd;
 extern Str15 OFwd;
-extern BoxLinesEnum TOCInversionMatrix[2][BoxLinesLimit]; // order of columns in
-                                                          // a table of contents
-extern bool DragFxxkOff; /* tell the drag manager where to put it */
-extern bool Sensitive;   /* case-sensitive? */
-extern bool WholeWord;   /* whole words? */
-extern bool FurrinSort;  /* do we want to watch your for furriners? */
-extern MyWindowPtr DragSource;
-extern MyWindowPtr DragTOCSource;
+extern unsigned char TOCInversionMatrix[2][16]; /* BoxLinesLimit */
+extern bool DragFxxkOff;
+extern bool Sensitive;
+extern bool WholeWord;
+extern bool FurrinSort;
+extern void *DragSource;           /* MyWindowPtr */
+extern void *DragTOCSource;        /* MyWindowPtr */
 extern short DragSourceKind;
 extern bool EmoTurdCache;
 extern bool AttentionNeeded;
-extern Byte YesStr[2];
-extern Byte NoStr[2];
-extern Byte Slash[3];
-/* extern Byte Cr[2]; */
-extern Byte Lf[2];
-extern Byte CrLf[3];
-
+extern unsigned char YesStr[2];
+extern unsigned char NoStr[2];
+extern unsigned char Slash[3];
+extern unsigned char Cr_bytes[2];  /* renamed to avoid Cr macro conflict */
+extern unsigned char Lf[2];
+extern unsigned char CrLf[3];
 extern bool OTIs;
 extern bool OptiMEMIs;
 extern bool CheckNow;
 extern long StupidTagForACAPandI4;
-extern uint32_t gCheckSessionID;
-#ifdef PERF
-extern TP2PerfGlobals ThePGlobals;
-#endif
+extern uLong gCheckSessionID;
+
 #ifdef DEBUG
 extern short BugFlags;
-#define BUG0 ((BugFlags & (1 << 0)) != 0)
-#define BUG1 ((BugFlags & (1 << 1)) != 0)
-#define BUG2 ((BugFlags & (1 << 2)) != 0)
-#define BUG3 ((BugFlags & (1 << 3)) != 0)
-#define BUG4 ((BugFlags & (1 << 4)) != 0)
-#define BUG5 ((BugFlags & (1 << 5)) != 0)
-#define BUG6 ((BugFlags & (1 << 6)) != 0)
-#define BUG7 ((BugFlags & (1 << 7)) != 0)
-#define BUG8 ((BugFlags & (1 << 8)) != 0)
-#define BUG9 ((BugFlags & (1 << 9)) != 0)
-#define BUG10 ((BugFlags & (1 << 10)) != 0)
-#define BUG11 ((BugFlags & (1 << 11)) != 0)
-#define BUG12 ((BugFlags & (1 << 12)) != 0)
-#define BUG13 ((BugFlags & (1 << 13)) != 0)
-#define BUG14 ((BugFlags & (1 << 14)) != 0)
-#define BUG15 ((BugFlags & (1 << 15)) != 0)
+#define BUG0 ((BugFlags&(1<<0))!=0)
+#define BUG1 ((BugFlags&(1<<1))!=0)
+#define BUG2 ((BugFlags&(1<<2))!=0)
+#define BUG3 ((BugFlags&(1<<3))!=0)
+#define BUG4 ((BugFlags&(1<<4))!=0)
+#define BUG5 ((BugFlags&(1<<5))!=0)
+#define BUG6 ((BugFlags&(1<<6))!=0)
+#define BUG7 ((BugFlags&(1<<7))!=0)
+#define BUG8 ((BugFlags&(1<<8))!=0)
+#define BUG9 ((BugFlags&(1<<9))!=0)
+#define BUG10 ((BugFlags&(1<<10))!=0)
+#define BUG11 ((BugFlags&(1<<11))!=0)
+#define BUG12 ((BugFlags&(1<<12))!=0)
+#define BUG13 ((BugFlags&(1<<13))!=0)
+#define BUG14 ((BugFlags&(1<<14))!=0)
+#define BUG15 ((BugFlags&(1<<15))!=0)
 #endif
+
 extern long SpinSpot;
-extern MyWindowPtr InsertWin;
+extern void *InsertWin;            /* MyWindowPtr */
 extern FSSpec AttFolderSpec;
-#ifdef CTB
-extern TransVector CTBTrans;
-#endif
 extern TransVector UUPCTrans;
 extern TransVector OTTCPTrans;
-extern MyOTTCPStreamHandle pendingCloses;
-extern Boolean gUseOT;
-extern Boolean gHasOTPPP;
+extern struct MTS *pendingCloses;
+extern bool gUseOT;
+extern bool gHasOTPPP;
 extern bool gPPPConnectFailed;
 extern FSSpec TCPprefFileSpec;
 extern FSSpec PPPprefFileSpec;
 extern bool gMissingNSLib;
-#ifdef SPEECH_ENABLED
-extern FSSpec SpeechPrefFileSpec;
-#endif
-#ifdef ADWARE
-extern FSSpec SettingsFileSpec;
-#endif
 extern long gActiveConnections;
 extern bool gConnecting;
 extern bool gStayConnected;
-#ifdef TWO
-extern TransVector PGPTrans;
-extern TransVector TransTrans;
-extern StackHandle TransContextStack;
-extern StackHandle MBRenameStack;
+extern void *TransContextStack;    /* StackHandle */
+extern void *MBRenameStack;        /* StackHandle */
 extern long MemLastFailed;
 extern long LastTotalSpace, LastContigSpace;
 extern bool EmptyRecip;
@@ -286,149 +269,118 @@ extern bool DirtyHackForChooseMailbox;
 extern bool OpenAddrErrs;
 #ifdef WINTERTREE
 extern short SpellSession;
-extern uint32_t WinterTreeOptions;
+extern uLong WinterTreeOptions;
 #endif
-#endif
-#ifdef USECMM
 extern bool gHasCMM;
-#endif
-extern Boolean gHave85MenuMgr;
+extern bool gHave85MenuMgr;
 
-/* -------------------- Appearance Manager Globals -------------------- */
+/* ---- Appearance Manager ---- */
 extern bool gAppearanceIsLoaded;
-extern bool gUseAppearance;    // Register Eudora as Appearance Client
-extern bool gGoodAppearance;   // Appearance 1.0.1 or later
-extern bool gBetterAppearance; // Appearance 1.1 or later
-extern bool gBestAppearance;   // Appearance 1.1.4 or later
-extern SInt32 gLastCtlValue;   // used for live scrolling
+extern bool gUseAppearance;
+extern bool gGoodAppearance;
+extern bool gBetterAppearance;
+extern bool gBestAppearance;
+extern int32_t gLastCtlValue;
 extern bool gUseLiveScroll;
-/* -------------------------------------------------------------------- */
 extern bool gAXIsSupported;
-extern Rect gAXLocation;
-#ifdef FLOAT_WIN
-extern WindowPtr
-    lastHilitedWinWP; // keep track of the last window to be hilighted.
-extern MyWindowPtr
-    keyFocusedFloater; // this floater wants to intercept key presses.
-#endif                 // FLOAT_WIN
+
 extern bool VicomIs;
 extern long VicomFactor;
 extern bool NoMenus;
-extern bool PleaseQuit; // toolbar signals it would like a quit
-extern Boolean
-    g16bitSubMenuIDs;       //	Are 16-bit hierarchical menu ID's supported?
-extern short gMaxBoxLevels; //	Maximum number of mailbox folders in menus
-extern IMAPConnectionHandle gIMAPConnectionPool;
+extern bool PleaseQuit;
+extern bool g16bitSubMenuIDs;
+extern short gMaxBoxLevels;
+extern void *gIMAPConnectionPool;  /* IMAPConnectionHandle */
 extern char gIMAPErrorString[256];
 extern bool gbDisplayIMAPWarnings;
-// f1	f2		f3		f4	f5	f6		f7
-// f8	f9	f10		f11	f12		f13	f14
-// f15
-extern Byte FunctionKeys[];
+extern unsigned char FunctionKeys[];
 
 /************************************************************************
  * mimestore declarations
  ************************************************************************/
-extern MStoreSubFile MSSubs[];
+extern void *MSSubs;               /* MStoreSubFile[] — simplified */
 
 /**********************************************************************
- * a few temp vars for macros
+ * temp vars for macros
  **********************************************************************/
-extern uint32_t M_T1, M_T2, M_T3;
+extern uLong M_T1, M_T2, M_T3;
 
 /**********************************************************************
- * thread globals - defined in threading.h
+ * thread globals
  **********************************************************************/
+extern threadGlobalsRec ThreadGlobals;
+extern threadGlobalsPtr CurThreadGlobals;
 
-/* extern threadGlobalsRec ThreadGlobals; (defined in threading.h) */
-/* extern threadGlobalsPtr CurThreadGlobals; (defined in threading.h) */
-
-#ifdef THREADING_ON
-/**********************************************************************
- * thread sets this to true when there are messages to filter
- **********************************************************************/
 extern short TempInCount;
 extern short NeedToFilterIn;
 extern short NeedToFilterOut;
 extern short NeedToNotify;
 extern short NeedToFilterIMAP;
 extern bool NoXfer;
-
-/* When send fails while other threads running (low mem), set this flag to true
- */
 extern bool SendImmediately;
 extern bool CheckThreadRunning;
 extern bool SendThreadRunning;
 extern threadDataHandle gThreadData;
-
 extern short IMAPCheckThreadRunning;
 extern short gNewMessages;
-extern bool gSkipIMAPBoxes; /* Set to true when we want to skip IMAP mailboxes
-                               during filtering */
+extern bool gSkipIMAPBoxes;
 extern bool gWasManualIMAPCheck;
-
-#ifdef TASK_PROGRESS_ON
-extern uint32_t LastCheckTime;
+extern uLong LastCheckTime;
 extern bool TaskDontAutoClose;
-#endif
-
-extern struct MyWindow *TaskProgressWindow;
+extern MyWindowPtr TaskProgressWindow;
 extern bool gTaskProgressInitied;
-extern long ThreadYieldTicks; /* last thread yield */
-extern OSErr CheckThreadError;
-extern OSErr SendThreadError;
+extern long ThreadYieldTicks;
+extern int CheckThreadError;
+extern int SendThreadError;
 extern bool DFWTC;
-#endif
 
 extern int TotalQueuedSize;
 extern Str255 P1, P2, P3, P4;
 extern bool NewError;
 extern long BgYieldInterval;
 extern long FgYieldInterval;
-
 extern long GroupSubjThreshTime;
 
 #ifdef NAG
-extern NagStateHandle nagState;
+extern void *nagState;             /* NagStateHandle */
 extern long gHighestAppVersionAtLaunch;
 #endif
 
 extern FeatureRecHandle gFeatureList;
+extern bool gNeedRemind;
+extern FSSpec *gRegFiles;           /* FSSpec ** simplified */
 
-extern bool gNeedRemind; // set to true when there's a link the user needs to be
-                         // reminded about
-
-extern FSSpec **gRegFiles;
-
-extern ScriptFontInfo normFonts;
-extern ScriptFontInfo monoFonts;
-extern ScriptFontInfo printNormFonts;
-extern ScriptFontInfo printMonoFonts;
+extern void *normFonts;            /* ScriptFontInfo — unused in GTK */
+extern void *monoFonts;
+extern void *printNormFonts;
+extern void *printMonoFonts;
 
 extern bool gImportersAvailable;
-extern Boolean gScreenChange;   // set when the screen size (resolution) changes
-extern Boolean gMenuBarIsSetup; //	We DO have menus
-extern ProxyHandle Proxies;
-extern StackHandle CompactStack; // specs of mailboxes that need compaction
+extern bool gScreenChange;
+extern bool gMenuBarIsSetup;
+extern void *Proxies;              /* ProxyHandle */
+extern void *CompactStack;         /* StackHandle */
+extern FSSpec SettingsSpec;
 
-extern FSSpec SettingsSpec; // our current settings file
-
-extern NoAdsAuxRec NoAdsRec;
-
-extern bool gCanPayMode; // could the user be in paid mode if they wanted?
-
+extern bool gCanPayMode;
 #define CurPersSafe PERS_FORCE(CurPers)
+extern short gEnterWheelHandlerCount;
+extern bool UsingAnyWindows;
+extern short ActiveSearchCount;
+extern long AnyTOCDirty;
+extern Accumulator OutgoingMIDList;
+extern bool OutgoingMIDListDirty;
+extern AccuPtr ExportErrors;
 
-extern short gEnterWheelHandlerCount; // prevent reentrant wheelies
+/* ---- Stationery/signature ---- */
+extern short pStationeryLabel;
+extern bool UseInlineSig;
 
-extern bool UsingAnyWindows; // any windows in use?
+/* historyAddressBook is an enum in nickmng.h, not a global */
 
-extern short ActiveSearchCount; // how many searches are running now?
+/* ---- Personalities ---- */
+#include "schizo.h"
+/* PersList: when THREADING_ON, it's a macro in threading.h.
+   Otherwise it's an extern in schizo.h. No need to redeclare here. */
 
-extern long
-    AnyTOCDirty; // global toc dirty count, used for updating the dock badge
-
-extern Accumulator OutgoingMIDList; // list of outgoing message id's
-extern bool OutgoingMIDListDirty;   // is it dirty?
-
-extern AccuPtr ExportErrors; // accumulate exporting errors here
+#endif /* GLOBALS_H */

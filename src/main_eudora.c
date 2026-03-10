@@ -14,6 +14,7 @@
 #include "gtk_settings.h"
 #include "gtk_toolbar_dock.h"
 #include "mailbox.h" /* For MessageSummary */
+#include "mailxfer.h"
 #include "message.h"
 #include "taskProgress.h"
 #include "toc.h"
@@ -634,12 +635,7 @@ static void action_check_mail(GSimpleAction *action, GVariant *parameter,
   (void)user_data;
 
   g_print("Checking mail...\n");
-  /* TODO: Trigger POP3/IMAP mail check via GetMail/CheckMail */
-  /* For now, show status */
-  if (app_state.preview_buffer) {
-    gtk_text_buffer_set_text(app_state.preview_buffer,
-                             "Checking for new mail...", -1);
-  }
+  XferMail(true, false, true, false, true, 0);
 }
 
 static void action_send_queued(GSimpleAction *action, GVariant *parameter,
@@ -649,11 +645,7 @@ static void action_send_queued(GSimpleAction *action, GVariant *parameter,
   (void)user_data;
 
   g_print("Sending queued messages...\n");
-  /* TODO: Call SendQueuedMessages from sendmail.c */
-  if (app_state.preview_buffer) {
-    gtk_text_buffer_set_text(app_state.preview_buffer,
-                             "Sending queued messages...", -1);
-  }
+  XferMail(false, true, true, false, true, 0);
 }
 
 static void action_preferences(GSimpleAction *action, GVariant *parameter,

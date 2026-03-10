@@ -4,7 +4,16 @@
  */
 
 #include "ends.h"
+#include "mailbox.h"
+#include "toc.h"
+#include "threading.h"
+#include "StringDefs.h"
 #include <glib.h>
+
+/* Global send queue counter */
+int SendQueue = 0;
+bool SendImmediately = false;
+bool SendThreadRunning = false;
 
 void Initialize(void)
 {
@@ -39,7 +48,18 @@ void RecallOpenWindows(void)
 
 void SetSendQueue(void)
 {
-    g_print("Setting send queue\n");
+    /* Count messages in Out mailbox that are QUEUED or TIMED */
+    TOCType *toc = GetOutTOC();
+    int count = 0;
+    if (toc) {
+        for (int i = 0; i < toc->count; i++) {
+            int state = toc->sums[i].state;
+            if (state == QUEUED || state == TIMED)
+                count++;
+        }
+    }
+    SendQueue = count;
+    g_print("SetSendQueue: %d messages queued\n", count);
 }
 
 void GetBoxLines(void)

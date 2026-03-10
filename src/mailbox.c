@@ -46,6 +46,7 @@ ADVISED OF THE POSSIBILITY OF SUCH DAMAGE. */
 #define ASSERT(x) assert(x)
 #endif
 #include "gtk_menus.h"
+#include "boxact.h"
 #include "imapmailboxes.h" /* For IsIMAPCacheFolder */
 int AddMesgError(TOCType * tocH, short sum, unsigned char *errorStr,
                  int errorCode);
@@ -80,7 +81,7 @@ enum { kStatReadMsg = 0 };
 #define nil 0
 #endif
 #define userCanceledErr -128
-enum { OPT_OPEN = 1, OPT_AUTO_OPENED = 2 };
+/* OPT_OPEN and OPT_AUTO_OPENED defined in mailbox.h */
 /* MAILBOX_MENU defined in gtk_menus.h */
 
 /* Missing Structs */
@@ -100,7 +101,7 @@ extern long AnyTOCDirty;
 typedef unsigned long uLong;
 struct MenuAndScore;
 typedef struct MenuAndScore **MenuAndScoreHandle;
-void BoxCenterSelection(WindowPtr win);
+/* BoxCenterSelection declared in boxact.h */
 
 int BoxMatchMenuItems(unsigned char *name, MenuAndScoreHandle *mashPtr,
                       int score());
@@ -557,18 +558,8 @@ int OpenMailbox(FSSpecPtr spec, bool showIt, TOCType * toc) {
 /**********************************************************************
  * InitMailboxWin - initialize mailbox window data
  **********************************************************************/
-/* Window Callbacks */
-bool BoxClose(MyWindowPtr win) { return true; }
-bool BoxButton(MyWindowPtr win, GtkWidget *widget, GdkEvent *event) {
-  return false;
-}
-bool BoxMenu(MyWindowPtr win, int menu, int item, short modifiers) {
-  return false;
-}
-int BoxGonnaShow(MyWindowPtr win) { return 0; }
-int BoxPosition(MyWindowPtr win) { return 0; }
+/* BoxClose, BoxButton, BoxMenu, BoxGonnaShow, BoxPosition, BoxFind — in boxact.c */
 void BoxCursor(Point mouse) {}
-bool BoxFind(MyWindowPtr win, unsigned char *text) { return false; }
 void MBDrawerOpen(MyWindowPtr win) {}
 
 /* Message list selection callback */
@@ -1838,55 +1829,7 @@ int RemoveMailbox(FSSpecPtr spec, bool trashChain) {
   return (noErr);
 }
 
-/************************************************************************
- * MessagePosition - save/restore position for a new message window
- ************************************************************************/
-bool MessagePosition(bool save, MyWindowPtr win) {
-  WindowPtr winWP = GetMyWindowWindowPtr(win);
-  TOCType * tocH = (*(MessHandle)GetMyWindowPrivateData(win))->tocH;
-  short sumNum = (*(MessHandle)GetMyWindowPrivateData(win))->sumNum;
-  Rect r;
-  bool zoomed;
-  bool res = True;
-
-  if (save) {
-    if (!tocH->virtualTOC) {
-      /*      utl_SaveWindowPos(winWP, &r, &zoomed);
-            tocH->sums[sumNum].u.savedPos = r;
-            if (zoomed)
-              tocH->sums[sumNum].flags |= FLAG_ZOOMED;
-            else
-              tocH->sums[sumNum].flags &= ~FLAG_ZOOMED; */
-      TOCSetDirty(tocH, true);
-    }
-  } else {
-    /*    r = tocH->sums[sumNum].u.savedPos;
-        if (r.right - r.left > 100 && r.bottom - r.top > 40) {
-          zoomed = (tocH->sums[sumNum].flags & FLAG_ZOOMED) != 0;
-          utl_RestoreWindowPos(winWP, &r, zoomed, 1, 0, 0, 0);
-        } else */
-    {
-      Point corner;
-      short val;
-
-      GetPortBounds(GetWindowPort(winWP), &r);
-      if (!(val = GetPrefLong(PREF_MWIDTH)))
-        val = GetRLong(DEF_MWIDTH);
-      r.right = r.left + MessWi(win);
-      /*      if (val = GetPrefLong(PREF_MHEIGHT))
-              r.bottom = r.top + win->vPitch * val;
-            MyStaggerWindow(winWP, &r, &corner);
-            OffsetRect(&r, corner.h - r.left, corner.v - r.top); */
-    }
-    // SanitizeSize(win, &r);
-    // MyMoveWindow(winWP, r.left, r.top, false);
-    // MySizeWindow(winWP, r.right - r.left, r.bottom - r.top, true);
-    utl_RestoreWindowPos(winWP, &r, zoomed, 1, TitleBarHeight(winWP),
-                         LeftRimWidth(winWP), (void *)FigureZoom,
-                         (void *)DefPosition);
-  }
-  return (res);
-}
+/* MessagePosition — real implementation in messact.c */
 
 /************************************************************************
  * TooLong - complain about a name that's too long
@@ -2906,8 +2849,8 @@ void PopupMailboxPath(MyWindowPtr win, TOCType * tocH, short sum, Point pt) {
       ShowMyWindow(tocWinWP);
       UserSelectWindow(tocWinWP);
       SelectMessage(tocH, sum);
-      if (MainEvent.modifiers & optionKey)
-        BoxSelectSame(tocH, SORT_SUBJECT_ITEM, sum);
+      /* TODO: check GDK Alt modifier state instead of Mac EventRecord */
+      /* if (gdk_modifier_is_alt_held()) BoxSelectSame(tocH, SORT_SUBJECT_ITEM, sum); */
       break;
 
     case kSelFolder:

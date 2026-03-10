@@ -122,15 +122,9 @@ bool IsIMAPPers(PersHandle pers);
                                    : 'STR ')
 
 // Global variables and macros
-#ifndef CurPers
-extern PersHandle CurPers;
-#endif
-#ifndef PersList
-extern PersHandle PersList;
-#endif
-#ifndef OLD_POPD_TYPE
-extern uint32_t OLD_POPD_TYPE;
-#endif
+/* CurPers is always a macro from threading.h: (CurThreadGlobals->tCurPers) */
+/* PersList is always a macro from threading.h: (CurThreadGlobals->tPersList) */
+/* OLD_POPD_TYPE is a macro in MyRes.h: 'popd' */
 
 /* PERS_FORCE and TS_TO_PERS are defined in pop.h */
 

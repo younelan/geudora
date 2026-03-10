@@ -28,6 +28,7 @@ DAMAGE. */
 #include "threading.h"
 #include "toc.h"
 #include "comp.h"
+#include "statmng.h"
 #include "prefdefs.h"
 #include "gtk_dialogs.h"
 #include "lex822.h"  // For EndOfHeader, EndOfMessage tokens

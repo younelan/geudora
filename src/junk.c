@@ -24,6 +24,7 @@
 #include "prefdefs.h"
 #include "schizo.h"
 #include "toc.h"
+#include "boxact.h"
 
 #ifndef JUNK
 #define JUNK MBX_JUNK

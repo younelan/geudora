@@ -7,25 +7,21 @@
  *
  * PETEHandle = GtkWidget* (gEditCtrl widget)
  */
+#include "pete_portable.h"  /* Full PETE types */
 #include "peteglue.h"
+#include "geditctrl.h"
 #include "gedit-document.h"
 #include <string.h>
 #include <stdlib.h>
 
-/* Edit operation enums matching original PETE constants */
-enum {
-  peeEvent = 0,
-  peeCut = 1,
-  peeCopy = 2,
-  peePaste = 3,
-  peeClear = 4,
-  peeSelectAll = 5
-};
-
-/* Scroll constants */
-enum {
-  pseCenterSelection = -2
-};
+/* Edit operation enums now in pete_portable.h.
+   peeSelectAll is a Eudora extension not in the original PETE enum. */
+#ifndef peeSelectAll
+#define peeSelectAll 5
+#endif
+#ifndef pseCenterSelection
+#define pseCenterSelection (-2)
+#endif
 
 /* ================================================================
  * Validation
@@ -550,4 +546,557 @@ void PeteRemove(GtkWidget *pte, GtkWidget **list) {
       return;
     }
   }
+}
+
+/* ===================================================================
+ * PETE API functions used by rich.c, message.c, and other files.
+ * These wrap gEditCtrl/geditDocument operations.
+ * =================================================================== */
+
+/***********************************************************************
+ * PETEGetParaInfo - get paragraph info at a given paragraph index
+ ***********************************************************************/
+int PETEGetParaInfo(PETEInst pi, PETEHandle pte, long paraIndex, PETEParaInfo *info)
+{
+	(void)pi;
+	if (!pte || !info) return -1;
+	memset(info, 0, sizeof(*info));
+
+	geditDocument *doc = geditctrl_get_document((GtkWidget *)pte);
+	if (!doc) return -1;
+
+	/* For default para, return zeroed info (default formatting) */
+	if (paraIndex == kPETEDefaultPara) return 0;
+
+	/* Get paragraph bounds via text buffer */
+	GtkTextBuffer *buf = gedit_document_get_buffer(doc);
+	if (!buf) return 0;
+
+	GtkTextIter iter;
+	if (paraIndex >= 0) {
+		gtk_text_buffer_get_iter_at_line(buf, &iter, (int)paraIndex);
+	} else {
+		gtk_text_buffer_get_start_iter(buf, &iter);
+	}
+
+	info->paraOffset = gtk_text_iter_get_offset(&iter);
+	GtkTextIter end = iter;
+	if (!gtk_text_iter_ends_line(&end))
+		gtk_text_iter_forward_to_line_end(&end);
+	info->paraLength = gtk_text_iter_get_offset(&end) - info->paraOffset;
+
+	return 0;
+}
+
+/***********************************************************************
+ * PETESetParaInfo - set paragraph formatting
+ ***********************************************************************/
+int PETESetParaInfo(PETEInst pi, PETEHandle pte, long paraIndex, PETEParaInfo *info, long validBits)
+{
+	(void)pi;
+	if (!pte || !info) return -1;
+
+	geditDocument *doc = geditctrl_get_document((GtkWidget *)pte);
+	if (!doc) return -1;
+
+	/* Map PETE paragraph attributes to gEditCtrl */
+	if (validBits & peJustificationValid) {
+		geditAlignment align = gedit_ALIGN_LEFT;
+		switch (info->justification) {
+			case 1: align = gedit_ALIGN_CENTER; break;
+			case 2: case -1: align = gedit_ALIGN_RIGHT; break;
+		}
+		long len = gedit_document_get_length(doc);
+		gedit_document_set_alignment(doc, 0, len, align);
+	}
+
+	if (validBits & peQuoteLevelValid) {
+		long len = gedit_document_get_length(doc);
+		gedit_document_set_quote_level(doc, 0, len, info->quoteLevel);
+	}
+
+	return 0;
+}
+
+/***********************************************************************
+ * PETEGetStyle - get style at a given offset
+ ***********************************************************************/
+int PETEGetStyle(PETEInst pi, PETEHandle pte, long offset, long *len, PETEStyleEntry *style)
+{
+	(void)pi;
+	if (!pte || !style) return -1;
+	memset(style, 0, sizeof(*style));
+	style->psStartChar = offset;
+
+	if (len) {
+		geditDocument *doc = geditctrl_get_document((GtkWidget *)pte);
+		*len = doc ? gedit_document_get_length(doc) : 0;
+	}
+
+	return 0;
+}
+
+/***********************************************************************
+ * PETESetStyle - set style on a range
+ ***********************************************************************/
+int PETESetStyle(PETEInst pi, PETEHandle pte, long start, long stop, PETEStyleInfo *style, long validBits)
+{
+	(void)pi;
+	if (!pte || !style) return -1;
+
+	geditDocument *doc = geditctrl_get_document((GtkWidget *)pte);
+	if (!doc) return -1;
+
+	long len = (stop > start) ? (stop - start) : gedit_document_get_length(doc);
+	GdkRGBA color = {0, 0, 0, 1};
+
+	if (validBits & peColorValid) {
+		color.red = style->textStyle.tsColor.red / 65535.0;
+		color.green = style->textStyle.tsColor.green / 65535.0;
+		color.blue = style->textStyle.tsColor.blue / 65535.0;
+	}
+
+	gedit_document_add_style_run(doc, start, len,
+		(validBits & peBoldValid) && (style->textStyle.tsFace & 1),
+		(validBits & peItalicValid) && (style->textStyle.tsFace & 2),
+		(validBits & peUnderlineValid) && (style->textStyle.tsFace & 4),
+		(validBits & peColorValid) ? &color : NULL,
+		(validBits & peSizeValid) ? style->textStyle.tsSize : 0);
+
+	return 0;
+}
+
+/***********************************************************************
+ * PETESetTextStyle - set text style on a range (convenience)
+ ***********************************************************************/
+int PETESetTextStyle(PETEInst pi, PETEHandle pte, long start, long stop, PETETextStyle *style, long validBits)
+{
+	PETEStyleInfo si;
+	memset(&si, 0, sizeof(si));
+	if (style)
+		si.textStyle = *style;
+	return PETESetStyle(pi, pte, start, stop, &si, validBits);
+}
+
+/***********************************************************************
+ * PETEInsertParaBreak - insert a paragraph break at offset
+ ***********************************************************************/
+int PETEInsertParaBreak(PETEInst pi, PETEHandle pte, long offset)
+{
+	(void)pi;
+	return PeteInsertPtr((GtkWidget *)pte, (int)offset, "\n", 1);
+}
+
+/***********************************************************************
+ * PETESelectGraphic - select a graphic at offset
+ ***********************************************************************/
+int PETESelectGraphic(PETEInst pi, PETEHandle pte, long offset)
+{
+	(void)pi;
+	if (!pte) return -1;
+	geditctrl_select_range((GtkWidget *)pte, (gint)offset, (gint)(offset + 1));
+	return 0;
+}
+
+/***********************************************************************
+ * PETESetRecalcState / PETEGetRefCon / PETESetRefCon / PETEMarkDocDirty
+ ***********************************************************************/
+int PETESetRecalcState(PETEInst pi, PETEHandle pte, int state)
+{
+	(void)pi; (void)pte; (void)state;
+	return 0;
+}
+
+long PETEGetRefCon(PETEInst pi, PETEHandle pte)
+{
+	(void)pi;
+	if (!pte) return 0;
+	return (long)(intptr_t)g_object_get_data(G_OBJECT(pte), "pete-refcon");
+}
+
+void PETESetRefCon(PETEInst pi, PETEHandle pte, long refCon)
+{
+	(void)pi;
+	if (pte)
+		g_object_set_data(G_OBJECT(pte), "pete-refcon", (gpointer)(intptr_t)refCon);
+}
+
+void PETEMarkDocDirty(PETEInst pi, PETEHandle pte, int dirty)
+{
+	(void)pi;
+	PeteSetDirty((GtkWidget *)pte, dirty);
+}
+
+/***********************************************************************
+ * PeteStyleAt - get style at a specific offset
+ ***********************************************************************/
+void PeteStyleAt(PETEHandle pte, long offset, PETEStyleEntry *style)
+{
+	PETEGetStyle(NULL, pte, offset, NULL, style);
+}
+
+/***********************************************************************
+ * PeteGetStyle - get style and run length at offset
+ ***********************************************************************/
+void PeteGetStyle(PETEHandle pte, long offset, long *runLen, PETEStyleEntry *style)
+{
+	memset(style, 0, sizeof(*style));
+	style->psStartChar = offset;
+
+	geditDocument *doc = geditctrl_get_document((GtkWidget *)pte);
+	if (doc) {
+		long totalLen = gedit_document_get_length(doc);
+		/* Return entire remaining text as one run (simplified) */
+		if (runLen)
+			*runLen = (totalLen > offset) ? (totalLen - offset) : 1;
+	} else {
+		if (runLen) *runLen = 1;
+	}
+}
+
+/***********************************************************************
+ * PeteTextStyleDiff - compare two text styles, return face diff bits
+ ***********************************************************************/
+short PeteTextStyleDiff(PETETextStylePtr s1, PETETextStylePtr s2)
+{
+	short diff = 0;
+	if (!s1 || !s2) return 0;
+	if (s1->tsFace != s2->tsFace) diff |= (short)(s1->tsFace ^ s2->tsFace);
+	if (s1->tsFont != s2->tsFont) diff |= 0x100; /* peFontValid-ish */
+	if (s1->tsSize != s2->tsSize) diff |= 0x200; /* peSizeValid-ish */
+	if (memcmp(&s1->tsColor, &s2->tsColor, sizeof(RGBColor)) != 0) diff |= 0x400;
+	return diff;
+}
+
+/***********************************************************************
+ * PeteParaInfoDiff - compare two paragraph infos
+ ***********************************************************************/
+short PeteParaInfoDiff(PETEParaInfoPtr s1, PETEParaInfoPtr s2)
+{
+	short diff = 0;
+	if (!s1 || !s2) return 0;
+	if (s1->startMargin != s2->startMargin) diff |= peStartMarginValid;
+	if (s1->endMargin != s2->endMargin) diff |= peEndMarginValid;
+	if (s1->indent != s2->indent) diff |= peIndentValid;
+	if (s1->justification != s2->justification) diff |= peJustificationValid;
+	if (s1->quoteLevel != s2->quoteLevel) diff |= peQuoteLevelValid;
+	return diff;
+}
+
+/***********************************************************************
+ * PeteLabel - set label on a text range
+ ***********************************************************************/
+void PeteLabel(PETEHandle pte, long start, long stop, short label, short mask)
+{
+	(void)mask;
+	if (pte)
+		geditctrl_set_label((GtkWidget *)pte, (gint)start, (gint)stop, label);
+}
+
+/***********************************************************************
+ * PeteLock - lock/unlock a text range
+ ***********************************************************************/
+void PeteLock(PETEHandle pte, long start, long stop, short lock)
+{
+	if (pte)
+		geditctrl_lock_range((GtkWidget *)pte, (gint)start, (gint)stop, lock);
+}
+
+/***********************************************************************
+ * PeteWrap - toggle word wrap
+ ***********************************************************************/
+void PeteWrap(void *win, PETEHandle pte, int wrap)
+{
+	(void)win; (void)pte; (void)wrap;
+	/* GTK text views handle wrap mode via CSS/properties */
+}
+
+/***********************************************************************
+ * PeteInsertIntlText - insert international text (encoding conversion)
+ ***********************************************************************/
+int PeteInsertIntlText(PETEHandle pte, long *offset, void *text, long len,
+                       long encoding1, void *converter, long encoding2,
+                       int b1, int b2)
+{
+	(void)encoding1; (void)converter; (void)encoding2; (void)b1; (void)b2;
+	/* In GTK, all text is UTF-8 — encoding conversion not needed */
+	if (text && len > 0 && pte && offset)
+		return PeteInsertPtr((GtkWidget *)pte, (int)*offset, (const char *)text, (int)len);
+	return 0;
+}
+
+/***********************************************************************
+ * PeteParaConvert - convert paragraph formatting
+ ***********************************************************************/
+int PeteParaConvert(PETEHandle pte, long start, long end)
+{
+	(void)pte; (void)start; (void)end;
+	return 0;
+}
+
+/* ================================================================
+ * Additional PETE functions needed by rich.c and other modules
+ * ================================================================ */
+
+/***********************************************************************
+ * PETEGetParaIndex - get paragraph index for a character offset
+ ***********************************************************************/
+int PETEGetParaIndex(PETEInst pi, PETEHandle pte, long offset, long *index)
+{
+	(void)pi;
+	if (!pte || !index) return -1;
+	geditDocument *doc = geditctrl_get_document((GtkWidget *)pte);
+	if (!doc) return -1;
+	GtkTextBuffer *buf = gedit_document_get_buffer(doc);
+	GtkTextIter iter;
+	gtk_text_buffer_get_iter_at_offset(buf, &iter, (gint)offset);
+	*index = (long)gtk_text_iter_get_line(&iter);
+	return 0;
+}
+
+/***********************************************************************
+ * PETEInsertTextHandle - insert text from a handle at given offset
+ ***********************************************************************/
+int PETEInsertTextHandle(PETEInst pi, PETEHandle pte, long offset,
+                         UHandle text, long len, long hOffset,
+                         PETEStyleListHandle styles)
+{
+	(void)pi; (void)styles;
+	if (!pte || !text || !*text) return -1;
+	unsigned char *src = *text + hOffset;
+	if (len < 0) len = strlen((const char *)src);
+	return PeteInsertPtr((GtkWidget *)pte, (int)offset, (const char *)src, (int)len);
+}
+
+/***********************************************************************
+ * PETESelect - set the selection range
+ ***********************************************************************/
+int PETESelect(PETEInst pi, PETEHandle pte, long start, long stop)
+{
+	(void)pi;
+	if (!pte) return -1;
+	geditctrl_select_range((GtkWidget *)pte, (gint)start, (gint)stop);
+	return 0;
+}
+
+/***********************************************************************
+ * PeteInsertHeader - insert text from a handle as a header
+ * In GTK, this is just a text insert (no special header formatting).
+ ***********************************************************************/
+int PeteInsertHeader(PETEHandle pte, long *pOff, UHandle text, long len, long tOff)
+{
+	if (!pte || !text || !*text || !pOff) return -1;
+	unsigned char *src = *text + tOff;
+	if (len < 0) len = strlen((const char *)src);
+	int err = PeteInsertPtr((GtkWidget *)pte, (int)*pOff, (const char *)src, (int)len);
+	if (!err && *pOff >= 0) *pOff += len;
+	return err;
+}
+
+/***********************************************************************
+ * PeteEnsureBreakLo - ensure there's a paragraph break at offset
+ ***********************************************************************/
+int PeteEnsureBreakLo(PETEHandle pte, long offset, bool *did)
+{
+	if (!pte) return -1;
+	geditDocument *doc = geditctrl_get_document((GtkWidget *)pte);
+	if (!doc) return -1;
+
+	long docLen = gedit_document_get_length(doc);
+	if (offset > docLen) offset = docLen;
+
+	/* Check if there's already a newline at the offset */
+	if (offset > 0) {
+		gchar *txt = gedit_document_get_text_range(doc, (gint)(offset - 1), 1);
+		if (txt) {
+			bool hasBreak = (txt[0] == '\n' || txt[0] == '\r');
+			g_free(txt);
+			if (hasBreak) {
+				if (did) *did = false;
+				return 0;
+			}
+		}
+	}
+
+	/* Insert a newline */
+	gedit_document_insert_text(doc, (gint)offset, "\n");
+	if (did) *did = true;
+	return 0;
+}
+
+/***********************************************************************
+ * PeteEnsureCrAndBreakLo - ensure CR + paragraph break
+ ***********************************************************************/
+int PeteEnsureCrAndBreakLo(PETEHandle pte, long inOffset, long *newOffset, bool *did)
+{
+	int err = PeteEnsureBreakLo(pte, inOffset, did);
+	if (!err && newOffset) {
+		if (did && *did)
+			*newOffset = inOffset + 1;
+		else
+			*newOffset = inOffset;
+	}
+	return err;
+}
+
+/***********************************************************************
+ * PetePlainParaAtLo - remove paragraph formatting in a range
+ ***********************************************************************/
+void PetePlainParaAtLo(PETEHandle pte, long start, long stop, long validBits)
+{
+	(void)validBits;
+	if (!pte) return;
+	geditctrl_plain_para_at((GtkWidget *)pte, (gint)start, (gint)stop);
+}
+
+/***********************************************************************
+ * PeteParaAt - return the paragraph index containing offset
+ ***********************************************************************/
+long PeteParaAt(PETEHandle pte, long offset)
+{
+	long idx = 0;
+	PETEGetParaIndex(NULL, pte, offset, &idx);
+	return idx;
+}
+
+/***********************************************************************
+ * PeteSetExcerptLevelAt - set the excerpt/quote level at an offset
+ ***********************************************************************/
+int PeteSetExcerptLevelAt(PETEHandle pte, long offset, short level)
+{
+	if (!pte) return -1;
+	geditctrl_set_quote_level((GtkWidget *)pte, (gint)level);
+	return 0;
+}
+
+/***********************************************************************
+ * PeteIsExcerptAt - check if text at offset is in an excerpt block
+ ***********************************************************************/
+bool PeteIsExcerptAt(PETEHandle pte, long offset)
+{
+	if (!pte) return false;
+	/* Get paragraph info and check quoteLevel */
+	PETEParaInfo info;
+	memset(&info, 0, sizeof(info));
+	long para = PeteParaAt(pte, offset);
+	PETEGetParaInfo(NULL, pte, para, &info);
+	return info.quoteLevel > 0;
+}
+
+/***********************************************************************
+ * PeteGetStyleLo - get style at offset, optionally allowing graphics
+ ***********************************************************************/
+int PeteGetStyleLo(PETEHandle pte, long offset, long *len, bool allowGraphics, PETEStyleEntry *style)
+{
+	(void)allowGraphics;
+	if (!pte || !style) return -1;
+	memset(style, 0, sizeof(*style));
+	PeteGetStyle(pte, offset, len, style);
+	return 0;
+}
+
+/***********************************************************************
+ * IsEmoticonStyle - check if a graphic style is an emoticon
+ ***********************************************************************/
+bool IsEmoticonStyle(PETEGraphicStylePtr gs)
+{
+	(void)gs;
+	/* No emoticons in GTK port yet */
+	return false;
+}
+
+/***********************************************************************
+ * GetFontName - get font name from font ID
+ * In GTK, font IDs are mapped to Pango font family names.
+ * For now, return a default font name as a Pascal string.
+ ***********************************************************************/
+void GetFontName(short fontID, unsigned char *name)
+{
+	const char *fontName;
+	if (fontID <= 0) {
+		/* Default or system font */
+		fontName = "Sans";
+	} else {
+		/* For now, map all IDs to Sans — real implementation would
+		   look up the Pango font family by ID */
+		fontName = "Sans";
+	}
+	/* Return as Pascal string */
+	size_t slen = strlen(fontName);
+	if (slen > 255) slen = 255;
+	name[0] = (unsigned char)slen;
+	memcpy(name + 1, fontName, slen);
+}
+
+/***********************************************************************
+ * ColorParam - parse a color parameter string like "FFFF,0000,CCCC"
+ * Returns 0 on success, non-zero on failure.
+ ***********************************************************************/
+int ColorParam(RGBColor *color, unsigned char *text)
+{
+	if (!color || !text) return -1;
+	/* text is a Pascal string; skip length byte */
+	unsigned char len = text[0];
+	char buf[256];
+	if (len > 255) len = 255;
+	memcpy(buf, text + 1, len);
+	buf[len] = '\0';
+
+	unsigned int r, g, b;
+	if (sscanf(buf, "%x,%x,%x", &r, &g, &b) == 3) {
+		color->red = (unsigned short)r;
+		color->green = (unsigned short)g;
+		color->blue = (unsigned short)b;
+		return 0;
+	}
+	return -1;
+}
+
+/***********************************************************************
+ * EncodingError - check if an error is a text encoding error
+ ***********************************************************************/
+bool EncodingError(int err)
+{
+	/* In GTK (UTF-8 everywhere), encoding errors don't happen */
+	(void)err;
+	return false;
+}
+
+/***********************************************************************
+ * CreateSystemRomanEncoding - return the system's Roman encoding
+ ***********************************************************************/
+TextEncoding CreateSystemRomanEncoding(void)
+{
+	return 0; /* kTextEncodingMacRoman */
+}
+
+/***********************************************************************
+ * InsertHTMLLo - insert HTML text with interpretation
+ * Placeholder — HTML parsing will be ported separately.
+ ***********************************************************************/
+int InsertHTMLLo(UHandle text, long *htmlOffset, long textLen, long *inOffset,
+                 PETEHandle pte, TextEncoding encoding, long flags, StackHandle partRefStack)
+{
+	(void)encoding; (void)flags; (void)partRefStack;
+	if (!text || !*text || !pte || !inOffset) return -1;
+	/* For now, insert as plain text */
+	unsigned char *src = *text + *htmlOffset;
+	long len = textLen;
+	if (len < 0) {
+		geditDocument *doc = geditctrl_get_document((GtkWidget *)pte);
+		if (!doc) return -1;
+		len = gedit_document_get_length(doc) - *htmlOffset;
+	}
+	long offset = *inOffset;
+	if (offset == -1) {
+		geditDocument *doc = geditctrl_get_document((GtkWidget *)pte);
+		if (doc) offset = gedit_document_get_length(doc);
+		else offset = 0;
+	}
+	int err = PeteInsertPtr((GtkWidget *)pte, (int)offset, (const char *)src, (int)len);
+	if (!err) {
+		*htmlOffset += len;
+		if (*inOffset >= 0) *inOffset += len;
+	}
+	return err;
 }

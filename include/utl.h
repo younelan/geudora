@@ -42,6 +42,9 @@ _____________________________________________________________________*/
 #include <gtk/gtk.h>
 #include <stdbool.h>
 
+struct FSSpec;
+
+
 /* ASCII codes. */
 
 #define homeKey 0x01     /* ascii code for home key */

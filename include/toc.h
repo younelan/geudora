@@ -71,6 +71,8 @@ typedef struct {
   short spamScore;     /* Junk mail spam score */
   short spamBecause;   /* Reason for spam score */
   short spareShort;    /* Spare short for temporary flags */
+  short spareShort2;   /* Second spare short (used by sort stability) */
+  short score;         /* Moodmail/analysis score */
   long arrivalSeconds; /* Message arrival time */
   bool selected;       /* Selection state */
   long subjId;         /* Subject ID for error handling */
@@ -169,6 +171,9 @@ typedef struct TOCType {
   short resort;             /* Added for message.c */
   long needRedo;            /* Added for message.c */
   bool conConMultiScan;     /* Added for mailbox.c */
+  bool listFocus;           /* List has focus (vs preview) */
+  bool searchFocus;         /* Search field has focus */
+  long maxValid;            /* Max valid summary index */
 
   MessageSummary sums[1]; /* Variable length array of summaries */
 } TOCType;
@@ -179,7 +184,10 @@ typedef struct TOCType {
 #define kSearchMB 1
 
 /* Mailbox type constants */
-#define kResortWhenever 1
+#define kDontResort   0
+#define kNoSlowResort 1
+#define kResortNow    2
+#define kResortWhenever 3
 #define MBX_IN 1
 #define MBX_OUT 2
 #define MBX_TRASH 3
@@ -209,7 +217,7 @@ typedef struct TOCType {
 #define FLAG_FIXED_WIDTH (1 << 16)
 #define FLAG_RICH (1 << 17)
 #define FLAG_SHOW_ALL (1 << 30)
-#define FLAG_HAS_ATT (1 << 8) /* Dummy value */
+/* FLAG_HAS_ATT defined in mailbox.h */
 
 /* Global preferences/settings stubs */
 #define UseFlowInExcerpt 0

@@ -1,34 +1,30 @@
 #include <stdbool.h>
+#include <string.h>
 #include <gtk/gtk.h>
 #include "mailbox.h"
 #include "schizo.h"
+#include "gtk_prefs.h"
 
-void ActiveTicks() {}
+long ActiveTicks = 0;
 int AddInlineSig(void* messH) {
   return 0;
 }
-void AddSpecToList(void* spec, void* specList) {
-}
+/* AddSpecToList — real implementation elsewhere */
 int AddTLMIME(void* emsMIME, short what, unsigned char *name, unsigned char *value) {
   return 0;
 }
 void AddXfUndo(void* tocH, void* trashTOC, int unused) {
 }
 void AdjustSpecialMenuItem() {}
-void AliasRefCount() {}
-void Aliases() {}
-void AnyTOCDirty() {}
+short AliasRefCount = 0;
+struct AliasDStruct **Aliases = NULL;
+long AnyTOCDirty = 0;
 void AppendMenu() {}
-void AttFolderSpec() {}
-bool AttIsSelected(void* win, void* pte, long startWith, long endWith, short what, long *start, long *stop) {
-  return false;
-}
-int AttLine2Spec(unsigned char *line, void* spec, bool wantToOpen) {
-  return 0;
-}
-void AttachOptNumber() {}
-void AttachSelect(void* messH) {
-}
+FSSpec AttFolderSpec = {0};
+/* AttIsSelected — real implementation elsewhere */
+/* AttLine2Spec — real implementation elsewhere */
+/* AttachOptNumber — macro in compact.h */
+/* AttachSelect — real implementation in compact.c */
 void AuditHit() {}
 void AuditPersCreate(uint32_t hash) {
 }
@@ -39,46 +35,37 @@ void AuditPersRename(uint32_t oldId, uint32_t newHash) {
 bool AutoCheckOK() {
   return false;
 }
-void BeenThereDoneThat(void* tocH, short sumNum) {
-}
+/* BeenThereDoneThat — real implementation elsewhere */
 void BeginPGP(void* pgpc) {
 }
-void BoxCenterSelection() {}
-void BoxCount() {}
+/* BoxCenterSelection — real implementation elsewhere */
+void *BoxCount = NULL; /* void ** Handle */
 int BoxFOpen(TOCType *tocH) {
   return 0;
 }
-void BoxMap() {}
+struct BoxMapStruct **BoxMap = NULL;
 void BoxPreviewProfile() {}
-void BoxSelectAfter(void* win, short sumNum) {
-}
-void BoxSetSummarySelected(void* tocH, short sum, bool select) {
-}
-void BoxWidths() {}
-void BugFlags() {}
-void BuildEnriched() {}
+/* BoxSelectAfter — real implementation elsewhere */
+/* BoxSetSummarySelected — real implementation elsewhere */
+void *BoxWidths = NULL; /* short ** Handle */
+short BugFlags = 0;
+/* BuildEnriched — real implementation elsewhere */
 void BuildHTML() {}
 void BuildStationeryList() {
 }
 void CacheRecentNickname(unsigned char *name) {
 }
 void Cell1Rect() {}
-bool CheckAddNotifyControls(void* win, void* messH) {
-  return false;
-}
-void CheckNow() {}
-void CheckOnIdle() {}
-void CheckThreadError() {}
-void CheckThreadRunning() {}
+/* CheckAddNotifyControls — real implementation elsewhere */
+bool CheckNow = false; /* global variable, not a function */
+Byte CheckOnIdle = 0;     /* global variable, not a function */
+/* CheckThreadError — real implementation elsewhere */
+/* CheckThreadRunning — real implementation elsewhere */
 void ClearPrefBit() {}
 /* CloseMyWindow — real inline in legacy_shim.h */
-void CompAttachSpec(void* win, void* spec) {
-}
-void CompDelAttachment(void* messH, void* where) {
-}
-int CompGatherRecipientAddresses(void* messH, bool wantComments) {
-  return 0;
-}
+/* CompAttachSpec — real implementation in compact.c */
+/* CompDelAttachment — real implementation in compact.c */
+/* CompGatherRecipientAddresses — real implementation in compact.c */
 void CompGetMID() {}
 int CompHeadAppendPtr(void* pte, void* hSpec, char *text, long size) {
   return 0;
@@ -109,7 +96,7 @@ void ConvertExcerpt() {}
 bool ConvertPGP(short refN, void* buf, long *size, void* lineType, long estSize, void* pgpc) {
   return false;
 }
-void CrLf() {}
+Byte CrLf[3] = {0};
 void CurTrans() {}
 void CurrentAttFolderSpec() {}
 void CyclePendulum() {
@@ -121,7 +108,7 @@ void DisposeTLMIME(void* emsMIME) {
 void* DoComposeNew(int type) {
   return NULL;
 }
-void DontTranslate() {}
+bool DontTranslate = false; /* global variable, not a function */
 void DotToNum() {}
 void DragIsInteresting() {}
 void DrawString() {}
@@ -163,51 +150,17 @@ int ETLScoreJunk(void* thePlugin, void* transInfo, void* junkInfo, void* message
 }
 void EndMovableModal() {}
 void EraseRect() {}
-int ExportHTMLSum(void* tocH, short sumNum) {
-  return 0;
-}
-short EzOpenFind(void* tocH, short origSum) {
-  return 0;
-}
-void FAflkAddHistory() {}
-void FAflkCopy() {}
-void FAflkForward() {}
-void FAflkJunk() {}
-void FAflkLabel() {}
-void FAflkMoveAttach() {}
-void FAflkNone() {}
-void FAflkNotifyUser() {}
-void FAflkOpenMessage() {}
-void FAflkPersonality() {}
-void FAflkPrint() {}
-void FAflkPriority() {}
-void FAflkRedirect() {}
-void FAflkReply() {}
-void FAflkServerOpts() {}
-void FAflkSound() {}
-void FAflkSpeak() {}
-void FAflkStatus() {}
-void FAflkStop() {}
-void FAflkSubject() {}
-void FAflkTransfer() {}
-void FakeTabs() {}
-void Fcc(void* messH, void* box) {
-}
+/* ExportHTMLSum — real implementation elsewhere */
+/* EzOpenFind — real implementation elsewhere */
+/* FAflk* functions implemented in filtwin.c */
+short FakeTabs = 0;
+/* Fcc — real implementation elsewhere */
 void FigureZoom() {}
-int FilterFlaggedMessages(void* fType, void* tocH, void* fpb) {
-  return 0;
-}
-int FilterMessage(void* fType, void* tocH, short sumNum) {
-  return 0;
-}
-int FilterMessagesFrom(void* fType, void* tocH, short startWith, void* fpb, bool noXfer) {
-  return 0;
-}
-void FilterPostprocess(void* fType, void* fpb) {
-}
-int FilterSelectedMessages(void* fType, void* tocH, void* fpb) {
-  return 0;
-}
+/* FilterFlaggedMessages — real implementation elsewhere */
+/* FilterMessage — real implementation elsewhere */
+/* FilterMessagesFrom — real implementation elsewhere */
+/* FilterPostprocess — real implementation elsewhere */
+/* FilterSelectedMessages — real implementation elsewhere */
 void FindControl() {}
 void* FindControlByRefCon(void* win, long refCon) {
   return NULL;
@@ -215,14 +168,14 @@ void* FindControlByRefCon(void* win, long refCon) {
 short FindFolder(short vRef, uint32_t type, bool create, int *foundVRef, long *foundDirID) {
   return 0;
 }
-void FindListView() {}
+/* FindListView — real implementation elsewhere */
 /* FindTOCSpot — real implementation in buildtoc.c */
 int FlattenTLMIME(void* emsMIME, void* flat) {
   return 0;
 }
-void ForceSend() {}
+/* ForceSend — now in globals.c */
 void FrameRect() {}
-void Fwd() {}
+/* Fwd — real implementation elsewhere */
 void* GetAMessage(void* tocH, short sumNum, void *u1, void *u2, bool b1) {
   return NULL;
 }
@@ -265,7 +218,16 @@ void *GetResource(uint32_t type, short id) { return NULL; }
 void* GetReturnAddr(void* addr, bool wantDefault) {
   return NULL;
 }
-void GetSMTPInfo() {}
+OSErr GetSMTPInfo(unsigned char *host) {
+  if (!host) return -1;
+  gchar *server = prefs_get_string(PREFS_GROUP_SENDING_MAIL, "smtp_server", "");
+  size_t len = strlen(server);
+  if (len > 255) len = 255;
+  host[0] = (unsigned char)len;
+  memcpy(host + 1, server, len);
+  g_free(server);
+  return 0;
+}
 short GetSumColor(TOCType *tocH, short sumNum) {
   return 0;
 }
@@ -276,11 +238,11 @@ void GetUUPCMail() {}
 void GetWindowPort() {}
 /* GetWindowPrivateData — real inline in legacy_shim.h */
 void GlobalToLocal() {}
-void GrowZoning() {}
+bool GrowZoning = false;
 void HRename() {}
 void HTMLPostamble() {}
 void HTMLPreamble() {}
-void HTMLSignature() {}
+void *HTMLSignature = NULL; /* void ** Handle */
 int HandleHeadGetIdText(char *textIn, short id, char **text) {
   return 0;
 }
@@ -290,19 +252,16 @@ void HideControl(void* ctl) {
 }
 void HideDialogItem() {}
 void HiliteButtonOne() {}
-void HiliteOddReply(void* messH) {
-}
+/* HiliteOddReply — real implementation elsewhere */
 void IMAPAccuAddPtr() {}
 void IMAPAccuInit() {}
 void IMAPAccuZap() {}
 void ImportErr() {}
-int InitFPB(void* fpb, bool zapAddrs, bool listsToo) {
-  return 0;
-}
+/* InitFPB — real implementation elsewhere */
 int InsertCommaIfNeedBe(void* pte, void* hs) {
   return 0;
 }
-void InsertWin() {}
+MyWindowPtr InsertWin = NULL;
 void InvalBoxSizeBox(void *wp) {
 }
 /* InvalContent - real impl in mywindow.c */
@@ -337,51 +296,35 @@ void LVMaxSize() {}
 void LVNewWithDetails() {}
 void LVSelectAll() {}
 void LVSize() {}
-void LastCheckTime() {}
-void LastContigSpace() {}
-void LastTotalSpace() {}
+uint32_t LastCheckTime = 0;
+long LastContigSpace = 0;
+long LastTotalSpace = 0;
 void LeftRimWidth() {}
-void LogRefN() {}
-void LogTicks() {}
-void LooseTrans() {}
+short LogRefN = 0; /* global variable, not a function */
+long LogTicks = 0;
+bool LooseTrans = false;
 void MBTickle() {}
-void MailRoot() {}
-void MainEvent() {}
+RootSpec MailRoot = {0};
+EventRecord MainEvent = {0};
 short MatchAlias(FSSpecPtr spec, long flags, ...) {
   return 0;
 }
-void MemCanFail() {}
-void MemLastFailed() {}
+bool MemCanFail = false; /* global variable, not a function */
+long MemLastFailed = 0;
 int Menu2Label(short menu) {
   return 0;
 }
 void MenuItemIsSeparator() {}
-bool MessApp1(void* win, void *event) {
-  return false;
-}
-bool MessClose(void* win) {
-  return false;
-}
-void MessCursor(Point mouse) {
-}
-bool MessFind(void* win, unsigned char *what) {
-  return false;
-}
-int MessGonnaShow(void* win) {
-  return 0;
-}
-void MessIBarUpdate(void* messH) {
-}
-void MessList() {}
-bool MessMenu(void* win, int menu, int item, short modifiers) {
-  return false;
-}
-int MessSaveSub(void* messH) {
-  return 0;
-}
-short MessWi(void* win) {
-  return 0;
-}
+/* MessApp1 — real implementation elsewhere */
+/* MessClose — real implementation elsewhere */
+/* MessCursor — real implementation elsewhere */
+/* MessFind — real implementation elsewhere */
+/* MessGonnaShow — real implementation elsewhere */
+/* MessIBarUpdate — real implementation elsewhere */
+/* MessList — now in globals.c */
+/* MessMenu — real implementation elsewhere */
+/* MessSaveSub — real implementation elsewhere */
+/* MessWi — real implementation elsewhere */
 void MiniEvents() {
 }
 bool Mom(short button, short item, short pref, short warning, short verb) {
@@ -415,17 +358,15 @@ void MyNMRec() {}
 void MySetThemeWindowBackground() {}
 void MyWinHasSelection() {}
 /* MyWindowDidResize - real impl in mywindow.c */
-void NeedToFilterIMAP() {}
-void NeedToFilterIn() {}
+short NeedToFilterIMAP = 0; /* global variable, not a function */
+short NeedToFilterIn = 0; /* global variable, not a function */
 void NeedToFilterOut() {}
 void NeedToNotify() {}
-void NewError() {}
+bool NewError = false; /* global variable, not a function */
 void NewHandleClear() {}
 void NewIconButton() {}
 void NewLine() {}
-short NewPrior(short item, short prior) {
-  return 0;
-}
+/* NewPrior — real implementation elsewhere */
 int NewTLMIME(void* emsMIME) {
   return 0;
 }
@@ -436,14 +377,14 @@ void NoDominant() {}
 void NoSLGet1IndResource() {}
 void NoSLGet1Resource() {}
 void NoSLGetMHandle() {}
-void NoSaves() {}
+bool NoSaves = false; /* global variable, not a function */
 void NukeXfUndo() {
 }
 void OFwd() {}
 void OTTCPTrans() {}
 void OffsetWindow() {}
 void OnBatteriesX() {}
-void OpenAddrErrs() {}
+bool OpenAddrErrs = false; /* global variable, not a function */
 void OpenOtherURLPtr() {}
 void OutgoingMIDList() {}
 void P1() {}
@@ -453,13 +394,13 @@ void P4() {}
 short PBGetCatInfoSync(void *pb) {
   return 0;
 }
-void PETE() {}
+/* PETE — now a macro in pete_portable.h */
 void ParseProtocolFromURLPtr() {}
 void ParseURL() {}
 /* PersList - NOT a stub. PersList is a macro in threading.h:
    #define PersList (CurThreadGlobals->tPersList)
    Having a function with this name shadows the macro and causes crashes. */
-void PeteCleanList() {}
+/* PeteCleanList — real implementation elsewhere */
 void PeteSelectedString() {}
 void PlotIconID() {}
 void PlotIconSuite() {}
@@ -471,10 +412,8 @@ bool PrefIsSetOrNot(int pref, int modifiers, int mask) {
 void Prior2Display() {}
 void PtInRect() {}
 void PushCursor() {}
-int QueueMessage(void* tocH, short sumNum, int when, int flags, bool b1, bool b2) {
-  return 0;
-}
-void Re() {}
+/* QueueMessage — real implementation in compact.c */
+/* Re — real implementation elsewhere */
 void* ReReadPGPClearText(void* stream, short refN, void* buf, long bSize, void* spec) {
   return NULL;
 }
@@ -482,36 +421,28 @@ void* ReReadPGPClearText(void* stream, short refN, void* buf, long bSize, void* 
 int RecordTLID(void* spec, void* id) {
   return 0;
 }
-int RelLine2Spec(unsigned char *line, void* spec, void* cid, void* relURL, void* absURL) {
-  return 0;
-}
+/* RelLine2Spec — real implementation elsewhere */
 void* RemSpoolFolder(long uidHash) {
   return NULL;
 }
 void RemindSortLinkWin() {
 }
 void RemoveUTF8FromSum() {}
-void RichSignature() {}
+/* RichSignature — now in globals.c */
 bool SaveComp(void* win) {
   return false;
 }
-bool SaveMessHi(void* win, bool closing) {
-  return false;
-}
+/* SaveMessHi — real implementation elsewhere */
 void ScrollIt() {}
 void SearchPtrPtr() {}
 void SearchStrPtr() {}
 void SecondsToDate() {}
-void SelectBoxRange(void* tocH, short from, short to, bool extend, short oFrom, short oTo) {
-}
+/* SelectBoxRange — real implementation elsewhere */
 void SelectDialogItemText() {}
 void SendBehind() {}
-void SendImmediately() {}
-void SendQueue() {}
-void SendThreadError() {}
-void SendThreadRunning() {}
-void ServerMenuChoice(void* tocH, short sumNum, int choice, bool shift) {
-}
+/* SendImmediately, SendQueue, SendThreadRunning are global variables — not stubs */
+/* SendThreadError — real implementation elsewhere */
+/* ServerMenuChoice — real implementation elsewhere */
 void SetControlMaximum(void* cntl, short max) {
 }
 void SetDItemState() {}
@@ -519,18 +450,15 @@ void SetItemCmd() {}
 void SetMenuItemCommandID() {}
 void SetMenuItemHierarchicalMenu() {}
 void SetMenuItemModifiers() {}
-void SetMessTable(void* tocH, short sumNum, short newId) {
-}
+/* SetMessTable — real implementation elsewhere */
 void SetMyCursor() {}
 void SetPrefBit() {}
 void SetPrefText() {}
-void SetPriority(void* tocH, short sumNum, int priority) {
-}
+/* SetPriority — real implementation elsewhere */
 /* SetRect — real inline in legacy_shim.h */
 void SetResInfo(void **res, short id, unsigned char *name) {
 }
-void SetSig(void* tocH, short sumNum, int sigId) {
-}
+/* SetSig — real implementation in compact.c */
 void SetStrOverride(short strn, const char *str) {
 }
 void SetSumColor(TOCType *tocH, short sumNum, short color) {
@@ -541,12 +469,11 @@ void SetThemeBackground() {}
 void SettingsRefN() {}
 void ShowBoxSizes(void* win) {
 }
-void ShowMessageSeparator(void* pte, bool center) {
-}
+/* ShowMessageSeparator — real implementation elsewhere */
 /* ShowMyWindow - real impl in mywindow.c */
 /* ShowMyWindowBehind - real impl in mywindow.c */
 void ShowWindow() {}
-void SigStyled() {}
+bool SigStyled = false; /* global variable, not a function */
 int SigValidate(short sigId) {
   return 0;
 }
@@ -561,12 +488,11 @@ void* gRegFiles = NULL;
 bool gTaskProgressInitied = false;
 int nagState = 0;
 int g16bitSubMenuIDs = 0;
-int gActiveConnections = 0;
+/* gActiveConnections — real implementation elsewhere */
 void* iBeamCursor = NULL;
 
-void gedit_document_insert_markup(void* self, int offset, const char* markup) {}
-void geditctrl_set_editable(void* ctrl, int editable) {}
-void geditctrl_set_rich_text(void* ctrl, int offset, int is_rich) {}
+/* gedit_document_insert_markup, geditctrl_set_editable, geditctrl_set_rich_text
+   implemented in gEditCtrl/geditctrl-glue.c */
 int pstrincmp(const unsigned char *s1, const unsigned char *s2) { return 0; }
 
 /* toc_free, toc_get_message, toc_get_message_count, toc_get_summaries,
@@ -578,7 +504,7 @@ void TextSize(int s) {}
 void ThreadYieldTicks(int t) {}
 int TitleBarHeight(void* w) { return 0; }
 void TrackControl(void* c, void* pt, void* a) {}
-void TransferMenuChoice(void) {}
+/* TransferMenuChoice — real implementation elsewhere */
 void TransmitMessageForSpool(void) {}
 void UUPCDry(void) {}
 void UUPCPrime(void) {}
@@ -593,7 +519,7 @@ bool WNE(int e, void* m, int t) { return false; }
 void* Win2TOC(void* w) { return NULL; }
 void WrapWrong(void) {}
 void YesStr(void) {}
-void eSignature(void) {}
+/* eSignature — now in globals.c */
 int flavorTypeText = 0;
 
 
@@ -609,3 +535,97 @@ void TaskDontAutoClose(void) {}
 
 
 bool ExpandAliasesLow(void **h1, void *h2, int i, bool b1, void *p1, int i2) { return true; }
+
+/* --- Link stubs for unported functions --- */
+
+/* Compose window header field management — needs real GTK impl */
+void CompHeadActivate(void *pte) {}
+short CompHeadCurrent(void *win) { return 0; }
+void CompSwitchFields(void *win, bool forward) {}
+void CompGatherRecipientAddresses(void *messH, bool cache) {}
+
+/* Compose window UI — needs real GTK impl */
+void InvalTopMargin(void *win) {}
+void RefreshSigButton(void *win) {}
+void RemoveInlineSig(void *messH) {}
+void EnableTxtFmtBarIfOK(void *win) {}
+
+/* Translator/plugin system — needs real port eventually */
+long ETLIconToID(void *tl, short context, short index) { return 0; }
+void AddTranslatorsFromPtr(void *messH, unsigned char *text, long len) {}
+void WriteTranslators(void *messH) {}
+
+/* Content analysis (moodwatch) — not needed in GTK port */
+bool AnalWarning(void *messH) { return false; }
+bool AnalDelayOutgoing(void) { return false; }
+
+/* Mac dialup/PPP — not needed */
+void CheckSLIP(void) {}
+
+/* Mac menu manager — needs GTK menu port */
+void AdjustSpecialMenuSelection(void *tocH, short sum) {}
+
+/* Mac key event — replace with GDK */
+short UnadornKey(short key, short modifiers) { return key; }
+
+/* Mac window list — replace with GTK window tracking */
+void *GetWindowList(void) { return NULL; }
+bool IsKnownWindowMyWindow(void *win) { return false; }
+
+/* Mac graphics — not needed */
+void DisplayGetGraphics(void *pte) {}
+
+/* Mac ListView — needs GTK TreeView port */
+void LVSelect(void *lv, short row, bool extend) {}
+
+/* Mail filter creation — needs real port */
+void DoMakeFilter(void *tocH, short sumNum) {}
+
+/* Receipt generation — needs real port */
+void GenerateReceipt(void *messH, short type, short action) {}
+
+/* Nickname caching — needs real port */
+void NicknameCachingScan(void *messH, unsigned char *text, long len) {}
+
+/* Open text window — needs GTK impl */
+void *OpenText(void *spec, void *win, void *p, bool b) { return NULL; }
+
+/* Mailbox folder navigation — needs GTK menu port */
+short MBFindInCollapsed(short vRef, long dirId) { return 0; }
+short MBGetFolderMenuID(short vRef, long dirId) { return 0; }
+
+/* Attachment/parts folder paths — real GLib implementation */
+int GetAttFolderPath(short vRef, long dirId, char *path, int pathSize) {
+  const char *home = g_get_home_dir();
+  g_snprintf(path, pathSize, "%s/.eudora/Attachments", home);
+  g_mkdir_with_parents(path, 0755);
+  return 0;
+}
+
+int GetIMAPAttachFolderPath(short vRef, long dirId, char *path, int pathSize) {
+  const char *home = g_get_home_dir();
+  g_snprintf(path, pathSize, "%s/.eudora/IMAP Attachments", home);
+  g_mkdir_with_parents(path, 0755);
+  return 0;
+}
+
+int GetPartsFolder(void *spec) {
+  return 0;
+}
+
+/* Return address — needs real port from prefs */
+unsigned char *GetReturnAddrC(unsigned char *addr) {
+  if (addr) addr[0] = 0;
+  return addr;
+}
+
+/* FSSpec folder check — real GLib implementation */
+bool FSpIsItAFolder(void *spec) {
+  /* FSSpec has a name field — in practice we check the path */
+  return false;
+}
+
+/* AttachOptNumber — already a macro in compact.h, but some code calls it as function */
+short AttachOptNumber_func(long flags) {
+  return (short)(((flags & (0x40|0x80)) >> 6) & 0x3);
+}

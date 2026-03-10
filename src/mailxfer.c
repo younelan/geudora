@@ -24,6 +24,7 @@ OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE OF THIS SOFTWARE, EVEN IF
 ADVISED OF THE POSSIBILITY OF SUCH DAMAGE. */
 
 #include "mailxfer.h"
+#include "ends.h"       // For SetSendQueue
 #include "StringDefs.h" // For OUT, OUT_TEMP, IN, IN_TEMP string resource IDs
 #include "StringUtil.h" // For ComposeRString
 #include "auditdefs.h"
@@ -38,6 +39,7 @@ ADVISED OF THE POSSIBILITY OF SUCH DAMAGE. */
 #include "sendmail.h"
 #include "threading.h" // For CurThreadGlobals, ThreadGlobals, LastAttSpec
 #include "toc.h"
+#include "compact.h"
 #include "imapmailboxes.h"
 #include "util.h"
 #define FILE_NUM 52
@@ -50,7 +52,7 @@ extern bool SendThreadRunning;
 extern bool SendImmediately;
 // PersList and CurPers are now macros from threading.h - don't declare as
 // extern
-extern void **SendQueue;
+extern int SendQueue;
 extern uint32_t LastCheckTime;
 extern uint32_t ActiveTicks;
 // CurPers is a macro from threading.h
@@ -91,7 +93,7 @@ extern int DoTransferMessagesToServer(TOCType * toc, void *data, bool copy, bool
 extern void IMAPPollMailboxes(FSSpec spec);
 // #include "filters.h" // already included via mailxfer.h/filters.h
 // #include "junk.h" // Removed to avoid conflicts
-// #include "filtrun.h"
+#include "filtrun.h"
 #define IMAPDOWNLOAD_H // Suppress conflicting header
 #include "junk.h"
 #undef IMAPDOWNLOAD_H
@@ -154,7 +156,7 @@ extern int FindOpenWazoo(int win);
 void *CurThreadGlobals = NULL;
 void *ThreadGlobals = NULL;
 #endif
-void *TaskProgressWindow = NULL;
+MyWindowPtr TaskProgressWindow = NULL;
 void *ModalWindow = NULL;
 bool gPPPConnectFailed = false;
 bool NoXfer = false;
@@ -250,9 +252,13 @@ extern int StartSMTP(TransStream stream, unsigned char *server, long port);
 bool TransOut = false;
 long TotalQueuedSize = 0;
 // ByteProgress is defined in progress.h - don't redefine
-bool RegenerateFilters(void) { return false; }
+/* RegenerateFilters is implemented in filtwin.c */
 bool EjectBuckaroo = false;
-bool IsQueued(TOCType * toc, int sum) { return false; }
+bool IsQueued(TOCType *toc, int sum) {
+  if (!toc || sum < 0 || sum >= toc->count) return false;
+  int s = toc->sums[sum].state;
+  return (s == QUEUED || s == TIMED);
+}
 // ProgressR(NoChange,count--,0,LEFT_TO_TRANSFER,nil);
 #define NoChange 0
 #undef LEFT_TO_TRANSFER
@@ -300,7 +306,7 @@ extern int POPrror(void);
 #define LOG_TPUT 1
 // ComposeLogS is defined in legacy_shim.h - don't redefine with different
 // signature
-long ApproxMessageSize(MessHandle messH) { return 100; }
+/* ApproxMessageSize — real implementation in compact.c */
 // ByteProgressExcess is defined in progress.h - don't redefine
 extern void SetState(TOCType * toc, int sum, int state);
 extern bool WriteTOC(TOCType * toc);
@@ -415,11 +421,11 @@ extern OSErr ArchiveJunk(TOCType * toc);
 // Stub missing functions
 static void TaskProgressRefresh(void) {}
 static void FlushTOCs(bool a, bool b) {}
-static void RememberOpenWindows(void) {}
+/* RememberOpenWindows is in ends.c */
 /* MailboxTreeGood, CreateLocalCache, EnsureSpecialMailboxes are in imapmailboxes.c */
 // ThreadsAvailable is defined in threading.h - don't redefine
 // SetupXferMailThread is defined in threading.h - don't redefine
-static void SetSendQueue(void) {}
+/* SetSendQueue is defined in ends.c — don't duplicate here */
 static bool SelectXferMailPers(bool check, bool send, bool manual) {
   return true;
 }
