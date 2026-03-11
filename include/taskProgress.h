@@ -27,6 +27,7 @@ OSErr AddTaskErrorsS(const char *error, const char *explanation,
                      TaskKindEnum taskKind, long persId);
 void RemoveTaskErrors(TaskKindEnum taskKind, long persId);
 void UpdateTaskProgress(int percent, int remaining);
+void UpdateTaskMessage(const char *title, const char *subtitle, const char *message);
 void DrawTaskProgressBar(ControlHandle bar);
 void InvalTPRect(Rect *invalRect);
 void OpenTasksWin(void);

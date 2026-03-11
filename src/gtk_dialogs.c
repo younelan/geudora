@@ -4,6 +4,9 @@
 #include "prefdefs.h"
 #include "gtk_dialogs.h"
 #include "gtk_prefs.h"
+#include "Globals.h"
+#include "task_types.h"
+#include "taskProgress.h"
 #include <gtk/gtk.h>
 #include <stdarg.h>
 #include <string.h>
@@ -102,6 +105,12 @@ short ComposeStdAlert(AlertType alertType, int msgResId, ...) {
     message = g_strdup_printf("Alert (Resource ID: %d)", msgResId);
   }
   va_end(args);
+
+  if (InAThread()) {
+    AddTaskErrorsS(title, message, CheckingTask, (*CurPers)->persId);
+    g_free(message);
+    return kAlertStdAlertOKButton;
+  }
 
   /* For now, just print to console and return OK - full GTK4 async dialog needs
    * main loop */
@@ -257,12 +266,32 @@ unsigned char *GetPref(unsigned char *dest, short prefId) {
 bool PrefIsSet(short prefId) {
   /* Bridge critical prefs to INI settings */
   switch (prefId) {
+    case PREF_IS_IMAP:
+      return (bool)prefs_get_bool(PREFS_GROUP_CHECKING_MAIL, "use_imap", FALSE);
     case PREF_KERBEROS:
       return (bool)prefs_get_bool(PREFS_GROUP_CHECKING_MAIL, "use_kerberos", FALSE);
     case PREF_SEND_CHECK:
       return (bool)prefs_get_bool(PREFS_GROUP_CHECKING_MAIL, "send_on_check", FALSE);
+    case PREF_LMOS:
+      return (bool)prefs_get_bool(PREFS_GROUP_CHECKING_MAIL, "leave_on_server", FALSE);
+    case PREF_THREADING_OFF:
+      return false;  /* threading always on */
+    case PREF_JUST_SAY_NO:
+      return false;  /* don't skip manual checks */
+    case PREF_PERS_NO_SEND:
+      return false;  /* allow sending */
+    case PREF_POP_SEND:
+      return false;  /* not using POP-before-SMTP send */
+    case PREF_TASK_PROGRESS_AUTO:
+      return (bool)prefs_get_bool(PREFS_GROUP_GETTING_ATTENTION, "show_task_progress", TRUE);
     case PREF_AUTO_EMPTY:
       return (bool)prefs_get_bool(PREFS_GROUP_MISCELLANEOUS, "empty_trash_on_quit", FALSE);
+    case PREF_SSL_POP_SETTING:
+      return (bool)prefs_get_bool(PREFS_GROUP_SSL, "use_ssl", FALSE);
+    case PREF_SSL_SMTP_SETTING:
+      return (bool)prefs_get_bool(PREFS_GROUP_SSL, "use_ssl", FALSE);
+    case PREF_SSL_IMAP_SETTING:
+      return (bool)prefs_get_bool(PREFS_GROUP_SSL, "use_ssl", FALSE);
     default:
       break;
   }

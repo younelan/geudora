@@ -103,6 +103,8 @@ static inline void c2pstr(char *s) {
 #include "schizo.h"    /* For CUR_POPD_TYPE */
 #include "tcp.h"       /* For OTFlushInput */
 #include "threading.h" /* For Prr, POPCmds, FixServers, CanPipeline macros */
+#include "StringUtil.h"
+#include "taskProgress.h"
 #include "util.h"      /* For Accumulator functions */
 
 #ifdef CommandPeriod
@@ -356,9 +358,7 @@ short GetMyMail(TransStream stream, bool quietly, short *gotSome,
     port =
         PrefIsSet(PREF_KERBEROS) ? GetRLong(KERB_POP_PORT) : GetRLong(POP_PORT);
   GetPOPInfo(msgname, hostName);
-  err = noErr;
-  if (err)
-    if ((err = StartPOP(stream, hostName, port)) == noErr) {
+  if ((err = StartPOP(stream, hostName, port)) == noErr) {
       messageCount = POPIntroductions(stream, msgname, capabilities);
 #ifdef DEBUG
       if (BUG15)
@@ -1343,6 +1343,25 @@ int POPCmdError(short cmd, unsigned char *args, unsigned char *message) {
     (*theError)--;
   if (theError[*theError] == '\015')
     (*theError)--;
+
+  if (InAThread()) {
+    char c_cmd[256], c_err[256];
+    int len;
+    
+    len = (unsigned char)theCmd[0];
+    if (len > 255) len = 255;
+    memcpy(c_cmd, theCmd + 1, len);
+    c_cmd[len] = '\0';
+
+    len = (unsigned char)theError[0];
+    if (len > 255) len = 255;
+    memcpy(c_err, theError + 1, len);
+    c_err[len] = '\0';
+
+    AddTaskErrorsS(c_cmd, c_err, CheckingTask, (*CurPers)->persId);
+    return 1;
+  }
+
   MyParamText(theCmd, theError, "\pPOP", "");
   err = ReallyDoAnAlert(PROTO_ERR_ALRT, Note);
   return (err);

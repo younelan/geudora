@@ -65,7 +65,13 @@ void InstallProgMessage(PStr string, ProgressRectEnum which);
 bool ProgPosition(bool save, MyWindowPtr win);
 bool ProgClose(MyWindowPtr win);
 /* CycleBalls is in legacy_shim.h */
-#define TickCount() (g_get_monotonic_time() / 1000)
+#include "taskProgress.h"
+#include <glib.h>
+
+/* TickCount - Mac-style ticks (1/60th of a second) using GLib monotonic time */
+uint32_t TickCount(void) {
+  return (uint32_t)(g_get_monotonic_time() * 60 / 1000000);
+}
 
 ProgressBlock **GetPrbl(MyWindowPtr win);
 void SetPrbl(MyWindowPtr win, ProgressBlock **prbl);
@@ -217,7 +223,7 @@ void ByteProgress(UPtr message, int onLine, int totLines) {
  * OpenProgress - create the progress window
  ************************************************************************/
 int OpenProgress(void) {
-  /* OpenProgressimplementation moved to gtk_dialogs.c */
+  OpenTasksWin();
   return 0;
 }
 #pragma segment Progress
@@ -274,9 +280,16 @@ void Progress(short percent, short remaining, PStr title, PStr subTitle,
               PStr message) {
   /* This should call the GTK version of Progress or update ProgressBlock */
   ProgressBlock **prbl;
+  char c_title[256], c_subtitle[256];
 
-  if (!(prbl = (ProgressBlock **)GetPrbl(ProgWindow)))
+  if (!(prbl = (ProgressBlock **)GetPrbl(ProgWindow))) {
+    /* If no legacy window, just update the taskProgress wazoo */
+    UpdateTaskProgress(percent, remaining);
+    UpdateTaskMessage(title ? (char *)pstr_to_c(title) : NULL,
+                      subTitle ? (char *)pstr_to_c(subTitle) : NULL,
+                      message ? (char *)pstr_to_c(message) : NULL);
     return;
+  }
 
   if (percent != NoChange)
     (*prbl)->percent = percent;
@@ -289,6 +302,12 @@ void Progress(short percent, short remaining, PStr title, PStr subTitle,
   /* Log message if needed */
   if (message)
     Log(LOG_PROG, message);
+
+  /* Also update the taskProgress wazoo */
+  UpdateTaskProgress(percent, remaining);
+  UpdateTaskMessage(title ? (char *)pstr_to_c(title) : NULL,
+                    subTitle ? (char *)pstr_to_c(subTitle) : NULL,
+                    message ? (char *)pstr_to_c(message) : NULL);
 }
 
 /************************************************************************

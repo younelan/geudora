@@ -80,16 +80,7 @@ taskErrHandle TaskErrorList = NULL;
 
 /* ── Internal helpers ── */
 
-/* Pascal string → C string (in-place, returns pointer to static buf) */
-static const char *pstr_to_c(const unsigned char *pstr) {
-  static char buf[256];
-  if (!pstr || pstr[0] == 0) return "";
-  int len = pstr[0];
-  if (len > 255) len = 255;
-  memcpy(buf, pstr + 1, len);
-  buf[len] = '\0';
-  return buf;
-}
+/* Pascal string -> C string is now in StringUtil.h */
 
 /* Task kind → human-readable label */
 static const char *task_kind_label(TaskKindEnum kind) {
@@ -377,6 +368,12 @@ OSErr AddProgressTask(threadDataHandle threadData) {
   gtk_widget_add_css_class(subtitle, "dim-label");
   gtk_box_append(GTK_BOX(vbox), subtitle);
 
+  /* Message label */
+  GtkWidget *message = gtk_label_new("");
+  gtk_label_set_xalign(GTK_LABEL(message), 0);
+  gtk_widget_add_css_class(message, "dim-label");
+  gtk_box_append(GTK_BOX(vbox), message);
+
   /* Progress bar */
   GtkWidget *pbar = gtk_progress_bar_new();
   gtk_progress_bar_set_show_text(GTK_PROGRESS_BAR(pbar), FALSE);
@@ -389,6 +386,7 @@ OSErr AddProgressTask(threadDataHandle threadData) {
   g_object_set_data(G_OBJECT(row), "thread-data", threadData);
   g_object_set_data(G_OBJECT(row), "title-label", title);
   g_object_set_data(G_OBJECT(row), "subtitle-label", subtitle);
+  g_object_set_data(G_OBJECT(row), "message-label", message);
   g_object_set_data(G_OBJECT(row), "progress-bar", pbar);
 
   gtk_list_box_append(GTK_LIST_BOX(tp_task_list), row);
@@ -437,6 +435,37 @@ void UpdateTaskProgress(int percent, int remaining) {
     }
     child = gtk_widget_get_next_sibling(child);
   }
+}
+
+/* Update a task's title, subtitle, and message */
+void UpdateTaskMessage(const char *title_text, const char *subtitle_text, const char *message_text) {
+  if (!tp_task_list || !GTK_IS_WIDGET(tp_task_list))
+    return;
+
+  /* Update the first (most recent) task row */
+  GtkWidget *child = gtk_widget_get_first_child(GTK_WIDGET(tp_task_list));
+  while (child) {
+    if (GTK_IS_LIST_BOX_ROW(child)) {
+      if (title_text) {
+        GtkWidget *lbl = g_object_get_data(G_OBJECT(child), "title-label");
+        if (lbl && GTK_IS_LABEL(lbl))
+          gtk_label_set_text(GTK_LABEL(lbl), title_text);
+      }
+      if (subtitle_text) {
+        GtkWidget *lbl = g_object_get_data(G_OBJECT(child), "subtitle-label");
+        if (lbl && GTK_IS_LABEL(lbl))
+          gtk_label_set_text(GTK_LABEL(lbl), subtitle_text);
+      }
+      if (message_text) {
+        GtkWidget *lbl = g_object_get_data(G_OBJECT(child), "message-label");
+        if (lbl && GTK_IS_LABEL(lbl))
+          gtk_label_set_text(GTK_LABEL(lbl), message_text);
+      }
+      break;
+    }
+    child = gtk_widget_get_next_sibling(child);
+  }
+  tp_update_status();
 }
 
 /* ── Filter task (batch delivery) ── */

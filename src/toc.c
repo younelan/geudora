@@ -515,13 +515,17 @@ static OSErr ReadDForkTOC(FSSpecPtr aSpec, TOCType * *inTOC) {
     return euCorruptTOC;
   }
 
-  /* Verify file has enough data for all summaries */
+  /* Verify file has enough data for all summaries.
+   * Also detect stale .toc files from old gEudora builds that used
+   * native 64-bit structs (152-byte header, 320-byte sums). */
   long expectedSize = TOCDiskSize(hdr.count);
   if (fileSize < expectedSize) {
-    g_warning("ReadDForkTOC(%s): truncated (%ld < %ld, count=%d)",
-              aSpec->name, fileSize, expectedSize, hdr.count);
+    g_debug("ReadDForkTOC(%s): format mismatch (%ld bytes, expected %ld for %d msgs) — will rebuild",
+            aSpec->name, fileSize, expectedSize, hdr.count);
     fclose(fp);
-    return -1;
+    /* Delete the stale .toc so CheckTOC rebuilds from mailbox */
+    unlink(tocSpec.path);
+    return euCorruptTOC;
   }
 
   /* Allocate full in-memory TOC */

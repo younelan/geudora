@@ -118,7 +118,15 @@ struct threadGlobals_ {
 
 extern _Thread_local threadGlobalsPtr CurThreadGlobals;
 extern threadGlobalsRec ThreadGlobals; // Main thread globals
-/* Here's some macros to help access these variables */
+#ifdef THREADING_ON
+
+#include <pthread.h>
+#include "mailxfer.h"
+#include "progress.h"
+
+#include "task_types.h"
+
+/* Thread-specific globals access macros */
 #define ProgWindow (CurThreadGlobals->tProgWindow)
 #ifndef CommandPeriod
 #define EudoraCommandPeriod (CurThreadGlobals->tCommandPeriod)
@@ -166,14 +174,6 @@ extern threadGlobalsRec ThreadGlobals; // Main thread globals
 #define EncoderGlobalsBuffers (CurThreadGlobals->encoderG.buffers)
 #define EncoderGlobalsBuffer (CurThreadGlobals->encoderG.buffer)
 #define EncoderGlobalsOldEncoder (CurThreadGlobals->encoderG.oldEncoder)
-
-#ifdef THREADING_ON
-
-#include <pthread.h>
-#include "mailxfer.h"
-#include "progress.h"
-
-#include "task_types.h"
 
 struct threadContextData_ {
   threadGlobalsPtr newThreadGlobals;
@@ -315,6 +315,11 @@ OSErr AddMyResourceMainThread(Handle h, OSType type, short id,
   AddMyResourceMainThread((void *)(h), (ResType)(t), i, (ConstStr255Param)(n))
 
 #else // threading off
+#define InAThread() false
+#define GetCurrentTaskKind() ((TaskKindEnum)0)
+#define SetCurrentTaskKind(t)
+#define ProgWindow (NULL)
+#define CurPers (NULL)
 #define GetResourceMainThread_ GetResource_
 #define ZapSettingsResourceMainThread ZapSettingsResource
 #define AddMyResourceMainThread_(h, t, i, n) AddMyRsource_

@@ -32,6 +32,8 @@ DAMAGE. */
 #include <stdarg.h>
 #include "Globals.h"
 #include "fileutil.h"
+#include "task_types.h"
+#include "taskProgress.h"
 
 /* DlgFilterUPP: Mac modal-dialog filter; unused on GTK — defined here for
  * the few callers that still reference it via extern.                       */
@@ -66,6 +68,12 @@ int ReallyDoAnAlert(int templ, int which)
 {
 	(void)templ; (void)which;
 	g_warning("ReallyDoAnAlert: template=%d", templ);
+
+	if (InAThread()) {
+		char buf[64];
+		snprintf(buf, sizeof(buf), "Alert %d", templ);
+		AddTaskErrorsS(buf, "", CheckingTask, (*CurPers)->persId);
+	}
 	return 1;
 }
 
@@ -79,6 +87,11 @@ short ReallyStandardAlert(int alertType, const char *error, const char *explanat
 		g_warning("Alert: %s", error);
 	if (explanation && *explanation)
 		g_warning("Alert: %s", explanation);
+
+	if (InAThread()) {
+		AddTaskErrorsS(error, explanation, CheckingTask, (*CurPers)->persId);
+	}
+
 	ActiveTicks = (long)(g_get_monotonic_time() / 16667);
 	return 1;
 }

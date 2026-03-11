@@ -201,4 +201,15 @@ PStr StripLeadingItems(PStr string, short resID);
 PStr StripTrailingITems(PStr string, short resID);
 bool EndsWithItem(PStr string, short resID);
 
+/* Pascal string -> C string (static buffer, NOT thread safe) */
+static inline const char *pstr_to_c(const unsigned char *pstr) {
+  static char buf[256];
+  if (!pstr || pstr[0] == 0) return "";
+  int len = pstr[0];
+  if (len > 255) len = 255;
+  memcpy(buf, pstr + 1, len);
+  buf[len] = '\0';
+  return buf;
+}
+
 #endif /* STRINGUTIL_H */

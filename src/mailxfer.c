@@ -24,6 +24,7 @@ OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE OF THIS SOFTWARE, EVEN IF
 ADVISED OF THE POSSIBILITY OF SUCH DAMAGE. */
 
 #include "mailxfer.h"
+#include "gtk_prefs.h"  // For prefs_get_string, PREFS_GROUP_*
 #include "ends.h"       // For SetSendQueue
 #include "StringDefs.h" // For OUT, OUT_TEMP, IN, IN_TEMP string resource IDs
 #include "StringUtil.h" // For ComposeRString
@@ -186,6 +187,7 @@ void PhKill(void) {}
 bool MonitorGrow(bool a) { return false; }
 bool HesOK = false;
 extern void GetPOPInfo(void *a, void *b);
+extern PStr GetPOPPref(PStr dest);
 #define NOTIFY_TYPE 0
 #define eWillConnect 2
 int CountResources(int type) { return 0; }
@@ -194,7 +196,7 @@ extern int NewTransStream(TransStream *stream);
 long gCheckSessionID = 0;
 extern long ReportStreamAudit(TransStream stream);
 long NonNullTicks = 0;
-uint32_t TickCount(void) { return 0; }
+// uint32_t TickCount(void) { return 0; }
 bool ShouldSMTPAuth(void) { return false; }
 bool UUPCIn = false;
 bool UUPCOut = false;
@@ -224,8 +226,21 @@ extern void PopPers(void);
 #define esslUseAltPort 1
 #undef SMTP_SSL_PORT
 #define SMTP_SSL_PORT 100
-long GetSMTPPort(void) { return 25; }
-int GetSMTPInfoLo(unsigned char *server, long *port) { return 0; }
+long GetSMTPPort(void) {
+  long p = prefs_get_int(PREFS_GROUP_SENDING_MAIL, "smtp_port", 587);
+  return p ? p : 587;
+}
+int GetSMTPInfoLo(unsigned char *server, long *port) {
+  gchar *smtp = prefs_get_string(PREFS_GROUP_SENDING_MAIL, "smtp_server", "");
+  if (server) {
+    strncpy((char *)server, smtp, 255);
+    ((char *)server)[255] = '\0';
+  }
+  g_free(smtp);
+  if (!server || !server[0])
+    return 1;
+  return 0;
+}
 /* ComposeLogR declared in log.h */
 #undef LOG_SEND
 #define LOG_SEND 0
@@ -291,7 +306,12 @@ void StartAuthenticatedSMTP(TransStream stream, unsigned char *server,
 #define PREF_KERBEROS 7
 #undef PrefIsSet
 extern bool PrefIsSet(short pref);
-int GetPOPInfoLo(unsigned char *server, unsigned char *s2, long *port) {
+int GetPOPInfoLo(unsigned char *user, unsigned char *host, long *port) {
+  GetPOPInfo(user, host);
+  if (!host || !host[0])
+    return 1; /* no server configured */
+  if (port && *port == 0)
+    *port = 110; /* default POP3 port */
   return 0;
 }
 extern int StartPOP(TransStream stream, unsigned char *server, long port);
@@ -360,7 +380,10 @@ long GetDblTime(void) { return 0; }
 // OnlyHostsStrn is defined in StrnDefs.h as a number - don't redefine as
 // variable
 bool UseCTB = false;
-bool IsIMAPPers(PersHandle pers) { return false; }
+bool IsIMAPPers(PersHandle pers) {
+  /* Read from INI: use_imap in [checking_mail] */
+  return (bool)prefs_get_bool(PREFS_GROUP_CHECKING_MAIL, "use_imap", FALSE);
+}
 extern MailboxNodeHandle LocateInboxForPers(PersHandle pers);
 extern TOCType * TOCBySpec(FSSpec *spec);
 extern int FetchNewMessages(TOCType * toc, bool a, bool b, bool c, bool d);
@@ -427,11 +450,7 @@ static void FlushTOCs(bool a, bool b) {}
 // SetupXferMailThread is defined in threading.h - don't redefine
 /* SetSendQueue is defined in ends.c — don't duplicate here */
 static bool SelectXferMailPers(bool check, bool send, bool manual) {
-  return true;
-}
-static unsigned char *GetPOPPref(unsigned char *pass) {
-  *pass = 0;
-  return pass;
+  return false;
 }
 
 // Stub constants

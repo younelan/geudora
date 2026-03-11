@@ -60,26 +60,22 @@ OSErr ACAPLogin(PStr server, PStr user, PStr password, ACAPStateHandle state) {
 
 /************************************************************************
  * GetPOPInfo - get POP username and server from INI settings
- * Populates Pascal strings: user = pop_username, host = pop_server
+ * Populates C strings: user = pop_username, host = pop_server
  ************************************************************************/
 void GetPOPInfo(void *user, void *host) {
-    PStr u = (PStr)user;
-    PStr h = (PStr)host;
+    char *u = (char *)user;
+    char *h = (char *)host;
 
     gchar *username = prefs_get_string(PREFS_GROUP_CHECKING_MAIL, "pop_username", "");
     gchar *server = prefs_get_string(PREFS_GROUP_CHECKING_MAIL, "pop_server", "");
 
     if (u) {
-        size_t len = strlen(username);
-        if (len > 255) len = 255;
-        u[0] = (unsigned char)len;
-        memcpy(u + 1, username, len);
+        strncpy(u, username, 255);
+        u[255] = '\0';
     }
     if (h) {
-        size_t len = strlen(server);
-        if (len > 255) len = 255;
-        h[0] = (unsigned char)len;
-        memcpy(h + 1, server, len);
+        strncpy(h, server, 255);
+        h[255] = '\0';
     }
 
     g_free(username);
@@ -87,8 +83,9 @@ void GetPOPInfo(void *user, void *host) {
 }
 
 /************************************************************************
- * GetPOPPref - get POP account string "username@server" as Pascal string
- * Used by mail engine to identify the POP account
+ * GetPOPPref - get POP account string "username@server" as C string
+ * Used by mail engine to identify the POP account.
+ * Returns dest, which is non-empty if account is configured.
  ************************************************************************/
 PStr GetPOPPref(PStr dest) {
     if (!dest) return dest;
@@ -97,12 +94,7 @@ PStr GetPOPPref(PStr dest) {
     gchar *server = prefs_get_string(PREFS_GROUP_CHECKING_MAIL, "pop_server", "");
 
     if (username[0] && server[0]) {
-        gchar *combined = g_strdup_printf("%s@%s", username, server);
-        size_t len = strlen(combined);
-        if (len > 255) len = 255;
-        dest[0] = (unsigned char)len;
-        memcpy(dest + 1, combined, len);
-        g_free(combined);
+        snprintf((char *)dest, 256, "%s@%s", username, server);
     } else {
         dest[0] = 0;
     }

@@ -42,6 +42,7 @@ typedef struct {
 } EUDORA_RGBColor;
 EUDORA_RGBColor *DarkenColor(EUDORA_RGBColor *color, short percent);
 #include "StringDefs.h"
+#include "string_table.h"
 
 #include <ctype.h>
 #define FILE_NUM 41
@@ -950,12 +951,18 @@ void SCClear(short theId) {
  * return a string from an STR# resource
  **********************************************************************/
 PStr GetRStringLo(PStr theString, int theIndex, PersHandle forPers) {
-  /* GTK Port: replace Mac Resource lookup with GTK resource_manager */
+  /* GTK Port: look up from compiled-in string table */
   theString[0] = 0;
-  if (!NoDominant || CurPers == PersList)
-    GetIndString(theString, 100 * (theIndex / 100), theIndex % 100);
-
-  theString[*theString + 1] = 0;
+  if (!NoDominant || CurPers == PersList) {
+    const char *s = string_table_lookup((uint16_t)theIndex);
+    if (s) {
+      size_t len = strlen(s);
+      if (len > 255) len = 255;
+      theString[0] = (unsigned char)len;
+      memcpy(theString + 1, s, len);
+      theString[len + 1] = '\0';
+    }
+  }
   return (theString);
 }
 

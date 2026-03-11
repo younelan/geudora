@@ -18,6 +18,7 @@
 #include "message.h"
 #include "taskProgress.h"
 #include "threading.h"
+#include "schizo.h"
 #include "toc.h"
 #include "wazoo.h"
 #include "StringUtil.h"
@@ -85,6 +86,13 @@ static gchar *read_message_raw(TOCType *toc, int msg_index) {
   size_t nread = fread(buf, 1, len, fp);
   fclose(fp);
   buf[nread] = '\0';
+
+  /* Ensure valid UTF-8 — auto-convert from Windows-1252 if needed */
+  if (!g_utf8_validate(buf, nread, NULL)) {
+    gchar *utf8 = ensure_utf8(buf);
+    g_free(buf);
+    return utf8;
+  }
   return buf;
 }
 
@@ -2040,6 +2048,9 @@ static void activate(GtkApplication *app, gpointer user_data) {
 
   /* Initialize preferences system */
   prefs_init(NULL); /* Uses default ~/.config directory */
+
+  /* Initialize personalities (mail accounts) from prefs */
+  InitPersonalities();
 
   /* Load settings from disk */
   app_state.settings = prefs_load();

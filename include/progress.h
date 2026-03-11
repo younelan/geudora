@@ -103,4 +103,7 @@ void ProgressUpdate(MyWindowPtr win);
 void DisposProgress(ProgressBHandle prbl);
 #define PROG_BAR_HI 12
 #define PROG_BOX_HI 16
+
+uint32_t TickCount(void);
+
 #endif

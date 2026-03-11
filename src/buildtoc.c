@@ -761,11 +761,13 @@ OSErr ReadSum(MSumPtr sum, bool isOut, LineIOP lip, bool lookEnvelope) {
             break;
 
           case tchStatus:
-            /* Check for "R" or "RO" meaning read */
+            /* Check for "R", "RO" (read), or "Q" (queued) */
             {
               char val[64];
               CopyHeaderLine((unsigned char *)val, sizeof(val), line);
-              if (strchr(val, 'R'))
+              if (strchr(val, 'Q'))
+                sum->state = QUEUED;
+              else if (strchr(val, 'R'))
                 sum->state = READ;
             }
             break;

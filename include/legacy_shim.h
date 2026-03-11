@@ -14,6 +14,8 @@
 /* Portable legacy typedefs to support non-Carbon builds. These are kept
    minimal and guarded so they won't conflict with system headers on
    platforms where the original Mac types exist. */
+#include <glib.h>
+
 /* Legacy Mac types (Point, Rect, Handle, FSSpec, etc.) are defined in
    mailbox.h. legacy_shim.h should only contain minimal stubs for types not
    provided by the project's own compatibility headers. */
@@ -540,10 +542,8 @@ static inline void ShowDragHilite(void *drag, RgnHandle rgn, int inside) {}
 static inline short HomeResFile(void *h) { return 1; }
 #endif
 
-/* GetIndString: retrieve the Nth string from an STR# resource (1-based index).
- * Implemented via the project's GetRStringLo / GetResource_ path.
- * Declare here so callers in util.c compile; actual lookup uses GetResource_.
- */
+/* GetIndString: legacy no-op stub kept for any stray callers.
+ * Real string lookup goes through string_table_lookup() in GetRStringLo. */
 #ifndef GetIndString
 static inline void GetIndString(unsigned char *str, short strListID,
                                 short index) {
@@ -777,5 +777,7 @@ static inline int AddDragItemFlavor(void *drag, unsigned int item,
 #ifndef CGrafPtr
 typedef void *CGrafPtr;
 #endif
+
+uint32_t TickCount(void);
 
 #endif /* LEGACY_SHIM_H */

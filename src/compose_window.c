@@ -7,6 +7,8 @@
 #include "compose_window.h"
 #include "../gEditCtrl/geditctrl.h"
 #include "gtk_mailbox.h"
+#include "mailxfer.h"
+#include "gtk_prefs.h"
 #include <string.h>
 #include <stdio.h>
 #include <time.h>
@@ -258,13 +260,61 @@ static void on_send_clicked(GtkWidget *widget, gpointer user_data)
     if (!data) return;
 
     const char *to = gtk_editable_get_text(GTK_EDITABLE(data->to_entry));
+    const char *cc = gtk_editable_get_text(GTK_EDITABLE(data->cc_entry));
+    const char *bcc = gtk_editable_get_text(GTK_EDITABLE(data->bcc_entry));
+    const char *subject = gtk_editable_get_text(GTK_EDITABLE(data->subject_entry));
+
     if (!to || strlen(to) == 0) {
         GtkAlertDialog *dialog = gtk_alert_dialog_new("Please enter a recipient");
         gtk_alert_dialog_show(dialog, GTK_WINDOW(data->window));
         g_object_unref(dialog);
         return;
     }
-    g_print("Sending message to: %s\n", to);
+
+    /* Get sender information from prefs */
+    PrefsAccount accounts[1];
+    const char *from_email = "sender@example.com";
+    if (prefs_load_accounts(accounts, 1) > 0) {
+        from_email = accounts[0].email;
+    }
+
+    /* Get message body */
+    GtkTextBuffer *buf = gtk_text_view_get_buffer(GTK_TEXT_VIEW(data->editor));
+    GtkTextIter start_iter, end_iter;
+    gtk_text_buffer_get_bounds(buf, &start_iter, &end_iter);
+    char *body = gtk_text_buffer_get_text(buf, &start_iter, &end_iter, FALSE);
+
+    /* Construct message with headers */
+    GDateTime *now = g_date_time_new_now_local();
+    gchar *date_str = g_date_time_format(now, "%a, %d %b %Y %H:%M:%S %z");
+
+    GString *msg = g_string_new(NULL);
+    g_string_append_printf(msg, "To: %s\n", to);
+    if (cc && *cc) g_string_append_printf(msg, "Cc: %s\n", cc);
+    if (bcc && *bcc) g_string_append_printf(msg, "Bcc: %s\n", bcc);
+    g_string_append_printf(msg, "From: %s\n", from_email);
+    g_string_append_printf(msg, "Subject: %s\n", subject);
+    g_string_append_printf(msg, "Date: %s\n", date_str);
+    g_string_append_printf(msg, "X-Priority: %d\n", data->priority);
+    g_string_append_printf(msg, "Status: Q\n");
+    g_string_append_printf(msg, "X-Mailer: gEudora\n");
+    g_string_append_printf(msg, "\n%s", body);
+
+    /* Save to Out mailbox */
+    gchar *out_path = gtk_mailbox_get_path("Out");
+    gtk_mailbox_add_message(out_path, msg->str);
+    g_free(out_path);
+
+    /* Trigger mail transfer */
+    XferMail(false, true, true, false, true, 0);
+
+    g_print("Message queued in Out mailbox and sending triggered.\n");
+
+    g_free(body);
+    g_date_time_unref(now);
+    g_free(date_str);
+    g_string_free(msg, TRUE);
+
     data->dirty = FALSE;
     gtk_window_close(GTK_WINDOW(data->window));
 }
