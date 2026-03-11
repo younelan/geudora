@@ -326,6 +326,37 @@ static char *generate_css(const ThemePalette *p) {
     /* tree.view */ p->surface, p->text
   );
 
+  /* ── Mailbox sidebar ── */
+  g_string_append_printf(s,
+    ".mb-sidebar { background: %s; }"
+    ".mb-sidebar > row { background: transparent; border: none;"
+    "  border-radius: 6px; margin: 1px 4px; padding: 0; }"
+    ".mb-sidebar > row:selected { background: alpha(%s, 0.15); }"
+    ".mb-sidebar > row:selected .mb-name,"
+    ".mb-sidebar > row:selected .mb-unread,"
+    ".mb-sidebar > row:selected .mb-icon { color: %s; }"
+
+    ".mb-icon { color: %s; }"
+    ".mb-name { color: %s; font-size: 0.88em; }"
+    ".mb-unread { color: %s; font-weight: 700; font-size: 0.88em; }"
+    ".mb-folder { color: %s; font-size: 0.78em; font-weight: 700;"
+    "  letter-spacing: 0.04em; text-transform: uppercase; }"
+
+    ".mb-pill {"
+    "  background: %s; color: %s; border-radius: 10px;"
+    "  padding: 0 6px; font-size: 0.72em; font-weight: 700;"
+    "  min-height: 18px;"
+    "}",
+    /* sidebar bg */ p->surface,
+    /* row:selected */ p->accent,
+    /* sel text/icon */ p->accent,
+    /* icon */ p->text2,
+    /* name */ p->text,
+    /* unread name */ p->text,
+    /* folder */ p->text3,
+    /* pill bg */ p->accent, /* pill text */ p->hero_text
+  );
+
   /* ── Wazoo titlebar ── */
   g_string_append_printf(s,
     ".wazoo-titlebar {"

@@ -56,10 +56,7 @@ void gtk_mailbox_create_default(void) {
         g_print("Created mailbox file: %s\n", mbx_path);
 
         /* Build TOC for this mailbox - creates .toc file */
-        FSSpec spec;
-        memset(&spec, 0, sizeof(FSSpec));
-        strncpy(spec.path, mbx_path, sizeof(spec.path) - 1);
-        TOCType * toc = BuildTOC(&spec);
+        TOCType *toc = BuildTOC(mbx_path);
         if (toc) {
           toc_save(toc);
           toc_free(toc);
@@ -96,10 +93,7 @@ gboolean gtk_mailbox_create(const gchar *name, gboolean is_folder) {
       g_print("Created mailbox file: %s\n", mailbox_path);
 
       /* Build TOC for this mailbox */
-      FSSpec spec;
-      memset(&spec, 0, sizeof(FSSpec));
-      strncpy(spec.path, mailbox_path, sizeof(spec.path) - 1);
-      TOCType * toc = BuildTOC(&spec);
+      TOCType *toc = BuildTOC(mailbox_path);
       if (toc) {
         toc_save(toc);
         toc_free(toc);
@@ -265,10 +259,7 @@ void gtk_mailbox_add_message(const gchar *mailbox_path,
   fclose(f);
 
   /* Rebuild TOC to include new message */
-  FSSpec spec;
-  memset(&spec, 0, sizeof(FSSpec));
-  strncpy(spec.path, mailbox_path, sizeof(spec.path) - 1);
-  TOCType * toc = BuildTOC(&spec);
+  TOCType *toc = BuildTOC(mailbox_path);
   if (toc) {
     toc_save(toc);
     toc_free(toc);
@@ -406,265 +397,80 @@ void gtk_mailbox_free(GtkMailbox *mailbox) {
 }
 
 /* Icon name for a mailbox based on its name (matches original Eudora icons) */
-static const char *mailbox_icon_name(const char *name, const char *path) {
-  if (!name) return "folder";
-  if (g_strcmp0(name, "In") == 0)     return "mail-inbox";
-  if (g_strcmp0(name, "Out") == 0)    return "mail-outbox";
-  if (g_strcmp0(name, "Trash") == 0)  return "user-trash";
-  if (g_strcmp0(name, "Junk") == 0)   return "edit-delete";
-  if (g_strcmp0(name, "Drafts") == 0) return "document-edit";
-  /* Check if path is a directory (folder) */
-  if (path && g_file_test(path, G_FILE_TEST_IS_DIR))
-    return "folder";
-  return "mail-unread";  /* generic mailbox icon */
+static const char *mailbox_icon_name(const char *name, gboolean is_dir) {
+  if (!name) return "folder-symbolic";
+  if (g_strcmp0(name, "In") == 0)     return "mail-inbox-symbolic";
+  if (g_strcmp0(name, "Out") == 0)    return "mail-outbox-symbolic";
+  if (g_strcmp0(name, "Trash") == 0)  return "user-trash-symbolic";
+  if (g_strcmp0(name, "Junk") == 0)   return "edit-delete-symbolic";
+  if (g_strcmp0(name, "Drafts") == 0) return "document-edit-symbolic";
+  if (is_dir) return "folder-symbolic";
+  return "mail-unread-symbolic";
 }
 
-/* Cell data function: sets icon based on mailbox name */
-static void mailbox_icon_cell_data(GtkTreeViewColumn *col,
-                                   GtkCellRenderer *cell,
-                                   GtkTreeModel *model,
-                                   GtkTreeIter *iter,
-                                   gpointer data) {
-  (void)col; (void)data;
-  gchar *name = NULL, *path = NULL;
-  gtk_tree_model_get(model, iter, 0, &name, 1, &path, -1);
-  g_object_set(cell, "icon-name", mailbox_icon_name(name, path), NULL);
-  g_free(name);
-  g_free(path);
-}
+/* GObject data keys for mailbox rows */
+#define MB_KEY_PATH  "mb-path"
+#define MB_KEY_NAME  "mb-name"
+#define MB_KEY_IS_DIR "mb-is-dir"
 
-/* Cell data function: renders name with unread pill like original Eudora.
- * Unread mailboxes show bold name + " (N)" count suffix. */
-static void mailbox_name_cell_data(GtkTreeViewColumn *col,
-                                   GtkCellRenderer *cell,
-                                   GtkTreeModel *model,
-                                   GtkTreeIter *iter,
-                                   gpointer data) {
-  (void)col; (void)data;
-  gchar *name = NULL;
-  int unread = 0;
-  gtk_tree_model_get(model, iter, 0, &name, 3, &unread, -1);
+/* ── Create a single mailbox row widget ────────────────────────────── */
 
+static GtkWidget *make_mb_row(const char *name, const char *path,
+                               gboolean is_dir, int unread, int depth) {
+  GtkWidget *row = gtk_list_box_row_new();
+  g_object_set_data_full(G_OBJECT(row), MB_KEY_PATH, g_strdup(path), g_free);
+  g_object_set_data_full(G_OBJECT(row), MB_KEY_NAME, g_strdup(name), g_free);
+  g_object_set_data(G_OBJECT(row), MB_KEY_IS_DIR, GINT_TO_POINTER(is_dir));
+
+  /* Folders are not directly selectable as mailboxes */
+  if (is_dir) {
+    gtk_list_box_row_set_selectable(GTK_LIST_BOX_ROW(row), FALSE);
+    gtk_list_box_row_set_activatable(GTK_LIST_BOX_ROW(row), FALSE);
+  }
+
+  GtkWidget *hbox = gtk_box_new(GTK_ORIENTATION_HORIZONTAL, 6);
+  gtk_widget_set_margin_start(hbox, 6 + depth * 16);
+  gtk_widget_set_margin_end(hbox, 6);
+  gtk_widget_set_margin_top(hbox, 3);
+  gtk_widget_set_margin_bottom(hbox, 3);
+
+  /* Icon */
+  GtkWidget *icon = gtk_image_new_from_icon_name(mailbox_icon_name(name, is_dir));
+  gtk_image_set_pixel_size(GTK_IMAGE(icon), 16);
+  gtk_widget_add_css_class(icon, "mb-icon");
+  gtk_box_append(GTK_BOX(hbox), icon);
+
+  /* Name label */
+  GtkWidget *lbl = gtk_label_new(name);
+  gtk_label_set_xalign(GTK_LABEL(lbl), 0);
+  gtk_label_set_ellipsize(GTK_LABEL(lbl), PANGO_ELLIPSIZE_END);
+  gtk_widget_set_hexpand(lbl, TRUE);
+  if (is_dir)
+    gtk_widget_add_css_class(lbl, "mb-folder");
+  else if (unread > 0)
+    gtk_widget_add_css_class(lbl, "mb-unread");
+  else
+    gtk_widget_add_css_class(lbl, "mb-name");
+  gtk_box_append(GTK_BOX(hbox), lbl);
+
+  /* Unread pill — right-aligned, only if > 0 */
   if (unread > 0) {
-    gchar *markup = g_markup_printf_escaped(
-        "<b>%s</b>  <span size=\"small\" background=\"#4a90d9\""
-        " foreground=\"white\"> %d </span>", name, unread);
-    g_object_set(cell, "markup", markup, NULL);
-    g_free(markup);
-  } else {
-    g_object_set(cell, "markup", name, "weight", PANGO_WEIGHT_NORMAL, NULL);
+    char pill_text[16];
+    snprintf(pill_text, sizeof(pill_text), "%d", unread);
+    GtkWidget *pill = gtk_label_new(pill_text);
+    gtk_widget_add_css_class(pill, "mb-pill");
+    gtk_widget_set_halign(pill, GTK_ALIGN_END);
+    gtk_box_append(GTK_BOX(hbox), pill);
   }
-  g_free(name);
+
+  gtk_list_box_row_set_child(GTK_LIST_BOX_ROW(row), hbox);
+  return row;
 }
 
-/* Rename callback: when user edits a mailbox name in the tree */
-static void on_mailbox_name_edited(GtkCellRendererText *cell,
-                                    const gchar *path_str,
-                                    const gchar *new_name,
-                                    gpointer user_data) {
-  (void)cell;
-  GtkTreeView *tree = GTK_TREE_VIEW(user_data);
-  GtkTreeModel *model = gtk_tree_view_get_model(tree);
-  GtkTreeIter iter;
+/* ── Recursive directory loading into list box ───────────────────── */
 
-  if (!gtk_tree_model_get_iter_from_string(model, &iter, path_str))
-    return;
-
-  gchar *old_path = NULL, *old_name = NULL;
-  gtk_tree_model_get(model, &iter, 0, &old_name, 1, &old_path, -1);
-
-  if (!old_path || !new_name || *new_name == '\0' ||
-      g_strcmp0(old_name, new_name) == 0) {
-    g_free(old_path); g_free(old_name);
-    return;
-  }
-
-  /* Don't rename standard mailboxes */
-  if (old_name && (g_strcmp0(old_name, "In") == 0 ||
-                   g_strcmp0(old_name, "Out") == 0 ||
-                   g_strcmp0(old_name, "Trash") == 0 ||
-                   g_strcmp0(old_name, "Junk") == 0 ||
-                   g_strcmp0(old_name, "Drafts") == 0)) {
-    g_free(old_path); g_free(old_name);
-    return;
-  }
-
-  /* Build new path: same parent directory, new name */
-  gchar *parent_dir = g_path_get_dirname(old_path);
-  gchar *new_path = g_build_filename(parent_dir, new_name, NULL);
-
-  if (g_file_test(new_path, G_FILE_TEST_EXISTS)) {
-    g_warning("Cannot rename: \"%s\" already exists", new_name);
-  } else {
-    g_rename(old_path, new_path);
-    /* Also rename .toc file if it exists */
-    gchar *old_toc = g_strdup_printf("%s.toc", old_path);
-    gchar *new_toc = g_strdup_printf("%s.toc", new_path);
-    if (g_file_test(old_toc, G_FILE_TEST_EXISTS))
-      g_rename(old_toc, new_toc);
-    g_free(old_toc);
-    g_free(new_toc);
-
-    /* Reload entire tree so children get updated paths */
-    gtk_mailbox_tree_load(GTK_WIDGET(tree));
-  }
-
-  g_free(parent_dir);
-  g_free(new_path);
-  g_free(old_path);
-  g_free(old_name);
-}
-
-/* ── Internal drag-and-drop: move mailboxes/folders into other folders ── */
-
-/* Store dragged row's filesystem path */
-static gchar *dnd_src_path = NULL;
-static gchar *dnd_src_name = NULL;
-
-static GdkContentProvider *on_drag_prepare(GtkDragSource *source,
-                                            double x, double y,
-                                            gpointer user_data) {
-  (void)source;
-  GtkTreeView *tree = GTK_TREE_VIEW(user_data);
-  GtkTreeSelection *sel = gtk_tree_view_get_selection(tree);
-  GtkTreeIter iter;
-  GtkTreeModel *model;
-
-  if (!gtk_tree_selection_get_selected(sel, &model, &iter))
-    return NULL;
-
-  g_free(dnd_src_path); dnd_src_path = NULL;
-  g_free(dnd_src_name); dnd_src_name = NULL;
-  gtk_tree_model_get(model, &iter, 0, &dnd_src_name, 1, &dnd_src_path, -1);
-
-  /* Don't drag standard mailboxes */
-  if (dnd_src_name && (g_strcmp0(dnd_src_name, "In") == 0 ||
-                       g_strcmp0(dnd_src_name, "Out") == 0 ||
-                       g_strcmp0(dnd_src_name, "Trash") == 0 ||
-                       g_strcmp0(dnd_src_name, "Junk") == 0 ||
-                       g_strcmp0(dnd_src_name, "Drafts") == 0)) {
-    g_free(dnd_src_path); dnd_src_path = NULL;
-    g_free(dnd_src_name); dnd_src_name = NULL;
-    return NULL;
-  }
-
-  GValue val = G_VALUE_INIT;
-  g_value_init(&val, G_TYPE_STRING);
-  g_value_set_string(&val, dnd_src_path);
-  GdkContentProvider *cp = gdk_content_provider_new_for_value(&val);
-  g_value_unset(&val);
-  return cp;
-}
-
-static gboolean on_drop(GtkDropTarget *target, const GValue *value,
-                         double x, double y, gpointer user_data) {
-  (void)target; (void)value;
-  GtkTreeView *tree = GTK_TREE_VIEW(user_data);
-
-  if (!dnd_src_path || !dnd_src_name)
-    return FALSE;
-
-  /* Find which row we dropped onto */
-  GtkTreePath *path = NULL;
-  GtkTreeViewDropPosition pos;
-  if (!gtk_tree_view_get_dest_row_at_pos(tree, (int)x, (int)y, &path, &pos))
-    return FALSE;
-
-  GtkTreeModel *model = gtk_tree_view_get_model(tree);
-  GtkTreeIter iter;
-  if (!gtk_tree_model_get_iter(model, &iter, path)) {
-    gtk_tree_path_free(path);
-    return FALSE;
-  }
-
-  gchar *dest_fs_path = NULL;
-  gtk_tree_model_get(model, &iter, 1, &dest_fs_path, -1);
-  gtk_tree_path_free(path);
-
-  /* Determine target directory */
-  gchar *target_dir = NULL;
-  if (dest_fs_path && g_file_test(dest_fs_path, G_FILE_TEST_IS_DIR))
-    target_dir = g_strdup(dest_fs_path);
-  else if (dest_fs_path)
-    target_dir = g_path_get_dirname(dest_fs_path);
-  g_free(dest_fs_path);
-
-  if (!target_dir)
-    return FALSE;
-
-  gchar *new_path = g_build_filename(target_dir, dnd_src_name, NULL);
-
-  if (g_strcmp0(dnd_src_path, new_path) != 0 &&
-      !g_file_test(new_path, G_FILE_TEST_EXISTS)) {
-    g_rename(dnd_src_path, new_path);
-    gchar *old_toc = g_strdup_printf("%s.toc", dnd_src_path);
-    gchar *new_toc = g_strdup_printf("%s.toc", new_path);
-    if (g_file_test(old_toc, G_FILE_TEST_EXISTS))
-      g_rename(old_toc, new_toc);
-    g_free(old_toc);
-    g_free(new_toc);
-    gtk_mailbox_tree_load(GTK_WIDGET(tree));
-  }
-
-  g_free(new_path);
-  g_free(target_dir);
-  g_free(dnd_src_path); dnd_src_path = NULL;
-  g_free(dnd_src_name); dnd_src_name = NULL;
-  return TRUE;
-}
-
-/* Create mailbox tree view — single column with icon + name + unread pill,
- * matching the original Mac Eudora mailbox browser layout. */
-GtkWidget *gtk_mailbox_tree_new(void) {
-  /* Tree store: [0]=name, [1]=path, [2]=message_count, [3]=unread_count */
-  GtkTreeStore *store = gtk_tree_store_new(4, G_TYPE_STRING, G_TYPE_STRING,
-                                           G_TYPE_INT, G_TYPE_INT);
-
-  GtkWidget *tree = gtk_tree_view_new_with_model(GTK_TREE_MODEL(store));
-  g_object_unref(store);
-
-  /* Use fixed height mode so tree doesn't request excessive width */
-  gtk_tree_view_set_fixed_height_mode(GTK_TREE_VIEW(tree), TRUE);
-
-  /* Single combined column: icon + name (like original Eudora) */
-  GtkTreeViewColumn *col = gtk_tree_view_column_new();
-  gtk_tree_view_column_set_sizing(col, GTK_TREE_VIEW_COLUMN_FIXED);
-
-  /* Icon renderer — icon chosen by cell data func based on mailbox name */
-  GtkCellRenderer *icon_r = gtk_cell_renderer_pixbuf_new();
-  gtk_tree_view_column_pack_start(col, icon_r, FALSE);
-  gtk_tree_view_column_set_cell_data_func(col, icon_r,
-      mailbox_icon_cell_data, NULL, NULL);
-
-  /* Name renderer — editable for rename, with unread pill */
-  GtkCellRenderer *text_r = gtk_cell_renderer_text_new();
-  g_object_set(text_r, "ellipsize", PANGO_ELLIPSIZE_END,
-                        "editable", TRUE, NULL);
-  g_signal_connect(text_r, "edited",
-                   G_CALLBACK(on_mailbox_name_edited), tree);
-  gtk_tree_view_column_pack_start(col, text_r, TRUE);
-  gtk_tree_view_column_set_cell_data_func(col, text_r,
-                                          mailbox_name_cell_data, NULL, NULL);
-
-  gtk_tree_view_append_column(GTK_TREE_VIEW(tree), col);
-  gtk_tree_view_set_headers_visible(GTK_TREE_VIEW(tree), FALSE);
-
-  /* Enable drag-and-drop: drag mailboxes/folders into folders */
-  GtkDragSource *drag_src = gtk_drag_source_new();
-  gtk_drag_source_set_actions(drag_src, GDK_ACTION_MOVE);
-  g_signal_connect(drag_src, "prepare", G_CALLBACK(on_drag_prepare), tree);
-  gtk_widget_add_controller(tree, GTK_EVENT_CONTROLLER(drag_src));
-
-  GtkDropTarget *drop_tgt = gtk_drop_target_new(G_TYPE_STRING, GDK_ACTION_MOVE);
-  g_signal_connect(drop_tgt, "drop", G_CALLBACK(on_drop), tree);
-  gtk_widget_add_controller(tree, GTK_EVENT_CONTROLLER(drop_tgt));
-
-  return tree;
-}
-
-/* Recursively load a directory into the tree store under parent_iter */
-static void load_directory(GtkTreeStore *store, GtkTreeIter *parent_iter,
-                           const gchar *dir_path) {
+static void load_directory_lb(GtkWidget *listbox, const gchar *dir_path,
+                               int depth) {
   GDir *dir = g_dir_open(dir_path, 0, NULL);
   if (!dir) return;
 
@@ -704,18 +510,14 @@ static void load_directory(GtkTreeStore *store, GtkTreeIter *parent_iter,
       g_free(toc_path);
     }
 
-    int msg_count = is_f ? gtk_mailbox_get_message_count(full_path) : 0;
     int unread = is_f ? gtk_mailbox_get_unread_count(full_path) : 0;
 
-    GtkTreeIter iter;
-    gtk_tree_store_append(store, &iter, parent_iter);
-    gtk_tree_store_set(store, &iter,
-                       0, filename, 1, full_path,
-                       2, msg_count, 3, unread, -1);
+    GtkWidget *row = make_mb_row(filename, full_path, is_d, unread, depth);
+    gtk_list_box_append(GTK_LIST_BOX(listbox), row);
 
     /* Recurse into directories */
     if (is_d)
-      load_directory(store, &iter, full_path);
+      load_directory_lb(listbox, full_path, depth + 1);
 
     g_free(full_path);
   }
@@ -724,22 +526,28 @@ static void load_directory(GtkTreeStore *store, GtkTreeIter *parent_iter,
   g_dir_close(dir);
 }
 
-/* Load mailboxes into tree view — recursive, like Mac Eudora */
-void gtk_mailbox_tree_load(GtkWidget *tree) {
-  if (!GTK_IS_TREE_VIEW(tree))
+/* Create mailbox list — modern GtkListBox with custom row widgets,
+ * matching a professional mail app sidebar layout. */
+GtkWidget *gtk_mailbox_tree_new(void) {
+  GtkWidget *listbox = gtk_list_box_new();
+  gtk_list_box_set_selection_mode(GTK_LIST_BOX(listbox), GTK_SELECTION_SINGLE);
+  gtk_widget_add_css_class(listbox, "mb-sidebar");
+  return listbox;
+}
+
+/* Load mailboxes into list box */
+void gtk_mailbox_tree_load(GtkWidget *listbox) {
+  if (!GTK_IS_LIST_BOX(listbox))
     return;
 
-  GtkTreeModel *model = gtk_tree_view_get_model(GTK_TREE_VIEW(tree));
-  GtkTreeStore *store = GTK_TREE_STORE(model);
-
-  gtk_tree_store_clear(store);
+  /* Clear existing rows */
+  GtkWidget *child;
+  while ((child = gtk_widget_get_first_child(listbox)) != NULL)
+    gtk_list_box_remove(GTK_LIST_BOX(listbox), child);
 
   gchar *mailboxes_dir = get_mailboxes_dir();
-  load_directory(store, NULL, mailboxes_dir);
+  load_directory_lb(listbox, mailboxes_dir, 0);
   g_free(mailboxes_dir);
-
-  /* Expand all rows so folder contents are visible */
-  gtk_tree_view_expand_all(GTK_TREE_VIEW(tree));
 }
 
 /* Refresh mailbox tree */

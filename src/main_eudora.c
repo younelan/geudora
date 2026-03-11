@@ -540,32 +540,20 @@ static void bind_size_cb(GtkSignalListItemFactory *self, GtkListItem *list_item,
   gtk_label_set_text(GTK_LABEL(label), gtk_messagelist_item_get_size(msg));
 }
 
-/* Mailbox selection callback — just tracks which row is highlighted */
-static void on_mailbox_selected(GtkTreeView *tree_view, gpointer user_data) {
-  (void)user_data;
-  (void)tree_view;
-  /* Selection tracked for context (e.g. which mailbox to act on).
-   * Actual opening happens on double-click (row-activated). */
-}
+/* Double-click / Enter on mailbox list → open a tab on the right */
+static void on_mailbox_activated(GtkListBox *box, GtkListBoxRow *row,
+                                  gpointer ud) {
+  (void)box; (void)ud;
+  if (!row) return;
 
-/* Double-click / Enter on mailbox tree → open a tab on the right */
-static void on_mailbox_activated(GtkTreeView *tree_view, GtkTreePath *path,
-                                  GtkTreeViewColumn *column, gpointer ud) {
-  (void)column; (void)ud;
-  GtkTreeModel *model = gtk_tree_view_get_model(tree_view);
-  GtkTreeIter iter;
-  if (!gtk_tree_model_get_iter(model, &iter, path))
-    return;
+  const char *name = g_object_get_data(G_OBJECT(row), "mb-name");
+  const char *mb_path = g_object_get_data(G_OBJECT(row), "mb-path");
+  gboolean is_dir = GPOINTER_TO_INT(g_object_get_data(G_OBJECT(row), "mb-is-dir"));
 
-  gchar *name = NULL;
-  gchar *mb_path = NULL;
-  gtk_tree_model_get(model, &iter, 0, &name, 1, &mb_path, -1);
+  if (is_dir) return;  /* folders are not openable */
 
   if (mb_path && *mb_path)
     open_mailbox_tab(name, mb_path);
-
-  g_free(name);
-  g_free(mb_path);
 }
 
 /* Message selection callback */
@@ -1197,23 +1185,16 @@ static GtkWidget *create_mailbox_tree(void) {
 /* Get the parent directory for new items: if a folder is selected, create
  * inside it; otherwise create at root mailboxes dir. */
 static const char *mb_get_target_dir(void) {
-  GtkTreeSelection *sel =
-      gtk_tree_view_get_selection(GTK_TREE_VIEW(app_state.mailbox_tree));
-  GtkTreeIter iter;
-  GtkTreeModel *model =
-      gtk_tree_view_get_model(GTK_TREE_VIEW(app_state.mailbox_tree));
-  if (gtk_tree_selection_get_selected(sel, &model, &iter)) {
-    gchar *sel_path = NULL;
-    gtk_tree_model_get(model, &iter, 1, &sel_path, -1);
+  GtkListBoxRow *row =
+      gtk_list_box_get_selected_row(GTK_LIST_BOX(app_state.mailbox_tree));
+  if (row) {
+    const char *sel_path = g_object_get_data(G_OBJECT(row), "mb-path");
     if (sel_path && g_file_test(sel_path, G_FILE_TEST_IS_DIR)) {
-      /* Selected item is a folder — create inside it */
-      return sel_path;  /* caller must g_free */
+      return g_strdup(sel_path);  /* caller must g_free */
     }
     if (sel_path) {
       /* Selected item is a mailbox file — create in its parent dir */
-      gchar *parent = g_path_get_dirname(sel_path);
-      g_free(sel_path);
-      return parent;  /* caller must g_free */
+      return g_path_get_dirname(sel_path);  /* caller must g_free */
     }
   }
   return g_strdup(prefs_get_mailboxes_path());
@@ -1291,24 +1272,76 @@ static void on_mb_remove_response(GObject *source, GAsyncResult *res, gpointer u
   g_free(path);
 }
 
-static void on_mb_remove(GtkButton *btn, gpointer ud) {
+/* ── Rename mailbox via inline GtkEntry overlay ── */
+
+static void on_rename_entry_activate(GtkEntry *entry, gpointer ud) {
+  GtkListBoxRow *row = GTK_LIST_BOX_ROW(ud);
+  const char *old_path = g_object_get_data(G_OBJECT(row), "mb-path");
+  const char *new_name = gtk_editable_get_text(GTK_EDITABLE(entry));
+
+  if (new_name && *new_name && old_path) {
+    gchar *parent = g_path_get_dirname(old_path);
+    gchar *new_path = g_build_filename(parent, new_name, NULL);
+
+    if (g_rename(old_path, new_path) == 0) {
+      /* Also rename .toc file if it exists */
+      gchar *old_toc = g_strdup_printf("%s.toc", old_path);
+      gchar *new_toc = g_strdup_printf("%s.toc", new_path);
+      if (g_file_test(old_toc, G_FILE_TEST_EXISTS))
+        g_rename(old_toc, new_toc);
+      g_free(old_toc);
+      g_free(new_toc);
+    }
+    g_free(new_path);
+    g_free(parent);
+  }
+
+  /* Destroy the entry popover and refresh */
+  GtkWidget *popover = gtk_widget_get_ancestor(GTK_WIDGET(entry), GTK_TYPE_POPOVER);
+  if (popover) gtk_popover_popdown(GTK_POPOVER(popover));
+  gtk_mailbox_tree_refresh(app_state.mailbox_tree);
+}
+
+static void on_mb_rename(GtkButton *btn, gpointer ud) {
   (void)btn; (void)ud;
-  GtkTreeSelection *sel =
-      gtk_tree_view_get_selection(GTK_TREE_VIEW(app_state.mailbox_tree));
-  GtkTreeIter iter;
-  GtkTreeModel *model =
-      gtk_tree_view_get_model(GTK_TREE_VIEW(app_state.mailbox_tree));
-  if (!gtk_tree_selection_get_selected(sel, &model, &iter))
+  GtkListBoxRow *row =
+      gtk_list_box_get_selected_row(GTK_LIST_BOX(app_state.mailbox_tree));
+  if (!row) return;
+
+  const char *name = g_object_get_data(G_OBJECT(row), "mb-name");
+
+  /* Don't allow renaming standard mailboxes */
+  if (name && (g_strcmp0(name, "In") == 0 || g_strcmp0(name, "Out") == 0 ||
+               g_strcmp0(name, "Trash") == 0 || g_strcmp0(name, "Junk") == 0 ||
+               g_strcmp0(name, "Drafts") == 0))
     return;
 
-  gchar *name = NULL, *path = NULL;
-  gtk_tree_model_get(model, &iter, 0, &name, 1, &path, -1);
+  /* Show a popover with an entry for inline rename */
+  GtkWidget *popover = gtk_popover_new();
+  gtk_widget_set_parent(popover, GTK_WIDGET(row));
+
+  GtkWidget *entry = gtk_entry_new();
+  gtk_editable_set_text(GTK_EDITABLE(entry), name ? name : "");
+  gtk_entry_set_activates_default(GTK_ENTRY(entry), FALSE);
+  g_signal_connect(entry, "activate", G_CALLBACK(on_rename_entry_activate), row);
+  gtk_popover_set_child(GTK_POPOVER(popover), entry);
+  gtk_popover_popup(GTK_POPOVER(popover));
+  gtk_widget_grab_focus(entry);
+}
+
+static void on_mb_remove(GtkButton *btn, gpointer ud) {
+  (void)btn; (void)ud;
+  GtkListBoxRow *row =
+      gtk_list_box_get_selected_row(GTK_LIST_BOX(app_state.mailbox_tree));
+  if (!row) return;
+
+  const char *name = g_object_get_data(G_OBJECT(row), "mb-name");
+  const char *path = g_object_get_data(G_OBJECT(row), "mb-path");
 
   /* Don't allow removing standard mailboxes */
   if (name && (g_strcmp0(name, "In") == 0 || g_strcmp0(name, "Out") == 0 ||
                g_strcmp0(name, "Trash") == 0 || g_strcmp0(name, "Junk") == 0 ||
                g_strcmp0(name, "Drafts") == 0)) {
-    g_free(name); g_free(path);
     return;
   }
 
@@ -1324,9 +1357,6 @@ static void on_mb_remove(GtkButton *btn, gpointer ud) {
   gtk_alert_dialog_choose(dlg, GTK_WINDOW(app_state.window), NULL,
                           on_mb_remove_response, g_strdup(path));
   g_object_unref(dlg);
-
-  g_free(name);
-  g_free(path);
 }
 
 /* Create message list view using GTK4 GtkColumnView */
@@ -1537,8 +1567,9 @@ static gboolean on_wazoo_float_close(GtkWindow *win, gpointer ud) {
   g_object_unref(left_wazoo_box);
   /* Restore paned position so wazoo is visible */
   gtk_paned_set_position(GTK_PANED(main_hpaned), 220);
-  left_wazoo_float = NULL;
-  return TRUE;
+  /* Don't clear left_wazoo_float here — let the caller (wazoo_redock or
+   * GTK close-request) handle destruction and pointer cleanup. */
+  return FALSE;  /* Allow GTK to destroy the window */
 }
 
 static void wazoo_undock(void) {
@@ -1563,9 +1594,11 @@ static void wazoo_undock(void) {
 static void wazoo_redock(void) {
   if (!left_wazoo_float)
     return;
-  on_wazoo_float_close(GTK_WINDOW(left_wazoo_float), NULL);
-  gtk_window_destroy(GTK_WINDOW(left_wazoo_float));
+  GtkWidget *win = left_wazoo_float;
   left_wazoo_float = NULL;
+  /* Reparent content back to main paned, then destroy the float window */
+  on_wazoo_float_close(GTK_WINDOW(win), NULL);
+  gtk_window_destroy(GTK_WINDOW(win));
 }
 
 static void wazoo_dock_toggle(void) {
@@ -2301,6 +2334,11 @@ static GtkWidget *create_main_layout(void) {
   g_signal_connect(btn_new_fld, "clicked", G_CALLBACK(on_mb_new_folder), NULL);
   gtk_box_append(GTK_BOX(mb_btn_bar), btn_new_fld);
 
+  GtkWidget *btn_rename = gtk_button_new_with_label("Rename");
+  gtk_widget_set_tooltip_text(btn_rename, "Rename selected mailbox");
+  g_signal_connect(btn_rename, "clicked", G_CALLBACK(on_mb_rename), NULL);
+  gtk_box_append(GTK_BOX(mb_btn_bar), btn_rename);
+
   GtkWidget *btn_remove = gtk_button_new_with_label("Del");
   gtk_widget_set_tooltip_text(btn_remove, "Remove selected mailbox");
   g_signal_connect(btn_remove, "clicked", G_CALLBACK(on_mb_remove), NULL);
@@ -2327,8 +2365,11 @@ static GtkWidget *create_main_layout(void) {
   g_signal_connect(app_state.mailbox_tree, "row-activated",
                    G_CALLBACK(on_mailbox_activated), NULL);
 
+  gtk_widget_set_size_request(left_wazoo_box, 200, -1);
   gtk_paned_set_start_child(GTK_PANED(main_hpaned), left_wazoo_box);
   gtk_paned_set_resize_start_child(GTK_PANED(main_hpaned), FALSE);
+  gtk_paned_set_shrink_start_child(GTK_PANED(main_hpaned), FALSE);
+  gtk_paned_set_position(GTK_PANED(main_hpaned), 220);
 
   /* ── Right: Mailbox notebook (one tab per opened mailbox) ── */
   mailbox_notebook = gtk_notebook_new();

@@ -341,11 +341,9 @@ void SetupDefaultWazoos(void)
 {
 	InitWazoos();
 
-	/* Open the default wazoo windows — matching original Eudora startup.
-	 * The original opened: MB_WIN (mailbox browser), plus optionally
-	 * PH_WIN, ALIAS_WIN, FILT_WIN, PERS_WIN, STA_WIN, SIG_WIN, LINK_WIN, STAT_WIN.
-	 * For now, open the mailbox browser which is the primary wazoo. */
-	OpenMBWin();
+	/* The mailbox browser is now integrated into the main window sidebar
+	 * (GtkListBox in the Mailboxes wazoo tab), so we no longer open a
+	 * separate legacy mailbox browser window here. */
 }
 
 void SetWinMinSize(MyWindowPtr win, short h, short v)
