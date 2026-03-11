@@ -413,6 +413,123 @@ static const char *mailbox_icon_name(const char *name, gboolean is_dir) {
 #define MB_KEY_NAME  "mb-name"
 #define MB_KEY_IS_DIR "mb-is-dir"
 
+/* ── Drag and drop callbacks ──────────────────────────────────────── */
+
+/* Prepare drag data: provide the mailbox path as a string */
+static GdkContentProvider *on_mb_drag_prepare(GtkDragSource *source,
+                                               double x, double y,
+                                               gpointer ud) {
+  (void)source; (void)x; (void)y;
+  GtkWidget *row = GTK_WIDGET(ud);
+  const char *path = g_object_get_data(G_OBJECT(row), MB_KEY_PATH);
+  if (!path) return NULL;
+  GValue val = G_VALUE_INIT;
+  g_value_init(&val, G_TYPE_STRING);
+  g_value_set_string(&val, path);
+  return gdk_content_provider_new_for_value(&val);
+}
+
+/* Visual feedback when drag starts */
+static void on_mb_drag_begin(GtkDragSource *source, GdkDrag *drag,
+                              gpointer ud) {
+  (void)source; (void)drag;
+  GtkWidget *row = GTK_WIDGET(ud);
+  gtk_widget_set_opacity(row, 0.4);
+}
+
+/* Drop onto a folder row: move the mailbox file into that folder */
+static gboolean on_mb_drop(GtkDropTarget *target, const GValue *value,
+                            double x, double y, gpointer ud) {
+  (void)target; (void)x; (void)y;
+  GtkWidget *folder_row = GTK_WIDGET(ud);
+  const char *folder_path = g_object_get_data(G_OBJECT(folder_row), MB_KEY_PATH);
+  if (!folder_path || !G_VALUE_HOLDS_STRING(value)) return FALSE;
+
+  const char *src_path = g_value_get_string(value);
+  if (!src_path || !*src_path) return FALSE;
+
+  gchar *basename = g_path_get_basename(src_path);
+  gchar *dest_path = g_build_filename(folder_path, basename, NULL);
+
+  gboolean ok = FALSE;
+  if (g_strcmp0(src_path, dest_path) != 0 &&
+      !g_file_test(dest_path, G_FILE_TEST_EXISTS)) {
+    if (g_rename(src_path, dest_path) == 0) {
+      /* Move .toc too */
+      gchar *src_toc = g_strdup_printf("%s.toc", src_path);
+      gchar *dst_toc = g_strdup_printf("%s.toc", dest_path);
+      if (g_file_test(src_toc, G_FILE_TEST_EXISTS))
+        g_rename(src_toc, dst_toc);
+      g_free(src_toc);
+      g_free(dst_toc);
+      ok = TRUE;
+    }
+  }
+
+  g_free(basename);
+  g_free(dest_path);
+
+  if (ok) {
+    /* Find the listbox and refresh */
+    GtkWidget *listbox = gtk_widget_get_ancestor(folder_row, GTK_TYPE_LIST_BOX);
+    if (listbox) gtk_mailbox_tree_refresh(listbox);
+  }
+  return ok;
+}
+
+/* Highlight folder on drag enter */
+static GdkDragAction on_mb_drop_enter(GtkDropTarget *target, double x, double y,
+                                       gpointer ud) {
+  (void)target; (void)x; (void)y;
+  GtkWidget *row = GTK_WIDGET(ud);
+  gtk_widget_add_css_class(row, "mb-drop-target");
+  return GDK_ACTION_MOVE;
+}
+
+/* Remove highlight on drag leave */
+static void on_mb_drop_leave(GtkDropTarget *target, gpointer ud) {
+  (void)target;
+  GtkWidget *row = GTK_WIDGET(ud);
+  gtk_widget_remove_css_class(row, "mb-drop-target");
+}
+
+/* ── Drop target on the listbox itself: drop to root ─────────────── */
+
+static gboolean on_mb_drop_root(GtkDropTarget *target, const GValue *value,
+                                 double x, double y, gpointer ud) {
+  (void)target; (void)x; (void)y;
+  GtkWidget *listbox = GTK_WIDGET(ud);
+  if (!G_VALUE_HOLDS_STRING(value)) return FALSE;
+
+  const char *src_path = g_value_get_string(value);
+  if (!src_path || !*src_path) return FALSE;
+
+  gchar *mailboxes_dir = get_mailboxes_dir();
+  gchar *basename = g_path_get_basename(src_path);
+  gchar *dest_path = g_build_filename(mailboxes_dir, basename, NULL);
+
+  gboolean ok = FALSE;
+  if (g_strcmp0(src_path, dest_path) != 0 &&
+      !g_file_test(dest_path, G_FILE_TEST_EXISTS)) {
+    if (g_rename(src_path, dest_path) == 0) {
+      gchar *src_toc = g_strdup_printf("%s.toc", src_path);
+      gchar *dst_toc = g_strdup_printf("%s.toc", dest_path);
+      if (g_file_test(src_toc, G_FILE_TEST_EXISTS))
+        g_rename(src_toc, dst_toc);
+      g_free(src_toc);
+      g_free(dst_toc);
+      ok = TRUE;
+    }
+  }
+
+  g_free(basename);
+  g_free(dest_path);
+  g_free(mailboxes_dir);
+
+  if (ok) gtk_mailbox_tree_refresh(listbox);
+  return ok;
+}
+
 /* ── Create a single mailbox row widget ────────────────────────────── */
 
 static GtkWidget *make_mb_row(const char *name, const char *path,
@@ -422,9 +539,9 @@ static GtkWidget *make_mb_row(const char *name, const char *path,
   g_object_set_data_full(G_OBJECT(row), MB_KEY_NAME, g_strdup(name), g_free);
   g_object_set_data(G_OBJECT(row), MB_KEY_IS_DIR, GINT_TO_POINTER(is_dir));
 
-  /* Folders are not directly selectable as mailboxes */
+  /* Folders are selectable (for delete/rename) but not activatable
+   * (double-click doesn't open them as a mailbox) */
   if (is_dir) {
-    gtk_list_box_row_set_selectable(GTK_LIST_BOX_ROW(row), FALSE);
     gtk_list_box_row_set_activatable(GTK_LIST_BOX_ROW(row), FALSE);
   }
 
@@ -464,10 +581,38 @@ static GtkWidget *make_mb_row(const char *name, const char *path,
   }
 
   gtk_list_box_row_set_child(GTK_LIST_BOX_ROW(row), hbox);
+
+  /* ── Drag source: mailbox files (not folders, not special) can be dragged ── */
+  if (!is_dir) {
+    GtkDragSource *drag = gtk_drag_source_new();
+    gtk_drag_source_set_actions(drag, GDK_ACTION_MOVE);
+    g_signal_connect(drag, "prepare", G_CALLBACK(on_mb_drag_prepare), row);
+    g_signal_connect(drag, "drag-begin", G_CALLBACK(on_mb_drag_begin), row);
+    gtk_widget_add_controller(row, GTK_EVENT_CONTROLLER(drag));
+  }
+
+  /* ── Drop target: folders accept mailbox drops ── */
+  if (is_dir) {
+    GtkDropTarget *drop = gtk_drop_target_new(G_TYPE_STRING, GDK_ACTION_MOVE);
+    g_signal_connect(drop, "drop", G_CALLBACK(on_mb_drop), row);
+    g_signal_connect(drop, "enter", G_CALLBACK(on_mb_drop_enter), row);
+    g_signal_connect(drop, "leave", G_CALLBACK(on_mb_drop_leave), row);
+    gtk_widget_add_controller(row, GTK_EVENT_CONTROLLER(drop));
+  }
+
   return row;
 }
 
 /* ── Recursive directory loading into list box ───────────────────── */
+
+/* Fixed ordering for special mailboxes — always shown first at root */
+static const char *SPECIAL_ORDER[] = {"In", "Out", "Drafts", "Trash", "Junk", NULL};
+
+static gboolean is_special_mailbox(const char *name) {
+  for (int i = 0; SPECIAL_ORDER[i]; i++)
+    if (g_strcmp0(name, SPECIAL_ORDER[i]) == 0) return TRUE;
+  return FALSE;
+}
 
 static void load_directory_lb(GtkWidget *listbox, const gchar *dir_path,
                                int depth) {
@@ -477,6 +622,24 @@ static void load_directory_lb(GtkWidget *listbox, const gchar *dir_path,
   const gchar *filename;
   GHashTable *seen =
       g_hash_table_new_full(g_str_hash, g_str_equal, g_free, NULL);
+
+  /* At root level, add special mailboxes first in fixed order */
+  if (depth == 0) {
+    for (int i = 0; SPECIAL_ORDER[i]; i++) {
+      gchar *full_path = g_build_filename(dir_path, SPECIAL_ORDER[i], NULL);
+      if (g_file_test(full_path, G_FILE_TEST_IS_REGULAR)) {
+        int unread = gtk_mailbox_get_unread_count(full_path);
+        GtkWidget *row = make_mb_row(SPECIAL_ORDER[i], full_path, FALSE, unread, 0);
+        gtk_list_box_append(GTK_LIST_BOX(listbox), row);
+        g_hash_table_insert(seen, g_strdup(SPECIAL_ORDER[i]), GINT_TO_POINTER(1));
+      }
+      g_free(full_path);
+    }
+  }
+
+  /* Collect non-special entries, then sort alphabetically (folders first) */
+  GPtrArray *dirs  = g_ptr_array_new_with_free_func(g_free);
+  GPtrArray *files = g_ptr_array_new_with_free_func(g_free);
 
   while ((filename = g_dir_read_name(dir)) != NULL) {
     if (g_str_has_prefix(filename, ".") || g_str_has_suffix(filename, ".toc"))
@@ -499,31 +662,51 @@ static void load_directory_lb(GtkWidget *listbox, const gchar *dir_path,
     g_hash_table_insert(seen, g_strdup(base_name), GINT_TO_POINTER(1));
     g_free(base_name);
 
-    /* Build TOC for mailbox files if needed */
-    if (is_f) {
-      gchar *toc_path = g_strdup_printf("%s.toc", full_path);
-      if (!g_file_test(toc_path, G_FILE_TEST_EXISTS)) {
-        g_print("Building TOC for mailbox: %s\n", full_path);
-        TOCType *toc = BuildTOC(full_path);
-        if (toc) { toc_save(toc); toc_free(toc); }
-      }
-      g_free(toc_path);
-    }
-
-    int unread = is_f ? gtk_mailbox_get_unread_count(full_path) : 0;
-
-    GtkWidget *row = make_mb_row(filename, full_path, is_d, unread, depth);
-    gtk_list_box_append(GTK_LIST_BOX(listbox), row);
-
-    /* Recurse into directories */
     if (is_d)
-      load_directory_lb(listbox, full_path, depth + 1);
+      g_ptr_array_add(dirs, g_strdup(filename));
+    else
+      g_ptr_array_add(files, g_strdup(filename));
 
     g_free(full_path);
   }
 
   g_hash_table_destroy(seen);
   g_dir_close(dir);
+
+  /* Sort both arrays alphabetically (case-insensitive) */
+  g_ptr_array_sort(dirs,  (GCompareFunc)g_ascii_strcasecmp);
+  g_ptr_array_sort(files, (GCompareFunc)g_ascii_strcasecmp);
+
+  /* Add folders first, then files — both sorted */
+  for (guint i = 0; i < dirs->len; i++) {
+    const char *name = g_ptr_array_index(dirs, i);
+    gchar *full_path = g_build_filename(dir_path, name, NULL);
+    GtkWidget *row = make_mb_row(name, full_path, TRUE, 0, depth);
+    gtk_list_box_append(GTK_LIST_BOX(listbox), row);
+    load_directory_lb(listbox, full_path, depth + 1);
+    g_free(full_path);
+  }
+
+  for (guint i = 0; i < files->len; i++) {
+    const char *name = g_ptr_array_index(files, i);
+    gchar *full_path = g_build_filename(dir_path, name, NULL);
+
+    /* Build TOC if needed */
+    gchar *toc_path = g_strdup_printf("%s.toc", full_path);
+    if (!g_file_test(toc_path, G_FILE_TEST_EXISTS)) {
+      TOCType *toc = BuildTOC(full_path);
+      if (toc) { toc_save(toc); toc_free(toc); }
+    }
+    g_free(toc_path);
+
+    int unread = gtk_mailbox_get_unread_count(full_path);
+    GtkWidget *row = make_mb_row(name, full_path, FALSE, unread, depth);
+    gtk_list_box_append(GTK_LIST_BOX(listbox), row);
+    g_free(full_path);
+  }
+
+  g_ptr_array_free(dirs, TRUE);
+  g_ptr_array_free(files, TRUE);
 }
 
 /* Create mailbox list — modern GtkListBox with custom row widgets,
@@ -532,6 +715,12 @@ GtkWidget *gtk_mailbox_tree_new(void) {
   GtkWidget *listbox = gtk_list_box_new();
   gtk_list_box_set_selection_mode(GTK_LIST_BOX(listbox), GTK_SELECTION_SINGLE);
   gtk_widget_add_css_class(listbox, "mb-sidebar");
+
+  /* Drop target on the listbox background — moves mailbox to root */
+  GtkDropTarget *root_drop = gtk_drop_target_new(G_TYPE_STRING, GDK_ACTION_MOVE);
+  g_signal_connect(root_drop, "drop", G_CALLBACK(on_mb_drop_root), listbox);
+  gtk_widget_add_controller(listbox, GTK_EVENT_CONTROLLER(root_drop));
+
   return listbox;
 }
 

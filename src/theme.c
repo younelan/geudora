@@ -346,6 +346,11 @@ static char *generate_css(const ThemePalette *p) {
     "  background: %s; color: %s; border-radius: 10px;"
     "  padding: 0 6px; font-size: 0.72em; font-weight: 700;"
     "  min-height: 18px;"
+    "}"
+    ".mb-drop-target {"
+    "  background: alpha(%s, 0.2);"
+    "  outline: 2px dashed %s; outline-offset: -2px;"
+    "  border-radius: 6px;"
     "}",
     /* sidebar bg */ p->surface,
     /* row:selected */ p->accent,
@@ -354,7 +359,8 @@ static char *generate_css(const ThemePalette *p) {
     /* name */ p->text,
     /* unread name */ p->text,
     /* folder */ p->text3,
-    /* pill bg */ p->accent, /* pill text */ p->hero_text
+    /* pill bg */ p->accent, /* pill text */ p->hero_text,
+    /* drop-target bg */ p->accent, /* drop-target outline */ p->accent
   );
 
   /* ── Wazoo titlebar ── */

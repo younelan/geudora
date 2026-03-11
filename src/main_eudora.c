@@ -1345,7 +1345,10 @@ static void on_mb_remove(GtkButton *btn, gpointer ud) {
     return;
   }
 
-  gchar *msg = g_strdup_printf("Remove mailbox \"%s\"?", name ? name : "");
+  gboolean is_dir = GPOINTER_TO_INT(g_object_get_data(G_OBJECT(row), "mb-is-dir"));
+  gchar *msg = is_dir
+      ? g_strdup_printf("Remove folder \"%s\" and all its contents?", name ? name : "")
+      : g_strdup_printf("Remove mailbox \"%s\"?", name ? name : "");
   GtkAlertDialog *dlg = gtk_alert_dialog_new("%s", msg);
   g_free(msg);
 
@@ -1929,12 +1932,24 @@ static int count_toc_messages(const char *mailbox_name) {
 }
 
 /* ── Stat pill widget ── */
+/* Callback for clickable stat pills — opens the named mailbox */
+static void on_stat_pill_clicked(GtkButton *btn, gpointer ud) {
+  (void)btn;
+  const char *name = (const char *)ud;
+  gchar *path = gtk_mailbox_get_path(name);
+  if (path) { open_mailbox_tab(name, path); g_free(path); }
+}
+
 static GtkWidget *stat_pill(const char *number, const char *label,
-                             const char *accent_class) {
+                             const char *accent_class,
+                             const char *mailbox_name) {
+  GtkWidget *btn = gtk_button_new();
+  gtk_button_set_has_frame(GTK_BUTTON(btn), FALSE);
+  gtk_widget_add_css_class(btn, "stat-card");
+  if (accent_class) gtk_widget_add_css_class(btn, accent_class);
+  gtk_widget_set_hexpand(btn, TRUE);
+
   GtkWidget *card = gtk_box_new(GTK_ORIENTATION_VERTICAL, 4);
-  gtk_widget_add_css_class(card, "stat-card");
-  if (accent_class) gtk_widget_add_css_class(card, accent_class);
-  gtk_widget_set_hexpand(card, TRUE);
 
   GtkWidget *num = gtk_label_new(number);
   gtk_widget_add_css_class(num, "stat-number");
@@ -1946,7 +1961,13 @@ static GtkWidget *stat_pill(const char *number, const char *label,
   gtk_label_set_xalign(GTK_LABEL(lbl), 0);
   gtk_box_append(GTK_BOX(card), lbl);
 
-  return card;
+  gtk_button_set_child(GTK_BUTTON(btn), card);
+
+  if (mailbox_name)
+    g_signal_connect(btn, "clicked",
+                     G_CALLBACK(on_stat_pill_clicked), (gpointer)mailbox_name);
+
+  return btn;
 }
 
 /* ── Action card widget ── */
@@ -2118,10 +2139,10 @@ static GtkWidget *create_welcome_page(void) {
   snprintf(s4, sizeof(s4), "%d", trash_n);
 
   GtkWidget *stats = gtk_box_new(GTK_ORIENTATION_HORIZONTAL, 12);
-  gtk_box_append(GTK_BOX(stats), stat_pill(s1, "Inbox",   "stat-accent-blue"));
-  gtk_box_append(GTK_BOX(stats), stat_pill(s2, "Outbox",  "stat-accent-green"));
-  gtk_box_append(GTK_BOX(stats), stat_pill(s3, "Junk",    "stat-accent-amber"));
-  gtk_box_append(GTK_BOX(stats), stat_pill(s4, "Trash",   "stat-accent-red"));
+  gtk_box_append(GTK_BOX(stats), stat_pill(s1, "Inbox",   "stat-accent-blue",  "In"));
+  gtk_box_append(GTK_BOX(stats), stat_pill(s2, "Outbox",  "stat-accent-green", "Out"));
+  gtk_box_append(GTK_BOX(stats), stat_pill(s3, "Junk",    "stat-accent-amber", "Junk"));
+  gtk_box_append(GTK_BOX(stats), stat_pill(s4, "Trash",   "stat-accent-red",   "Trash"));
   gtk_box_append(GTK_BOX(body), stats);
 
   /* ── Two-column grid: actions left, tools right ── */
@@ -2137,19 +2158,19 @@ static GtkWidget *create_welcome_page(void) {
   GtkWidget *al = gtk_box_new(GTK_ORIENTATION_VERTICAL, 8);
   gtk_box_append(GTK_BOX(al),
       action_card("mail-unread-symbolic", NULL,
-                  "Check Mail", "Fetch new messages from the server",
+                  "Check Mail", "Fetch new messages  \xe2\x8c\x98M",
                   "app.check-mail"));
   gtk_box_append(GTK_BOX(al),
       action_card("document-new-symbolic", "action-icon-green",
-                  "New Message", "Compose a new email",
+                  "New Message", "Compose a new email  \xe2\x8c\x98N",
                   "app.new-message"));
   gtk_box_append(GTK_BOX(al),
       action_card("mail-send-symbolic", "action-icon-amber",
-                  "Send Queued", "Deliver messages waiting in the outbox",
+                  "Send Queued", "Deliver queued messages  \xe2\x8c\x98T",
                   "app.send-queued"));
   gtk_box_append(GTK_BOX(al),
       action_card("mail-reply-sender-symbolic", "action-icon-purple",
-                  "Reply", "Reply to the selected message",
+                  "Reply", "Reply to the selected message  \xe2\x8c\x98R",
                   "app.reply"));
   gtk_box_append(GTK_BOX(al),
       action_card("mail-forward-symbolic", "action-icon-cyan",
@@ -2175,7 +2196,7 @@ static GtkWidget *create_welcome_page(void) {
                   "app.filters"));
   gtk_box_append(GTK_BOX(ar),
       action_card("preferences-system-symbolic", "action-icon-purple",
-                  "Settings", "Accounts, display, and behavior",
+                  "Settings", "Accounts, display, and behavior  \xe2\x8c\x98,",
                   "app.preferences"));
   gtk_box_append(GTK_BOX(ar),
       action_card("avatar-default-symbolic", "action-icon-rose",
@@ -2189,22 +2210,6 @@ static GtkWidget *create_welcome_page(void) {
   gtk_box_append(GTK_BOX(columns), col_right);
 
   gtk_box_append(GTK_BOX(body), columns);
-
-  /* ── Keyboard shortcuts row ── */
-  gtk_box_append(GTK_BOX(body), wc_section("KEYBOARD SHORTCUTS"));
-
-  GtkWidget *shortcuts = gtk_box_new(GTK_ORIENTATION_HORIZONTAL, 8);
-  gtk_box_append(GTK_BOX(shortcuts),
-      shortcut_pill("\xe2\x8c\x98N", "New Message", "app.new-message"));
-  gtk_box_append(GTK_BOX(shortcuts),
-      shortcut_pill("\xe2\x8c\x98M", "Check Mail", "app.check-mail"));
-  gtk_box_append(GTK_BOX(shortcuts),
-      shortcut_pill("\xe2\x8c\x98R", "Reply", "app.reply"));
-  gtk_box_append(GTK_BOX(shortcuts),
-      shortcut_pill("\xe2\x8c\x98T", "Send Queued", "app.send-queued"));
-  gtk_box_append(GTK_BOX(shortcuts),
-      shortcut_pill("\xe2\x8c\x98,", "Settings", "app.preferences"));
-  gtk_box_append(GTK_BOX(body), shortcuts);
 
   /* ── Tip bar ── */
   GtkWidget *tip = gtk_box_new(GTK_ORIENTATION_HORIZONTAL, 10);
