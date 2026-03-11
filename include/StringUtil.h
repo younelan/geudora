@@ -189,7 +189,10 @@ bool PtrPtrMatchLWSP(Ptr lookFor, short lookLen, Ptr text, uint32_t textLen,
   PtrPtrMatchLWSP((lf) + 1, *(lf), (tx) + 1, *(tx), s, e)
 #define PPtrMatchLWSP(lf, tx, txLen, s, e)                                     \
   PtrPtrMatchLWSP((lf) + 1, *(lf), tx, txLen, s, e)
-#endif
+#include <glib.h>
+
+char *ensure_utf8(const char *text);
+
 UPtr ShortVersString(short vers, UPtr versionStr);
 PStr InfiniteString(PStr s, short size);
 bool ItemFromResAppearsInStr(short resID, PStr string, UPtr delims);
@@ -197,3 +200,5 @@ bool StrIsItemFromRes(PStr string, short resID, UPtr delims);
 PStr StripLeadingItems(PStr string, short resID);
 PStr StripTrailingITems(PStr string, short resID);
 bool EndsWithItem(PStr string, short resID);
+
+#endif /* STRINGUTIL_H */

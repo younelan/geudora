@@ -121,34 +121,171 @@ static const char *get_mail_dir(void) {
 #define CURRENT_TOC_VERS 1
 
 /*
- * On-disk TOC format: a compact header followed by the sums array.
- * We do NOT serialize the entire in-memory TOCType (it has pointers,
- * PATH_MAX path, etc. that are meaningless on disk).
+ * On-disk TOC format — portable 32-bit layout matching original Mac Eudora.
+ *
+ * Uses fixed-size integer types (int32_t, int16_t) instead of `long`
+ * so the binary format is identical whether built on 32-bit or 64-bit.
+ * Pointer fields (mesgErrH, cache, messH) are stored as 4-byte zeros.
+ *
+ * This allows us to read TOC files from original Mac Eudora 6.2.4
+ * and write files that are compatible across platforms.
  */
-typedef struct {
-  long majorVersion;
-  long minorVersion;
-  short count;
-  short which;
-  long boxSize;
-  long writeDate;
-  long nextSerialNum;
-  long sort;
-  long lastSort;
-  long pluginKey;
-  long pluginValue;
-  long previewHi;
-  long unreadBase;
-  long sorts[6];
-  long needsCompact;
+
+/* Portable disk header — 76 bytes, matches original Mac 32-bit layout */
+typedef struct __attribute__((packed)) {
+  int32_t majorVersion;
+  int32_t minorVersion;
+  int16_t count;
+  int16_t which;
+  int32_t boxSize;
+  int32_t writeDate;
+  int32_t nextSerialNum;
+  int32_t sort;
+  int32_t lastSort;
+  int32_t pluginKey;
+  int32_t pluginValue;
+  int32_t previewHi;
+  int32_t unreadBase;
+  int32_t sorts[6];
+  int32_t needsCompact;
 } TOCDiskHeader;
 
-#define TOCDiskSize(count) \
-  (sizeof(TOCDiskHeader) + (count) * sizeof(MSumType))
+/* Portable disk summary — 224 bytes, matches original Mac 32-bit MSumType */
+typedef struct __attribute__((packed)) {
+  int32_t offset;
+  int32_t length;
+  int32_t bodyOffset;
+  int32_t state;
+  int32_t spamBits;        /* spamScore:8 + spamBecause:3 + spare21:21 */
+  uint32_t arrivalSeconds;
+  uint32_t mesgErrH;       /* was pointer — always 0 on disk */
+  uint32_t fromHash;
+  uint32_t spare[3];
+  int32_t serialNum;
+  uint32_t seconds;
+  uint32_t flags;
+  int16_t savedPos[4];     /* Rect: top, left, bottom, right */
+  uint8_t priority;
+  uint8_t origPriority;
+  int16_t tableId;
+  int16_t scoreBits;       /* score:4 + outType:4 + unused:8 */
+  int16_t spareShort2;
+  int16_t sumRandBytes;
+  int16_t origZone;
+  uint32_t sigId;
+  char from[48];
+  uint32_t popPersId;
+  uint32_t persId;
+  int32_t msgIdHash;
+  int16_t subjId;
+  int16_t spareShort;
+  char subj[60];
+  uint32_t opts;
+  uint32_t uidHash;
+  uint32_t cache;          /* was Handle — always 0 on disk */
+  uint8_t selected;
+  uint8_t _pad[3];
+  uint32_t messH;          /* was pointer — always 0 on disk */
+} MSumDisk;
 
-/* Legacy macro kept for compat — but we use TOCDiskSize for actual I/O */
+_Static_assert(sizeof(TOCDiskHeader) == 76, "TOCDiskHeader must be 76 bytes");
+_Static_assert(sizeof(MSumDisk) == 224, "MSumDisk must be 224 bytes");
+
+#define TOCDiskSize(count) \
+  ((long)sizeof(TOCDiskHeader) + (long)(count) * (long)sizeof(MSumDisk))
+
+/* Legacy macro kept for compat */
 #define TOCSizeShouldBe(tocH) \
   TOCDiskSize((tocH)->count)
+
+/*
+ * Conversion: MSumDisk ↔ MSumType (in-memory)
+ */
+static void disk_to_sum(const MSumDisk *d, MSumType *s) {
+  memset(s, 0, sizeof(*s));
+  s->offset = d->offset;
+  s->length = d->length;
+  s->bodyOffset = d->bodyOffset;
+  s->state = (StateEnum)d->state;
+  /* Unpack bitfield */
+  s->spamScore = (int8_t)(d->spamBits & 0xFF);
+  s->spamBecause = (d->spamBits >> 8) & 0x7;
+  s->arrivalSeconds = d->arrivalSeconds;
+  s->fromHash = d->fromHash;
+  memcpy(s->spare, d->spare, sizeof(s->spare));
+  s->serialNum = d->serialNum;
+  s->seconds = d->seconds;
+  s->flags = d->flags;
+  /* Rect / VirtualMessData union */
+  s->u.savedPos.top = d->savedPos[0];
+  s->u.savedPos.left = d->savedPos[1];
+  s->u.savedPos.bottom = d->savedPos[2];
+  s->u.savedPos.right = d->savedPos[3];
+  s->priority = d->priority;
+  s->origPriority = d->origPriority;
+  s->tableId = d->tableId;
+  /* Unpack score bits */
+  s->score = d->scoreBits & 0xF;
+  s->outType = (d->scoreBits >> 4) & 0xF;
+  s->unused = (d->scoreBits >> 8) & 0xFF;
+  s->spareShort2 = d->spareShort2;
+  s->sumRandBytes = d->sumRandBytes;
+  s->origZone = d->origZone;
+  s->sigId = d->sigId;
+  memcpy(s->from, d->from, sizeof(s->from));
+  s->popPersId = d->popPersId;
+  s->persId = d->persId;
+  s->msgIdHash = d->msgIdHash;
+  s->subjId = d->subjId;
+  s->spareShort = d->spareShort;
+  memcpy(s->subj, d->subj, sizeof(s->subj));
+  s->opts = d->opts;
+  s->uidHash = d->uidHash;
+  /* pointer fields stay NULL */
+  s->selected = d->selected;
+}
+
+static void sum_to_disk(const MSumType *s, MSumDisk *d) {
+  memset(d, 0, sizeof(*d));
+  d->offset = (int32_t)s->offset;
+  d->length = (int32_t)s->length;
+  d->bodyOffset = (int32_t)s->bodyOffset;
+  d->state = (int32_t)s->state;
+  /* Pack bitfield */
+  d->spamBits = (s->spamScore & 0xFF) | ((s->spamBecause & 0x7) << 8);
+  d->arrivalSeconds = (uint32_t)s->arrivalSeconds;
+  d->mesgErrH = 0;
+  d->fromHash = (uint32_t)s->fromHash;
+  memcpy(d->spare, s->spare, sizeof(d->spare));
+  d->serialNum = (int32_t)s->serialNum;
+  d->seconds = (uint32_t)s->seconds;
+  d->flags = (uint32_t)s->flags;
+  d->savedPos[0] = s->u.savedPos.top;
+  d->savedPos[1] = s->u.savedPos.left;
+  d->savedPos[2] = s->u.savedPos.bottom;
+  d->savedPos[3] = s->u.savedPos.right;
+  d->priority = s->priority;
+  d->origPriority = s->origPriority;
+  d->tableId = s->tableId;
+  d->scoreBits = (s->score & 0xF) | ((s->outType & 0xF) << 4) |
+                 ((s->unused & 0xFF) << 8);
+  d->spareShort2 = s->spareShort2;
+  d->sumRandBytes = s->sumRandBytes;
+  d->origZone = s->origZone;
+  d->sigId = (uint32_t)s->sigId;
+  memcpy(d->from, s->from, sizeof(d->from));
+  d->popPersId = (uint32_t)s->popPersId;
+  d->persId = (uint32_t)s->persId;
+  d->msgIdHash = (int32_t)s->msgIdHash;
+  d->subjId = s->subjId;
+  d->spareShort = s->spareShort;
+  memcpy(d->subj, s->subj, sizeof(d->subj));
+  d->opts = (uint32_t)s->opts;
+  d->uidHash = (uint32_t)s->uidHash;
+  d->cache = 0;
+  d->selected = s->selected;
+  d->messH = 0;
+}
 
 /************************************************************************
  * TOCBySpec - take a spec, return a TOC
@@ -364,7 +501,7 @@ static OSErr ReadDForkTOC(FSSpecPtr aSpec, TOCType * *inTOC) {
     return -1;
   }
 
-  /* Read disk header */
+  /* Read portable 32-bit disk header (76 bytes) */
   TOCDiskHeader hdr;
   if (fread(&hdr, 1, sizeof(hdr), fp) != sizeof(hdr)) {
     g_warning("ReadDForkTOC(%s): header read failed", aSpec->name);
@@ -379,7 +516,7 @@ static OSErr ReadDForkTOC(FSSpecPtr aSpec, TOCType * *inTOC) {
   }
 
   /* Verify file has enough data for all summaries */
-  long expectedSize = (long)TOCDiskSize(hdr.count);
+  long expectedSize = TOCDiskSize(hdr.count);
   if (fileSize < expectedSize) {
     g_warning("ReadDForkTOC(%s): truncated (%ld < %ld, count=%d)",
               aSpec->name, fileSize, expectedSize, hdr.count);
@@ -412,25 +549,22 @@ static OSErr ReadDForkTOC(FSSpecPtr aSpec, TOCType * *inTOC) {
   memcpy(toc->sorts, hdr.sorts, sizeof(toc->sorts));
   toc->needsCompact = hdr.needsCompact;
 
-  /* Read message summaries */
+  /* Read message summaries using portable MSumDisk (224 bytes each),
+   * then convert to in-memory MSumType */
   if (hdr.count > 0) {
-    size_t sumsSize = hdr.count * sizeof(MSumType);
-    if (fread(toc->sums, 1, sumsSize, fp) != sumsSize) {
-      g_warning("ReadDForkTOC(%s): sums read failed", aSpec->name);
-      g_free(toc);
-      fclose(fp);
-      return -1;
+    MSumDisk diskSum;
+    for (int i = 0; i < hdr.count; i++) {
+      if (fread(&diskSum, 1, sizeof(diskSum), fp) != sizeof(diskSum)) {
+        g_warning("ReadDForkTOC(%s): sum[%d] read failed", aSpec->name, i);
+        g_free(toc);
+        fclose(fp);
+        return -1;
+      }
+      disk_to_sum(&diskSum, &toc->sums[i]);
     }
   }
 
   fclose(fp);
-
-  /* Clear runtime-only pointer fields in each summary */
-  for (int i = 0; i < toc->count; i++) {
-    toc->sums[i].messH = NULL;
-    toc->sums[i].cache = NULL;
-    toc->sums[i].mesgErrH = NULL;
-  }
 
   g_debug("ReadDForkTOC(%s): %d messages, %ld bytes", aSpec->name, toc->count,
           fileSize);
@@ -475,24 +609,25 @@ int WriteTOC(TOCType * tocH) {
     return -1;
   }
 
-  /* Write compact disk header (no pointers, no path) */
+  /* Write portable 32-bit disk header (76 bytes) */
   TOCDiskHeader hdr;
   memset(&hdr, 0, sizeof(hdr));
-  hdr.majorVersion = tocH->majorVersion;
-  hdr.minorVersion = tocH->minorVersion;
-  hdr.count = tocH->count;
-  hdr.which = tocH->which;
-  hdr.boxSize = tocH->boxSize;
-  hdr.writeDate = tocH->writeDate;
-  hdr.nextSerialNum = tocH->nextSerialNum;
-  hdr.sort = tocH->sort;
-  hdr.lastSort = tocH->lastSort;
-  hdr.pluginKey = tocH->pluginKey;
-  hdr.pluginValue = tocH->pluginValue;
-  hdr.previewHi = tocH->previewHi;
-  hdr.unreadBase = tocH->unreadBase;
-  memcpy(hdr.sorts, tocH->sorts, sizeof(hdr.sorts));
-  hdr.needsCompact = tocH->needsCompact;
+  hdr.majorVersion = (int32_t)tocH->majorVersion;
+  hdr.minorVersion = (int32_t)tocH->minorVersion;
+  hdr.count = (int16_t)tocH->count;
+  hdr.which = (int16_t)tocH->which;
+  hdr.boxSize = (int32_t)tocH->boxSize;
+  hdr.writeDate = (int32_t)tocH->writeDate;
+  hdr.nextSerialNum = (int32_t)tocH->nextSerialNum;
+  hdr.sort = (int32_t)tocH->sort;
+  hdr.lastSort = (int32_t)tocH->lastSort;
+  hdr.pluginKey = (int32_t)tocH->pluginKey;
+  hdr.pluginValue = (int32_t)tocH->pluginValue;
+  hdr.previewHi = (int32_t)tocH->previewHi;
+  hdr.unreadBase = (int32_t)tocH->unreadBase;
+  for (int i = 0; i < 6; i++)
+    hdr.sorts[i] = (int32_t)tocH->sorts[i];
+  hdr.needsCompact = (int32_t)tocH->needsCompact;
 
   size_t written = fwrite(&hdr, 1, sizeof(hdr), fp);
   if (written != sizeof(hdr)) {
@@ -503,16 +638,19 @@ int WriteTOC(TOCType * tocH) {
     return -1;
   }
 
-  /* Write message summaries */
+  /* Write message summaries using portable MSumDisk (224 bytes each) */
   if (tocH->count > 0) {
-    size_t sumsSize = tocH->count * sizeof(MSumType);
-    written = fwrite(tocH->sums, 1, sumsSize, fp);
-    if (written != sumsSize) {
-      g_warning("WriteTOC(%s): sums write failed", tocSpec.name);
-      fclose(fp);
-      unlink(tocSpec.path);
-      tocH->beingWritten--;
-      return -1;
+    MSumDisk diskSum;
+    for (int i = 0; i < tocH->count; i++) {
+      sum_to_disk(&tocH->sums[i], &diskSum);
+      written = fwrite(&diskSum, 1, sizeof(diskSum), fp);
+      if (written != sizeof(diskSum)) {
+        g_warning("WriteTOC(%s): sum[%d] write failed", tocSpec.name, i);
+        fclose(fp);
+        unlink(tocSpec.path);
+        tocH->beingWritten--;
+        return -1;
+      }
     }
   }
 

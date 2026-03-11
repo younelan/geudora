@@ -20,6 +20,7 @@
 #include "threading.h"
 #include "toc.h"
 #include "wazoo.h"
+#include "StringUtil.h"
 #include <gtk/gtk.h>
 #include <glib/gstdio.h>
 
@@ -55,10 +56,10 @@ static GtkWidget *create_message_list(void);
 static void open_mailbox_tab(const char *name, const char *path);
 
 /*
- * read_message_body - Read message body from mailbox file using TOC summary info.
+ * read_message_raw - Read entire message from mailbox file (headers + body).
  * Returns allocated string (caller must g_free), or NULL on error.
  */
-static gchar *read_message_body(TOCType *toc, int msg_index) {
+static gchar *read_message_raw(TOCType *toc, int msg_index) {
   if (!toc || msg_index < 0 || msg_index >= toc->count)
     return NULL;
 
@@ -75,7 +76,7 @@ static gchar *read_message_body(TOCType *toc, int msg_index) {
   }
 
   long len = sum->length;
-  if (len <= 0 || len > 10 * 1024 * 1024) { /* cap at 10 MB */
+  if (len <= 0 || len > 10 * 1024 * 1024) {
     fclose(fp);
     return NULL;
   }
@@ -84,17 +85,248 @@ static gchar *read_message_body(TOCType *toc, int msg_index) {
   size_t nread = fread(buf, 1, len, fp);
   fclose(fp);
   buf[nread] = '\0';
-
-  /* Find body after blank line (headers end with \n\n or \r\n\r\n) */
-  const char *body = strstr(buf, "\n\n");
-  if (body) {
-    body += 2;
-    gchar *result = g_strdup(body);
-    g_free(buf);
-    return result;
-  }
-  /* No blank line separator found — return the whole thing */
   return buf;
+}
+
+/* Headers we display (case-insensitive match). Order matters for display. */
+static const char *const kDisplayHeaders[] = {
+  "From", "To", "Subject", "Date", "Cc", "Reply-To", NULL
+};
+
+/*
+ * Extract a single header value from raw message text.
+ * Handles continuation lines (lines starting with space/tab).
+ * Returns allocated string or NULL. Caller must g_free.
+ */
+static gchar *extract_header(const char *raw, const char *name) {
+  size_t nlen = strlen(name);
+  const char *p = raw;
+
+  while (p && *p && *p != '\n') {
+    /* Match "Name:" at start of line (case-insensitive) */
+    if (g_ascii_strncasecmp(p, name, nlen) == 0 && p[nlen] == ':') {
+      const char *val = p + nlen + 1;
+      while (*val == ' ' || *val == '\t') val++;
+
+      /* Collect value including continuation lines */
+      GString *s = g_string_new(NULL);
+      while (*val && *val != '\n') {
+        g_string_append_c(s, *val);
+        val++;
+      }
+      /* Continuation: next line starts with space or tab */
+      while (val[0] == '\n' && (val[1] == ' ' || val[1] == '\t')) {
+        val++; /* skip \n */
+        g_string_append_c(s, ' ');
+        while (*val == ' ' || *val == '\t') val++;
+        while (*val && *val != '\n') {
+          g_string_append_c(s, *val);
+          val++;
+        }
+      }
+      gchar *val_raw = g_string_free(s, FALSE);
+      gchar *val_utf8 = ensure_utf8(val_raw);
+      g_free(val_raw);
+      return val_utf8;
+    }
+
+    /* Skip to next line */
+    p = strchr(p, '\n');
+    if (p) p++;
+  }
+  return NULL;
+}
+
+/*
+ * Find the body start (after blank line separator).
+ * Returns pointer into the raw string, or raw itself if no separator found.
+ */
+static const char *find_body(const char *raw) {
+  const char *p = strstr(raw, "\n\n");
+  if (p) return p + 2;
+  p = strstr(raw, "\r\n\r\n");
+  if (p) return p + 4;
+  return raw;
+}
+
+/* CSS for the message header area and preview */
+static const char *kMessageCSS =
+  ".msg-header-box { padding: 8px 12px; }"
+  ".msg-header-name { font-weight: bold; font-size: 0.9em; color: #555; min-width: 70px; }"
+  ".msg-header-value { font-size: 0.9em; }"
+  ".msg-header-subject .msg-header-value { font-weight: bold; font-size: 1.0em; color: #222; }"
+  ".msg-separator { min-height: 1px; background: #ccc; margin: 4px 0; }"
+  ".msg-body-view { padding: 8px 12px; }"
+  ".msg-quote-1 { color: #2962FF; }"    /* blue for first-level quotes */
+  ".msg-quote-2 { color: #00796B; }"    /* teal for second-level */
+  ".msg-quote-3 { color: #6A1B9A; }";   /* purple for deeper */
+
+static gboolean css_loaded = FALSE;
+
+static void ensure_message_css(void) {
+  if (css_loaded) return;
+  css_loaded = TRUE;
+  GtkCssProvider *prov = gtk_css_provider_new();
+  gtk_css_provider_load_from_string(prov, kMessageCSS);
+  gtk_style_context_add_provider_for_display(
+      gdk_display_get_default(), GTK_STYLE_PROVIDER(prov),
+      GTK_STYLE_PROVIDER_PRIORITY_APPLICATION);
+  g_object_unref(prov);
+}
+
+/*
+ * Create styled header row: "Name:  value"
+ */
+static GtkWidget *make_header_row(const char *name, const char *value,
+                                   const char *extra_class) {
+  GtkWidget *row = gtk_box_new(GTK_ORIENTATION_HORIZONTAL, 6);
+  if (extra_class)
+    gtk_widget_add_css_class(row, extra_class);
+
+  GtkWidget *lbl_name = gtk_label_new(name);
+  gtk_widget_add_css_class(lbl_name, "msg-header-name");
+  gtk_label_set_xalign(GTK_LABEL(lbl_name), 1.0);
+  gtk_widget_set_valign(lbl_name, GTK_ALIGN_START);
+
+  GtkWidget *lbl_colon = gtk_label_new(":");
+  gtk_widget_add_css_class(lbl_colon, "msg-header-name");
+
+  GtkWidget *lbl_val = gtk_label_new(value ? value : "");
+  gtk_widget_add_css_class(lbl_val, "msg-header-value");
+  gtk_label_set_xalign(GTK_LABEL(lbl_val), 0.0);
+  gtk_label_set_wrap(GTK_LABEL(lbl_val), TRUE);
+  gtk_label_set_selectable(GTK_LABEL(lbl_val), TRUE);
+  gtk_widget_set_hexpand(lbl_val, TRUE);
+
+  gtk_box_append(GTK_BOX(row), lbl_name);
+  gtk_box_append(GTK_BOX(row), lbl_colon);
+  gtk_box_append(GTK_BOX(row), lbl_val);
+  return row;
+}
+
+/*
+ * Build the header widget box from raw message text.
+ * Shows From, To, Subject, Date, Cc, Reply-To (if present).
+ */
+static GtkWidget *build_header_box(const char *raw) {
+  ensure_message_css();
+
+  GtkWidget *box = gtk_box_new(GTK_ORIENTATION_VERTICAL, 2);
+  gtk_widget_add_css_class(box, "msg-header-box");
+
+  for (int i = 0; kDisplayHeaders[i]; i++) {
+    gchar *val = extract_header(raw, kDisplayHeaders[i]);
+    if (!val) continue;
+
+    const char *cls = NULL;
+    if (g_ascii_strcasecmp(kDisplayHeaders[i], "Subject") == 0)
+      cls = "msg-header-subject";
+
+    gtk_box_append(GTK_BOX(box), make_header_row(kDisplayHeaders[i], val, cls));
+    g_free(val);
+  }
+
+  /* Separator line */
+  GtkWidget *sep = gtk_separator_new(GTK_ORIENTATION_HORIZONTAL);
+  gtk_widget_add_css_class(sep, "msg-separator");
+  gtk_box_append(GTK_BOX(box), sep);
+
+  return box;
+}
+
+/*
+ * Apply quote-level styling to a GtkTextView displaying a message body.
+ * Lines starting with > get colored by depth.
+ */
+static void style_quotes(GtkTextView *view) {
+  GtkTextBuffer *buf = gtk_text_view_get_buffer(view);
+  GtkTextIter start, end, line_start, line_end;
+  gtk_text_buffer_get_bounds(buf, &start, &end);
+
+  /* Create tags for quote levels */
+  static const char *tag_names[] = {"q1", "q2", "q3"};
+  static const char *tag_colors[] = {"#2962FF", "#00796B", "#6A1B9A"};
+  for (int i = 0; i < 3; i++) {
+    if (!gtk_text_tag_table_lookup(gtk_text_buffer_get_tag_table(buf), tag_names[i]))
+      gtk_text_buffer_create_tag(buf, tag_names[i], "foreground", tag_colors[i], NULL);
+  }
+
+  /* Scan each line */
+  line_start = start;
+  while (gtk_text_iter_compare(&line_start, &end) < 0) {
+    line_end = line_start;
+    gtk_text_iter_forward_to_line_end(&line_end);
+
+    gchar *line = gtk_text_buffer_get_text(buf, &line_start, &line_end, FALSE);
+    if (line) {
+      int depth = 0;
+      const char *p = line;
+      while (*p == '>' || *p == ' ') {
+        if (*p == '>') depth++;
+        p++;
+      }
+      if (depth > 0) {
+        int tag_idx = (depth > 3) ? 2 : depth - 1;
+        gtk_text_buffer_apply_tag_by_name(buf, tag_names[tag_idx],
+                                           &line_start, &line_end);
+      }
+      g_free(line);
+    }
+
+    if (!gtk_text_iter_forward_line(&line_start))
+      break;
+  }
+}
+
+/*
+ * Create a complete message view widget (header box + body text view).
+ * Used by both the preview pane and the message window.
+ * If max_body_len > 0, truncate body to that many bytes (for preview).
+ */
+static GtkWidget *create_message_view(const char *raw, long max_body_len) {
+  ensure_message_css();
+
+  GtkWidget *vbox = gtk_box_new(GTK_ORIENTATION_VERTICAL, 0);
+
+  /* Header area */
+  GtkWidget *hdr = build_header_box(raw);
+  gtk_box_append(GTK_BOX(vbox), hdr);
+
+  /* Body text view */
+  const char *body = find_body(raw);
+  GtkTextBuffer *buf = gtk_text_buffer_new(NULL);
+  if (max_body_len > 0 && (long)strlen(body) > max_body_len) {
+    gchar *trunc = g_strndup(body, max_body_len);
+    gchar *utf8 = ensure_utf8(trunc);
+    gtk_text_buffer_set_text(buf, utf8, -1);
+    g_free(trunc);
+    g_free(utf8);
+  } else {
+    gchar *utf8 = ensure_utf8(body);
+    gtk_text_buffer_set_text(buf, utf8, -1);
+    g_free(utf8);
+  }
+
+
+  GtkWidget *view = gtk_text_view_new_with_buffer(buf);
+  gtk_text_view_set_editable(GTK_TEXT_VIEW(view), FALSE);
+  gtk_text_view_set_cursor_visible(GTK_TEXT_VIEW(view), FALSE);
+  gtk_text_view_set_wrap_mode(GTK_TEXT_VIEW(view), GTK_WRAP_WORD_CHAR);
+  gtk_text_view_set_left_margin(GTK_TEXT_VIEW(view), 12);
+  gtk_text_view_set_right_margin(GTK_TEXT_VIEW(view), 12);
+  gtk_text_view_set_top_margin(GTK_TEXT_VIEW(view), 4);
+  gtk_widget_add_css_class(view, "msg-body-view");
+  g_object_unref(buf);
+
+  /* Style quoted lines */
+  style_quotes(GTK_TEXT_VIEW(view));
+
+  GtkWidget *scroll = gtk_scrolled_window_new();
+  gtk_scrolled_window_set_child(GTK_SCROLLED_WINDOW(scroll), view);
+  gtk_widget_set_vexpand(scroll, TRUE);
+  gtk_box_append(GTK_BOX(vbox), scroll);
+
+  return vbox;
 }
 
 /*
@@ -325,12 +557,43 @@ static void on_message_selection_changed(GtkSelectionModel *model,
   }
 }
 
-/* Double-click / Enter on message list → open message in its own window */
+/*
+ * Open a compose window pre-populated with an existing outgoing/draft message.
+ * Parses the raw message to fill To, Subject, Cc, Bcc, and body.
+ */
+static void open_compose_window_with_message(GtkApplication *app,
+                                              const char *raw,
+                                              TOCType *toc, int sumNum) {
+  (void)toc; (void)sumNum;
+  GtkWindow *parent = app ? gtk_application_get_active_window(app)
+                          : GTK_WINDOW(app_state.window);
+
+  GtkWidget *comp = create_compose_window(parent);
+  if (!comp) return;
+
+  gchar *to = extract_header(raw, "To");
+  gchar *subj = extract_header(raw, "Subject");
+  gchar *cc = extract_header(raw, "Cc");
+  gchar *bcc = extract_header(raw, "Bcc");
+
+  if (to) { compose_window_set_to(comp, to); g_free(to); }
+  if (subj) { compose_window_set_subject(comp, subj); g_free(subj); }
+  if (cc) { compose_window_set_cc(comp, cc); g_free(cc); }
+  if (bcc) { compose_window_set_bcc(comp, bcc); g_free(bcc); }
+
+  const char *body = find_body(raw);
+  if (body && *body)
+    compose_window_set_text(comp, body);
+
+  gtk_window_present(GTK_WINDOW(comp));
+}
+
+/* Double-click / Enter on message list → open message in its own window.
+ * For outgoing/draft messages, opens the compose window instead. */
 static void on_message_activated(GtkColumnView *col_view, guint position,
                                  gpointer user_data) {
   (void)user_data;
 
-  /* The TOC is stored on the parent vpaned */
   GtkWidget *vpaned = gtk_widget_get_ancestor(GTK_WIDGET(col_view),
                                                GTK_TYPE_PANED);
   if (!vpaned)
@@ -340,7 +603,42 @@ static void on_message_activated(GtkColumnView *col_view, guint position,
   if (!toc || (int)position >= toc->count)
     return;
 
-  GetAMessage(toc, (short)position, NULL, NULL, true);
+  MessageSummary *sum = &toc->sums[position];
+
+  /* Outgoing/draft messages open in the compose window */
+  if (toc->which == MBX_OUT || toc->which == MBX_OUT_TEMP ||
+      sum->state == UNSENDABLE || sum->state == SENDABLE ||
+      sum->state == QUEUED || sum->state == UNSENT ||
+      sum->state == TIMED) {
+    gchar *raw = read_message_raw(toc, (int)position);
+    if (raw) {
+      open_compose_window_with_message(
+          GTK_APPLICATION(g_application_get_default()), raw, toc, position);
+      g_free(raw);
+    }
+    return;
+  }
+
+  /* Incoming messages open read-only in a message viewer */
+  gchar *raw = read_message_raw(toc, (int)position);
+  if (!raw) return;
+
+  GtkWidget *win = gtk_window_new();
+  gchar *title = g_strdup_printf("%s — %s", sum->from, sum->subj);
+  gtk_window_set_title(GTK_WINDOW(win), title);
+  g_free(title);
+  gtk_window_set_default_size(GTK_WINDOW(win), 700, 550);
+
+  GtkWidget *msg_view = create_message_view(raw, 0);
+  gtk_window_set_child(GTK_WINDOW(win), msg_view);
+  g_free(raw);
+
+  GtkWidget *toplevel = gtk_widget_get_ancestor(GTK_WIDGET(col_view),
+                                                 GTK_TYPE_WINDOW);
+  if (toplevel)
+    gtk_window_set_transient_for(GTK_WINDOW(win), GTK_WINDOW(toplevel));
+
+  gtk_window_present(GTK_WINDOW(win));
 }
 
 /* Simple action handlers */
@@ -456,7 +754,7 @@ static void action_reply(GSimpleAction *action, GVariant *parameter,
 
   MessageSummary *sum = &toc->sums[idx];
   gchar *reply_addr = extract_reply_address(toc, idx);
-  gchar *body = read_message_body(toc, idx);
+  gchar *body = ({ gchar *_raw = read_message_raw(toc, idx); gchar *_b = _raw ? g_strdup(find_body(_raw)) : NULL; g_free(_raw); _b; });
   gchar *quoted = quote_text(body);
 
   GtkWindow *main_window = GTK_WINDOW(app_state.window);
@@ -508,7 +806,7 @@ static void action_reply_all(GSimpleAction *action, GVariant *parameter,
   gchar *reply_addr = extract_reply_address(toc, idx);
   gchar *orig_to = NULL, *orig_cc = NULL;
   extract_all_recipients(toc, idx, &orig_to, &orig_cc);
-  gchar *body = read_message_body(toc, idx);
+  gchar *body = ({ gchar *_raw = read_message_raw(toc, idx); gchar *_b = _raw ? g_strdup(find_body(_raw)) : NULL; g_free(_raw); _b; });
   gchar *quoted = quote_text(body);
 
   GtkWindow *main_window = GTK_WINDOW(app_state.window);
@@ -567,7 +865,7 @@ static void action_forward(GSimpleAction *action, GVariant *parameter,
   }
 
   MessageSummary *sum = &toc->sums[idx];
-  gchar *body = read_message_body(toc, idx);
+  gchar *body = ({ gchar *_raw = read_message_raw(toc, idx); gchar *_b = _raw ? g_strdup(find_body(_raw)) : NULL; g_free(_raw); _b; });
 
   GtkWindow *main_window = GTK_WINDOW(app_state.window);
   GtkWidget *compose = create_compose_window(main_window);
@@ -1350,6 +1648,37 @@ static GtkNotebook *on_create_window(GtkNotebook *notebook, GtkWidget *page,
 
 /* ── Mailbox tab management ── */
 
+/* Selection changed in a mailbox tab — update tab's preview pane */
+static void on_tab_selection_changed(GtkSelectionModel *model,
+                                     guint position, guint n_items,
+                                     gpointer user_data) {
+  (void)position; (void)n_items;
+  GtkWidget *vpaned = GTK_WIDGET(user_data);
+  GtkWidget *preview_box = g_object_get_data(G_OBJECT(vpaned), "preview-box");
+  TOCType *toc = g_object_get_data(G_OBJECT(vpaned), "toc");
+  GtkSingleSelection *sel = GTK_SINGLE_SELECTION(model);
+  if (!preview_box || !toc) return;
+
+  GtkMessageListItem *msg = GTK_MESSAGELIST_ITEM(
+      gtk_single_selection_get_selected_item(sel));
+  if (!msg) return;
+
+  int idx = gtk_messagelist_item_get_index(msg);
+  gchar *raw = read_message_raw(toc, idx);
+  if (!raw) return;
+
+  /* Remove old child from preview box */
+  GtkWidget *old_child = gtk_widget_get_first_child(preview_box);
+  if (old_child)
+    gtk_box_remove(GTK_BOX(preview_box), old_child);
+
+  /* Add new message view */
+  GtkWidget *msg_view = create_message_view(raw, 4096);
+  gtk_widget_set_vexpand(msg_view, TRUE);
+  gtk_box_append(GTK_BOX(preview_box), msg_view);
+  g_free(raw);
+}
+
 /* Create a mailbox tab: VPaned with message list on top, preview on bottom.
  * Like original Eudora mailbox window. */
 static GtkWidget *create_mailbox_tab_content(TOCType *toc) {
@@ -1420,23 +1749,25 @@ static GtkWidget *create_mailbox_tab_content(TOCType *toc) {
   gtk_paned_set_start_child(GTK_PANED(vpaned), list_scroll);
   gtk_paned_set_resize_start_child(GTK_PANED(vpaned), TRUE);
 
-  /* Preview (bottom) */
-  GtkTextBuffer *buf = gtk_text_buffer_new(NULL);
-  gtk_text_buffer_set_text(buf, "Select a message to preview.", -1);
-  GtkWidget *preview = gtk_text_view_new_with_buffer(buf);
-  gtk_text_view_set_editable(GTK_TEXT_VIEW(preview), FALSE);
-  gtk_text_view_set_wrap_mode(GTK_TEXT_VIEW(preview), GTK_WRAP_WORD_CHAR);
-
-  GtkWidget *preview_scroll = gtk_scrolled_window_new();
-  gtk_scrolled_window_set_child(GTK_SCROLLED_WINDOW(preview_scroll), preview);
-  gtk_paned_set_end_child(GTK_PANED(vpaned), preview_scroll);
+  /* Preview (bottom) — a plain container whose child gets swapped */
+  GtkWidget *preview_box = gtk_box_new(GTK_ORIENTATION_VERTICAL, 0);
+  GtkWidget *placeholder = gtk_label_new("Select a message to preview.");
+  gtk_widget_set_opacity(placeholder, 0.5);
+  gtk_widget_set_vexpand(placeholder, TRUE);
+  gtk_widget_set_valign(placeholder, GTK_ALIGN_CENTER);
+  gtk_box_append(GTK_BOX(preview_box), placeholder);
+  gtk_paned_set_end_child(GTK_PANED(vpaned), preview_box);
   gtk_paned_set_resize_end_child(GTK_PANED(vpaned), TRUE);
 
   /* Store refs on the vpaned for later use */
   g_object_set_data(G_OBJECT(vpaned), "toc", toc);
   g_object_set_data(G_OBJECT(vpaned), "store", store);
   g_object_set_data(G_OBJECT(vpaned), "selection", sel);
-  g_object_set_data(G_OBJECT(vpaned), "preview-buffer", buf);
+  g_object_set_data(G_OBJECT(vpaned), "preview-box", preview_box);
+
+  /* Selection change → update preview pane */
+  g_signal_connect(sel, "selection-changed",
+                   G_CALLBACK(on_tab_selection_changed), vpaned);
 
   return vpaned;
 }

@@ -591,16 +591,13 @@ static void on_mbox_msg_selected(GtkTreeSelection *sel, gpointer data) {
   size_t nread = fread(text, 1, len, fp);
   fclose(fp);
   text[nread] = '\0';
-  /* Ensure valid UTF-8 */
-  if (!g_utf8_validate(text, nread, NULL)) {
-    gchar *valid = g_utf8_make_valid(text, nread);
-    gtk_text_buffer_set_text(buf, valid, -1);
-    g_free(valid);
-  } else {
-    gtk_text_buffer_set_text(buf, text, -1);
-  }
+
+  gchar *utf8 = ensure_utf8(text);
+  gtk_text_buffer_set_text(buf, utf8, -1);
+  g_free(utf8);
   g_free(text);
 }
+
 
 /* Populate the message list from TOC summaries */
 static void populate_mbox_list(GtkListStore *store, TOCType *toc) {

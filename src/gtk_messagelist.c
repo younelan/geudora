@@ -3,7 +3,9 @@
  */
 
 #include "gtk_messagelist.h"
+#include "StringUtil.h"
 #include <stdio.h>
+
 
 struct _GtkMessageListItem {
   GObject parent_instance;
@@ -37,8 +39,9 @@ GtkMessageListItem *gtk_messagelist_item_new(MessageSummary *summary,
   GtkMessageListItem *msg = g_object_new(GTK_TYPE_MESSAGELIST_ITEM, NULL);
 
   if (summary) {
-    msg->from = g_strdup(summary->from);
-    msg->subject = g_strdup(summary->subj);
+    msg->from = ensure_utf8(summary->from);
+    msg->subject = ensure_utf8(summary->subj);
+
 
     char date_str[64];
     time_t t = summary->seconds;

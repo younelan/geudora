@@ -662,7 +662,7 @@ OSErr ReadSum(MSumPtr sum, bool isOut, LineIOP lip, bool lookEnvelope) {
   outFlags |= FLAG_UTF8;
   sum->flags |= FLAG_UTF8;
 
-  while (oldLineData || (type = GetLine(line, sizeof(line), &len, lip))) {
+  while (oldLineData || (type = NLGetLine(line, sizeof(line), &len, lip))) {
     if (oldLineData) {
       if (oldLineLen > 0 && oldLineLen < (long)sizeof(line)) {
         memcpy(line, oldLineData, oldLineLen + 1);

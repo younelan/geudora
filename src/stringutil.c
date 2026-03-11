@@ -1764,3 +1764,23 @@ bool EndsWithItem(PStr string, short resID) {
 
   return false;
 }
+/************************************************************************
+ * ensure_utf8 - ensure a string is valid UTF-8, convert from Win-1252 if not
+ ************************************************************************/
+gchar *ensure_utf8(const char *text) {
+  if (!text)
+    return NULL;
+  if (g_utf8_validate(text, -1, NULL))
+    return g_strdup(text);
+
+  /* Not valid UTF-8, assume Windows-1252 and convert */
+  GError *err = NULL;
+  gchar *converted = g_convert(text, -1, "UTF-8", "WINDOWS-1252", NULL, NULL, &err);
+  if (err) {
+    g_warning("ensure_utf8 failed: %s", err->message);
+    g_error_free(err);
+    /* Fallback to make_valid which replaces invalid sequences */
+    return g_utf8_make_valid(text, -1);
+  }
+  return converted;
+}
