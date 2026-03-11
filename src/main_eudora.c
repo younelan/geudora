@@ -17,6 +17,7 @@
 #include "mailxfer.h"
 #include "message.h"
 #include "taskProgress.h"
+#include "theme.h"
 #include "threading.h"
 #include "schizo.h"
 #include "toc.h"
@@ -55,6 +56,9 @@ static AppState app_state = {0};
 /* Forward declarations */
 static GtkWidget *create_message_list(void);
 static void open_mailbox_tab(const char *name, const char *path);
+static GtkWidget *open_panel_tab_icon(const char *panel_id, const char *title,
+                                       const char *icon_name,
+                                       GtkWidget *(*builder)(void));
 
 /*
  * read_message_raw - Read entire message from mailbox file (headers + body).
@@ -188,30 +192,8 @@ static const char *find_body(const char *raw) {
   return raw;
 }
 
-/* CSS for the message header area and preview */
-static const char *kMessageCSS =
-  ".msg-header-box { padding: 8px 12px; }"
-  ".msg-header-name { font-weight: bold; font-size: 0.9em; color: #555; min-width: 70px; }"
-  ".msg-header-value { font-size: 0.9em; }"
-  ".msg-header-subject .msg-header-value { font-weight: bold; font-size: 1.0em; color: #222; }"
-  ".msg-separator { min-height: 1px; background: #ccc; margin: 4px 0; }"
-  ".msg-body-view { padding: 8px 12px; }"
-  ".msg-quote-1 { color: #2962FF; }"    /* blue for first-level quotes */
-  ".msg-quote-2 { color: #00796B; }"    /* teal for second-level */
-  ".msg-quote-3 { color: #6A1B9A; }";   /* purple for deeper */
-
-static gboolean css_loaded = FALSE;
-
-static void ensure_message_css(void) {
-  if (css_loaded) return;
-  css_loaded = TRUE;
-  GtkCssProvider *prov = gtk_css_provider_new();
-  gtk_css_provider_load_from_string(prov, kMessageCSS);
-  gtk_style_context_add_provider_for_display(
-      gdk_display_get_default(), GTK_STYLE_PROVIDER(prov),
-      GTK_STYLE_PROVIDER_PRIORITY_APPLICATION);
-  g_object_unref(prov);
-}
+/* Message CSS is now provided by theme.c */
+static void ensure_message_css(void) { /* handled by theme engine */ }
 
 /*
  * Create styled header row: "Name:  value"
@@ -1029,118 +1011,21 @@ static void action_preferences(GSimpleAction *action, GVariant *parameter,
 
 /* ─── Wazoo window action handlers ────────────────────────────────────── */
 
-/* OpenABWin declared in nickwin.c */
+/* Address Book panel */
 extern void OpenABWin(void);
+extern GtkWidget *CreateAddressBookPanel(void);
 
 static void action_address_book(GSimpleAction *action, GVariant *parameter,
                                 gpointer user_data) {
   (void)action; (void)parameter; (void)user_data;
-  OpenABWin();
+  open_panel_tab_icon("addressbook", "Address Book", "x-office-address-book-symbolic", CreateAddressBookPanel);
 }
 
 static void action_filters(GSimpleAction *action, GVariant *parameter,
                            gpointer user_data) {
   (void)action; (void)parameter; (void)user_data;
-
-  GtkWidget *win = gtk_window_new();
-  gtk_window_set_title(GTK_WINDOW(win), "Filters");
-  gtk_window_set_default_size(GTK_WINDOW(win), 700, 500);
-  gtk_window_set_transient_for(GTK_WINDOW(win),
-                               GTK_WINDOW(app_state.window));
-
-  GtkWidget *vbox = gtk_box_new(GTK_ORIENTATION_VERTICAL, 4);
-  gtk_widget_set_margin_start(vbox, 8);
-  gtk_widget_set_margin_end(vbox, 8);
-  gtk_widget_set_margin_top(vbox, 8);
-  gtk_widget_set_margin_bottom(vbox, 8);
-
-  /* Toolbar */
-  GtkWidget *toolbar = gtk_box_new(GTK_ORIENTATION_HORIZONTAL, 4);
-  GtkWidget *btn_new = gtk_button_new_with_label("New");
-  GtkWidget *btn_del = gtk_button_new_with_label("Delete");
-  GtkWidget *btn_up = gtk_button_new_with_label("Up");
-  GtkWidget *btn_down = gtk_button_new_with_label("Down");
-  gtk_box_append(GTK_BOX(toolbar), btn_new);
-  gtk_box_append(GTK_BOX(toolbar), btn_del);
-  gtk_box_append(GTK_BOX(toolbar), btn_up);
-  gtk_box_append(GTK_BOX(toolbar), btn_down);
-  gtk_box_append(GTK_BOX(vbox), toolbar);
-
-  /* HPaned: filter list on left, rule editor on right */
-  GtkWidget *hpaned = gtk_paned_new(GTK_ORIENTATION_HORIZONTAL);
-  gtk_paned_set_position(GTK_PANED(hpaned), 250);
-
-  /* Left: filter list */
-  GtkWidget *list_scroll = gtk_scrolled_window_new();
-  GtkWidget *list_box = gtk_list_box_new();
-  gtk_list_box_append(GTK_LIST_BOX(list_box),
-                      gtk_label_new("(filters appear here)"));
-  gtk_scrolled_window_set_child(GTK_SCROLLED_WINDOW(list_scroll), list_box);
-  gtk_paned_set_start_child(GTK_PANED(hpaned), list_scroll);
-
-  /* Right: filter rule editor */
-  GtkWidget *rule_box = gtk_box_new(GTK_ORIENTATION_VERTICAL, 6);
-
-  /* Match section */
-  GtkWidget *match_frame = gtk_frame_new("Match");
-  GtkWidget *match_box = gtk_box_new(GTK_ORIENTATION_VERTICAL, 4);
-  gtk_widget_set_margin_start(match_box, 8);
-  gtk_widget_set_margin_end(match_box, 8);
-  gtk_widget_set_margin_top(match_box, 4);
-  gtk_widget_set_margin_bottom(match_box, 4);
-
-  /* Header dropdown + contains + value */
-  GtkWidget *cond_row = gtk_box_new(GTK_ORIENTATION_HORIZONTAL, 4);
-  GtkWidget *header_combo = gtk_drop_down_new_from_strings(
-      (const char *[]){"From", "To", "Subject", "Any Header", NULL});
-  GtkWidget *verb_combo = gtk_drop_down_new_from_strings(
-      (const char *[]){"contains", "doesn't contain", "is", "is not",
-                        "starts with", "ends with", NULL});
-  GtkWidget *value_entry = gtk_entry_new();
-  gtk_widget_set_hexpand(value_entry, TRUE);
-  gtk_box_append(GTK_BOX(cond_row), header_combo);
-  gtk_box_append(GTK_BOX(cond_row), verb_combo);
-  gtk_box_append(GTK_BOX(cond_row), value_entry);
-  gtk_box_append(GTK_BOX(match_box), cond_row);
-  gtk_frame_set_child(GTK_FRAME(match_frame), match_box);
-  gtk_box_append(GTK_BOX(rule_box), match_frame);
-
-  /* Action section */
-  GtkWidget *action_frame = gtk_frame_new("Action");
-  GtkWidget *action_box = gtk_box_new(GTK_ORIENTATION_VERTICAL, 4);
-  gtk_widget_set_margin_start(action_box, 8);
-  gtk_widget_set_margin_end(action_box, 8);
-  gtk_widget_set_margin_top(action_box, 4);
-  gtk_widget_set_margin_bottom(action_box, 4);
-
-  GtkWidget *action_row = gtk_box_new(GTK_ORIENTATION_HORIZONTAL, 4);
-  GtkWidget *action_combo = gtk_drop_down_new_from_strings(
-      (const char *[]){"Transfer To", "Skip Rest", "Delete",
-                        "Mark Read", "Label", "Play Sound", NULL});
-  GtkWidget *action_value = gtk_entry_new();
-  gtk_widget_set_hexpand(action_value, TRUE);
-  gtk_box_append(GTK_BOX(action_row), action_combo);
-  gtk_box_append(GTK_BOX(action_row), action_value);
-  gtk_box_append(GTK_BOX(action_box), action_row);
-  gtk_frame_set_child(GTK_FRAME(action_frame), action_box);
-  gtk_box_append(GTK_BOX(rule_box), action_frame);
-
-  /* Incoming/Outgoing/Manual checkboxes */
-  GtkWidget *when_box = gtk_box_new(GTK_ORIENTATION_HORIZONTAL, 8);
-  gtk_box_append(GTK_BOX(when_box),
-                 gtk_check_button_new_with_label("Incoming"));
-  gtk_box_append(GTK_BOX(when_box),
-                 gtk_check_button_new_with_label("Outgoing"));
-  gtk_box_append(GTK_BOX(when_box),
-                 gtk_check_button_new_with_label("Manual"));
-  gtk_box_append(GTK_BOX(rule_box), when_box);
-
-  gtk_paned_set_end_child(GTK_PANED(hpaned), rule_box);
-  gtk_widget_set_vexpand(hpaned, TRUE);
-  gtk_box_append(GTK_BOX(vbox), hpaned);
-
-  gtk_window_set_child(GTK_WINDOW(win), vbox);
-  gtk_window_present(GTK_WINDOW(win));
+  extern GtkWidget *CreateFiltersPanel(void);
+  open_panel_tab_icon("filters", "Filters", "edit-find-symbolic", CreateFiltersPanel);
 }
 
 static void action_personalities(GSimpleAction *action, GVariant *parameter,
@@ -1274,9 +1159,25 @@ static void action_signatures(GSimpleAction *action, GVariant *parameter,
 static void action_statistics(GSimpleAction *action, GVariant *parameter,
                               gpointer user_data) {
   (void)action; (void)parameter; (void)user_data;
-  /* Delegate to existing OpenStatWin if available */
-  extern void OpenStatWin(void);
-  OpenStatWin();
+  extern GtkWidget *CreateStatisticsPanel(void);
+  open_panel_tab_icon("statistics", "Statistics", "utilities-system-monitor-symbolic", CreateStatisticsPanel);
+}
+
+/* Theme cycling action */
+static GtkWidget *theme_toggle_btn = NULL;
+
+static void update_theme_tooltip(void) {
+  if (!theme_toggle_btn) return;
+  char tip[64];
+  snprintf(tip, sizeof(tip), "Theme: %s (click to change)",
+           theme_get_name(theme_get_current()));
+  gtk_widget_set_tooltip_text(theme_toggle_btn, tip);
+}
+
+static void on_theme_toggle(GtkButton *btn, gpointer ud) {
+  (void)btn; (void)ud;
+  theme_cycle();
+  update_theme_tooltip();
 }
 
 /* Create mailbox tree view */
@@ -1590,6 +1491,14 @@ static void create_toolbars(GtkBox *toolbar_container) {
   toolbar_add_button(app_state.main_toolbar, tb_btn(ICON_SEARCH,       "Search",      G_CALLBACK(tb_search)));
   toolbar_add_separator(app_state.main_toolbar);
   toolbar_add_button(app_state.main_toolbar, tb_btn(ICON_PRINT,        "Print",       G_CALLBACK(tb_print)));
+  toolbar_add_separator(app_state.main_toolbar);
+
+  /* Theme toggle button */
+  theme_toggle_btn = gtk_button_new_from_icon_name("preferences-desktop-appearance-symbolic");
+  gtk_button_set_has_frame(GTK_BUTTON(theme_toggle_btn), FALSE);
+  gtk_widget_add_css_class(theme_toggle_btn, "theme-toggle");
+  g_signal_connect(theme_toggle_btn, "clicked", G_CALLBACK(on_theme_toggle), NULL);
+  toolbar_add_button(app_state.main_toolbar, theme_toggle_btn);
 
   set_toolbar_position(app_state.main_toolbar, TOOLBAR_DOCK_TOP);
   gtk_box_append(GTK_BOX(toolbar_container),
@@ -1680,6 +1589,19 @@ static void on_wazoo_title_clicked(GtkGestureClick *gesture, int n_press,
   gtk_gesture_set_state(GTK_GESTURE(gesture), GTK_EVENT_SEQUENCE_CLAIMED);
 }
 
+/* Create a tab label widget with icon + text */
+static GtkWidget *make_tab_label(const char *icon_name, const char *text) {
+  GtkWidget *box = gtk_box_new(GTK_ORIENTATION_HORIZONTAL, 4);
+  if (icon_name) {
+    GtkWidget *icon = gtk_image_new_from_icon_name(icon_name);
+    gtk_image_set_pixel_size(GTK_IMAGE(icon), 14);
+    gtk_box_append(GTK_BOX(box), icon);
+  }
+  GtkWidget *lbl = gtk_label_new(text);
+  gtk_box_append(GTK_BOX(box), lbl);
+  return box;
+}
+
 /* When a tab is dragged out of a notebook, GTK calls this to get the
  * target notebook for the new floating window. */
 static GtkNotebook *on_create_window(GtkNotebook *notebook, GtkWidget *page,
@@ -1688,13 +1610,17 @@ static GtkNotebook *on_create_window(GtkNotebook *notebook, GtkWidget *page,
   const char *title = "Eudora";
   GtkWidget *tab_label = gtk_notebook_get_tab_label(notebook, page);
   if (tab_label) {
-    /* Tab label might be a box with a label child */
+    /* Tab label might be a box with icon + label children */
     if (GTK_IS_LABEL(tab_label))
       title = gtk_label_get_text(GTK_LABEL(tab_label));
     else if (GTK_IS_BOX(tab_label)) {
-      GtkWidget *child = gtk_widget_get_first_child(tab_label);
-      if (child && GTK_IS_LABEL(child))
-        title = gtk_label_get_text(GTK_LABEL(child));
+      for (GtkWidget *child = gtk_widget_get_first_child(tab_label);
+           child; child = gtk_widget_get_next_sibling(child)) {
+        if (GTK_IS_LABEL(child)) {
+          title = gtk_label_get_text(GTK_LABEL(child));
+          break;
+        }
+      }
     }
   }
 
@@ -1850,6 +1776,54 @@ static void on_mailbox_tab_close(GtkButton *btn, gpointer ud) {
   }
 }
 
+/* Open a named panel as a tab in the right notebook.
+ * If already open, switches to it. Returns the page widget. */
+static GtkWidget *open_panel_tab_icon(const char *panel_id, const char *title,
+                                       const char *icon_name,
+                                       GtkWidget *(*builder)(void)) {
+  if (!mailbox_notebook) return NULL;
+
+  /* Check if already open */
+  int n = gtk_notebook_get_n_pages(GTK_NOTEBOOK(mailbox_notebook));
+  for (int i = 0; i < n; i++) {
+    GtkWidget *page = gtk_notebook_get_nth_page(GTK_NOTEBOOK(mailbox_notebook), i);
+    const char *pid = g_object_get_data(G_OBJECT(page), "panel-id");
+    if (pid && strcmp(pid, panel_id) == 0) {
+      gtk_notebook_set_current_page(GTK_NOTEBOOK(mailbox_notebook), i);
+      return page;
+    }
+  }
+
+  /* Build new content */
+  GtkWidget *content = builder();
+  g_object_set_data_full(G_OBJECT(content), "panel-id",
+                         g_strdup(panel_id), g_free);
+
+  /* Tab label with icon and close button */
+  GtkWidget *tab_box = gtk_box_new(GTK_ORIENTATION_HORIZONTAL, 4);
+  if (icon_name) {
+    GtkWidget *icon = gtk_image_new_from_icon_name(icon_name);
+    gtk_image_set_pixel_size(GTK_IMAGE(icon), 14);
+    gtk_box_append(GTK_BOX(tab_box), icon);
+  }
+  GtkWidget *label = gtk_label_new(title);
+  GtkWidget *close_btn = gtk_button_new_from_icon_name("window-close-symbolic");
+  gtk_button_set_has_frame(GTK_BUTTON(close_btn), FALSE);
+  gtk_box_append(GTK_BOX(tab_box), label);
+  gtk_box_append(GTK_BOX(tab_box), close_btn);
+
+  int idx = gtk_notebook_append_page(GTK_NOTEBOOK(mailbox_notebook),
+                                      content, tab_box);
+  gtk_notebook_set_tab_reorderable(GTK_NOTEBOOK(mailbox_notebook), content, TRUE);
+  gtk_notebook_set_current_page(GTK_NOTEBOOK(mailbox_notebook), idx);
+
+  g_object_set_data(G_OBJECT(close_btn), "page-widget", content);
+  g_signal_connect(close_btn, "clicked",
+                   G_CALLBACK(on_mailbox_tab_close), NULL);
+
+  return content;
+}
+
 /* Open a mailbox as a new tab in the mailbox notebook, or switch to
  * existing tab if already open.  Like original Eudora mailbox windows. */
 static void open_mailbox_tab(const char *name, const char *path) {
@@ -1875,8 +1849,11 @@ static void open_mailbox_tab(const char *name, const char *path) {
   g_object_set_data_full(G_OBJECT(content), "mailbox-path",
                          g_strdup(path), g_free);
 
-  /* Tab label with close button */
+  /* Tab label with icon and close button */
   GtkWidget *tab_box = gtk_box_new(GTK_ORIENTATION_HORIZONTAL, 4);
+  GtkWidget *mail_icon = gtk_image_new_from_icon_name("mail-unread-symbolic");
+  gtk_image_set_pixel_size(GTK_IMAGE(mail_icon), 14);
+  gtk_box_append(GTK_BOX(tab_box), mail_icon);
   GtkWidget *label = gtk_label_new(name);
   GtkWidget *close_btn = gtk_button_new_from_icon_name("window-close-symbolic");
   gtk_button_set_has_frame(GTK_BUTTON(close_btn), FALSE);
@@ -1902,108 +1879,8 @@ static void open_mailbox_tab(const char *name, const char *path) {
 
 /* ── Welcome dashboard ── */
 
-static const char *kWelcomeCSS =
-  ".welcome-bg {"
-  "  background: #f0f2f5;"
-  "}"
-  /* ── Hero banner ── */
-  ".welcome-hero {"
-  "  background: linear-gradient(135deg, #1e3a5f 0%, #2d5f8a 60%, #3a7bb8 100%);"
-  "  padding: 32px 40px 28px;"
-  "}"
-  ".welcome-greeting {"
-  "  font-size: 1.7em; font-weight: 700; color: white;"
-  "}"
-  ".welcome-account-line {"
-  "  font-size: 0.92em; color: rgba(255,255,255,0.75); margin-top: 2px;"
-  "}"
-  /* ── Stat pills (top row) ── */
-  ".stat-card {"
-  "  background: white;"
-  "  border-radius: 10px;"
-  "  padding: 16px 20px;"
-  "  border: 1px solid #e2e6ec;"
-  "}"
-  ".stat-number {"
-  "  font-size: 1.8em; font-weight: 800; color: #1e293b;"
-  "}"
-  ".stat-label {"
-  "  font-size: 0.82em; color: #64748b; font-weight: 500;"
-  "}"
-  ".stat-accent-blue  .stat-number { color: #2563eb; }"
-  ".stat-accent-green .stat-number { color: #16a34a; }"
-  ".stat-accent-amber .stat-number { color: #d97706; }"
-  ".stat-accent-red   .stat-number { color: #dc2626; }"
-  /* ── Action cards ── */
-  ".wc-section-title {"
-  "  font-size: 0.78em; font-weight: 700; color: #94a3b8;"
-  "  letter-spacing: 0.08em;"
-  "}"
-  ".action-card {"
-  "  background: white;"
-  "  border-radius: 10px;"
-  "  padding: 14px 18px;"
-  "  border: 1px solid #e2e6ec;"
-  "}"
-  ".action-card:hover {"
-  "  background: #f8faff;"
-  "  border-color: #93a8d2;"
-  "}"
-  ".action-icon {"
-  "  background: #eef2ff;"
-  "  border-radius: 8px;"
-  "  padding: 8px;"
-  "}"
-  ".action-icon-green  { background: #ecfdf5; }"
-  ".action-icon-amber  { background: #fffbeb; }"
-  ".action-icon-purple { background: #f5f3ff; }"
-  ".action-icon-rose   { background: #fff1f2; }"
-  ".action-icon-cyan   { background: #ecfeff; }"
-  ".action-title {"
-  "  font-size: 0.95em; font-weight: 600; color: #1e293b;"
-  "}"
-  ".action-desc {"
-  "  font-size: 0.82em; color: #64748b;"
-  "}"
-  /* ── Shortcut row ── */
-  ".shortcut-pill {"
-  "  background: white; border-radius: 8px;"
-  "  padding: 10px 16px; border: 1px solid #e2e6ec;"
-  "}"
-  ".shortcut-pill:hover {"
-  "  background: #f8faff; border-color: #93a8d2;"
-  "}"
-  ".shortcut-key {"
-  "  font-size: 0.78em; font-weight: 600; font-family: monospace;"
-  "  color: #64748b; background: #f1f5f9; border-radius: 4px;"
-  "  padding: 2px 6px;"
-  "}"
-  ".shortcut-label {"
-  "  font-size: 0.85em; color: #334155; font-weight: 500;"
-  "}"
-  /* ── Tip bar ── */
-  ".tip-bar {"
-  "  background: #fffbeb;"
-  "  border-radius: 10px;"
-  "  padding: 14px 20px;"
-  "  border: 1px solid #fde68a;"
-  "}"
-  ".tip-text {"
-  "  font-size: 0.88em; color: #92400e;"
-  "}";
-
-static gboolean welcome_css_loaded = FALSE;
-
-static void ensure_welcome_css(void) {
-  if (welcome_css_loaded) return;
-  welcome_css_loaded = TRUE;
-  GtkCssProvider *prov = gtk_css_provider_new();
-  gtk_css_provider_load_from_string(prov, kWelcomeCSS);
-  gtk_style_context_add_provider_for_display(
-      gdk_display_get_default(), GTK_STYLE_PROVIDER(prov),
-      GTK_STYLE_PROVIDER_PRIORITY_APPLICATION);
-  g_object_unref(prov);
-}
+/* Welcome CSS is now provided by theme.c */
+static void ensure_welcome_css(void) { /* handled by theme engine */ }
 
 /* Count messages in a .toc file (each summary is fixed-size after header) */
 static int count_toc_messages(const char *mailbox_name) {
@@ -2432,14 +2309,14 @@ static GtkWidget *create_main_layout(void) {
   gtk_box_append(GTK_BOX(mb_vbox), mb_btn_bar);
 
   gtk_notebook_append_page(GTK_NOTEBOOK(left_wazoo), mb_vbox,
-                           gtk_label_new("Mailboxes"));
+                           make_tab_label("folder-symbolic", "Mailboxes"));
   gtk_notebook_set_tab_detachable(GTK_NOTEBOOK(left_wazoo), mb_vbox, TRUE);
   gtk_notebook_set_tab_reorderable(GTK_NOTEBOOK(left_wazoo), mb_vbox, TRUE);
 
   /* Task Progress tab — shows active tasks, errors, check times */
   GtkWidget *tp_panel = create_task_progress_widget();
   gtk_notebook_append_page(GTK_NOTEBOOK(left_wazoo), tp_panel,
-                           gtk_label_new("Tasks"));
+                           make_tab_label("view-list-symbolic", "Tasks"));
   gtk_notebook_set_tab_detachable(GTK_NOTEBOOK(left_wazoo), tp_panel, TRUE);
   gtk_notebook_set_tab_reorderable(GTK_NOTEBOOK(left_wazoo), tp_panel, TRUE);
 
@@ -2464,7 +2341,7 @@ static GtkWidget *create_main_layout(void) {
   /* Start with a welcome page */
   GtkWidget *welcome = create_welcome_page();
   gtk_notebook_append_page(GTK_NOTEBOOK(mailbox_notebook), welcome,
-                           gtk_label_new("Welcome"));
+                           make_tab_label("go-home-symbolic", "Welcome"));
 
   gtk_paned_set_end_child(GTK_PANED(main_hpaned), mailbox_notebook);
   gtk_paned_set_resize_end_child(GTK_PANED(main_hpaned), TRUE);
@@ -2499,6 +2376,10 @@ static void activate(GtkApplication *app, gpointer user_data) {
     /* Create default settings if load failed */
     app_state.settings = g_new0(AppSettings, 1);
   }
+
+  /* Initialize theme system (loads saved theme from prefs) */
+  theme_init(app_state.window);
+  update_theme_tooltip();
 
   /* Set some defaults if not already set */
   if (app_state.settings->check_interval == 0) {

@@ -411,6 +411,24 @@ static int FWriteEnum(FILE *fp, FilterKeywordEnum flk, short e) {
   return 0;
 }
 
+/* FD* struct forward declarations for WriteFilter action data access.
+ * These mirror the struct definitions in the FAflk* functions below. */
+typedef struct { FSSpec spec; bool brandNew; GtkWidget *button; } FDTransfer;
+typedef struct { short status; GtkWidget *dropdown; } FDStatus;
+typedef struct { char subject[256]; GtkWidget *entry; } FDSubject;
+typedef struct { long color; GtkWidget *dropdown; } FDLabel;
+typedef struct { long persId; GtkWidget *dropdown; } FDPers;
+typedef struct { char name[256]; GtkWidget *entry; } FDSound;
+typedef struct { long prior; GtkWidget *dropdown; } FDPrior;
+typedef struct { char addresses[256]; GtkWidget *entry; } FDForward;
+typedef struct { long flags; GtkWidget *chk_mailbox; GtkWidget *chk_message; } FDOpen;
+
+/* afbOpenMailbox / afbOpenMessage flags */
+#ifndef afbOpenMailbox
+#define afbOpenMailbox 1
+#define afbOpenMessage 2
+#endif
+
 /* WriteFilter — write a single filter to file */
 static int WriteFilter(FILE *fp, FilterRecord *fr) {
   FWriteStr(fp, flkRule, fr->name);
@@ -435,7 +453,57 @@ static int WriteFilter(FILE *fp, FilterRecord *fr) {
   for (FActionHandle fa = fr->actions; fa; fa = (*fa)->next) {
     FilterKeywordEnum act = (*fa)->action;
     if (act == flkNone || act == flkZero) continue;
-    if ((int)act < (int)NUM_FILT_KEYWORDS && FiltKeywords[act][0])
+    if ((int)act >= (int)NUM_FILT_KEYWORDS || !FiltKeywords[act][0]) continue;
+
+    /* Write action keyword with its data value */
+    const char *val = NULL;
+    char numbuf[32];
+    if ((*fa)->data) {
+      switch (act) {
+      case flkPriority: {
+        FDPrior *d = *(FDPrior **)(*fa)->data;
+        if (d) { snprintf(numbuf, sizeof(numbuf), "%ld", d->prior); val = numbuf; }
+        break;
+      }
+      case flkLabel: {
+        FDLabel *d = *(FDLabel **)(*fa)->data;
+        if (d) { snprintf(numbuf, sizeof(numbuf), "%ld", d->color); val = numbuf; }
+        break;
+      }
+      case flkStatus: {
+        FDStatus *d = *(FDStatus **)(*fa)->data;
+        if (d) { snprintf(numbuf, sizeof(numbuf), "%d", d->status); val = numbuf; }
+        break;
+      }
+      case flkSubject: {
+        FDSubject *d = *(FDSubject **)(*fa)->data;
+        if (d && d->subject[0]) val = d->subject;
+        break;
+      }
+      case flkTransfer:
+      case flkCopy: {
+        FDTransfer *d = *(FDTransfer **)(*fa)->data;
+        if (d && d->spec.name[0]) val = d->spec.name;
+        break;
+      }
+      case flkForward:
+      case flkRedirect: {
+        FDForward *d = *(FDForward **)(*fa)->data;
+        if (d && d->addresses[0]) val = d->addresses;
+        break;
+      }
+      case flkSound: {
+        FDSound *d = *(FDSound **)(*fa)->data;
+        if (d && d->name[0]) val = d->name;
+        break;
+      }
+      default:
+        break;
+      }
+    }
+    if (val)
+      fprintf(fp, "%s %s\n", FiltKeywords[act], val);
+    else
       fprintf(fp, "%s\n", FiltKeywords[act]);
   }
   return 0;
@@ -560,11 +628,7 @@ short FAflkPrint(FACallEnum callType, FActionHandle action, Rect *r,
 }
 
 /*---------- FAflkTransfer / FAflkCopy ----------*/
-typedef struct {
-  FSSpec spec;
-  bool brandNew;
-  GtkWidget *button;
-} FDTransfer;
+/* FDTransfer defined above */
 
 short FAflkTransfer(FACallEnum callType, FActionHandle action, Rect *r,
                     void *dataPtr) {
@@ -713,10 +777,7 @@ short FAflkMoveAttach(FACallEnum callType, FActionHandle action, Rect *r,
 }
 
 /*---------- FAflkStatus ----------*/
-typedef struct {
-  short status;
-  GtkWidget *dropdown;
-} FDStatus;
+/* FDStatus defined above */
 
 short FAflkStatus(FACallEnum callType, FActionHandle action, Rect *r,
                   void *dataPtr) {
@@ -762,10 +823,7 @@ short FAflkStatus(FACallEnum callType, FActionHandle action, Rect *r,
 }
 
 /*---------- FAflkSubject ----------*/
-typedef struct {
-  char subject[256];
-  GtkWidget *entry;
-} FDSubject;
+/* FDSubject defined above */
 
 short FAflkSubject(FACallEnum callType, FActionHandle action, Rect *r,
                    void *dataPtr) {
@@ -815,10 +873,7 @@ short FAflkSubject(FACallEnum callType, FActionHandle action, Rect *r,
 }
 
 /*---------- FAflkLabel ----------*/
-typedef struct {
-  long color;
-  GtkWidget *dropdown;
-} FDLabel;
+/* FDLabel defined above */
 
 short FAflkLabel(FACallEnum callType, FActionHandle action, Rect *r,
                  void *dataPtr) {
@@ -867,10 +922,7 @@ short FAflkLabel(FACallEnum callType, FActionHandle action, Rect *r,
 }
 
 /*---------- FAflkPersonality ----------*/
-typedef struct {
-  long persId;
-  GtkWidget *dropdown;
-} FDPers;
+/* FDPers defined above */
 
 short FAflkPersonality(FACallEnum callType, FActionHandle action, Rect *r,
                        void *dataPtr) {
@@ -915,10 +967,7 @@ short FAflkPersonality(FACallEnum callType, FActionHandle action, Rect *r,
 }
 
 /*---------- FAflkSound ----------*/
-typedef struct {
-  char name[256];
-  GtkWidget *entry;
-} FDSound;
+/* FDSound defined above */
 
 short FAflkSound(FACallEnum callType, FActionHandle action, Rect *r,
                  void *dataPtr) {
@@ -968,11 +1017,7 @@ short FAflkSound(FACallEnum callType, FActionHandle action, Rect *r,
 }
 
 /*---------- FAflkOpenMessage ----------*/
-typedef struct {
-  long flags;
-  GtkWidget *chk_mailbox;
-  GtkWidget *chk_message;
-} FDOpen;
+/* FDOpen defined above */
 
 short FAflkOpenMessage(FACallEnum callType, FActionHandle action, Rect *r,
                        void *dataPtr) {
@@ -1028,10 +1073,7 @@ short FAflkOpenMessage(FACallEnum callType, FActionHandle action, Rect *r,
 }
 
 /*---------- FAflkPriority ----------*/
-typedef struct {
-  long prior;
-  GtkWidget *dropdown;
-} FDPrior;
+/* FDPrior defined above */
 
 short FAflkPriority(FACallEnum callType, FActionHandle action, Rect *r,
                     void *dataPtr) {
@@ -1088,10 +1130,7 @@ short FAflkPriority(FACallEnum callType, FActionHandle action, Rect *r,
 }
 
 /*---------- FAflkForward ----------*/
-typedef struct {
-  char addresses[256];
-  GtkWidget *entry;
-} FDForward;
+/* FDForward defined above */
 
 short FAflkForward(FACallEnum callType, FActionHandle action, Rect *r,
                    void *dataPtr) {
@@ -1381,6 +1420,7 @@ static GtkWidget *detail_box = NULL;
 
 static int gSelectedFilter = -1;
 static bool gCurrentDirty = false;
+static bool gPopulating = false;  /* guard against re-entrancy during list rebuild */
 
 /* Detail panel widgets */
 static GtkWidget *chk_incoming = NULL;
@@ -1427,16 +1467,348 @@ static int fk_to_action_idx(FilterKeywordEnum fk) {
   return 0;
 }
 
+/* Predefined header options matching original Mac Eudora */
+static const char *header_options[] = {
+  "From:",  "To:",  "Cc:",  "Subject:",  "Reply-To:",
+  "Any Recipient",  "Any Header",  "Body",  NULL
+};
+#define NUM_HEADER_OPTIONS 8
+
+/* Find index of a header string in header_options, or -1 */
+static int header_to_idx(const char *h) {
+  for (int i = 0; header_options[i]; i++)
+    if (g_ascii_strcasecmp(h, header_options[i]) == 0) return i;
+  return -1;
+}
+
+/* Color for label index (0-7), returns CSS hex string */
+static const char *label_css_colors[] = {
+  "#e53e3e", "#3182ce", "#2f855a", "#dd6b20",
+  "#805ad5", "#0694a2", "#97851a", "#718096"
+};
+
+/* ── Markup dropdown helpers (for icons in dropdown items) ── */
+
+/* Factory callbacks for GtkDropDown with markup items */
+static void markup_factory_setup(GtkSignalListItemFactory *f, GtkListItem *li,
+                                  gpointer user_data) {
+  (void)f; (void)user_data;
+  GtkWidget *lbl = gtk_label_new(NULL);
+  gtk_label_set_use_markup(GTK_LABEL(lbl), TRUE);
+  gtk_label_set_xalign(GTK_LABEL(lbl), 0);
+  gtk_list_item_set_child(li, lbl);
+}
+
+static void markup_factory_bind(GtkSignalListItemFactory *f, GtkListItem *li,
+                                 gpointer user_data) {
+  (void)f; (void)user_data;
+  GtkStringObject *obj = GTK_STRING_OBJECT(gtk_list_item_get_item(li));
+  GtkWidget *lbl = gtk_list_item_get_child(li);
+  gtk_label_set_markup(GTK_LABEL(lbl), gtk_string_object_get_string(obj));
+}
+
+/* Create a GtkDropDown whose items render Pango markup */
+static GtkWidget *markup_drop_down(const char * const *items, int n) {
+  GtkStringList *sl = gtk_string_list_new(NULL);
+  for (int i = 0; i < n; i++)
+    gtk_string_list_append(sl, items[i]);
+
+  GtkWidget *drop = gtk_drop_down_new(G_LIST_MODEL(sl), NULL);
+
+  /* List factory (popup items) */
+  GtkListItemFactory *list_f = gtk_signal_list_item_factory_new();
+  g_signal_connect(list_f, "setup", G_CALLBACK(markup_factory_setup), NULL);
+  g_signal_connect(list_f, "bind",  G_CALLBACK(markup_factory_bind),  NULL);
+  gtk_drop_down_set_list_factory(GTK_DROP_DOWN(drop), list_f);
+  g_object_unref(list_f);
+
+  /* Selected-item factory (button face) */
+  GtkListItemFactory *sel_f = gtk_signal_list_item_factory_new();
+  g_signal_connect(sel_f, "setup", G_CALLBACK(markup_factory_setup), NULL);
+  g_signal_connect(sel_f, "bind",  G_CALLBACK(markup_factory_bind),  NULL);
+  gtk_drop_down_set_factory(GTK_DROP_DOWN(drop), sel_f);
+  g_object_unref(sel_f);
+
+  return drop;
+}
+
 /* Forward declarations */
 static void SaveCurrentFilter(void);
 static void DisplaySelectedFilter(void);
 static void PopulateFilterList(void);
 static void FiltersSetGreys(void);
+static void populate_action_value(int action_idx);
+
+/* Clear all children from a GtkBox */
+static void box_clear(GtkWidget *box) {
+  GtkWidget *child;
+  while ((child = gtk_widget_get_first_child(box)) != NULL)
+    gtk_box_remove(GTK_BOX(box), child);
+}
+
+/* Callback: action type dropdown changed — populate the value_box */
+static void on_action_type_changed(GObject *obj, GParamSpec *pspec,
+                                   gpointer user_data) {
+  (void)pspec;
+  int idx = GPOINTER_TO_INT(user_data);
+  populate_action_value(idx);
+}
+
+/* Browse callback for mailbox/folder chooser — sets text in sibling entry */
+static void on_browse_folder_response(GObject *source, GAsyncResult *res,
+                                       gpointer user_data) {
+  GtkFileDialog *dlg = GTK_FILE_DIALOG(source);
+  GtkWidget *entry = GTK_WIDGET(user_data);
+  GFile *file = gtk_file_dialog_select_folder_finish(dlg, res, NULL);
+  if (file) {
+    char *path = g_file_get_path(file);
+    if (path) {
+      /* Use just the basename for display */
+      char *base = g_path_get_basename(path);
+      gtk_editable_set_text(GTK_EDITABLE(entry), base);
+      g_free(base);
+      g_free(path);
+    }
+    g_object_unref(file);
+  }
+}
+
+static void on_browse_clicked(GtkButton *btn, gpointer user_data) {
+  (void)btn;
+  GtkWidget *entry = GTK_WIDGET(user_data);
+  GtkFileDialog *dlg = gtk_file_dialog_new();
+  gtk_file_dialog_set_title(dlg, "Choose Mailbox Folder");
+
+  /* Start in mailboxes directory if possible */
+  extern const char *prefs_get_mailboxes_path(void);
+  const char *mb_path = prefs_get_mailboxes_path();
+  if (mb_path && mb_path[0]) {
+    GFile *start = g_file_new_for_path(mb_path);
+    gtk_file_dialog_set_initial_folder(dlg, start);
+    g_object_unref(start);
+  }
+
+  GtkWidget *toplevel = gtk_widget_get_root(GTK_WIDGET(btn));
+  gtk_file_dialog_select_folder(dlg,
+    GTK_WINDOW(toplevel), NULL,
+    on_browse_folder_response, entry);
+  g_object_unref(dlg);
+}
+
+/* Populate the value_box for action row `idx` based on the selected action type.
+ * Reads current values from the FAction's typed FD* data struct. */
+static void populate_action_value(int idx) {
+  if (idx < 0 || idx >= MAX_ACTIONS) return;
+  GtkWidget *vbox = action_rows[idx].value_box;
+  box_clear(vbox);
+
+  int aidx = gtk_drop_down_get_selected(GTK_DROP_DOWN(action_rows[idx].type_drop));
+  if (aidx < 0 || aidx >= (int)NUM_ACTION_TYPES) return;
+  FilterKeywordEnum fk = action_idx_to_fk[aidx];
+
+  /* Find the FAction for this row */
+  FActionHandle fa = NULL;
+  if (gSelectedFilter >= 0 && gSelectedFilter < gNFilters) {
+    fa = gFilterArray[gSelectedFilter].actions;
+    for (int i = 0; i < idx && fa; i++) fa = (*fa)->next;
+  }
+
+  switch (fk) {
+    case flkPriority: {
+      static const char *pri_icons[] = {
+        "\xe2\x96\xb2\xe2\x96\xb2", "\xe2\x96\xb2", "\xe2\x80\x94",
+        "\xe2\x96\xbc", "\xe2\x96\xbc\xe2\x96\xbc",
+        "\xe2\x86\x91", "\xe2\x86\x93"};
+      static const char *pri_colors[] = {
+        "#e53e3e", "#dd6b20", "#718096", "#3182ce", "#2f855a",
+        "#805ad5", "#805ad5"};
+      static const char *pri_names[] = {
+        "Highest", "High", "Normal", "Low", "Lowest", "Raise", "Lower"};
+      /* Build markup items with colored icons */
+      char markup_items[7][128];
+      const char *markup_ptrs[7];
+      for (int p = 0; p < 7; p++) {
+        snprintf(markup_items[p], sizeof(markup_items[p]),
+                 "<span color='%s'>%s</span>  %s",
+                 pri_colors[p], pri_icons[p], pri_names[p]);
+        markup_ptrs[p] = markup_items[p];
+      }
+      GtkWidget *drop = markup_drop_down(markup_ptrs, 7);
+      int pri_val = 2;
+      if (fa && (*fa)->data) {
+        FDPrior *d = *(FDPrior **)(*fa)->data;
+        if (d) {
+          if (d->prior >= 1 && d->prior <= 5) pri_val = d->prior - 1;
+          else if (d->prior == 7) pri_val = 5;
+          else if (d->prior == 8) pri_val = 6;
+        }
+      }
+      gtk_drop_down_set_selected(GTK_DROP_DOWN(drop), pri_val);
+      gtk_widget_set_hexpand(drop, TRUE);
+      gtk_box_append(GTK_BOX(vbox), drop);
+      break;
+    }
+    case flkLabel: {
+      /* Build markup items with color swatches */
+      static const char *lab_names[] = {
+        "None", "Label 1", "Label 2", "Label 3",
+        "Label 4", "Label 5", "Label 6", "Label 7"};
+      char markup_items[8][128];
+      const char *markup_ptrs[8];
+      for (int l = 0; l < 8; l++) {
+        const char *lc = (l > 0) ? label_css_colors[l] : "#718096";
+        snprintf(markup_items[l], sizeof(markup_items[l]),
+                 "<span color='%s'>\xe2\x96\x88\xe2\x96\x88</span>  %s",
+                 lc, lab_names[l]);
+        markup_ptrs[l] = markup_items[l];
+      }
+      GtkWidget *drop = markup_drop_down(markup_ptrs, 8);
+      int lab_val = 0;
+      if (fa && (*fa)->data) {
+        FDLabel *d = *(FDLabel **)(*fa)->data;
+        if (d && d->color >= 0 && d->color < 8) lab_val = d->color;
+      }
+      gtk_drop_down_set_selected(GTK_DROP_DOWN(drop), lab_val);
+      gtk_widget_set_hexpand(drop, TRUE);
+      gtk_box_append(GTK_BOX(vbox), drop);
+      break;
+    }
+    case flkStatus: {
+      const char *statuses[] = {"Unread", "Read", "Replied", "Forwarded",
+                                "Redirected", "Unsendable", "Sendable",
+                                "Queued", "Sent", "Unsent", NULL};
+      GtkWidget *drop = gtk_drop_down_new_from_strings(statuses);
+      int stat_val = 0;
+      if (fa && (*fa)->data) {
+        FDStatus *d = *(FDStatus **)(*fa)->data;
+        if (d && d->status >= 0 && d->status < 10) stat_val = d->status;
+      }
+      gtk_drop_down_set_selected(GTK_DROP_DOWN(drop), stat_val);
+      gtk_widget_set_hexpand(drop, TRUE);
+      gtk_box_append(GTK_BOX(vbox), drop);
+      break;
+    }
+    case flkSubject: {
+      GtkWidget *entry = gtk_entry_new();
+      gtk_entry_set_placeholder_text(GTK_ENTRY(entry), "Subject text");
+      if (fa && (*fa)->data) {
+        FDSubject *d = *(FDSubject **)(*fa)->data;
+        if (d && d->subject[0])
+          gtk_editable_set_text(GTK_EDITABLE(entry), d->subject);
+      }
+      gtk_widget_set_hexpand(entry, TRUE);
+      gtk_box_append(GTK_BOX(vbox), entry);
+      break;
+    }
+    case flkTransfer:
+    case flkCopy: {
+      GtkWidget *entry = gtk_entry_new();
+      gtk_entry_set_placeholder_text(GTK_ENTRY(entry),
+        fk == flkTransfer ? "Transfer to mailbox..." : "Copy to mailbox...");
+      if (fa && (*fa)->data) {
+        FDTransfer *d = *(FDTransfer **)(*fa)->data;
+        if (d && d->spec.name[0])
+          gtk_editable_set_text(GTK_EDITABLE(entry), d->spec.name);
+      }
+      gtk_widget_set_hexpand(entry, TRUE);
+      gtk_box_append(GTK_BOX(vbox), entry);
+      GtkWidget *browse = gtk_button_new_with_label("Browse...");
+      g_signal_connect(browse, "clicked", G_CALLBACK(on_browse_clicked), entry);
+      gtk_box_append(GTK_BOX(vbox), browse);
+      break;
+    }
+    case flkForward:
+    case flkRedirect: {
+      GtkWidget *entry = gtk_entry_new();
+      gtk_entry_set_placeholder_text(GTK_ENTRY(entry),
+        fk == flkForward ? "Forward to address..." : "Redirect to address...");
+      if (fa && (*fa)->data) {
+        FDForward *d = *(FDForward **)(*fa)->data;
+        if (d && d->addresses[0])
+          gtk_editable_set_text(GTK_EDITABLE(entry), d->addresses);
+      }
+      gtk_widget_set_hexpand(entry, TRUE);
+      gtk_box_append(GTK_BOX(vbox), entry);
+      break;
+    }
+    case flkReply: {
+      const char *tmpls[] = {"(no stationery)", NULL};
+      GtkWidget *drop = gtk_drop_down_new_from_strings(tmpls);
+      gtk_widget_set_hexpand(drop, TRUE);
+      gtk_box_append(GTK_BOX(vbox), drop);
+      break;
+    }
+    case flkSound: {
+      /* Dropdown of common system sounds */
+      const char *sounds[] = {"Default", "Glass", "Ping", "Pop", "Purr",
+                              "Sosumi", "Submarine", "Tink", NULL};
+      GtkWidget *drop = gtk_drop_down_new_from_strings(sounds);
+      int snd_val = 0;
+      if (fa && (*fa)->data) {
+        FDSound *d = *(FDSound **)(*fa)->data;
+        if (d && d->name[0]) {
+          for (int s = 0; sounds[s]; s++)
+            if (g_ascii_strcasecmp(d->name, sounds[s]) == 0) { snd_val = s; break; }
+        }
+      }
+      gtk_drop_down_set_selected(GTK_DROP_DOWN(drop), snd_val);
+      gtk_widget_set_hexpand(drop, TRUE);
+      gtk_box_append(GTK_BOX(vbox), drop);
+      break;
+    }
+    case flkPersonality: {
+      /* Dropdown — for now just dominant personality */
+      const char *pers[] = {"Dominant", NULL};
+      GtkWidget *drop = gtk_drop_down_new_from_strings(pers);
+      gtk_widget_set_hexpand(drop, TRUE);
+      gtk_box_append(GTK_BOX(vbox), drop);
+      break;
+    }
+    case flkOpenMessage: {
+      GtkWidget *chk_mb = gtk_check_button_new_with_label("Open Mailbox");
+      GtkWidget *chk_msg = gtk_check_button_new_with_label("Open Message");
+      if (fa && (*fa)->data) {
+        FDOpen *d = *(FDOpen **)(*fa)->data;
+        if (d) {
+          gtk_check_button_set_active(GTK_CHECK_BUTTON(chk_mb),
+            0 != (d->flags & afbOpenMailbox));
+          gtk_check_button_set_active(GTK_CHECK_BUTTON(chk_msg),
+            0 != (d->flags & afbOpenMessage));
+        }
+      }
+      gtk_box_append(GTK_BOX(vbox), chk_mb);
+      gtk_box_append(GTK_BOX(vbox), chk_msg);
+      break;
+    }
+    case flkServerOpts: {
+      const char *opts[] = {"Delete from server", "Fetch from server",
+                            "Don't download", NULL};
+      GtkWidget *drop = gtk_drop_down_new_from_strings(opts);
+      gtk_widget_set_hexpand(drop, TRUE);
+      gtk_box_append(GTK_BOX(vbox), drop);
+      break;
+    }
+    case flkMoveAttach: {
+      GtkWidget *entry = gtk_entry_new();
+      gtk_entry_set_placeholder_text(GTK_ENTRY(entry), "Destination folder...");
+      gtk_widget_set_hexpand(entry, TRUE);
+      gtk_box_append(GTK_BOX(vbox), entry);
+      GtkWidget *browse = gtk_button_new_with_label("Browse...");
+      g_signal_connect(browse, "clicked", G_CALLBACK(on_browse_clicked), entry);
+      gtk_box_append(GTK_BOX(vbox), browse);
+      break;
+    }
+    default:
+      /* flkNone, flkStop, flkPrint, flkJunk — no value needed */
+      break;
+  }
+}
 
 /* Callback: filter list selection changed */
 static void on_filter_selected(GtkListBox *box, GtkListBoxRow *row,
                                 gpointer user_data) {
   (void)box; (void)user_data;
+  if (gPopulating) return;  /* ignore signals during list rebuild */
   SaveCurrentFilter();
   gSelectedFilter = row ? gtk_list_box_row_get_index(row) : -1;
   DisplaySelectedFilter();
@@ -1452,6 +1824,7 @@ static void on_new_filter(GtkButton *btn, gpointer user_data) {
   FilterRecord fr;
   FRInit(&fr);
   fr.incoming = true;
+  fr.manual = true;
   fr.fu.id = FilterNewId();
   sstrncpy(fr.name, "Untitled", sizeof(fr.name));
 
@@ -1468,9 +1841,12 @@ static void on_new_filter(GtkButton *btn, gpointer user_data) {
 
   PopulateFilterList();
   gSelectedFilter = n;
+  gPopulating = true;
   gtk_list_box_select_row(GTK_LIST_BOX(filter_list_box),
     gtk_list_box_get_row_at_index(GTK_LIST_BOX(filter_list_box), n));
+  gPopulating = false;
   DisplaySelectedFilter();
+  FiltersSetGreys();
   gCurrentDirty = true;
 }
 
@@ -1488,11 +1864,14 @@ static void on_remove_filter(GtkButton *btn, gpointer user_data) {
   if (gSelectedFilter >= gNFilters) gSelectedFilter = gNFilters - 1;
 
   PopulateFilterList();
+  gPopulating = true;
   if (gSelectedFilter >= 0) {
     gtk_list_box_select_row(GTK_LIST_BOX(filter_list_box),
       gtk_list_box_get_row_at_index(GTK_LIST_BOX(filter_list_box), gSelectedFilter));
   }
+  gPopulating = false;
   DisplaySelectedFilter();
+  FiltersSetGreys();
 }
 
 /* Callback: "Duplicate" button */
@@ -1521,9 +1900,12 @@ static void on_dup_filter(GtkButton *btn, gpointer user_data) {
 
   PopulateFilterList();
   gSelectedFilter = n;
+  gPopulating = true;
   gtk_list_box_select_row(GTK_LIST_BOX(filter_list_box),
     gtk_list_box_get_row_at_index(GTK_LIST_BOX(filter_list_box), n));
+  gPopulating = false;
   DisplaySelectedFilter();
+  FiltersSetGreys();
 }
 
 /* Callback: "Save" button */
@@ -1531,10 +1913,20 @@ static void on_save_filters(GtkButton *btn, gpointer user_data) {
   (void)btn; (void)user_data;
   SaveCurrentFilter();
   SaveFilters();
+  int sel = gSelectedFilter;
+  PopulateFilterList();
+  gPopulating = true;
+  if (sel >= 0 && sel < gNFilters) {
+    gSelectedFilter = sel;
+    gtk_list_box_select_row(GTK_LIST_BOX(filter_list_box),
+      gtk_list_box_get_row_at_index(GTK_LIST_BOX(filter_list_box), sel));
+  }
+  gPopulating = false;
 }
 
 /* Save the current filter's UI state back to the FilterRecord */
 static void SaveCurrentFilter(void) {
+  if (gPopulating) return;  /* don't save during list rebuild */
   if (gSelectedFilter < 0 || gSelectedFilter >= gNFilters) return;
   FilterRecord *fr = &gFilterArray[gSelectedFilter];
 
@@ -1543,8 +1935,9 @@ static void SaveCurrentFilter(void) {
   fr->manual = gtk_check_button_get_active(GTK_CHECK_BUTTON(chk_manual));
 
   /* Match term 1 */
-  const char *h1 = gtk_editable_get_text(GTK_EDITABLE(header_entry1));
-  sstrncpy(fr->terms[0].header, h1, sizeof(fr->terms[0].header));
+  int h1idx = gtk_drop_down_get_selected(GTK_DROP_DOWN(header_entry1));
+  if (h1idx >= 0 && h1idx < NUM_HEADER_OPTIONS)
+    sstrncpy(fr->terms[0].header, header_options[h1idx], sizeof(fr->terms[0].header));
   int vidx1 = gtk_drop_down_get_selected(GTK_DROP_DOWN(verb_drop1));
   fr->terms[0].verb = (vidx1 >= 0 && vidx1 < (int)mbmLimit - 1) ? vidx1 + 1 : mbmContains;
   const char *v1 = gtk_editable_get_text(GTK_EDITABLE(value_entry1));
@@ -1555,19 +1948,121 @@ static void SaveCurrentFilter(void) {
   fr->conjunction = (cidx >= 0 && cidx < (int)cjLimit - 1) ? cidx + 1 : cjIgnore;
 
   /* Match term 2 */
-  const char *h2 = gtk_editable_get_text(GTK_EDITABLE(header_entry2));
-  sstrncpy(fr->terms[1].header, h2, sizeof(fr->terms[1].header));
+  int h2idx = gtk_drop_down_get_selected(GTK_DROP_DOWN(header_entry2));
+  if (h2idx >= 0 && h2idx < NUM_HEADER_OPTIONS)
+    sstrncpy(fr->terms[1].header, header_options[h2idx], sizeof(fr->terms[1].header));
   int vidx2 = gtk_drop_down_get_selected(GTK_DROP_DOWN(verb_drop2));
   fr->terms[1].verb = (vidx2 >= 0 && vidx2 < (int)mbmLimit - 1) ? vidx2 + 1 : mbmContains;
   const char *v2 = gtk_editable_get_text(GTK_EDITABLE(value_entry2));
   sstrncpy(fr->terms[1].value, v2, sizeof(fr->terms[1].value));
 
-  /* Update actions from dropdowns */
+  /* Update actions from dropdowns + value widgets */
   FActionHandle fa = fr->actions;
   for (int i = 0; i < MAX_ACTIONS && fa; i++, fa = (*fa)->next) {
     int aidx = gtk_drop_down_get_selected(GTK_DROP_DOWN(action_rows[i].type_drop));
     if (aidx >= 0 && aidx < (int)NUM_ACTION_TYPES)
       (*fa)->action = action_idx_to_fk[aidx];
+
+    /* Read value from value_box widget into FAction data */
+    GtkWidget *val_w = gtk_widget_get_first_child(action_rows[i].value_box);
+    if (!val_w) continue;
+    FilterKeywordEnum fk = (*fa)->action;
+
+    /* Allocate data struct if missing (action type was changed from None) */
+    if (!(*fa)->data && fk != flkNone && fk != flkZero) {
+      if (fk == flkPriority) {
+        FDPrior *nd = calloc(1, sizeof(FDPrior)); nd->prior = 3;
+        (*fa)->data = calloc(1, sizeof(void *));
+        if ((*fa)->data) *(FDPrior **)(*fa)->data = nd; else { free(nd); continue; }
+      } else if (fk == flkLabel) {
+        FDLabel *nd = calloc(1, sizeof(FDLabel));
+        (*fa)->data = calloc(1, sizeof(void *));
+        if ((*fa)->data) *(FDLabel **)(*fa)->data = nd; else { free(nd); continue; }
+      } else if (fk == flkStatus) {
+        FDStatus *nd = calloc(1, sizeof(FDStatus));
+        (*fa)->data = calloc(1, sizeof(void *));
+        if ((*fa)->data) *(FDStatus **)(*fa)->data = nd; else { free(nd); continue; }
+      } else if (fk == flkSubject) {
+        FDSubject *nd = calloc(1, sizeof(FDSubject));
+        (*fa)->data = calloc(1, sizeof(void *));
+        if ((*fa)->data) *(FDSubject **)(*fa)->data = nd; else { free(nd); continue; }
+      } else if (fk == flkTransfer || fk == flkCopy) {
+        FDTransfer *nd = calloc(1, sizeof(FDTransfer));
+        (*fa)->data = calloc(1, sizeof(void *));
+        if ((*fa)->data) *(FDTransfer **)(*fa)->data = nd; else { free(nd); continue; }
+      } else if (fk == flkForward || fk == flkRedirect) {
+        FDForward *nd = calloc(1, sizeof(FDForward));
+        (*fa)->data = calloc(1, sizeof(void *));
+        if ((*fa)->data) *(FDForward **)(*fa)->data = nd; else { free(nd); continue; }
+      } else if (fk == flkSound) {
+        FDSound *nd = calloc(1, sizeof(FDSound));
+        (*fa)->data = calloc(1, sizeof(void *));
+        if ((*fa)->data) *(FDSound **)(*fa)->data = nd; else { free(nd); continue; }
+      } else if (fk == flkOpenMessage) {
+        FDOpen *nd = calloc(1, sizeof(FDOpen));
+        (*fa)->data = calloc(1, sizeof(void *));
+        if ((*fa)->data) *(FDOpen **)(*fa)->data = nd; else { free(nd); continue; }
+      }
+    }
+    if (!(*fa)->data) continue;
+
+    if (fk == flkPriority) {
+      FDPrior *d = *(FDPrior **)(*fa)->data;
+      if (d && GTK_IS_DROP_DOWN(val_w)) {
+        int sel = gtk_drop_down_get_selected(GTK_DROP_DOWN(val_w));
+        if (sel <= 4) d->prior = sel + 1;
+        else if (sel == 5) d->prior = 7; /* Raise */
+        else if (sel == 6) d->prior = 8; /* Lower */
+      }
+    } else if (fk == flkLabel) {
+      FDLabel *d = *(FDLabel **)(*fa)->data;
+      if (d && GTK_IS_DROP_DOWN(val_w))
+        d->color = gtk_drop_down_get_selected(GTK_DROP_DOWN(val_w));
+    } else if (fk == flkStatus) {
+      FDStatus *d = *(FDStatus **)(*fa)->data;
+      if (d && GTK_IS_DROP_DOWN(val_w))
+        d->status = gtk_drop_down_get_selected(GTK_DROP_DOWN(val_w));
+    } else if (fk == flkSubject) {
+      FDSubject *d = *(FDSubject **)(*fa)->data;
+      if (d && GTK_IS_EDITABLE(val_w))
+        sstrncpy(d->subject, gtk_editable_get_text(GTK_EDITABLE(val_w)),
+                 sizeof(d->subject));
+    } else if (fk == flkTransfer || fk == flkCopy) {
+      FDTransfer *d = *(FDTransfer **)(*fa)->data;
+      if (d && GTK_IS_EDITABLE(val_w)) {
+        const char *path = gtk_editable_get_text(GTK_EDITABLE(val_w));
+        sstrncpy(d->spec.name, path, sizeof(d->spec.name));
+        sstrncpy(d->spec.path, path, sizeof(d->spec.path));
+      }
+    } else if (fk == flkForward || fk == flkRedirect) {
+      FDForward *d = *(FDForward **)(*fa)->data;
+      if (d && GTK_IS_EDITABLE(val_w))
+        sstrncpy(d->addresses, gtk_editable_get_text(GTK_EDITABLE(val_w)),
+                 sizeof(d->addresses));
+    } else if (fk == flkSound) {
+      FDSound *d = *(FDSound **)(*fa)->data;
+      if (d && GTK_IS_DROP_DOWN(val_w)) {
+        static const char *sounds[] = {"Default", "Glass", "Ping", "Pop", "Purr",
+                                       "Sosumi", "Submarine", "Tink"};
+        int sel = gtk_drop_down_get_selected(GTK_DROP_DOWN(val_w));
+        if (sel >= 0 && sel < 8) sstrncpy(d->name, sounds[sel], sizeof(d->name));
+      } else if (d && GTK_IS_EDITABLE(val_w)) {
+        sstrncpy(d->name, gtk_editable_get_text(GTK_EDITABLE(val_w)),
+                 sizeof(d->name));
+      }
+    } else if (fk == flkOpenMessage) {
+      FDOpen *d = *(FDOpen **)(*fa)->data;
+      if (d) {
+        d->flags = 0;
+        /* First child = chk_mailbox, second = chk_message */
+        GtkWidget *c1 = val_w;
+        GtkWidget *c2 = gtk_widget_get_next_sibling(c1);
+        if (GTK_IS_CHECK_BUTTON(c1) && gtk_check_button_get_active(GTK_CHECK_BUTTON(c1)))
+          d->flags |= afbOpenMailbox;
+        if (c2 && GTK_IS_CHECK_BUTTON(c2) && gtk_check_button_get_active(GTK_CHECK_BUTTON(c2)))
+          d->flags |= afbOpenMessage;
+      }
+    }
   }
 
   /* Build filter name from first term */
@@ -1593,7 +2088,8 @@ static void DisplaySelectedFilter(void) {
   gtk_check_button_set_active(GTK_CHECK_BUTTON(chk_manual), fr.manual);
 
   /* Match term 1 */
-  gtk_editable_set_text(GTK_EDITABLE(header_entry1), fr.terms[0].header);
+  int hidx = header_to_idx(fr.terms[0].header);
+  gtk_drop_down_set_selected(GTK_DROP_DOWN(header_entry1), hidx >= 0 ? hidx : 0);
   int vidx = (fr.terms[0].verb >= mbmContains && fr.terms[0].verb < mbmLimit)
                  ? fr.terms[0].verb - 1 : 0;
   gtk_drop_down_set_selected(GTK_DROP_DOWN(verb_drop1), vidx);
@@ -1605,13 +2101,14 @@ static void DisplaySelectedFilter(void) {
   gtk_drop_down_set_selected(GTK_DROP_DOWN(conj_drop), cidx);
 
   /* Match term 2 */
-  gtk_editable_set_text(GTK_EDITABLE(header_entry2), fr.terms[1].header);
+  int hidx2 = header_to_idx(fr.terms[1].header);
+  gtk_drop_down_set_selected(GTK_DROP_DOWN(header_entry2), hidx2 >= 0 ? hidx2 : 0);
   vidx = (fr.terms[1].verb >= mbmContains && fr.terms[1].verb < mbmLimit)
              ? fr.terms[1].verb - 1 : 0;
   gtk_drop_down_set_selected(GTK_DROP_DOWN(verb_drop2), vidx);
   gtk_editable_set_text(GTK_EDITABLE(value_entry2), fr.terms[1].value);
 
-  /* Actions */
+  /* Actions — set dropdown then populate value widget */
   FActionHandle fa = fr.actions;
   for (int i = 0; i < MAX_ACTIONS; i++) {
     FilterKeywordEnum act = flkNone;
@@ -1619,8 +2116,14 @@ static void DisplaySelectedFilter(void) {
       act = (*fa)->action;
       fa = (*fa)->next;
     }
+    /* Block signal during programmatic change to avoid double populate */
+    g_signal_handlers_block_matched(action_rows[i].type_drop,
+      G_SIGNAL_MATCH_FUNC, 0, 0, NULL, on_action_type_changed, NULL);
     gtk_drop_down_set_selected(GTK_DROP_DOWN(action_rows[i].type_drop),
                                fk_to_action_idx(act));
+    g_signal_handlers_unblock_matched(action_rows[i].type_drop,
+      G_SIGNAL_MATCH_FUNC, 0, 0, NULL, on_action_type_changed, NULL);
+    populate_action_value(i);
   }
 
   /* Enable/disable second match row based on conjunction */
@@ -1631,16 +2134,275 @@ static void DisplaySelectedFilter(void) {
 }
 
 /* Populate the filter list from gFilterArray */
+/* Get a human-readable summary of a filter's first action */
+static const char *action_summary(FilterKeywordEnum fk) {
+  for (int i = 0; action_ui_strings[i]; i++)
+    if (action_idx_to_fk[i] == fk) return action_ui_strings[i];
+  return "None";
+}
+
+/* ── Drag-to-reorder via motion tracking ── */
+#define DRAG_THRESHOLD 8  /* pixels of movement before drag starts */
+static bool gDragActive = false;   /* drag recognized (past threshold) */
+static bool gDragPending = false;  /* button down, waiting for threshold */
+static int gDragOriginIdx = -1;
+static int gDragCurrentIdx = -1;
+static double gDragStartY = 0;
+
+static int row_index_at_y(double y_in_list) {
+  for (int i = 0; i < gNFilters; i++) {
+    GtkListBoxRow *row = gtk_list_box_get_row_at_index(
+        GTK_LIST_BOX(filter_list_box), i);
+    if (!row) continue;
+    double ry;
+    gtk_widget_translate_coordinates(GTK_WIDGET(row), filter_list_box,
+                                     0, 0, NULL, &ry);
+    int rh = gtk_widget_get_height(GTK_WIDGET(row));
+    if (y_in_list >= ry && y_in_list < ry + rh)
+      return i;
+  }
+  if (y_in_list > 0 && gNFilters > 0) return gNFilters - 1;
+  return -1;
+}
+
+static void move_filter(int src, int dst) {
+  if (src == dst || src < 0 || src >= gNFilters ||
+      dst < 0 || dst >= gNFilters) return;
+  SaveCurrentFilter();
+  FilterRecord tmp = gFilterArray[src];
+  if (src < dst) {
+    memmove(&gFilterArray[src], &gFilterArray[src + 1],
+            (dst - src) * sizeof(FilterRecord));
+  } else {
+    memmove(&gFilterArray[dst + 1], &gFilterArray[dst],
+            (src - dst) * sizeof(FilterRecord));
+  }
+  gFilterArray[dst] = tmp;
+  gSelectedFilter = dst;
+  PopulateFilterList();
+  gPopulating = true;
+  gtk_list_box_select_row(GTK_LIST_BOX(filter_list_box),
+    gtk_list_box_get_row_at_index(GTK_LIST_BOX(filter_list_box), dst));
+  gPopulating = false;
+  DisplaySelectedFilter();
+  FiltersSetGreys();
+  SaveFilters();  /* persist new order to disk */
+  gCurrentDirty = false;
+}
+
+static void drag_reset_visuals(void) {
+  for (int i = 0; i < gNFilters; i++) {
+    GtkListBoxRow *row = gtk_list_box_get_row_at_index(
+        GTK_LIST_BOX(filter_list_box), i);
+    if (!row) continue;
+    gtk_widget_set_opacity(GTK_WIDGET(row), 1.0);
+    gtk_widget_remove_css_class(GTK_WIDGET(row), "filt-drop-target");
+  }
+}
+
+/* pressed: record start position, let listbox handle the click normally */
+static void on_list_press(GtkGestureClick *gesture, int n_press,
+                           double x, double y, gpointer user_data) {
+  (void)gesture; (void)n_press; (void)x; (void)user_data;
+  int idx = row_index_at_y(y);
+  if (idx < 0) return;
+  gDragPending = true;
+  gDragActive = false;
+  gDragOriginIdx = idx;
+  gDragStartY = y;
+}
+
+/* released: finish drag if active */
+static void on_list_release(GtkGestureClick *gesture, int n_press,
+                             double x, double y, gpointer user_data) {
+  (void)gesture; (void)n_press; (void)x; (void)y; (void)user_data;
+  if (gDragActive) {
+    drag_reset_visuals();
+    if (gDragCurrentIdx != gDragOriginIdx)
+      move_filter(gDragOriginIdx, gDragCurrentIdx);
+  }
+  gDragActive = false;
+  gDragPending = false;
+  gDragOriginIdx = -1;
+  gDragCurrentIdx = -1;
+}
+
+/* motion: check threshold, update drop indicator */
+static void on_list_motion(GtkEventControllerMotion *ctrl, double x,
+                            double y, gpointer user_data) {
+  (void)ctrl; (void)x; (void)user_data;
+  if (!gDragPending && !gDragActive) return;
+
+  if (gDragPending && !gDragActive) {
+    double dy = y - gDragStartY;
+    if (dy < 0) dy = -dy;
+    if (dy < DRAG_THRESHOLD) return;
+    /* Threshold crossed — start drag */
+    gDragActive = true;
+    gDragPending = false;
+  }
+
+  if (!gDragActive) return;
+
+  int hover = row_index_at_y(y);
+  if (hover < 0) hover = (y < gDragStartY) ? 0 : gNFilters - 1;
+  gDragCurrentIdx = hover;
+
+  for (int i = 0; i < gNFilters; i++) {
+    GtkListBoxRow *row = gtk_list_box_get_row_at_index(
+        GTK_LIST_BOX(filter_list_box), i);
+    if (!row) continue;
+    gtk_widget_set_opacity(GTK_WIDGET(row),
+                           (i == gDragOriginIdx) ? 0.4 : 1.0);
+    if (i == hover && i != gDragOriginIdx)
+      gtk_widget_add_css_class(GTK_WIDGET(row), "filt-drop-target");
+    else
+      gtk_widget_remove_css_class(GTK_WIDGET(row), "filt-drop-target");
+  }
+}
+
+/* Button reorder (kept for accessibility / keyboard) */
+static void on_move_up(GtkButton *btn, gpointer user_data) {
+  (void)btn; (void)user_data;
+  if (gSelectedFilter > 0)
+    move_filter(gSelectedFilter, gSelectedFilter - 1);
+}
+
+static void on_move_down(GtkButton *btn, gpointer user_data) {
+  (void)btn; (void)user_data;
+  if (gSelectedFilter >= 0 && gSelectedFilter < gNFilters - 1)
+    move_filter(gSelectedFilter, gSelectedFilter + 1);
+}
+
 static void PopulateFilterList(void) {
+  gPopulating = true;
   GtkWidget *child;
   while ((child = gtk_widget_get_first_child(filter_list_box)) != NULL)
     gtk_list_box_remove(GTK_LIST_BOX(filter_list_box), child);
 
   for (int i = 0; i < gNFilters; i++) {
-    GtkWidget *label = gtk_label_new(gFilterArray[i].name);
-    gtk_label_set_xalign(GTK_LABEL(label), 0.0);
-    gtk_list_box_append(GTK_LIST_BOX(filter_list_box), label);
+    FilterRecord *fr = &gFilterArray[i];
+
+    GtkWidget *row = gtk_box_new(GTK_ORIENTATION_VERTICAL, 1);
+    gtk_widget_set_margin_start(row, 6);
+    gtk_widget_set_margin_end(row, 6);
+    gtk_widget_set_margin_top(row, 3);
+    gtk_widget_set_margin_bottom(row, 3);
+
+    /* Top line: colored dot + filter name + type badges */
+    GtkWidget *top = gtk_box_new(GTK_ORIENTATION_HORIZONTAL, 6);
+
+    /* Colored dot based on filter's label action or first action type */
+    const char *dot_color = "#94a3b8"; /* gray default */
+    bool has_label = false;
+    FActionHandle fa = fr->actions;
+    FilterKeywordEnum first_act = flkNone;
+    while (fa) {
+      if ((*fa)->action == flkLabel) {
+        int lab_idx = 0;
+        if ((*fa)->data && *((char *)(*(*fa)->data)) >= '0')
+          lab_idx = *((char *)(*(*fa)->data)) - '0';
+        if (lab_idx >= 0 && lab_idx < 8)
+          dot_color = label_css_colors[lab_idx];
+        has_label = true;
+      }
+      if (first_act == flkNone && (*fa)->action != flkNone)
+        first_act = (*fa)->action;
+      fa = (*fa)->next;
+    }
+    if (!has_label) {
+      if (first_act == flkTransfer || first_act == flkCopy) dot_color = "#3182ce";
+      else if (first_act == flkStop) dot_color = "#e53e3e";
+      else if (first_act == flkJunk) dot_color = "#dd6b20";
+      else if (first_act == flkForward || first_act == flkRedirect) dot_color = "#2f855a";
+    }
+
+    /* The dot — use Pango markup for color */
+    char dot_markup[128];
+    snprintf(dot_markup, sizeof(dot_markup),
+             "<span color='%s' size='large'>\xe2\x97\x8f</span>", dot_color);
+    GtkWidget *dot = gtk_label_new(NULL);
+    gtk_label_set_markup(GTK_LABEL(dot), dot_markup);
+    gtk_widget_set_valign(dot, GTK_ALIGN_CENTER);
+    gtk_box_append(GTK_BOX(top), dot);
+
+    /* Filter name — use Pango markup for bold */
+    char *escaped_name = g_markup_escape_text(fr->name, -1);
+    char *name_markup = g_strdup_printf("<b>%s</b>", escaped_name);
+    GtkWidget *name_lbl = gtk_label_new(NULL);
+    gtk_label_set_markup(GTK_LABEL(name_lbl), name_markup);
+    g_free(escaped_name);
+    g_free(name_markup);
+    gtk_label_set_xalign(GTK_LABEL(name_lbl), 0);
+    gtk_label_set_ellipsize(GTK_LABEL(name_lbl), PANGO_ELLIPSIZE_END);
+    gtk_widget_set_hexpand(name_lbl, TRUE);
+    gtk_box_append(GTK_BOX(top), name_lbl);
+
+    /* Type badges */
+    if (fr->incoming) {
+      GtkWidget *b = gtk_label_new("IN");
+      gtk_widget_add_css_class(b, "filt-badge-in");
+      gtk_box_append(GTK_BOX(top), b);
+    }
+    if (fr->outgoing) {
+      GtkWidget *b = gtk_label_new("OUT");
+      gtk_widget_add_css_class(b, "filt-badge-out");
+      gtk_box_append(GTK_BOX(top), b);
+    }
+    if (fr->manual) {
+      GtkWidget *b = gtk_label_new("MAN");
+      gtk_widget_add_css_class(b, "filt-badge-man");
+      gtk_box_append(GTK_BOX(top), b);
+    }
+
+    /* Disabled indicator */
+    if (!fr->incoming && !fr->outgoing && !fr->manual) {
+      gtk_widget_set_opacity(row, 0.5);
+    }
+
+    gtk_box_append(GTK_BOX(row), top);
+
+    /* Bottom line: match summary + action summary */
+    char summary[256] = "";
+    if (fr->terms[0].header[0]) {
+      int n = snprintf(summary, sizeof(summary), "%s %s \"%s\"",
+               fr->terms[0].header,
+               (fr->terms[0].verb >= 1 && fr->terms[0].verb < (int)NUM_VERB_STRINGS)
+                   ? VerbStrings[fr->terms[0].verb] : "?",
+               fr->terms[0].value);
+      if (fr->conjunction > cjIgnore && fr->terms[1].header[0]) {
+        snprintf(summary + n, sizeof(summary) - n, " %s %s %s \"%s\"",
+                 ConjStrings[fr->conjunction],
+                 fr->terms[1].header,
+                 (fr->terms[1].verb >= 1 && fr->terms[1].verb < (int)NUM_VERB_STRINGS)
+                     ? VerbStrings[fr->terms[1].verb] : "?",
+                 fr->terms[1].value);
+      }
+    }
+
+    /* Append action */
+    char act_sum[128] = "";
+    if (first_act != flkNone)
+      snprintf(act_sum, sizeof(act_sum), "  \xe2\x86\x92 %s", action_summary(first_act));
+
+    char bottom[400];
+    snprintf(bottom, sizeof(bottom), "%s%s", summary, act_sum);
+    /* Use Pango markup for small gray summary text */
+    char *esc_bottom = g_markup_escape_text(bottom, -1);
+    char *bot_markup = g_strdup_printf(
+        "<span size='small' color='#64748b'>%s</span>", esc_bottom);
+    GtkWidget *bot_lbl = gtk_label_new(NULL);
+    gtk_label_set_markup(GTK_LABEL(bot_lbl), bot_markup);
+    g_free(esc_bottom);
+    g_free(bot_markup);
+    gtk_label_set_xalign(GTK_LABEL(bot_lbl), 0);
+    gtk_label_set_ellipsize(GTK_LABEL(bot_lbl), PANGO_ELLIPSIZE_END);
+    gtk_widget_set_margin_start(bot_lbl, 22); /* indent past dot */
+    gtk_box_append(GTK_BOX(row), bot_lbl);
+
+    gtk_list_box_append(GTK_LIST_BOX(filter_list_box), row);
   }
+  gPopulating = false;
 }
 
 /* Enable/disable controls based on selection state */
@@ -1657,14 +2419,13 @@ static void FiltersSetGreys(void) {
     gtk_widget_set_sensitive(action_rows[i].type_drop, hasSel);
 }
 
-/* Build one match-term row: [header entry] [verb dropdown] [value entry] */
+/* Build one match-term row: [header dropdown] [verb dropdown] [value entry] */
 static GtkWidget *build_match_row(GtkWidget **out_header, GtkWidget **out_verb,
                                   GtkWidget **out_value) {
   GtkWidget *row = gtk_box_new(GTK_ORIENTATION_HORIZONTAL, 4);
 
-  *out_header = gtk_entry_new();
-  gtk_entry_set_placeholder_text(GTK_ENTRY(*out_header), "Header");
-  gtk_widget_set_size_request(*out_header, 100, -1);
+  *out_header = gtk_drop_down_new_from_strings(header_options);
+  gtk_widget_set_size_request(*out_header, 130, -1);
   gtk_box_append(GTK_BOX(row), *out_header);
 
   *out_verb = gtk_drop_down_new_from_strings(verb_ui_strings);
@@ -1686,7 +2447,7 @@ void OpenFiltersWindow(GtkWindow *parent) {
     gtk_window_present(GTK_WINDOW(filter_window));
     return;
   }
-
+  gSelectedFilter = -1;  /* reset selection — window is being recreated */
   RegenerateFilters();
 
   filter_window = gtk_window_new();
@@ -1713,9 +2474,17 @@ void OpenFiltersWindow(GtkWindow *parent) {
   g_signal_connect(remove_btn, "clicked", G_CALLBACK(on_remove_filter), NULL);
   g_signal_connect(dup_btn, "clicked", G_CALLBACK(on_dup_filter), NULL);
   g_signal_connect(save_btn, "clicked", G_CALLBACK(on_save_filters), NULL);
+  GtkWidget *up_btn = gtk_button_new_with_label("\xe2\x96\xb2");
+  GtkWidget *down_btn = gtk_button_new_with_label("\xe2\x96\xbc");
+  gtk_widget_set_tooltip_text(up_btn, "Move Up");
+  gtk_widget_set_tooltip_text(down_btn, "Move Down");
+  g_signal_connect(up_btn, "clicked", G_CALLBACK(on_move_up), NULL);
+  g_signal_connect(down_btn, "clicked", G_CALLBACK(on_move_down), NULL);
   gtk_box_append(GTK_BOX(toolbar), new_btn);
   gtk_box_append(GTK_BOX(toolbar), remove_btn);
   gtk_box_append(GTK_BOX(toolbar), dup_btn);
+  gtk_box_append(GTK_BOX(toolbar), up_btn);
+  gtk_box_append(GTK_BOX(toolbar), down_btn);
   gtk_box_append(GTK_BOX(toolbar), save_btn);
   gtk_box_append(GTK_BOX(vbox), toolbar);
 
@@ -1733,6 +2502,18 @@ void OpenFiltersWindow(GtkWindow *parent) {
                                   GTK_SELECTION_SINGLE);
   g_signal_connect(filter_list_box, "row-selected",
                    G_CALLBACK(on_filter_selected), NULL);
+  { /* Drag-to-reorder: click (capture phase) + motion tracking */
+    GtkGesture *click = gtk_gesture_click_new();
+    gtk_gesture_single_set_button(GTK_GESTURE_SINGLE(click), GDK_BUTTON_PRIMARY);
+    gtk_event_controller_set_propagation_phase(GTK_EVENT_CONTROLLER(click),
+                                                GTK_PHASE_CAPTURE);
+    g_signal_connect(click, "pressed", G_CALLBACK(on_list_press), NULL);
+    g_signal_connect(click, "released", G_CALLBACK(on_list_release), NULL);
+    gtk_widget_add_controller(filter_list_box, GTK_EVENT_CONTROLLER(click));
+    GtkEventController *motion = gtk_event_controller_motion_new();
+    g_signal_connect(motion, "motion", G_CALLBACK(on_list_motion), NULL);
+    gtk_widget_add_controller(filter_list_box, motion);
+  }
   gtk_scrolled_window_set_child(GTK_SCROLLED_WINDOW(list_scroll),
                                 filter_list_box);
   gtk_paned_set_start_child(GTK_PANED(paned), list_scroll);
@@ -1791,6 +2572,8 @@ void OpenFiltersWindow(GtkWindow *parent) {
     action_rows[i].type_drop = gtk_drop_down_new_from_strings(action_ui_strings);
     action_rows[i].value_box = gtk_box_new(GTK_ORIENTATION_HORIZONTAL, 4);
     gtk_widget_set_hexpand(action_rows[i].value_box, TRUE);
+    g_signal_connect(action_rows[i].type_drop, "notify::selected",
+                     G_CALLBACK(on_action_type_changed), GINT_TO_POINTER(i));
     gtk_box_append(GTK_BOX(act_row), action_rows[i].type_drop);
     gtk_box_append(GTK_BOX(act_row), action_rows[i].value_box);
     gtk_box_append(GTK_BOX(action_box), act_row);
@@ -1813,4 +2596,181 @@ void OpenFiltersWindow(GtkWindow *parent) {
                            G_CALLBACK(g_nullify_pointer), &filter_window);
 
   gtk_window_present(GTK_WINDOW(filter_window));
+}
+
+/************************************************************************
+ * CreateFiltersPanel — build the filters UI as an embeddable panel widget
+ * Called by open_panel_tab() from main_eudora.c
+ ************************************************************************/
+
+/* CSS for filter badges is now provided by theme.c */
+
+GtkWidget *CreateFiltersPanel(void) {
+  gSelectedFilter = -1;  /* reset selection — panel is being recreated */
+  RegenerateFilters();
+
+  GtkWidget *vbox = gtk_box_new(GTK_ORIENTATION_VERTICAL, 0);
+  gtk_widget_add_css_class(vbox, "filt-panel");
+
+  /* ── Hero header ── */
+  GtkWidget *hero = gtk_box_new(GTK_ORIENTATION_HORIZONTAL, 12);
+  gtk_widget_add_css_class(hero, "filt-hero");
+
+  GtkWidget *hero_vbox = gtk_box_new(GTK_ORIENTATION_VERTICAL, 2);
+  gtk_widget_set_hexpand(hero_vbox, TRUE);
+  GtkWidget *hero_title = gtk_label_new("Filters");
+  gtk_widget_add_css_class(hero_title, "filt-hero-title");
+  gtk_label_set_xalign(GTK_LABEL(hero_title), 0);
+  gtk_box_append(GTK_BOX(hero_vbox), hero_title);
+
+  GtkWidget *hero_sub = gtk_label_new("Automate mail sorting, labeling, and actions");
+  gtk_widget_add_css_class(hero_sub, "filt-hero-sub");
+  gtk_label_set_xalign(GTK_LABEL(hero_sub), 0);
+  gtk_box_append(GTK_BOX(hero_vbox), hero_sub);
+  gtk_box_append(GTK_BOX(hero), hero_vbox);
+
+  /* Filter count pill */
+  char count_str[32];
+  snprintf(count_str, sizeof(count_str), "%d filters", gNFilters);
+  GtkWidget *count_pill = gtk_label_new(count_str);
+  gtk_widget_add_css_class(count_pill, "filt-count-pill");
+  gtk_widget_set_valign(count_pill, GTK_ALIGN_CENTER);
+  gtk_box_append(GTK_BOX(hero), count_pill);
+
+  gtk_box_append(GTK_BOX(vbox), hero);
+
+  /* ===== Toolbar ===== */
+  GtkWidget *toolbar = gtk_box_new(GTK_ORIENTATION_HORIZONTAL, 4);
+  gtk_widget_set_margin_start(toolbar, 8);
+  gtk_widget_set_margin_end(toolbar, 8);
+  gtk_widget_set_margin_top(toolbar, 4);
+  gtk_widget_set_margin_bottom(toolbar, 4);
+
+  GtkWidget *new_btn = gtk_button_new_with_label("New");
+  GtkWidget *remove_btn = gtk_button_new_with_label("Remove");
+  GtkWidget *dup_btn = gtk_button_new_with_label("Duplicate");
+  GtkWidget *save_btn = gtk_button_new_with_label("Save");
+  GtkWidget *up_btn = gtk_button_new_with_label("\xe2\x96\xb2");
+  GtkWidget *down_btn = gtk_button_new_with_label("\xe2\x96\xbc");
+  gtk_widget_set_tooltip_text(up_btn, "Move Up");
+  gtk_widget_set_tooltip_text(down_btn, "Move Down");
+  g_signal_connect(new_btn, "clicked", G_CALLBACK(on_new_filter), NULL);
+  g_signal_connect(remove_btn, "clicked", G_CALLBACK(on_remove_filter), NULL);
+  g_signal_connect(dup_btn, "clicked", G_CALLBACK(on_dup_filter), NULL);
+  g_signal_connect(save_btn, "clicked", G_CALLBACK(on_save_filters), NULL);
+  g_signal_connect(up_btn, "clicked", G_CALLBACK(on_move_up), NULL);
+  g_signal_connect(down_btn, "clicked", G_CALLBACK(on_move_down), NULL);
+  gtk_box_append(GTK_BOX(toolbar), new_btn);
+  gtk_box_append(GTK_BOX(toolbar), remove_btn);
+  gtk_box_append(GTK_BOX(toolbar), dup_btn);
+  gtk_box_append(GTK_BOX(toolbar), up_btn);
+  gtk_box_append(GTK_BOX(toolbar), down_btn);
+  gtk_box_append(GTK_BOX(toolbar), save_btn);
+  gtk_box_append(GTK_BOX(vbox), toolbar);
+
+  /* ===== Paned: left = filter list, right = detail ===== */
+  GtkWidget *paned = gtk_paned_new(GTK_ORIENTATION_HORIZONTAL);
+  gtk_paned_set_position(GTK_PANED(paned), 260);
+  gtk_widget_set_vexpand(paned, TRUE);
+
+  /* --- Filter list (left) --- */
+  GtkWidget *list_scroll = gtk_scrolled_window_new();
+  gtk_scrolled_window_set_policy(GTK_SCROLLED_WINDOW(list_scroll),
+                                 GTK_POLICY_AUTOMATIC, GTK_POLICY_AUTOMATIC);
+  filter_list_box = gtk_list_box_new();
+  gtk_list_box_set_selection_mode(GTK_LIST_BOX(filter_list_box),
+                                  GTK_SELECTION_SINGLE);
+  g_signal_connect(filter_list_box, "row-selected",
+                   G_CALLBACK(on_filter_selected), NULL);
+  { /* Drag-to-reorder: click (capture phase) + motion tracking */
+    GtkGesture *click = gtk_gesture_click_new();
+    gtk_gesture_single_set_button(GTK_GESTURE_SINGLE(click), GDK_BUTTON_PRIMARY);
+    gtk_event_controller_set_propagation_phase(GTK_EVENT_CONTROLLER(click),
+                                                GTK_PHASE_CAPTURE);
+    g_signal_connect(click, "pressed", G_CALLBACK(on_list_press), NULL);
+    g_signal_connect(click, "released", G_CALLBACK(on_list_release), NULL);
+    gtk_widget_add_controller(filter_list_box, GTK_EVENT_CONTROLLER(click));
+    GtkEventController *motion = gtk_event_controller_motion_new();
+    g_signal_connect(motion, "motion", G_CALLBACK(on_list_motion), NULL);
+    gtk_widget_add_controller(filter_list_box, motion);
+  }
+  gtk_scrolled_window_set_child(GTK_SCROLLED_WINDOW(list_scroll),
+                                filter_list_box);
+  gtk_paned_set_start_child(GTK_PANED(paned), list_scroll);
+  gtk_paned_set_resize_start_child(GTK_PANED(paned), FALSE);
+  gtk_paned_set_shrink_start_child(GTK_PANED(paned), FALSE);
+
+  /* --- Detail panel (right) --- */
+  GtkWidget *detail_scroll = gtk_scrolled_window_new();
+  detail_box = gtk_box_new(GTK_ORIENTATION_VERTICAL, 8);
+  gtk_widget_set_margin_start(detail_box, 12);
+  gtk_widget_set_margin_end(detail_box, 12);
+  gtk_widget_set_margin_top(detail_box, 8);
+  gtk_widget_set_margin_bottom(detail_box, 8);
+
+  /* -- Incoming/Outgoing/Manual checkboxes -- */
+  GtkWidget *type_row = gtk_box_new(GTK_ORIENTATION_HORIZONTAL, 12);
+  chk_incoming = gtk_check_button_new_with_label("Incoming");
+  chk_outgoing = gtk_check_button_new_with_label("Outgoing");
+  chk_manual = gtk_check_button_new_with_label("Manual");
+  gtk_box_append(GTK_BOX(type_row), chk_incoming);
+  gtk_box_append(GTK_BOX(type_row), chk_outgoing);
+  gtk_box_append(GTK_BOX(type_row), chk_manual);
+  gtk_box_append(GTK_BOX(detail_box), type_row);
+
+  /* -- Match section -- */
+  GtkWidget *match_frame = gtk_frame_new("Match");
+  GtkWidget *match_box = gtk_box_new(GTK_ORIENTATION_VERTICAL, 4);
+  gtk_widget_set_margin_start(match_box, 8);
+  gtk_widget_set_margin_end(match_box, 8);
+  gtk_widget_set_margin_top(match_box, 4);
+  gtk_widget_set_margin_bottom(match_box, 8);
+
+  GtkWidget *row1 = build_match_row(&header_entry1, &verb_drop1, &value_entry1);
+  gtk_box_append(GTK_BOX(match_box), row1);
+
+  const char *conjs[] = {"ignore", "and", "or", "unless", NULL};
+  conj_drop = gtk_drop_down_new_from_strings(conjs);
+  gtk_box_append(GTK_BOX(match_box), conj_drop);
+
+  GtkWidget *row2 = build_match_row(&header_entry2, &verb_drop2, &value_entry2);
+  gtk_box_append(GTK_BOX(match_box), row2);
+
+  gtk_frame_set_child(GTK_FRAME(match_frame), match_box);
+  gtk_box_append(GTK_BOX(detail_box), match_frame);
+
+  /* -- Action section -- */
+  GtkWidget *action_frame = gtk_frame_new("Actions");
+  GtkWidget *action_box = gtk_box_new(GTK_ORIENTATION_VERTICAL, 4);
+  gtk_widget_set_margin_start(action_box, 8);
+  gtk_widget_set_margin_end(action_box, 8);
+  gtk_widget_set_margin_top(action_box, 4);
+  gtk_widget_set_margin_bottom(action_box, 8);
+
+  for (int i = 0; i < MAX_ACTIONS; i++) {
+    GtkWidget *act_row = gtk_box_new(GTK_ORIENTATION_HORIZONTAL, 4);
+    action_rows[i].type_drop = gtk_drop_down_new_from_strings(action_ui_strings);
+    action_rows[i].value_box = gtk_box_new(GTK_ORIENTATION_HORIZONTAL, 4);
+    gtk_widget_set_hexpand(action_rows[i].value_box, TRUE);
+    g_signal_connect(action_rows[i].type_drop, "notify::selected",
+                     G_CALLBACK(on_action_type_changed), GINT_TO_POINTER(i));
+    gtk_box_append(GTK_BOX(act_row), action_rows[i].type_drop);
+    gtk_box_append(GTK_BOX(act_row), action_rows[i].value_box);
+    gtk_box_append(GTK_BOX(action_box), act_row);
+  }
+
+  gtk_frame_set_child(GTK_FRAME(action_frame), action_box);
+  gtk_box_append(GTK_BOX(detail_box), action_frame);
+
+  gtk_scrolled_window_set_child(GTK_SCROLLED_WINDOW(detail_scroll), detail_box);
+  gtk_paned_set_end_child(GTK_PANED(paned), detail_scroll);
+  gtk_paned_set_resize_end_child(GTK_PANED(paned), TRUE);
+  gtk_paned_set_shrink_end_child(GTK_PANED(paned), FALSE);
+
+  gtk_box_append(GTK_BOX(vbox), paned);
+
+  PopulateFilterList();
+  FiltersSetGreys();
+
+  return vbox;
 }

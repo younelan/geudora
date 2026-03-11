@@ -639,7 +639,7 @@ enum { longDate = 1 };
 enum { tokDecPoint = 1, tokThousands = 2 };
 
 extern short InBG;
-static inline void RedisplayStats(void) {}
+/* RedisplayStats is now a real function in statwin.c */
 static inline void GetDateTime(long *time) {
   if (time)
     *time = 0;

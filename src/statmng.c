@@ -24,6 +24,7 @@ OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE OF THIS SOFTWARE, EVEN IF
 ADVISED OF THE POSSIBILITY OF SUCH DAMAGE. */
 
 #include "statmng.h"
+#include "statwin.h"
 #include "StringDefs.h"
 #include "StringUtil.h"
 #include "fileutil.h"
@@ -2129,4 +2130,90 @@ void LongArrayOperation(long *array, long *sub, short n, OpType op) {
       *array = (100 * (*array)) / (*sub);
     break;
   }
+}
+
+/************************************************************************
+ * Accessor functions for statwin.c GTK display
+ ************************************************************************/
+bool StatDataLoaded(void) {
+  return gStatData != NULL;
+}
+
+long StatGetTotal(StatType which) {
+  if (!gStatData) return 0;
+  StatDataPtr p = *gStatData;
+  if (which < kStatCount)
+    return p->numStats[which].total;
+  else if (which > kBeginShortStats && which < kEndStats)
+    return p->shortStats[which - kBeginShortStats - 1].total;
+  return 0;
+}
+
+/* Get current-period value for a numeric stat */
+long StatGetCurrentPeriod(StatType which, StatTimePeriod period) {
+  if (!gStatData || which >= kStatCount) return 0;
+  NumericStats *ns = &(*gStatData)->numStats[which];
+  switch (period) {
+  case kStatDay:   return SumArrayHi(ns->current.day);
+  case kStatWeek:  return SumArrayHi(ns->current.week);
+  case kStatMonth: return SumArrayHi(ns->current.month);
+  case kStatYear:  return SumArrayHi(ns->current.year);
+  }
+  return 0;
+}
+
+long StatGetLastPeriod(StatType which, StatTimePeriod period) {
+  if (!gStatData || which >= kStatCount) return 0;
+  NumericStats *ns = &(*gStatData)->numStats[which];
+  switch (period) {
+  case kStatDay:   return SumArrayHi(ns->last.day);
+  case kStatWeek:  return SumArrayHi(ns->last.week);
+  case kStatMonth: return SumArrayHi(ns->last.month);
+  case kStatYear:  return SumArrayHi(ns->last.year);
+  }
+  return 0;
+}
+
+/* Get current-period value for a short stat */
+long StatGetShortCurrent(StatType which, StatTimePeriod period) {
+  if (!gStatData || which <= kBeginShortStats || which >= kEndStats) return 0;
+  ShortNumericStats *ss = &(*gStatData)->shortStats[which - kBeginShortStats - 1];
+  switch (period) {
+  case kStatDay:   return ss->current.day;
+  case kStatWeek:  return ss->current.week;
+  case kStatMonth: return ss->current.month;
+  case kStatYear:  return ss->current.year;
+  }
+  return 0;
+}
+
+long StatGetShortLast(StatType which, StatTimePeriod period) {
+  if (!gStatData || which <= kBeginShortStats || which >= kEndStats) return 0;
+  ShortNumericStats *ss = &(*gStatData)->shortStats[which - kBeginShortStats - 1];
+  switch (period) {
+  case kStatDay:   return ss->last.day;
+  case kStatWeek:  return ss->last.week;
+  case kStatMonth: return ss->last.month;
+  case kStatYear:  return ss->last.year;
+  }
+  return 0;
+}
+
+long StatGetStartTime(void) {
+  if (!gStatData) return 0;
+  return (*gStatData)->startTime;
+}
+
+/* Get hourly breakdown for today (24 values) for a numeric stat */
+void StatGetHourlyData(StatType which, long out[24]) {
+  memset(out, 0, 24 * sizeof(long));
+  if (!gStatData || which >= kStatCount) return;
+  memcpy(out, (*gStatData)->numStats[which].current.day, 24 * sizeof(long));
+}
+
+/* Get daily breakdown for this week (7 values) */
+void StatGetWeeklyData(StatType which, long out[7]) {
+  memset(out, 0, 7 * sizeof(long));
+  if (!gStatData || which >= kStatCount) return;
+  memcpy(out, (*gStatData)->numStats[which].current.week, 7 * sizeof(long));
 }

@@ -75,4 +75,15 @@ Handle GetStatsAsText(StatTimePeriod period, bool extended);
 char GetIntlNumberPart(short charToken);
 void ResetStatistics(void);
 
+/* Accessor functions for GTK stat display */
+bool StatDataLoaded(void);
+long StatGetTotal(StatType which);
+long StatGetCurrentPeriod(StatType which, StatTimePeriod period);
+long StatGetLastPeriod(StatType which, StatTimePeriod period);
+long StatGetShortCurrent(StatType which, StatTimePeriod period);
+long StatGetShortLast(StatType which, StatTimePeriod period);
+long StatGetStartTime(void);
+void StatGetHourlyData(StatType which, long out[24]);
+void StatGetWeeklyData(StatType which, long out[7]);
+
 #endif // STATMNG_H
