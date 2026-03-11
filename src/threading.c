@@ -123,7 +123,10 @@ static pthread_mutex_t gCriticalMutex = PTHREAD_MUTEX_INITIALIZER;
 
 // Thread-local storage for globals
 threadGlobalsRec ThreadGlobals;
-threadGlobalsPtr CurThreadGlobals = &ThreadGlobals;
+/* Initialized to NULL; main() must call CurThreadGlobals = &ThreadGlobals
+   before any code accesses thread globals. Cannot use &ThreadGlobals as
+   a TLS initializer — macOS ARM64 doesn't support address fixups in TLS. */
+_Thread_local threadGlobalsPtr CurThreadGlobals = NULL;
 
 /*
          private functions
@@ -160,30 +163,12 @@ void InvalTaskProgressBeat(ProgressBHandle prbl);
 void CheckSelectedGlobals();
 
 #ifdef DEBUG_THREAD
-static void MyDebuggerNewThread(pthread_t threadCreated);
-static void MyDebuggerDisposeThread(pthread_t threadDeleted);
-
-/* This guy isn't getting called!!!! */
-
-static pascal void MyDebuggerNewThread(ThreadID threadCreated) {
-  DebugStr("\pThread started");
+static void MyDebuggerNewThread(pthread_t threadCreated) {
+  fprintf(stderr, "Thread started: %p\n", (void *)threadCreated);
 }
 
-/* This guy isn't getting called!!!! */
-
-static pascal void MyDebuggerDisposeThread(ThreadID threadDeleted) {
-  DebugStr("\pThread ended");
-}
-
-static pascal ThreadID
-MyDebuggerThreadScheduler(SchedulerInfoRecPtr schedulerInfo) {
-  Str255 text;
-
-  ComposeString(text, "\pContext Switch -- tickCount:%d curThread:%d",
-                TickCount(), (int)schedulerInfo->CurrentThreadID);
-  DebugStr(text);
-
-  return (kNoThreadID);
+static void MyDebuggerDisposeThread(pthread_t threadDeleted) {
+  fprintf(stderr, "Thread ended: %p\n", (void *)threadDeleted);
 }
 #endif
 
@@ -218,15 +203,6 @@ ProgressBlock **GetCurrentThreadPrbl(void) {
   GetCurrentThreadData(&threadData);
   return (threadData ? (*threadData)->prbl : nil);
 }
-
-#pragma segment newthreads
-
-/*
- put functions that create threads in a separate segment:
-         they can safely be unloaded from the main event loop (provided they
- don't Yield to other threads) they should be in a separate segment from
- referenced procptrs (to ensure that procptrs are A5-relative)
-*/
 
 /************************************************************************
  * InitThreadGlobals - create thread and allocate data for it
@@ -509,8 +485,6 @@ OSErr SetupXferMailThread(bool check, bool send, bool manual, bool ae,
   return err;
 }
 
-#pragma segment Threads
-
 /************************************************************************
  * DisposeThreadGlobals -
  ************************************************************************/
@@ -652,6 +626,11 @@ void *XferMailThread(void *threadParameter) {
     return nil;
 
   threadData = (threadDataHandle)threadParameter;
+
+  /* Switch to thread-local globals — on Mac the Thread Manager did this
+     automatically via switch-in procs; with pthreads we do it explicitly */
+  ThreadSwitchProcIn(pthread_self(), threadData);
+
 #ifdef DEBUG
   (*threadData)->startTime = TickCount();
 #endif
@@ -691,6 +670,11 @@ void *XferMailThread(void *threadParameter) {
     CleanTempOutTOC();
     SetSendQueue();
   }
+
+  /* On Mac, the Thread Manager called the termination proc automatically.
+     With pthreads we must call it explicitly to clean up thread data. */
+  ThreadTermination(pthread_self(), threadData);
+
   return nil;
 }
 
@@ -714,34 +698,7 @@ void ThreadSwitchProcIn(pthread_t threadBeingSwitched, void *switchProcParam) {
 #ifdef TASK_PROGRESS_ON
   ProgWindow = TaskProgressWindow;
 #endif
-  // make sure curresfile is thread's SettingsRefN
-  if (SettingsRefN != -1)
-    UseResFile(SettingsRefN);
 
-#ifdef TASK_PROGRESS_ON
-#ifdef NEVER
-  if (TaskProgressWindow) {
-    ThreadID threadID, oldThreadID;
-
-    /* we're actually still in the main thread right now. so before we update
-       the task progress beat, set this thread's id to the main thread's id */
-    InvalTaskProgressBeat((*threadData)->prbl);
-    oldThreadID = (*threadData)->threadID;
-    GetCurrentThread(&threadID);
-    (*threadData)->threadID = threadID;
-    UpdateMyWindow(GetMyWindowWindowPtr(TaskProgressWindow));
-    (*threadData)->threadID = oldThreadID;
-  }
-#endif
-#endif
-
-#if 0
-  myA5 = SetA5(currentA5);
-#endif
-#if __profile__
-  // ProfilerSwitchToThread((*threadData)->threadRef);
-  // ProfilerSetStatus(profilerWas);
-#endif
 #ifdef DEBUG
   (*threadData)->switchInTime = TickCount();
   (*threadData)->switchCount++;
@@ -766,28 +723,10 @@ void ThreadSwitchProcOut(pthread_t threadBeingSwitched, void *switchProcParam) {
 
   // save globals from this thread
   threadContext->newThreadGlobals = CurThreadGlobals;
-  CurThreadGlobals->tResRefN = CurResFile();
 
-  // restore main thread-globals
+  // restore main thread-globals (for this thread's view only, thanks to _Thread_local)
   CurThreadGlobals = &ThreadGlobals;
-  UseResFile(SettingsRefN);
 
-#ifdef TASK_PROGRESS_ON
-#ifdef NEVER
-  if (TaskProgressWindow) {
-    InvalTaskProgressBeat((*threadData)->prbl);
-    UpdateMyWindow(GetMyWindowWindowPtr(TaskProgressWindow));
-  }
-#endif
-#endif
-
-#if 0
-  myA5 = SetA5(currentA5);
-#endif
-#if __profile__
-  // ProfilerSwitchToThread(ProfilerGetMainThreadRef());
-  // ProfilerSetStatus(profilerWas);
-#endif
 #ifdef DEBUG
   (*threadData)->totalTimeThread += (TickCount() - (*threadData)->switchInTime);
 #endif
@@ -805,6 +744,9 @@ static OSErr SaveSettingsToMainThread(threadDataHandle threadData) {
   prefChangeRec prefChange;
 
   ASSERT(threadData);
+
+  /* Lock mutex — we're about to access main thread data structures */
+  MyThreadBeginCritical();
 
   // prefs that were changed by thread should be changed
   prefStack = (*threadData)->threadContext.prefStack;
@@ -890,103 +832,78 @@ static OSErr SaveSettingsToMainThread(threadDataHandle threadData) {
     FixServers = FixServers || myFixServers;
     ThreadSwitchProcIn(nil, threadData);
   }
+
+  MyThreadEndCritical();
   return theError;
 }
 
 /************************************************************************
- * CopySettingsForThread - copy settings for thread
+ * CopySettingsForThread - clone personality list for thread
+ * Ported: no resource fork duplication needed on Linux/GTK.
+ * Settings are in a GKeyFile; we just clone the personality list in memory.
  ************************************************************************/
 static OSErr CopySettingsForThread(short sourceRefN, PersHandle sourcePerslist,
                                    short *destRefN, PersHandle *destPersList,
                                    PersHandle *destCurPers) {
-  FSSpec tempSpec, settingsSpec;
   OSErr theError = noErr;
-  short oldRefN = CurResFile();
+  PersHandle oldPers, clone, lastClone = nil;
 
-  Zero(tempSpec);
+  (void)sourceRefN; /* resource file ref not used on Linux */
 
   MyThreadBeginCritical();
   SetMyCursor(watchCursor);
-  UpdateResFile(sourceRefN);
-  theError = GetFileByRef(sourceRefN, &settingsSpec);
-  if (!theError) {
-    theError = NewTempSpec(Root.vRef, Root.dirId, nil, &tempSpec);
-    if (!theError) {
-      theError = FSpDupFile(&tempSpec, &settingsSpec, True, False);
-      if (!theError) {
-        *destRefN = FSpOpenResFile(&tempSpec, fsRdWrPerm); // change to RdWr
-        if (*destRefN == -1)
-          theError = ResError();
 
-        // What about the cache? for now. we'll just leave it initialized to nil
-        // instead of copying it.
+  /* Clone the personality linked list */
+  for (oldPers = sourcePerslist; oldPers && !theError;
+       oldPers = (*oldPers)->next) {
+    /* Allocate a Handle-style clone: pointer to pointer to Personality */
+    clone = (PersHandle)calloc(1, sizeof(PersPtr));
+    if (clone)
+      *clone = (PersPtr)calloc(1, sizeof(Personality));
+    if (!clone || !*clone) {
+      theError = -108; /* memFullErr */
+      break;
+    }
+    /* Copy the personality data */
+    **clone = **oldPers;
+    (*clone)->next = nil;
 
-        if (!theError) {
-          // copy personalities
-          PersHandle oldPers, clone, lastClone = nil;
+    if (lastClone)
+      (*lastClone)->next = clone;
+    else
+      *destPersList = clone;
+    lastClone = clone;
+  }
+  *destCurPers = *destPersList;
 
-          for (oldPers = sourcePerslist; oldPers && !theError;
-               oldPers = (*oldPers)->next) {
-            clone = oldPers;
-            if (!(theError = 0)) {
-              (*clone)->next = nil;
-              if (lastClone)
-                (*lastClone)->next = clone;
-              else
-                *destPersList = clone;
-              lastClone = clone;
-            } else
-              FileSystemError(READ_SETTINGS, tempSpec.name, theError);
-            *destCurPers = *destPersList;
-          }
-        } else
-          FileSystemError(READ_SETTINGS, tempSpec.name, theError);
-      } else
-        FileSystemError(READ_SETTINGS, tempSpec.name, theError);
-    } else
-      FileSystemError(READ_SETTINGS, tempSpec.name, theError);
-  } else
-    FileSystemError(READ_SETTINGS, tempSpec.name, theError);
+  /* Mark settings as available with a dummy refN */
+  *destRefN = theError ? -1 : 1;
 
   MyThreadEndCritical();
   if (theError) {
     DeleteSettingsForThread(destRefN);
   }
-  UseResFile(oldRefN);
   return (CommandPeriod ? userCanceledErr : theError);
 }
 
 /************************************************************************
- * DeleteSettingsForThread - do it
+ * DeleteSettingsForThread - free cloned personality list
+ * Ported: no temp file to delete on Linux/GTK.
+ * Note: the cloned personality list itself is freed by DisposeThreadGlobals
+ * via DisposePersonalities() which walks PersList. We just reset the refN.
  ************************************************************************/
 static OSErr DeleteSettingsForThread(short *settingsRefN) {
-  FSSpec tempSpec;
-  OSErr theError = noErr;
-
   if (*settingsRefN == -1)
     return noErr;
 
-  // close and delete temp settings file
-  theError = GetFileByRef(*settingsRefN, &tempSpec);
-  if (!theError) {
-    CloseResFile(*settingsRefN);
-    *settingsRefN = -1;
-    theError = ResError();
-  }
-  if (!theError)
-    theError = FSpDelete(&tempSpec);
-
-  ASSERT(!theError); // temp file should get deleted!!!
-  return theError;
+  *settingsRefN = -1;
+  return noErr;
 }
 
 /************************************************************************
  * getNumBackgroundThreads - return number of background threads
  ************************************************************************/
-#pragma segment Main
 int GetNumBackgroundThreads(void) { return (int)(gNumBackgroundThreads); }
-#pragma segment Threads
-
 /************************************************************************
  * PushThreadPrefChange -
  ************************************************************************/
@@ -1029,53 +946,24 @@ bool ThreadsAvailable(void) {
   return true;
 }
 
-/* folowing three functions primarily used in pop.c cause we want to write to
-the settings file belonging to the main thread, not the background thread */
+/* Resource Manager thread functions — no-ops on Linux/GTK.
+   Mac Eudora used these to access the main thread's settings resource fork
+   from background threads. With GKeyFile-based prefs, not needed. */
 
-/************************************************************************
- * GetResourceMainThread -
- ************************************************************************/
 Handle GetResourceMainThread(ResType theType, short theID) {
-  short refN = SettingsRefN, curRefN;
-  Handle res = nil;
-
-  SettingsRefN = GetMainGlobalSettingsRefN();
-  curRefN = CurResFile();
-  UseResFile(SettingsRefN);
-  res = GetResource_(theType, theID);
-  SettingsRefN = refN;
-  UseResFile(curRefN);
-  return (res);
+  (void)theType; (void)theID;
+  return nil;
 }
 
-/************************************************************************
- * ZapSettingsResourceMainThread -
- ************************************************************************/
 OSErr ZapSettingsResourceMainThread(OSType type, short id) {
-  OSErr theError = noErr;
-  short refN = SettingsRefN;
-
-  SettingsRefN = GetMainGlobalSettingsRefN();
-  theError = ZapSettingsResource(type, id);
-  SettingsRefN = refN;
-  return (theError);
+  (void)type; (void)id;
+  return noErr;
 }
 
-/************************************************************************
- * AddMyResourceMainThread -
- ************************************************************************/
 OSErr AddMyResourceMainThread(Handle h, OSType type, short id,
                               ConstStr255Param name) {
-  short refN = SettingsRefN, curRefN;
-  OSErr err = noErr;
-
-  SettingsRefN = GetMainGlobalSettingsRefN();
-  curRefN = CurResFile();
-  AddMyResource(h, type, id, name);
-  err = ResError();
-  SettingsRefN = refN;
-  UseResFile(curRefN);
-  return err;
+  (void)h; (void)type; (void)id; (void)name;
+  return noErr;
 }
 
 /************************************************************************
@@ -1098,9 +986,12 @@ void SetThreadGlobalCommandPeriod(ThreadID threadID, bool value) {
 short GetMainGlobalSettingsRefN(void) { return (ThreadGlobals.tSettingsRefN); }
 
 /************************************************************************
- * MyBeginCritical -
+ * MyBeginCritical - with pthreads, use a real mutex
  ************************************************************************/
-void MyThreadBeginCritical(void) { ++gCriticalSection; }
+void MyThreadBeginCritical(void) {
+  pthread_mutex_lock(&gCriticalMutex);
+  ++gCriticalSection;
+}
 
 /************************************************************************
  * MyEndCritical -
@@ -1108,6 +999,7 @@ void MyThreadBeginCritical(void) { ++gCriticalSection; }
 void MyThreadEndCritical(void) {
   if (--gCriticalSection < 0)
     gCriticalSection = 0;
+  pthread_mutex_unlock(&gCriticalMutex);
 }
 
 /************************************************************************
@@ -1117,14 +1009,9 @@ void MyYieldToAnyThread(void) {
 #ifdef DEBUG
   CheckSelectedGlobals();
 #endif
-  if (ThreadsAvailable()) {
-    if (!gCriticalSection) {
-      short curRes = CurResFile(); //	Thread might change res file
-
-      sched_yield(); // POSIX sched_yield
-      ThreadYieldTicks = TickCount();
-      UseResFile(curRes);
-    } // WNELo stubbed out for POSIX
+  if (ThreadsAvailable() && !gCriticalSection) {
+    sched_yield();
+    ThreadYieldTicks = TickCount();
   }
 }
 
@@ -1143,10 +1030,6 @@ void YieldCPUNow(void) {
  * 		only call this from main thread during initialization
  ************************************************************************/
 OSErr MyInitThreads(void) {
-#ifdef DEBUG_THREAD
-  SetDebuggerNotificationProcs(MyDebuggerNewThread, MyDebuggerDisposeThread,
-                               MyDebuggerThreadScheduler);
-#endif
   gMainThreadID = pthread_self();
   return noErr;
 }

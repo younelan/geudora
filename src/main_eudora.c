@@ -17,6 +17,7 @@
 #include "mailxfer.h"
 #include "message.h"
 #include "taskProgress.h"
+#include "threading.h"
 #include "toc.h"
 #include "wazoo.h"
 #include <gtk/gtk.h>
@@ -1874,6 +1875,13 @@ static void activate(GtkApplication *app, gpointer user_data) {
 int main(int argc, char **argv) {
   GtkApplication *app;
   int status;
+
+  /* Initialize thread-local globals pointer for the main thread.
+     Must happen before ANY code accesses CurThreadGlobals macros
+     (PersList, CurPers, etc). Cannot use a TLS initializer on
+     macOS ARM64 because address-valued TLS initializers don't
+     get proper fixups. */
+  CurThreadGlobals = &ThreadGlobals;
 
   app = gtk_application_new("org.geudora.mail", G_APPLICATION_DEFAULT_FLAGS);
   g_signal_connect(app, "activate", G_CALLBACK(activate), NULL);

@@ -116,7 +116,7 @@ struct threadGlobals_ {
                         reading headers */
 };
 
-extern threadGlobalsPtr CurThreadGlobals;
+extern _Thread_local threadGlobalsPtr CurThreadGlobals;
 extern threadGlobalsRec ThreadGlobals; // Main thread globals
 /* Here's some macros to help access these variables */
 #define ProgWindow (CurThreadGlobals->tProgWindow)
@@ -169,25 +169,13 @@ extern threadGlobalsRec ThreadGlobals; // Main thread globals
 
 #ifdef THREADING_ON
 
-#if defined(__has_include)
-#if __has_include(<Threads.h>)
-#include <Threads.h>
-#else
 #include <pthread.h>
-#endif
-#else
-/* Default to POSIX threads for cross-platform compatibility */
-#include <pthread.h>
-#endif
 #include "mailxfer.h"
 #include "progress.h"
 
 #include "task_types.h"
 
 struct threadContextData_ {
-#if !TARGET_RT_MAC_CFM
-  long appsA5;
-#endif
   threadGlobalsPtr newThreadGlobals;
   StackHandle prefStack; // keep track of pref changes
 };
@@ -314,7 +302,7 @@ void RemoveTaskErrors(TaskKindEnum taskKind, long persId);
 OSErr SetThreadStackSize(long newSize);
 long GetThreadStackSize(void);
 
-pascal Handle GetResourceMainThread(ResType theType, short theID);
+Handle GetResourceMainThread(ResType theType, short theID);
 OSErr ZapSettingsResourceMainThread(OSType type, short id);
 OSErr AddMyResourceMainThread(Handle h, OSType type, short id,
                               ConstStr255Param name);

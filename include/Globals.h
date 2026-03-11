@@ -309,7 +309,7 @@ extern uLong M_T1, M_T2, M_T3;
  * thread globals
  **********************************************************************/
 extern threadGlobalsRec ThreadGlobals;
-extern threadGlobalsPtr CurThreadGlobals;
+extern _Thread_local threadGlobalsPtr CurThreadGlobals;
 
 extern short TempInCount;
 extern short NeedToFilterIn;

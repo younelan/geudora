@@ -120,7 +120,7 @@ long BeautifyDate(unsigned char *dateStr, long *zoneSecs);
 #undef ProgressMessage
 #undef ProgressMessageR
 
-extern threadGlobalsPtr CurThreadGlobals;
+extern _Thread_local threadGlobalsPtr CurThreadGlobals;
 #define MINI_MASK 0
 
 /* Macro fixes to avoid redefinition conflicts */
@@ -1486,7 +1486,7 @@ int ReallyDoAnAlert(int templ, int which);
 
 
 #define DELETE_ID 1003
-  extern threadGlobalsPtr CurThreadGlobals;
+  extern _Thread_local threadGlobalsPtr CurThreadGlobals;
 #define MINI_MASK 0
 
 /* Macro fixes to avoid redefinition conflicts */

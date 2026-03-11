@@ -39,54 +39,61 @@ bool AmTempToc(TOCType * tocH);
 #define kNeverHashed 0
 #define kNoMessageId 0
 
-/* StateEnum typedef for IMAP compatibility */
-// typedef short StateEnum;
-
-/* Forward declaration for legacy handle types */
-// typedef struct mstruct **MessHandle;
-
-/* Message summary structure - legacy compatible */
+/* VirtualMessData — must be no larger than sizeof(Rect) = 8 bytes on 32-bit.
+   On 64-bit, long is 8 bytes so the union will be larger. */
 typedef struct {
-  long offset;         /* Offset in mailbox file */
-  long length;         /* Message length */
-  short state;         /* Message state (read, etc) */
-  short flags;         /* Message flags */
-  short priority;      /* Priority */
-  short opts;          /* Options */
-  long seconds;        /* Date in seconds */
-  short origZone;      /* Original time zone */
-  uint32_t uidHash;    /* UIDL hash */
-  uint32_t msgIdHash;  /* Message-ID hash */
-  uint32_t fromHash;   /* From hash */
-  long serialNum;      /* Message Serial Number */
-  char from[64];       /* From address (PStr equivalent in size) */
-  char subj[64];       /* Subject (PStr equivalent) */
-  MessHandle messH;    /* Handle to message structure */
-  void **cache;        /* Cached message content */
-  long bodyOffset;     /* Added for buildtoc.obj */
-  long popPersId;      /* Added for buildtoc.obj */
-  long persId;         /* Added for buildtoc.obj */
-  short tableId;       /* Added for mailxfer.c */
-  long sigId;          /* Added for mailxfer.c */
-  short spamScore;     /* Junk mail spam score */
-  short spamBecause;   /* Reason for spam score */
-  short spareShort;    /* Spare short for temporary flags */
-  short spareShort2;   /* Second spare short (used by sort stability) */
-  short score;         /* Moodmail/analysis score */
-  long arrivalSeconds; /* Message arrival time */
-  bool selected;       /* Selection state */
-  long subjId;         /* Subject ID for error handling */
-  union {
-    struct {
-      short virtualMBIdx;
-      long linkSerialNum;
-    } virtualMess;
-  } u;
-  void **mesgErrH; /* Message error handle */
-} MessageSummary;
+  long linkSerialNum;    /* Serial # link to original message */
+  short virtualMBIdx;    /* FSSpec index for virtual mailboxes */
+} VirtualMessData;
 
-typedef MessageSummary *MSumPtr;
-typedef MessageSummary MSumType; /* Legacy typedef */
+/*
+ * MSumType — matches original Eudora Mac field order exactly.
+ * See MAC624/Include/mailbox.h lines 91-134.
+ */
+typedef struct {
+  long offset;              /* byte offset in file */
+  long length;              /* length of message, in bytes */
+  int bodyOffset;           /* byte where the body begins, relative to offset */
+  StateEnum state;          /* current state of the message */
+  long spamScore:8;         /* spam score */
+  unsigned long spamBecause:3; /* where the spam score came from */
+  long spare21:21;          /* spare bits */
+  unsigned long arrivalSeconds; /* when the message arrived at this machine */
+  void **mesgErrH;          /* mesgErrorHandle — message error handle */
+  unsigned long fromHash;   /* hash of the from address */
+  unsigned long spare[3];
+  long serialNum;           /* unique message serial number */
+  unsigned long seconds;    /* the value of seconds represented by the date field */
+  unsigned long flags;      /* some binary values */
+  union {
+    Rect savedPos;          /* saved window position */
+    VirtualMessData virtualMess;
+  } u;
+  Byte priority;            /* display as 1-5, keep as 1-200 */
+  Byte origPriority;
+  short tableId;            /* resid of xlate table to use */
+  short score:4;            /* for the text analysis engine */
+  short outType:4;          /* for statistics: forward, reply, redirect */
+  short unused:8;           /* take it if you need it */
+  short spareShort2;
+  short sumRandBytes;       /* bytes for various uses */
+  short origZone;           /* message's original timezone */
+  unsigned long sigId;      /* fileid of signature; 0 for main sig, 1 for alternate */
+  char from[48];            /* from address */
+  unsigned long popPersId;  /* personality id it came from */
+  unsigned long persId;     /* the personality id */
+  long msgIdHash;           /* hash of the message-id */
+  short subjId;             /* subject id */
+  short spareShort;
+  char subj[60];            /* subject */
+  unsigned long opts;
+  unsigned long uidHash;    /* hash of message id */
+  Handle cache;             /* cache of message text */
+  bool selected;            /* is it selected? */
+  MessHandle messH;         /* message structure (and window) if any */
+} MSumType, *MSumPtr;
+
+typedef MSumType MessageSummary; /* Alias used by ported code */
 
 /* TOC (Table of Contents) structure - legacy compatible */
 typedef struct TOCType {
