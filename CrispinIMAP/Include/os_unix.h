@@ -72,7 +72,8 @@ typedef Accumulator IMAPAccumulator;
 
 /* MailboxNodeHandle is defined in imapnetlib.h - do not redefine */
 
-#define CommandPeriod 0
+/* CommandPeriod is a global bool in main_eudora.c — no macro needed */
+extern bool CommandPeriod;
 void IMAPSpamWatchSupported(bool supported, bool bNotify);
 void IMAPAccuZap(IMAPAccumulator *pAccu);
 void IMAPAccuInit(IMAPAccumulator *pAccu);
