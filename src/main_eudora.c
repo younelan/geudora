@@ -1557,6 +1557,7 @@ static GtkWidget *mailbox_notebook = NULL;  /* GtkNotebook for opened mailboxes 
 static GtkWidget *main_hpaned = NULL;
 static GtkWidget *left_wazoo_float = NULL;  /* Floating window when undocked */
 static GtkWidget *wazoo_titlebar = NULL;    /* Title bar widget for drag */
+static GtkWidget *wazoo_title_label_g = NULL; /* Title label in sidebar header */
 
 /* ── Left wazoo dock/undock ── */
 
@@ -1575,6 +1576,36 @@ static gboolean on_wazoo_float_close(GtkWindow *win, gpointer ud) {
   return FALSE;  /* Allow GTK to destroy the window */
 }
 
+/* Get the tab title for a given page widget */
+static const char *wazoo_tab_title_for_page(GtkWidget *page) {
+  if (!left_wazoo || !GTK_IS_NOTEBOOK(left_wazoo) || !page)
+    return "Mailboxes";
+  GtkWidget *tab_label = gtk_notebook_get_tab_label(GTK_NOTEBOOK(left_wazoo), page);
+  if (!tab_label) return "Mailboxes";
+  if (GTK_IS_LABEL(tab_label))
+    return gtk_label_get_text(GTK_LABEL(tab_label));
+  if (GTK_IS_BOX(tab_label)) {
+    for (GtkWidget *child = gtk_widget_get_first_child(tab_label);
+         child; child = gtk_widget_get_next_sibling(child)) {
+      if (GTK_IS_LABEL(child))
+        return gtk_label_get_text(GTK_LABEL(child));
+    }
+  }
+  return "Mailboxes";
+}
+
+/* Update titles when wazoo tab is switched — use the page arg, not
+   get_current_page which still returns the old page during switch-page */
+static void on_wazoo_tab_switched(GtkNotebook *nb, GtkWidget *page,
+                                   guint page_num, gpointer ud) {
+  (void)nb; (void)page_num; (void)ud;
+  const char *title = wazoo_tab_title_for_page(page);
+  if (left_wazoo_float)
+    gtk_window_set_title(GTK_WINDOW(left_wazoo_float), title);
+  if (wazoo_title_label_g)
+    gtk_label_set_text(GTK_LABEL(wazoo_title_label_g), title);
+}
+
 static void wazoo_undock(void) {
   if (!left_wazoo_box || !main_hpaned || left_wazoo_float)
     return;
@@ -1585,7 +1616,11 @@ static void wazoo_undock(void) {
   gtk_paned_set_position(GTK_PANED(main_hpaned), 0);
 
   left_wazoo_float = gtk_window_new();
-  gtk_window_set_title(GTK_WINDOW(left_wazoo_float), "Wazoo");
+  {
+    int pn = gtk_notebook_get_current_page(GTK_NOTEBOOK(left_wazoo));
+    GtkWidget *pg = pn >= 0 ? gtk_notebook_get_nth_page(GTK_NOTEBOOK(left_wazoo), pn) : NULL;
+    gtk_window_set_title(GTK_WINDOW(left_wazoo_float), wazoo_tab_title_for_page(pg));
+  }
   gtk_window_set_default_size(GTK_WINDOW(left_wazoo_float), 250, 500);
   gtk_window_set_child(GTK_WINDOW(left_wazoo_float), left_wazoo_box);
   g_object_unref(left_wazoo_box);
@@ -2273,7 +2308,8 @@ static GtkWidget *create_main_layout(void) {
   gtk_widget_set_tooltip_text(drag_handle, "Drag to undock");
   gtk_center_box_set_start_widget(GTK_CENTER_BOX(wazoo_titlebar), drag_handle);
 
-  GtkWidget *wazoo_title_label = gtk_label_new("Wazoo");
+  GtkWidget *wazoo_title_label = gtk_label_new("Mailboxes");
+  wazoo_title_label_g = wazoo_title_label;
   PangoAttrList *attrs = pango_attr_list_new();
   pango_attr_list_insert(attrs, pango_attr_weight_new(PANGO_WEIGHT_BOLD));
   pango_attr_list_insert(attrs, pango_attr_scale_new(0.85));
@@ -2305,6 +2341,8 @@ static GtkWidget *create_main_layout(void) {
   gtk_notebook_set_tab_pos(GTK_NOTEBOOK(left_wazoo), GTK_POS_BOTTOM);
   g_signal_connect(left_wazoo, "create-window",
                    G_CALLBACK(on_create_window), NULL);
+  g_signal_connect(left_wazoo, "switch-page",
+                   G_CALLBACK(on_wazoo_tab_switched), NULL);
 
   /* Mailbox tree tab: tree + button bar in a VBox */
   GtkWidget *mb_vbox = gtk_box_new(GTK_ORIENTATION_VERTICAL, 0);
