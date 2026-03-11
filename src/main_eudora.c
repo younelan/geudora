@@ -102,7 +102,19 @@ static gchar *extract_header(const char *raw, const char *name) {
   size_t nlen = strlen(name);
   const char *p = raw;
 
-  while (p && *p && *p != '\n') {
+  while (p && *p) {
+    /* Check for end of headers (blank line)
+       Tolerant of \n\n, \r\n\r\n, \r\r, and \n\r\n */
+    if (*p == '\n') break;
+    if (*p == '\r') {
+        if (p[1] == '\n') break; /* \r\n */
+        if (p[1] == '\r' || (p[1] != ' ' && p[1] != '\t')) {
+            /* \r\r or \r followed by next header = end of this header line.
+               But a lone \r at start of "line" usually means blank line in legacy Mac */
+            break;
+        }
+    }
+
     /* Match "Name:" at start of line (case-insensitive) */
     if (g_ascii_strncasecmp(p, name, nlen) == 0 && p[nlen] == ':') {
       const char *val = p + nlen + 1;
@@ -110,29 +122,45 @@ static gchar *extract_header(const char *raw, const char *name) {
 
       /* Collect value including continuation lines */
       GString *s = g_string_new(NULL);
-      while (*val && *val != '\n') {
+      while (*val && *val != '\r' && *val != '\n') {
         g_string_append_c(s, *val);
         val++;
       }
-      /* Continuation: next line starts with space or tab */
-      while (val[0] == '\n' && (val[1] == ' ' || val[1] == '\t')) {
-        val++; /* skip \n */
-        g_string_append_c(s, ' ');
-        while (*val == ' ' || *val == '\t') val++;
-        while (*val && *val != '\n') {
-          g_string_append_c(s, *val);
-          val++;
+
+      /* Handle continuation lines (next line starts with space or tab) */
+      while (TRUE) {
+        const char *next = val;
+        /* Skip over any flavor of newline */
+        if (*next == '\r' && next[1] == '\n') next += 2;
+        else if (*next == '\r' || *next == '\n') next++;
+        else break;
+
+        /* If next line starts with space/tab, it's a continuation */
+        if (*next == ' ' || *next == '\t') {
+          val = next;
+          g_string_append_c(s, ' ');
+          while (*val == ' ' || *val == '\t') val++;
+          while (*val && *val != '\r' && *val != '\n') {
+            g_string_append_c(s, *val);
+            val++;
+          }
+        } else {
+          break;
         }
       }
+
       gchar *val_raw = g_string_free(s, FALSE);
       gchar *val_utf8 = ensure_utf8(val_raw);
       g_free(val_raw);
       return val_utf8;
     }
 
-    /* Skip to next line */
-    p = strchr(p, '\n');
-    if (p) p++;
+    /* Skip to next line - handle \r\n, \n, or \r */
+    const char *next_n = strchr(p, '\n');
+    const char *next_r = strchr(p, '\r');
+    if (next_n && (!next_r || next_n < next_r)) p = next_n + 1;
+    else if (next_r) p = next_r + (next_r[1] == '\n' ? 2 : 1);
+    else break;
   }
   return NULL;
 }
@@ -142,10 +170,13 @@ static gchar *extract_header(const char *raw, const char *name) {
  * Returns pointer into the raw string, or raw itself if no separator found.
  */
 static const char *find_body(const char *raw) {
-  const char *p = strstr(raw, "\n\n");
-  if (p) return p + 2;
-  p = strstr(raw, "\r\n\r\n");
-  if (p) return p + 4;
+  const char *p;
+  /* Tolerant search for double newline in any combination */
+  p = strstr(raw, "\r\n\r\n"); if (p) return p + 4;
+  p = strstr(raw, "\n\n");     if (p) return p + 2;
+  p = strstr(raw, "\r\r");     if (p) return p + 2;
+  p = strstr(raw, "\n\r\n");   if (p) return p + 3;
+  p = strstr(raw, "\r\n\n");   if (p) return p + 3;
   return raw;
 }
 
@@ -214,16 +245,24 @@ static GtkWidget *build_header_box(const char *raw) {
   GtkWidget *box = gtk_box_new(GTK_ORIENTATION_VERTICAL, 2);
   gtk_widget_add_css_class(box, "msg-header-box");
 
+  gboolean found_any = FALSE;
   for (int i = 0; kDisplayHeaders[i]; i++) {
     gchar *val = extract_header(raw, kDisplayHeaders[i]);
     if (!val) continue;
 
+    found_any = TRUE;
     const char *cls = NULL;
     if (g_ascii_strcasecmp(kDisplayHeaders[i], "Subject") == 0)
       cls = "msg-header-subject";
 
     gtk_box_append(GTK_BOX(box), make_header_row(kDisplayHeaders[i], val, cls));
     g_free(val);
+  }
+
+  if (!found_any) {
+    g_object_ref_sink(box);
+    g_object_unref(box);
+    return NULL;
   }
 
   /* Separator line */
@@ -290,7 +329,8 @@ static GtkWidget *create_message_view(const char *raw, long max_body_len) {
 
   /* Header area */
   GtkWidget *hdr = build_header_box(raw);
-  gtk_box_append(GTK_BOX(vbox), hdr);
+  if (hdr)
+      gtk_box_append(GTK_BOX(vbox), hdr);
 
   /* Body text view */
   const char *body = find_body(raw);
