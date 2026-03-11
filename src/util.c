@@ -43,6 +43,7 @@ typedef struct {
 EUDORA_RGBColor *DarkenColor(EUDORA_RGBColor *color, short percent);
 #include "StringDefs.h"
 #include "string_table.h"
+#include "gtk_prefs.h"
 
 #include <ctype.h>
 #define FILE_NUM 41
@@ -238,11 +239,13 @@ int WannaSave(MyWindowPtr win) { return CANCEL_ITEM; }
 #define PASSWORD_OK 0
 #define PASSWORD_CANCEL 1
 
-/* GTK4 password dialog — modal, blocks until user enters password or cancels */
+/* GTK4 password dialog — modal, blocks until user enters password or cancels.
+ * Matches original Mac PASSWORD_DLOG: entry + "Save password" checkbox. */
 typedef struct {
   GMainLoop *loop;
   int result;
   GtkWidget *entry;
+  GtkWidget *save_check;
   UPtr word;
   int size;
 } PwDialogData;
@@ -254,9 +257,8 @@ static void pw_on_ok(GtkWidget *btn, gpointer user_data) {
   if (text && d->word && d->size > 0) {
     int len = strlen(text);
     if (len >= d->size) len = d->size - 1;
-    /* Store as Pascal string: length byte + chars */
-    d->word[0] = (unsigned char)len;
-    memcpy(d->word + 1, text, len);
+    memcpy(d->word, text, len);
+    d->word[len] = '\0';
   }
   d->result = PASSWORD_OK;
   g_main_loop_quit(d->loop);
@@ -281,16 +283,13 @@ int GetPassword(PStr personality, PStr userName, PStr serverName, UPtr word,
                 int size, short prompt) {
   (void)prompt;
 
-  /* Build display strings from Pascal strings */
-  char pers_str[256] = "", user_str[256] = "", server_str[256] = "";
-  if (personality && personality[0])
-    snprintf(pers_str, sizeof(pers_str), "%.*s", personality[0], personality + 1);
-  if (userName && userName[0])
-    snprintf(user_str, sizeof(user_str), "%.*s", userName[0], userName + 1);
-  if (serverName && serverName[0])
-    snprintf(server_str, sizeof(server_str), "%.*s", serverName[0], serverName + 1);
+  const char *pers_str = (const char *)personality;
+  const char *user_str = (const char *)userName;
+  const char *server_str = (const char *)serverName;
+  if (!pers_str) pers_str = "";
+  if (!user_str) user_str = "";
+  if (!server_str) server_str = "";
 
-  /* Create modal password dialog */
   GtkWidget *dlg = gtk_window_new();
   gtk_window_set_title(GTK_WINDOW(dlg), "Enter Password");
   gtk_window_set_modal(GTK_WINDOW(dlg), TRUE);
@@ -304,7 +303,7 @@ int GetPassword(PStr personality, PStr userName, PStr serverName, UPtr word,
   gtk_widget_set_margin_bottom(vbox, 16);
   gtk_window_set_child(GTK_WINDOW(dlg), vbox);
 
-  /* Info label */
+  /* Info label: "Password for <personality> (<user> on <server>)" */
   char info[512];
   if (pers_str[0])
     snprintf(info, sizeof(info), "Password for %s\n(%s on %s)", pers_str, user_str, server_str);
@@ -320,6 +319,12 @@ int GetPassword(PStr personality, PStr userName, PStr serverName, UPtr word,
   gtk_password_entry_set_show_peek_icon(GTK_PASSWORD_ENTRY(entry), TRUE);
   gtk_box_append(GTK_BOX(vbox), entry);
 
+  /* "Save password" checkbox — matches original Mac PASSWORD_SAVE item */
+  GtkWidget *save_check = gtk_check_button_new_with_label("Save password");
+  gboolean save_pref = prefs_get_bool(PREFS_GROUP_CHECKING_MAIL, "save_password", FALSE);
+  gtk_check_button_set_active(GTK_CHECK_BUTTON(save_check), save_pref);
+  gtk_box_append(GTK_BOX(vbox), save_check);
+
   /* Buttons */
   GtkWidget *btn_box = gtk_box_new(GTK_ORIENTATION_HORIZONTAL, 8);
   gtk_widget_set_halign(btn_box, GTK_ALIGN_END);
@@ -331,24 +336,35 @@ int GetPassword(PStr personality, PStr userName, PStr serverName, UPtr word,
   gtk_box_append(GTK_BOX(btn_box), ok_btn);
   gtk_box_append(GTK_BOX(vbox), btn_box);
 
-  /* Run a nested main loop for modal behavior */
   PwDialogData data = {0};
   data.loop = g_main_loop_new(NULL, FALSE);
   data.result = PASSWORD_CANCEL;
   data.entry = entry;
+  data.save_check = save_check;
   data.word = word;
   data.size = size;
 
   g_signal_connect(ok_btn, "clicked", G_CALLBACK(pw_on_ok), &data);
   g_signal_connect(cancel_btn, "clicked", G_CALLBACK(pw_on_cancel), &data);
   g_signal_connect(dlg, "close-request", G_CALLBACK(pw_on_close), &data);
-
-  /* Also accept Enter key in the entry */
   g_signal_connect_swapped(entry, "activate", G_CALLBACK(pw_on_ok), &data);
 
   gtk_window_present(GTK_WINDOW(dlg));
   g_main_loop_run(data.loop);
   g_main_loop_unref(data.loop);
+
+  /* If OK, persist the save_password preference and optionally save the password */
+  if (data.result == PASSWORD_OK) {
+    gboolean want_save = gtk_check_button_get_active(GTK_CHECK_BUTTON(save_check));
+    prefs_set_bool(PREFS_GROUP_CHECKING_MAIL, "save_password", want_save);
+    if (want_save && word[0]) {
+      /* Save password to INI so it persists across sessions */
+      prefs_set_string(PREFS_GROUP_CHECKING_MAIL, "saved_password", (const char *)word);
+    } else if (!want_save) {
+      /* Clear any previously saved password */
+      prefs_set_string(PREFS_GROUP_CHECKING_MAIL, "saved_password", "");
+    }
+  }
 
   gtk_window_destroy(GTK_WINDOW(dlg));
 
@@ -356,6 +372,29 @@ int GetPassword(PStr personality, PStr userName, PStr serverName, UPtr word,
 }
 
 bool PasswordFilter(void *dgPtr, void *event, short *item) { return false; }
+
+/************************************************************************
+ * GetPassStuff - collect the info needed for the password prompt
+ * Ported from Mac: reads from INI prefs, fills C strings
+ ************************************************************************/
+void GetPassStuff(unsigned char *persName, unsigned char *uName, unsigned char *hName) {
+  if (uName) {
+    gchar *u = prefs_get_string(PREFS_GROUP_CHECKING_MAIL, "pop_username", "");
+    strncpy((char *)uName, u, 127);
+    ((char *)uName)[127] = '\0';
+    g_free(u);
+  }
+  if (hName) {
+    gchar *h = prefs_get_string(PREFS_GROUP_CHECKING_MAIL, "pop_server", "");
+    strncpy((char *)hName, h, 127);
+    ((char *)hName)[127] = '\0';
+    g_free(h);
+  }
+  if (persName) {
+    strncpy((char *)persName, "Dominant", 63);
+    ((char *)persName)[63] = '\0';
+  }
+}
 
 /************************************************************************
  * CopyPassword - retrieve the password

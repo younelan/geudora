@@ -116,21 +116,21 @@ MyWindowPtr OpenComp(TOCType * tocH, int sumNum, GtkWidget *winWP,
   void *grumble;
 
   // Remove Mac-specific CycleBalls()
-  if ((messH = (MessHandle)g_malloc0(sizeof(MessType))) == NULL)
+  if ((messH = NewZH(MessType)) == NULL)
     return (NULL);
 
   // Create GTK window instead of Mac window
   if (!win) {
     win = (MyWindowPtr)g_malloc0(sizeof(MyWindow));
     if (!win) {
-      g_free(messH);
+      DisposeHandle((Handle)messH);
       return NULL;
     }
     win->window = gtk_window_new();
     win->pte = NULL;
   }
   if (!win) {
-    g_free(messH);
+    DisposeHandle((Handle)messH);
     return (NULL);
   }
 
@@ -213,6 +213,43 @@ MyWindowPtr OpenComp(TOCType * tocH, int sumNum, GtkWidget *winWP,
   UpdateMyWindow(winWP);
 
   return (win);
+}
+
+/**********************************************************************
+ * DoComposeNew - start a new outgoing message
+ * Ported from functions.c - gets Out TOC, creates blank summary, opens OpenComp
+ **********************************************************************/
+MyWindowPtr DoComposeNew(int type) {
+  (void)type;
+  TOCType *tocH;
+  MSumType sum;
+  MyWindowPtr newWin;
+  bool oldReallyDirty;
+
+  /* Always use the real Out TOC (threading is always on) */
+  tocH = GetRealOutTOC();
+  g_print("DoComposeNew: GetRealOutTOC=%p\n", (void*)tocH);
+  if (!tocH) return NULL;
+
+  memset(&sum, 0, sizeof(sum));
+  sum.state = UNSENDABLE;
+  sum.flags = 0;
+  sum.tableId = 0;
+  sum.origZone = ZoneSecs() / 60;
+  sum.seconds = GMTDateTime();
+  sum.persId = (*CurPers)->persId;
+  sum.sigId = 0;
+
+  oldReallyDirty = tocH->reallyDirty;
+  if (!SaveMessageSum(&sum, &tocH)) {
+    g_print("DoComposeNew: SaveMessageSum failed\n");
+    return NULL;
+  }
+  g_print("DoComposeNew: SaveMessageSum OK, count=%d\n", tocH->count);
+
+  newWin = OpenComp(tocH, tocH->count - 1, NULL, NULL, true, true);
+  g_print("DoComposeNew: OpenComp returned %p\n", (void*)newWin);
+  return newWin;
 }
 
 /**********************************************************************
@@ -814,7 +851,7 @@ bool CompClose(MyWindowPtr win) {
   LL_Remove(MessList, messH, (MessHandle));
 
   // Free message handle
-  g_free(messH);
+  DisposeHandle((Handle)messH);
 
   return true;
 }

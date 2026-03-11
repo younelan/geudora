@@ -14,14 +14,9 @@
 /* Copyright (c) 1990-1992 by the University of Illinois Board of Trustees */
 /* Copyright (c) 1992-1995 by QUALCOMM Incorporated */
 
-/* Legacy state constants */
-#define UNREAD 0
-#define READ 1
-#define SENT 2
-#define REPLIED 3
-#define TIMED 4
-#define MESG_ERR 6
-#define REBUILT 100
+/* State constants are defined in mailbox.h as StateEnum.
+ * Do NOT redefine them here — the old Mac defines had wrong values
+ * that conflict with the enum (e.g. SENT was 2 here but 9 in enum). */
 
 #ifdef THREADING_ON
 #define GetTempInTOC() GetSpecialTOC(IN_TEMP)

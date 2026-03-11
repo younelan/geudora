@@ -723,6 +723,25 @@ static void action_new_message(GSimpleAction *action, GVariant *parameter,
   gtk_window_present(GTK_WINDOW(compose_window));
 }
 
+static void action_old_compose(GSimpleAction *action, GVariant *parameter,
+                               gpointer user_data) {
+  (void)action;
+  (void)parameter;
+  (void)user_data;
+
+  /* Open the original comp.c compose window via DoComposeNew */
+  extern MyWindowPtr DoComposeNew(int type);
+  g_print("action_old_compose: calling DoComposeNew\n");
+  MyWindowPtr win = DoComposeNew(0);
+  g_print("action_old_compose: DoComposeNew returned %p\n", (void*)win);
+  if (win && win->window) {
+    g_print("action_old_compose: presenting window %p\n", (void*)win->window);
+    gtk_window_present(GTK_WINDOW(win->window));
+  } else {
+    g_print("action_old_compose: no window returned\n");
+  }
+}
+
 static void action_open(GSimpleAction *action, GVariant *parameter,
                         gpointer user_data) {
   (void)action;
@@ -1881,6 +1900,428 @@ static void open_mailbox_tab(const char *name, const char *path) {
   app_state.current_mailbox_path = g_strdup(path);
 }
 
+/* ── Welcome dashboard ── */
+
+static const char *kWelcomeCSS =
+  ".welcome-bg {"
+  "  background: #f0f2f5;"
+  "}"
+  /* ── Hero banner ── */
+  ".welcome-hero {"
+  "  background: linear-gradient(135deg, #1e3a5f 0%, #2d5f8a 60%, #3a7bb8 100%);"
+  "  padding: 32px 40px 28px;"
+  "}"
+  ".welcome-greeting {"
+  "  font-size: 1.7em; font-weight: 700; color: white;"
+  "}"
+  ".welcome-account-line {"
+  "  font-size: 0.92em; color: rgba(255,255,255,0.75); margin-top: 2px;"
+  "}"
+  /* ── Stat pills (top row) ── */
+  ".stat-card {"
+  "  background: white;"
+  "  border-radius: 10px;"
+  "  padding: 16px 20px;"
+  "  border: 1px solid #e2e6ec;"
+  "}"
+  ".stat-number {"
+  "  font-size: 1.8em; font-weight: 800; color: #1e293b;"
+  "}"
+  ".stat-label {"
+  "  font-size: 0.82em; color: #64748b; font-weight: 500;"
+  "}"
+  ".stat-accent-blue  .stat-number { color: #2563eb; }"
+  ".stat-accent-green .stat-number { color: #16a34a; }"
+  ".stat-accent-amber .stat-number { color: #d97706; }"
+  ".stat-accent-red   .stat-number { color: #dc2626; }"
+  /* ── Action cards ── */
+  ".wc-section-title {"
+  "  font-size: 0.78em; font-weight: 700; color: #94a3b8;"
+  "  letter-spacing: 0.08em;"
+  "}"
+  ".action-card {"
+  "  background: white;"
+  "  border-radius: 10px;"
+  "  padding: 14px 18px;"
+  "  border: 1px solid #e2e6ec;"
+  "}"
+  ".action-card:hover {"
+  "  background: #f8faff;"
+  "  border-color: #93a8d2;"
+  "}"
+  ".action-icon {"
+  "  background: #eef2ff;"
+  "  border-radius: 8px;"
+  "  padding: 8px;"
+  "}"
+  ".action-icon-green  { background: #ecfdf5; }"
+  ".action-icon-amber  { background: #fffbeb; }"
+  ".action-icon-purple { background: #f5f3ff; }"
+  ".action-icon-rose   { background: #fff1f2; }"
+  ".action-icon-cyan   { background: #ecfeff; }"
+  ".action-title {"
+  "  font-size: 0.95em; font-weight: 600; color: #1e293b;"
+  "}"
+  ".action-desc {"
+  "  font-size: 0.82em; color: #64748b;"
+  "}"
+  /* ── Shortcut row ── */
+  ".shortcut-pill {"
+  "  background: white; border-radius: 8px;"
+  "  padding: 10px 16px; border: 1px solid #e2e6ec;"
+  "}"
+  ".shortcut-pill:hover {"
+  "  background: #f8faff; border-color: #93a8d2;"
+  "}"
+  ".shortcut-key {"
+  "  font-size: 0.78em; font-weight: 600; font-family: monospace;"
+  "  color: #64748b; background: #f1f5f9; border-radius: 4px;"
+  "  padding: 2px 6px;"
+  "}"
+  ".shortcut-label {"
+  "  font-size: 0.85em; color: #334155; font-weight: 500;"
+  "}"
+  /* ── Tip bar ── */
+  ".tip-bar {"
+  "  background: #fffbeb;"
+  "  border-radius: 10px;"
+  "  padding: 14px 20px;"
+  "  border: 1px solid #fde68a;"
+  "}"
+  ".tip-text {"
+  "  font-size: 0.88em; color: #92400e;"
+  "}";
+
+static gboolean welcome_css_loaded = FALSE;
+
+static void ensure_welcome_css(void) {
+  if (welcome_css_loaded) return;
+  welcome_css_loaded = TRUE;
+  GtkCssProvider *prov = gtk_css_provider_new();
+  gtk_css_provider_load_from_string(prov, kWelcomeCSS);
+  gtk_style_context_add_provider_for_display(
+      gdk_display_get_default(), GTK_STYLE_PROVIDER(prov),
+      GTK_STYLE_PROVIDER_PRIORITY_APPLICATION);
+  g_object_unref(prov);
+}
+
+/* Count messages in a .toc file (each summary is fixed-size after header) */
+static int count_toc_messages(const char *mailbox_name) {
+  const char *mdir = prefs_get_mailboxes_path();
+  if (!mdir) return 0;
+  char path[1024];
+  snprintf(path, sizeof(path), "%s/%s.toc", mdir, mailbox_name);
+  struct stat st;
+  if (stat(path, &st) != 0) return 0;
+  long data = st.st_size - (long)sizeof(short); /* TOC version header */
+  if (data <= 0) return 0;
+  return (int)(data / (long)sizeof(MSumType));
+}
+
+/* ── Stat pill widget ── */
+static GtkWidget *stat_pill(const char *number, const char *label,
+                             const char *accent_class) {
+  GtkWidget *card = gtk_box_new(GTK_ORIENTATION_VERTICAL, 4);
+  gtk_widget_add_css_class(card, "stat-card");
+  if (accent_class) gtk_widget_add_css_class(card, accent_class);
+  gtk_widget_set_hexpand(card, TRUE);
+
+  GtkWidget *num = gtk_label_new(number);
+  gtk_widget_add_css_class(num, "stat-number");
+  gtk_label_set_xalign(GTK_LABEL(num), 0);
+  gtk_box_append(GTK_BOX(card), num);
+
+  GtkWidget *lbl = gtk_label_new(label);
+  gtk_widget_add_css_class(lbl, "stat-label");
+  gtk_label_set_xalign(GTK_LABEL(lbl), 0);
+  gtk_box_append(GTK_BOX(card), lbl);
+
+  return card;
+}
+
+/* ── Action card widget ── */
+static GtkWidget *action_card(const char *icon_name, const char *icon_color_class,
+                               const char *title, const char *desc,
+                               const char *action_name) {
+  GtkWidget *btn = gtk_button_new();
+  gtk_button_set_has_frame(GTK_BUTTON(btn), FALSE);
+  gtk_widget_add_css_class(btn, "action-card");
+  gtk_widget_set_hexpand(btn, TRUE);
+
+  GtkWidget *hbox = gtk_box_new(GTK_ORIENTATION_HORIZONTAL, 14);
+
+  /* Icon in colored circle */
+  GtkWidget *icon_frame = gtk_box_new(GTK_ORIENTATION_VERTICAL, 0);
+  gtk_widget_add_css_class(icon_frame, "action-icon");
+  if (icon_color_class) gtk_widget_add_css_class(icon_frame, icon_color_class);
+  gtk_widget_set_valign(icon_frame, GTK_ALIGN_CENTER);
+  GtkWidget *icon = gtk_image_new_from_icon_name(icon_name);
+  gtk_image_set_pixel_size(GTK_IMAGE(icon), 22);
+  gtk_box_append(GTK_BOX(icon_frame), icon);
+  gtk_box_append(GTK_BOX(hbox), icon_frame);
+
+  /* Text */
+  GtkWidget *vbox = gtk_box_new(GTK_ORIENTATION_VERTICAL, 2);
+  gtk_widget_set_hexpand(vbox, TRUE);
+
+  GtkWidget *t = gtk_label_new(title);
+  gtk_widget_add_css_class(t, "action-title");
+  gtk_label_set_xalign(GTK_LABEL(t), 0);
+  gtk_box_append(GTK_BOX(vbox), t);
+
+  GtkWidget *d = gtk_label_new(desc);
+  gtk_widget_add_css_class(d, "action-desc");
+  gtk_label_set_xalign(GTK_LABEL(d), 0);
+  gtk_label_set_wrap(GTK_LABEL(d), TRUE);
+  gtk_box_append(GTK_BOX(vbox), d);
+
+  gtk_box_append(GTK_BOX(hbox), vbox);
+
+  /* Arrow indicator */
+  GtkWidget *arrow = gtk_image_new_from_icon_name("go-next-symbolic");
+  gtk_image_set_pixel_size(GTK_IMAGE(arrow), 16);
+  gtk_widget_set_opacity(arrow, 0.3);
+  gtk_widget_set_valign(arrow, GTK_ALIGN_CENTER);
+  gtk_box_append(GTK_BOX(hbox), arrow);
+
+  gtk_button_set_child(GTK_BUTTON(btn), hbox);
+  gtk_actionable_set_action_name(GTK_ACTIONABLE(btn), action_name);
+  return btn;
+}
+
+/* ── Shortcut pill ── */
+static GtkWidget *shortcut_pill(const char *key, const char *label,
+                                 const char *action_name) {
+  GtkWidget *btn = gtk_button_new();
+  gtk_button_set_has_frame(GTK_BUTTON(btn), FALSE);
+  gtk_widget_add_css_class(btn, "shortcut-pill");
+  gtk_widget_set_hexpand(btn, TRUE);
+
+  GtkWidget *hbox = gtk_box_new(GTK_ORIENTATION_HORIZONTAL, 8);
+  gtk_widget_set_halign(hbox, GTK_ALIGN_CENTER);
+
+  GtkWidget *k = gtk_label_new(key);
+  gtk_widget_add_css_class(k, "shortcut-key");
+  gtk_box_append(GTK_BOX(hbox), k);
+
+  GtkWidget *l = gtk_label_new(label);
+  gtk_widget_add_css_class(l, "shortcut-label");
+  gtk_box_append(GTK_BOX(hbox), l);
+
+  gtk_button_set_child(GTK_BUTTON(btn), hbox);
+  if (action_name)
+    gtk_actionable_set_action_name(GTK_ACTIONABLE(btn), action_name);
+  return btn;
+}
+
+/* ── Section header ── */
+static GtkWidget *wc_section(const char *text) {
+  GtkWidget *lbl = gtk_label_new(text);
+  gtk_widget_add_css_class(lbl, "wc-section-title");
+  gtk_label_set_xalign(GTK_LABEL(lbl), 0);
+  gtk_widget_set_margin_top(lbl, 20);
+  gtk_widget_set_margin_bottom(lbl, 8);
+  return lbl;
+}
+
+static GtkWidget *create_welcome_page(void) {
+  ensure_welcome_css();
+
+  GtkWidget *scroll = gtk_scrolled_window_new();
+  gtk_scrolled_window_set_policy(GTK_SCROLLED_WINDOW(scroll),
+                                  GTK_POLICY_NEVER, GTK_POLICY_AUTOMATIC);
+  gtk_widget_set_vexpand(scroll, TRUE);
+
+  GtkWidget *bg = gtk_box_new(GTK_ORIENTATION_VERTICAL, 0);
+  gtk_widget_add_css_class(bg, "welcome-bg");
+  gtk_widget_set_hexpand(bg, TRUE);
+
+  /* ════════════════════════════════════════════
+   * Hero banner with greeting + account info
+   * ════════════════════════════════════════════ */
+  GtkWidget *hero = gtk_box_new(GTK_ORIENTATION_VERTICAL, 4);
+  gtk_widget_add_css_class(hero, "welcome-hero");
+
+  /* Greeting */
+  gchar *real_name = prefs_get_string(PREFS_GROUP_SENDING_MAIL, "real_name", "");
+  const char *first = (real_name && real_name[0]) ? real_name : "there";
+  /* Extract first name only */
+  char first_name[64];
+  g_strlcpy(first_name, first, sizeof(first_name));
+  char *sp = strchr(first_name, ' ');
+  if (sp) *sp = '\0';
+
+  GDateTime *now = g_date_time_new_now_local();
+  int hour = g_date_time_get_hour(now);
+  const char *tod = (hour < 12) ? "Good morning" :
+                    (hour < 17) ? "Good afternoon" : "Good evening";
+  char greeting[128];
+  snprintf(greeting, sizeof(greeting), "%s, %s", tod, first_name);
+  g_date_time_unref(now);
+  g_free(real_name);
+
+  GtkWidget *greet_lbl = gtk_label_new(greeting);
+  gtk_widget_add_css_class(greet_lbl, "welcome-greeting");
+  gtk_label_set_xalign(GTK_LABEL(greet_lbl), 0);
+  gtk_box_append(GTK_BOX(hero), greet_lbl);
+
+  /* Account line */
+  gchar *email = prefs_get_string(PREFS_GROUP_SENDING_MAIL, "email_address", "");
+  gchar *server = prefs_get_string(PREFS_GROUP_CHECKING_MAIL, "pop_server", "");
+  gboolean use_imap = prefs_get_bool(PREFS_GROUP_CHECKING_MAIL, "use_imap", FALSE);
+  gboolean use_ssl = prefs_get_bool(PREFS_GROUP_SSL, "use_ssl", FALSE);
+  char acct_line[256];
+  snprintf(acct_line, sizeof(acct_line), "%s  %s  %s  %s",
+           (email && email[0]) ? email : "No email configured",
+           use_imap ? "IMAP" : "POP3",
+           (server && server[0]) ? server : "",
+           use_ssl ? "SSL" : "");
+  g_free(email);
+  g_free(server);
+
+  GtkWidget *acct_lbl = gtk_label_new(acct_line);
+  gtk_widget_add_css_class(acct_lbl, "welcome-account-line");
+  gtk_label_set_xalign(GTK_LABEL(acct_lbl), 0);
+  gtk_box_append(GTK_BOX(hero), acct_lbl);
+
+  gtk_box_append(GTK_BOX(bg), hero);
+
+  /* ════════════════════════════════════════════
+   * Dashboard body — padded content area
+   * ════════════════════════════════════════════ */
+  GtkWidget *body = gtk_box_new(GTK_ORIENTATION_VERTICAL, 0);
+  gtk_widget_set_margin_start(body, 32);
+  gtk_widget_set_margin_end(body, 32);
+  gtk_widget_set_margin_top(body, 20);
+  gtk_widget_set_margin_bottom(body, 32);
+
+  /* ── Stats row: 4 metric cards ── */
+  int inbox_n = count_toc_messages("In");
+  int out_n   = count_toc_messages("Out");
+  int trash_n = count_toc_messages("Trash");
+  int junk_n  = count_toc_messages("Junk");
+
+  char s1[16], s2[16], s3[16], s4[16];
+  snprintf(s1, sizeof(s1), "%d", inbox_n);
+  snprintf(s2, sizeof(s2), "%d", out_n);
+  snprintf(s3, sizeof(s3), "%d", junk_n);
+  snprintf(s4, sizeof(s4), "%d", trash_n);
+
+  GtkWidget *stats = gtk_box_new(GTK_ORIENTATION_HORIZONTAL, 12);
+  gtk_box_append(GTK_BOX(stats), stat_pill(s1, "Inbox",   "stat-accent-blue"));
+  gtk_box_append(GTK_BOX(stats), stat_pill(s2, "Outbox",  "stat-accent-green"));
+  gtk_box_append(GTK_BOX(stats), stat_pill(s3, "Junk",    "stat-accent-amber"));
+  gtk_box_append(GTK_BOX(stats), stat_pill(s4, "Trash",   "stat-accent-red"));
+  gtk_box_append(GTK_BOX(body), stats);
+
+  /* ── Two-column grid: actions left, tools right ── */
+  GtkWidget *columns = gtk_box_new(GTK_ORIENTATION_HORIZONTAL, 20);
+  gtk_widget_set_margin_top(columns, 4);
+
+  /* Left column — primary actions */
+  GtkWidget *col_left = gtk_box_new(GTK_ORIENTATION_VERTICAL, 0);
+  gtk_widget_set_hexpand(col_left, TRUE);
+
+  gtk_box_append(GTK_BOX(col_left), wc_section("ACTIONS"));
+
+  GtkWidget *al = gtk_box_new(GTK_ORIENTATION_VERTICAL, 8);
+  gtk_box_append(GTK_BOX(al),
+      action_card("mail-unread-symbolic", NULL,
+                  "Check Mail", "Fetch new messages from the server",
+                  "app.check-mail"));
+  gtk_box_append(GTK_BOX(al),
+      action_card("document-new-symbolic", "action-icon-green",
+                  "New Message", "Compose a new email",
+                  "app.new-message"));
+  gtk_box_append(GTK_BOX(al),
+      action_card("mail-send-symbolic", "action-icon-amber",
+                  "Send Queued", "Deliver messages waiting in the outbox",
+                  "app.send-queued"));
+  gtk_box_append(GTK_BOX(al),
+      action_card("mail-reply-sender-symbolic", "action-icon-purple",
+                  "Reply", "Reply to the selected message",
+                  "app.reply"));
+  gtk_box_append(GTK_BOX(al),
+      action_card("mail-forward-symbolic", "action-icon-cyan",
+                  "Forward", "Forward the selected message",
+                  "app.forward"));
+  gtk_box_append(GTK_BOX(col_left), al);
+  gtk_box_append(GTK_BOX(columns), col_left);
+
+  /* Right column — tools & manage */
+  GtkWidget *col_right = gtk_box_new(GTK_ORIENTATION_VERTICAL, 0);
+  gtk_widget_set_hexpand(col_right, TRUE);
+
+  gtk_box_append(GTK_BOX(col_right), wc_section("MANAGE"));
+
+  GtkWidget *ar = gtk_box_new(GTK_ORIENTATION_VERTICAL, 8);
+  gtk_box_append(GTK_BOX(ar),
+      action_card("x-office-address-book-symbolic", NULL,
+                  "Address Book", "Manage contacts and nicknames",
+                  "app.address-book"));
+  gtk_box_append(GTK_BOX(ar),
+      action_card("edit-find-symbolic", "action-icon-amber",
+                  "Filters", "Automatic mail sorting rules",
+                  "app.filters"));
+  gtk_box_append(GTK_BOX(ar),
+      action_card("preferences-system-symbolic", "action-icon-purple",
+                  "Settings", "Accounts, display, and behavior",
+                  "app.preferences"));
+  gtk_box_append(GTK_BOX(ar),
+      action_card("avatar-default-symbolic", "action-icon-rose",
+                  "Personalities", "Manage email identities",
+                  "app.personalities"));
+  gtk_box_append(GTK_BOX(ar),
+      action_card("utilities-system-monitor-symbolic", "action-icon-cyan",
+                  "Statistics", "View mail usage statistics",
+                  "app.statistics"));
+  gtk_box_append(GTK_BOX(col_right), ar);
+  gtk_box_append(GTK_BOX(columns), col_right);
+
+  gtk_box_append(GTK_BOX(body), columns);
+
+  /* ── Keyboard shortcuts row ── */
+  gtk_box_append(GTK_BOX(body), wc_section("KEYBOARD SHORTCUTS"));
+
+  GtkWidget *shortcuts = gtk_box_new(GTK_ORIENTATION_HORIZONTAL, 8);
+  gtk_box_append(GTK_BOX(shortcuts),
+      shortcut_pill("\xe2\x8c\x98N", "New Message", "app.new-message"));
+  gtk_box_append(GTK_BOX(shortcuts),
+      shortcut_pill("\xe2\x8c\x98M", "Check Mail", "app.check-mail"));
+  gtk_box_append(GTK_BOX(shortcuts),
+      shortcut_pill("\xe2\x8c\x98R", "Reply", "app.reply"));
+  gtk_box_append(GTK_BOX(shortcuts),
+      shortcut_pill("\xe2\x8c\x98T", "Send Queued", "app.send-queued"));
+  gtk_box_append(GTK_BOX(shortcuts),
+      shortcut_pill("\xe2\x8c\x98,", "Settings", "app.preferences"));
+  gtk_box_append(GTK_BOX(body), shortcuts);
+
+  /* ── Tip bar ── */
+  GtkWidget *tip = gtk_box_new(GTK_ORIENTATION_HORIZONTAL, 10);
+  gtk_widget_add_css_class(tip, "tip-bar");
+  gtk_widget_set_margin_top(tip, 16);
+
+  GtkWidget *tip_icon = gtk_image_new_from_icon_name("dialog-information-symbolic");
+  gtk_image_set_pixel_size(GTK_IMAGE(tip_icon), 18);
+  gtk_widget_set_valign(tip_icon, GTK_ALIGN_CENTER);
+  gtk_box_append(GTK_BOX(tip), tip_icon);
+
+  GtkWidget *tip_text = gtk_label_new(
+      "Tip: Double-click any mailbox in the sidebar to open it in a new tab. "
+      "Drag tabs to reorder or tear them off into separate windows.");
+  gtk_widget_add_css_class(tip_text, "tip-text");
+  gtk_label_set_wrap(GTK_LABEL(tip_text), TRUE);
+  gtk_widget_set_hexpand(tip_text, TRUE);
+  gtk_box_append(GTK_BOX(tip), tip_text);
+
+  gtk_box_append(GTK_BOX(body), tip);
+
+  gtk_box_append(GTK_BOX(bg), body);
+  gtk_scrolled_window_set_child(GTK_SCROLLED_WINDOW(scroll), bg);
+
+  return scroll;
+}
+
 /* Create main layout */
 static GtkWidget *create_main_layout(void) {
   GtkWidget *main_box = gtk_box_new(GTK_ORIENTATION_VERTICAL, 0);
@@ -2021,7 +2462,7 @@ static GtkWidget *create_main_layout(void) {
                    G_CALLBACK(on_create_window), NULL);
 
   /* Start with a welcome page */
-  GtkWidget *welcome = gtk_label_new("Double-click a mailbox to open it.");
+  GtkWidget *welcome = create_welcome_page();
   gtk_notebook_append_page(GTK_NOTEBOOK(mailbox_notebook), welcome,
                            gtk_label_new("Welcome"));
 
@@ -2084,6 +2525,11 @@ static void activate(GtkApplication *app, gpointer user_data) {
 
   action = g_simple_action_new("new-message", NULL);
   g_signal_connect(action, "activate", G_CALLBACK(action_new_message), app);
+  g_action_map_add_action(G_ACTION_MAP(app), G_ACTION(action));
+  g_object_unref(action);
+
+  action = g_simple_action_new("old-compose", NULL);
+  g_signal_connect(action, "activate", G_CALLBACK(action_old_compose), NULL);
   g_action_map_add_action(G_ACTION_MAP(app), G_ACTION(action));
   g_object_unref(action);
 

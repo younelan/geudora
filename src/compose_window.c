@@ -9,12 +9,16 @@
 #include "gtk_mailbox.h"
 #include "mailxfer.h"
 #include "gtk_prefs.h"
+#include "toc.h"
+#include "mailbox.h"  /* QUEUED state */
 #include <string.h>
 #include <stdio.h>
 #include <time.h>
 #include <gdk-pixbuf/gdk-pixbuf.h>
 
 extern const char *prefs_get_mailboxes_path(void);
+extern TOCType *CheckTOC(FSSpecPtr spec);
+extern int WriteTOC(TOCType *toc);
 
 /* Priority levels matching original Eudora */
 enum {
@@ -300,15 +304,31 @@ static void on_send_clicked(GtkWidget *widget, gpointer user_data)
     g_string_append_printf(msg, "X-Mailer: gEudora\n");
     g_string_append_printf(msg, "\n%s", body);
 
-    /* Save to Out mailbox */
+    /* Save to Out mailbox and update TOC with QUEUED state */
     gchar *out_path = gtk_mailbox_get_path("Out");
     gtk_mailbox_add_message(out_path, msg->str);
+
+    /* Rebuild TOC to pick up the new message, then set state to QUEUED */
+    {
+      FSSpec outSpec;
+      memset(&outSpec, 0, sizeof(outSpec));
+      snprintf(outSpec.path, sizeof(outSpec.path), "%s", out_path);
+      strncpy(outSpec.name, "Out", sizeof(outSpec.name) - 1);
+
+      /* Force TOC rebuild to pick up new message */
+      TOCType *outToc = CheckTOC(&outSpec);
+      if (outToc && outToc->count > 0) {
+        /* Set the last (newly added) message to QUEUED */
+        outToc->sums[outToc->count - 1].state = QUEUED;
+        WriteTOC(outToc);
+        g_print("Message queued (state=%d) in Out, total %d messages\n",
+                QUEUED, outToc->count);
+      }
+    }
     g_free(out_path);
 
     /* Trigger mail transfer */
     XferMail(false, true, true, false, true, 0);
-
-    g_print("Message queued in Out mailbox and sending triggered.\n");
 
     g_free(body);
     g_date_time_unref(now);

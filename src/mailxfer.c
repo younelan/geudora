@@ -985,6 +985,7 @@ short XferMailLo(bool check, bool send, bool manual, XferFlags flags,
 #endif
   short anyErr = 0;
   Str255 s;
+  char popUser[256], popHost[256];
   TransStream mailStream = 0;
   bool willCheck = false, willSend = false;
 
@@ -1009,7 +1010,7 @@ short XferMailLo(bool check, bool send, bool manual, XferFlags flags,
     goto done;
   if (check)
     HesOK = True; // force re-fetch of hesiod info
-  GetPOPInfo(s, s + 127);
+  GetPOPInfo(popUser, popHost);
   HesOK = False;
 
   /*
@@ -1185,7 +1186,7 @@ done:
  **********************************************************************/
 bool NeedPassword(bool check, bool send) {
   bool needPW;
-  Str255 s;
+  char s[256];
   bool doesAuth = PrefIsSet(PREF_SMTP_DOES_AUTH);
   bool authOK = !PrefIsSet(PREF_SMTP_AUTH_NOTOK);
   bool xtndXmit = PrefIsSet(PREF_POP_SEND);
@@ -1194,8 +1195,10 @@ bool NeedPassword(bool check, bool send) {
 
   if (!(*CurPers)->doMeNow)
     return (False);
-  needPW = !PrefIsSet(PREF_KERBEROS) && !UUPCIn && check &&
-           *GetPOPPref(s); /* canonical; a POP check */
+
+  /* Need password for POP or IMAP check */
+  needPW = !PrefIsSet(PREF_KERBEROS) && check &&
+           *GetPOPPref((unsigned char *)s);
 
   // Are we going to send in a potentially auth-able way?
   if (!needPW && (doesAuth || xtndXmit) && send && !UUPCOut && !doggieStyle) {

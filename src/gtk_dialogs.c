@@ -266,6 +266,8 @@ unsigned char *GetPref(unsigned char *dest, short prefId) {
 bool PrefIsSet(short prefId) {
   /* Bridge critical prefs to INI settings */
   switch (prefId) {
+    case PREF_SAVE_PASSWORD:
+      return (bool)prefs_get_bool(PREFS_GROUP_CHECKING_MAIL, "save_password", FALSE);
     case PREF_IS_IMAP:
       return (bool)prefs_get_bool(PREFS_GROUP_CHECKING_MAIL, "use_imap", FALSE);
     case PREF_KERBEROS:

@@ -20,6 +20,7 @@ DAMAGE. */
 #include "StringUtil.h"
 #include "MyRes.h"
 #include "StringDefs.h"
+#include "gtk_prefs.h"
 #include "gtk_dialogs.h"
 #include "fileutil.h"
 #include "util.h"
@@ -67,35 +68,38 @@ bool PersAnyPasswords(void)
  **********************************************************************/
 OSErr PersFillPw(PersHandle pers,uint32_t whichOnes)
 {
-	Str255 s;
+	char pw[256];
 	OSErr err = noErr;
-	Str127 uName, hName, persName;
-	
-	*s = 0;
-	
-#ifdef HAVE_KEYCHAIN
-	if (PrefIsSet(PREF_KEYCHAIN))
-	{
-		err = FindPersKCPassword(pers,s,sizeof(s));
-		if (err==userCanceledErr) return err;
-		PSCopy((*pers)->password,s);
-	}
-#endif //HAVE_KEYCHAIN
+	char uName[128], hName[128], persName[64];
 
-	if (!*(*pers)->password)
+	pw[0] = '\0';
+
+	if (!(*pers)->password[0])
 	{
-		GetPassStuff(persName,uName,hName);
-		GetPassword(persName,uName,hName,s,sizeof(s),ENTER);
-		(*pers)->dirty = true;
-		PSCopy((*pers)->password,s);
-		if (*s)
-		{
-			if (PrefIsSet(PREF_SAVE_PASSWORD)) PersSavePw(pers);
-			PSCopy((*pers)->password,s);	// savepw wipes it out; put it back, for now
+		/* Try loading saved password from INI first */
+		if (prefs_get_bool(PREFS_GROUP_CHECKING_MAIL, "save_password", FALSE)) {
+			gchar *saved = prefs_get_string(PREFS_GROUP_CHECKING_MAIL, "saved_password", "");
+			if (saved && saved[0]) {
+				strncpy((char *)(*pers)->password, saved, sizeof((*pers)->password) - 1);
+				(*pers)->password[sizeof((*pers)->password) - 1] = '\0';
+			}
+			g_free(saved);
+		}
+
+		/* If still no password, prompt the user */
+		if (!(*pers)->password[0]) {
+			GetPassStuff((unsigned char *)persName, (unsigned char *)uName, (unsigned char *)hName);
+			GetPassword((unsigned char *)persName, (unsigned char *)uName, (unsigned char *)hName,
+			            (unsigned char *)pw, sizeof(pw), ENTER);
+			(*pers)->dirty = true;
+			if (pw[0]) {
+				strncpy((char *)(*pers)->password, pw, sizeof((*pers)->password) - 1);
+				(*pers)->password[sizeof((*pers)->password) - 1] = '\0';
+			}
 		}
 	}
-	
-	return(*(*pers)->password ? noErr:userCanceledErr);
+
+	return((*pers)->password[0] ? noErr : userCanceledErr);
 }
 
 /**********************************************************************
@@ -104,33 +108,18 @@ OSErr PersFillPw(PersHandle pers,uint32_t whichOnes)
 OSErr PersSavePw(PersHandle pers)
 {
 	OSErr err = noErr;
-	Str31 pass, secondPass;
-	Str255 scratch;
-	
-#ifdef HAVE_KEYCHAIN
-	if (KeychainAvailable() && PrefIsSet(PREF_KEYCHAIN))
-	{
-		err = UpdatePersKCPassword(pers);
-		WriteZero((*pers)->password,sizeof((*pers)->password));
-	}
-	else
-#endif //HAVE_KEYCHAIN
-	if (pers==PersList)
-	{
-		PSCopy(pass,(*PersList)->password);
-		PSCopy(secondPass,(*PersList)->secondPass);
- 		if (!EqualString(pass,GetPref(scratch,PREF_PASS_TEXT),True,True) ||
-	     	!EqualString(secondPass,GetPref(scratch,PREF_AUXPW),True,True))
-		{
-			SetPref(PREF_PASS_TEXT,pass);
-			SetPref(PREF_AUXPW,secondPass);
-			MyUpdateResFile(SettingsRefN);
+
+	if (prefs_get_bool(PREFS_GROUP_CHECKING_MAIL, "save_password", FALSE)) {
+		/* Save password to INI */
+		if ((*pers)->password[0]) {
+			prefs_set_string(PREFS_GROUP_CHECKING_MAIL, "saved_password",
+			                 (const char *)(*pers)->password);
 		}
+	} else {
+		/* User doesn't want password saved — clear it from INI */
+		prefs_set_string(PREFS_GROUP_CHECKING_MAIL, "saved_password", "");
 	}
-	else
-	{
-		err = PersSave(pers);
-	}
+
 	return(err);
 }
 
@@ -155,48 +144,12 @@ OSErr PersSaveAll(void)
 OSErr PersSave(PersHandle pers)
 {
 	OSErr err = noErr;
-	Str63 scratch;
-	PersHandle oldCur = CurPers;
-	Str63 oldPass;
-	
-	*oldPass = 0;
-	
-	if ((*pers)->dirty && (*pers)->resId)
-	{
-		// swap personality into current
-		CurPers = pers;
-		// make sure we don't unintentionally save the password
-		if (!PrefIsSet(PREF_SAVE_PASSWORD))
-		{
-			PSCopy(oldPass,(*pers)->password);
-			WriteZero(LDRef(pers)->password,sizeof((*pers)->password));
-			UL(pers);
-		}
-#ifdef HAVE_KEYCHAIN
-		else if (KeychainAvailable() && PrefIsSet(PREF_KEYCHAIN))
-		{
-			WriteZero((*pers)->password,sizeof((*pers)->password));
-		}
-#endif //HAVE_KEYCHAIN
 
-		// remove old, add new
-		ZapResource(PERS_RTYPE,(*pers)->resId);
-		AddMyResource((Handle)pers,PERS_RTYPE,(*pers)->resId,"");
-		if (!(err=ResError()))
-		{
-			err = MyUpdateResFile(SettingsRefN);
-			DetachResource((Handle)pers);
-		}
-		if (!err) (*pers)->dirty = False;
-		else
-		{
-			PSCopy(scratch,(*pers)->name);
-			Aprintf(OK_ALRT,err,PERS_SAVE_ERR,scratch);
-		}
-		
-		// put stuff back
-		CurPers = oldCur;
-		if (*oldPass) PSCopy((*pers)->password,oldPass);
+	if ((*pers)->dirty)
+	{
+		/* Save password if user wants it saved */
+		PersSavePw(pers);
+		(*pers)->dirty = False;
 	}
 	return(err);
 }

@@ -90,7 +90,7 @@ enum { kStatReadMsg = 0 };
 /* MemError defined in headers */
 /* PCopyTrim defined in headers */
 /* ResolveAliasOrElse defined in headers */
-#define BoxFOpen BoxFOpenImp
+/* BoxFOpen is the real implementation — stub removed from mac_stubs.c */
 #define LOG_FLOW 7
 
 /* Missing definitions restored */
@@ -553,6 +553,8 @@ int OpenMailbox(FSSpecPtr spec, bool showIt, TOCType * toc) {
     // resync the mailbox when it's convenient
     FlagForResync(toc);
   }
+
+  return 0;
 }
 
 /**********************************************************************
@@ -1347,12 +1349,12 @@ int BoxFOpenLo(TOCType * tocH, short sumNum) {
 
   if (tocH->refN == 0) {
     spec = GetMailboxSpec(tocH, sumNum);
+    g_print("BoxFOpen: name='%s' path='%s'\n", spec.name, spec.path);
     err = AFSpOpenDF(&spec, &newSpec, fsRdWrPerm, &refN);
     if (err)
       FileSystemError(OPEN_MBOX, spec.name, err);
     else
       tocH->refN = refN;
-    g_print("BoxFOpen: %s\n", spec.name);
   }
 
   return (err);

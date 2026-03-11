@@ -885,6 +885,13 @@ TOCType * GetSpecialTOC(short nameId) {
   snprintf(spec.path, sizeof(spec.path), "%s/%s", get_mail_dir(), name);
   strncpy(spec.name, name, sizeof(spec.name) - 1);
 
+  /* Create the mailbox file if it doesn't exist */
+  struct stat st;
+  if (stat(spec.path, &st) != 0) {
+    FILE *fp = fopen(spec.path, "w");
+    if (fp) fclose(fp);
+  }
+
   return TOCBySpec(&spec);
 }
 
@@ -956,13 +963,20 @@ static OSErr InsaneTOC(TOCType * tocH) {
   long boxSize = 0;
   if (stat(spec.path, &st) == 0)
     boxSize = (long)st.st_size;
+  else
+    g_warning("InsaneTOC(%s): stat failed for '%s': %s",
+              spec.name, spec.path, strerror(errno));
 
-  /* Right size? */
-  if (tocH->boxSize && tocH->boxSize - 1 != boxSize) {
+  /* Right size? Allow off-by-one (Mac line ending differences) */
+  if (tocH->boxSize && boxSize > 0 &&
+      labs(tocH->boxSize - boxSize) > 1) {
     g_warning("InsaneTOC(%s): file size mismatch (toc=%ld, file=%ld)",
               spec.name, tocH->boxSize, boxSize);
     return euMismatchTOC;
   }
+  /* If stat failed (boxSize==0), update boxSize from actual file */
+  if (boxSize > 0)
+    tocH->boxSize = boxSize;
 
   /* Check for out-of-range pointers */
   for (int i = 0; i < tocH->count; i++) {

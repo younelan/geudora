@@ -2520,7 +2520,7 @@ OSErr AFSpOpenDF(FSSpecPtr spec, FSSpecPtr newSpec, SignedByte permission,
   if ((err = ResolveAliasFile(newSpec, true, &folder, &wasIt)))
     return (err);
 
-  err = FSpOpenDF(newSpec->path, permission, &localRef);
+  err = FSpOpenDF(newSpec, permission, &localRef);
   if (!err)
     *refNum = localRef;
   return err;
@@ -2555,7 +2555,7 @@ OSErr AFSpDelete(FSSpecPtr spec, FSSpecPtr newSpec) {
   if ((err = ResolveAliasFile(newSpec, true, &folder, &wasIt)))
     return (err);
 
-  return (FSpDelete(newSpec->path));
+  return (FSpDelete(newSpec));
 }
 
 /************************************************************************

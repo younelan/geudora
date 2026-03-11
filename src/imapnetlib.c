@@ -69,8 +69,8 @@ bool CommandPeriod = false;
 #define ZapHandle(h)
 #define NuHandle(s) 0
 #define NCWrite(a,b,c)
-#define TickCount() 0
-#define ByteProgress(a,b,c)
+uint32_t TickCount(void);
+void ByteProgress(unsigned char *message, int onLine, int totLines);
 
 /* FlagsString declared in imapdownload.h */
 #define ASSERT(x)
@@ -2388,9 +2388,7 @@ long LoMemCheck(void) {
 
   PCopy(lastTwenty, last);
 
-#undef TickCount
   ret = TickCount();
-#define TickCount LoMemCheck
 
   return (ret);
 }

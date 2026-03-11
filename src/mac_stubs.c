@@ -40,9 +40,7 @@ void BeginPGP(void* pgpc) {
 }
 /* BoxCenterSelection — real implementation elsewhere */
 void *BoxCount = NULL; /* void ** Handle */
-int BoxFOpen(TOCType *tocH) {
-  return 0;
-}
+/* BoxFOpen — real implementation in mailbox.c */
 struct BoxMapStruct **BoxMap = NULL;
 void BoxPreviewProfile() {}
 /* BoxSelectAfter — real implementation elsewhere */
@@ -105,9 +103,7 @@ void DarkenColor() {}
 void DefPosition() {}
 void DisposeTLMIME(void* emsMIME) {
 }
-void* DoComposeNew(int type) {
-  return NULL;
-}
+/* DoComposeNew — ported to comp.c */
 bool DontTranslate = false; /* global variable, not a function */
 void DotToNum() {}
 void DragIsInteresting() {}
@@ -195,8 +191,7 @@ void GetMenuItemText() {}
 /* GetNamedResource — real inline in legacy_shim.h */
 void GetNewMyDialog() {}
 /* GetNewMyWindow - real impl in mywindow.c */
-void GetPassStuff(unsigned char *persName, unsigned char *uName, unsigned char *hName) {
-}
+/* GetPassStuff — ported to util.c, no longer a stub */
 void GetPortBounds() {}
 int GetPrefBit(short prefId, int bit) {
   return 0;

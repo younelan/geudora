@@ -52,11 +52,15 @@ void SetSendQueue(void)
     TOCType *toc = GetOutTOC();
     int count = 0;
     if (toc) {
+        g_print("SetSendQueue: Out TOC has %d messages\n", toc->count);
         for (int i = 0; i < toc->count; i++) {
             int state = toc->sums[i].state;
+            g_print("  msg %d: state=%d subj='%s'\n", i, state, toc->sums[i].subj);
             if (state == QUEUED || state == TIMED)
                 count++;
         }
+    } else {
+        g_print("SetSendQueue: GetOutTOC() returned NULL\n");
     }
     SendQueue = count;
     g_print("SetSendQueue: %d messages queued\n", count);
