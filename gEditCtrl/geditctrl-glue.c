@@ -711,6 +711,20 @@ void gedit_document_insert_markup(geditDocument *self, gint offset,
   g_string_free(plain, TRUE);
 }
 
+/* Set font family on the current selection */
+void geditctrl_set_font_family(GtkWidget *ctrl, const gchar *family) {
+  if (!GTK_IS_SCROLLED_WINDOW(ctrl)) return;
+  GtkWidget *area = gtk_scrolled_window_get_child(GTK_SCROLLED_WINDOW(ctrl));
+  GEditCtrlState *s = area ? gedit_state_for_area(area) : NULL;
+  geditDocument *doc = s ? s->doc : NULL;
+  if (!s || !doc) return;
+  gint a = MIN(s->sel_start, s->sel_end);
+  gint b = MAX(s->sel_start, s->sel_end);
+  if (b > a)
+    gedit_document_set_font_family(doc, a, b - a, family);
+  gtk_widget_queue_draw(area);
+}
+
 /* Clear all formatting on the current selection */
 void geditctrl_clear_style(GtkWidget *ctrl) {
   if (!GTK_IS_SCROLLED_WINDOW(ctrl)) return;
@@ -724,6 +738,7 @@ void geditctrl_clear_style(GtkWidget *ctrl) {
   GdkRGBA black = {0, 0, 0, 1};
   gedit_document_add_style_run(doc, a, b - a, 0, 0, 0, &black, 0);
   gedit_document_set_link(doc, a, b - a, NULL);
+  gedit_document_set_font_family(doc, a, b - a, NULL);
   gtk_widget_queue_draw(area);
 }
 
@@ -738,6 +753,40 @@ void geditctrl_set_link(GtkWidget *ctrl, const gchar *url) {
   gint b = MAX(s->sel_start, s->sel_end);
   if (b > a)
     gedit_document_set_link(doc, a, b - a, url);
+  gtk_widget_queue_draw(area);
+}
+
+/* Insert link text at caret (or replace selection) and apply link style */
+void geditctrl_insert_link(GtkWidget *ctrl, const gchar *url, const gchar *text) {
+  if (!GTK_IS_SCROLLED_WINDOW(ctrl)) return;
+  GtkWidget *area = gtk_scrolled_window_get_child(GTK_SCROLLED_WINDOW(ctrl));
+  GEditCtrlState *s = area ? gedit_state_for_area(area) : NULL;
+  geditDocument *doc = s ? s->doc : NULL;
+  if (!s || !doc || !url || !url[0]) return;
+
+  /* If there's a selection, delete it first */
+  gint insert_at = s->caret;
+  if (s->sel_start != s->sel_end) {
+    gint a = MIN(s->sel_start, s->sel_end);
+    gint b = MAX(s->sel_start, s->sel_end);
+    gedit_document_delete_range(doc, a, b - a);
+    insert_at = a;
+  }
+
+  /* Insert the display text */
+  const gchar *display = (text && text[0]) ? text : url;
+  gedit_document_insert_text(doc, insert_at, display);
+  gint len = (gint)g_utf8_strlen(display, -1);
+
+  /* Apply link style (blue underline + URL) */
+  gedit_document_set_link(doc, insert_at, len, url);
+
+  /* Move caret past the inserted link */
+  s->caret = insert_at + len;
+  s->sel_start = s->sel_end = s->caret;
+  s->sel_anchor = -1;
+
+  gedit_scroll_to_caret(area);
   gtk_widget_queue_draw(area);
 }
 

@@ -165,6 +165,10 @@ void gedit_document_get_para_attr(geditDocument *self, gint offset, gint length,
 
 GList *gedit_document_get_style_runs(geditDocument *self);
 
+/* Font family API */
+void gedit_document_set_font_family(geditDocument *self, gint offset,
+                                    gint length, const gchar *family);
+
 /* Hyperlink APIs */
 void gedit_document_set_link(geditDocument *self, gint offset, gint length,
                              const gchar *url);

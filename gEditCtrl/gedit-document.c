@@ -852,6 +852,12 @@ PangoAttrList *gedit_document_get_attr_list(geditDocument *self) {
       a->end_index = end_byte;
       pango_attr_list_insert(list, a);
     }
+    if (run->font_family && run->font_family[0]) {
+      PangoAttribute *a = pango_attr_family_new(run->font_family);
+      a->start_index = start_byte;
+      a->end_index = end_byte;
+      pango_attr_list_insert(list, a);
+    }
     if (run->is_graphic && run->graphic) {
       /* sit on the baseline */
       PangoRectangle rect = {0, -run->graphic->height * PANGO_SCALE,
@@ -882,6 +888,57 @@ GList *gedit_document_get_style_runs(geditDocument *self) {
   GList *res = g_list_copy(self->style_runs);
   g_mutex_unlock(&self->mutex);
   return res;
+}
+
+/* Set font family on a range of text. Pass NULL to reset to default. */
+void gedit_document_set_font_family(geditDocument *self, gint offset,
+                                    gint length, const gchar *family) {
+  g_return_if_fail(gedit_DOCUMENT(self));
+  if (length <= 0) return;
+
+  g_mutex_lock(&self->mutex);
+  gint range_end = offset + length;
+  GList *new_runs = NULL;
+
+  for (GList *l = self->style_runs; l; l = l->next) {
+    geditStyleRun *run = l->data;
+    gint rs = run->offset, re = rs + run->length;
+    if (re <= offset || rs >= range_end) {
+      new_runs = g_list_append(new_runs, gedit_style_run_copy(run));
+      continue;
+    }
+    if (rs < offset) {
+      geditStyleRun *pre = gedit_style_run_copy(run);
+      pre->length = offset - rs;
+      new_runs = g_list_append(new_runs, pre);
+    }
+    gint ms = MAX(rs, offset), me = MIN(re, range_end);
+    geditStyleRun *mid = gedit_style_run_copy(run);
+    mid->offset = ms;
+    mid->length = me - ms;
+    g_free(mid->font_family);
+    mid->font_family = g_strdup(family);
+    new_runs = g_list_append(new_runs, mid);
+    if (re > range_end) {
+      geditStyleRun *suf = gedit_style_run_copy(run);
+      suf->offset = range_end;
+      suf->length = re - range_end;
+      new_runs = g_list_append(new_runs, suf);
+    }
+  }
+
+  if (!self->style_runs) {
+    geditStyleRun *nr = g_new0(geditStyleRun, 1);
+    nr->offset = offset;
+    nr->length = length;
+    nr->font_family = g_strdup(family);
+    new_runs = g_list_append(new_runs, nr);
+  }
+
+  g_list_free_full(self->style_runs, (GDestroyNotify)gedit_style_run_free);
+  self->style_runs = new_runs;
+  g_mutex_unlock(&self->mutex);
+  g_signal_emit(self, signals[DOCUMENT_CHANGED], 0);
 }
 
 /* Set a hyperlink URL on a range of text. Pass NULL to remove link. */
@@ -1236,6 +1293,12 @@ PangoAttrList *gedit_document_get_attr_list_for_range(geditDocument *self,
       sz->start_index = rel_start;
       sz->end_index = rel_end;
       pango_attr_list_insert(list, sz);
+    }
+    if (run->font_family && run->font_family[0]) {
+      PangoAttribute *ff = pango_attr_family_new(run->font_family);
+      ff->start_index = rel_start;
+      ff->end_index = rel_end;
+      pango_attr_list_insert(list, ff);
     }
     if (run->is_graphic && run->graphic) {
       /* sit on the baseline */
