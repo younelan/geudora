@@ -261,23 +261,26 @@ G_GNUC_INTERNAL void gedit_draw_cb(GtkDrawingArea *area, cairo_t *cr, int width,
         double gy = y + crect.y / (double)PANGO_SCALE;
 
         if (run->graphic->texture) {
+          GdkTexture *tex = run->graphic->texture;
+          int tw = gdk_texture_get_width(tex);
+          int th = gdk_texture_get_height(tex);
+
+          /* Download texture pixels into a cairo image surface */
+          cairo_surface_t *img = cairo_image_surface_create(CAIRO_FORMAT_ARGB32, tw, th);
+          guchar *pixels = cairo_image_surface_get_data(img);
+          gsize stride = (gsize)cairo_image_surface_get_stride(img);
+          gdk_texture_download(tex, pixels, stride);
+          cairo_surface_mark_dirty(img);
+
           cairo_save(cr);
           cairo_translate(cr, gx, gy);
-          double sw = (double)run->graphic->width /
-                      gdk_texture_get_width(run->graphic->texture);
-          double sh = (double)run->graphic->height /
-                      gdk_texture_get_height(run->graphic->texture);
+          double sw = (double)run->graphic->width / tw;
+          double sh = (double)run->graphic->height / th;
           cairo_scale(cr, sw, sh);
-
-          /* Draw a light blue placeholder for the texture */
-          cairo_set_source_rgb(cr, 0.8, 0.9, 1.0);
-          cairo_rectangle(cr, 0, 0, gdk_texture_get_width(run->graphic->texture),
-                          gdk_texture_get_height(run->graphic->texture));
-          cairo_fill(cr);
-          cairo_set_source_rgb(cr, 0.2, 0.4, 0.8);
-          cairo_set_line_width(cr, 1.0);
-          cairo_stroke(cr);
+          cairo_set_source_surface(cr, img, 0, 0);
+          cairo_paint(cr);
           cairo_restore(cr);
+          cairo_surface_destroy(img);
         } else {
           /* Placeholder: draw a gray box */
           cairo_save(cr);

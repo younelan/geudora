@@ -11,7 +11,9 @@ GtkWidget *geditctrl_new(void) {
   gtk_widget_set_hexpand(area, TRUE);
   gtk_widget_set_vexpand(area, TRUE);
   gtk_widget_set_can_focus(area, TRUE);
+  gtk_widget_set_focusable(area, TRUE);
   gtk_widget_set_can_focus(scrolled, TRUE);
+  gtk_widget_set_focusable(scrolled, TRUE);
   
   /* Set minimum size for the drawing area */
   gtk_widget_set_size_request(area, 200, 200);
@@ -165,11 +167,10 @@ void geditctrl_set_color(GtkWidget *ctrl, const GdkRGBA *color) {
       ed++;
     }
     if (ed > st)
-      gedit_document_add_style_run(doc, st, ed - st, FALSE, FALSE, FALSE, color,
-                                   0);
+      gedit_document_add_style_run(doc, st, ed - st, -1, -1, -1, color, -1);
     g_free(t);
   } else
-    gedit_document_add_style_run(doc, a, b - a, FALSE, FALSE, FALSE, color, 0);
+    gedit_document_add_style_run(doc, a, b - a, -1, -1, -1, color, -1);
 }
 
 void geditctrl_change_font_size(GtkWidget *ctrl, gint delta_points) {
@@ -211,11 +212,11 @@ void geditctrl_change_font_size(GtkWidget *ctrl, gint delta_points) {
       ed++;
     }
     if (ed > st)
-      gedit_document_add_style_run(doc, st, ed - st, FALSE, FALSE, FALSE, NULL,
+      gedit_document_add_style_run(doc, st, ed - st, -1, -1, -1, NULL,
                                    delta_points);
     g_free(t);
   } else
-    gedit_document_add_style_run(doc, a, b - a, FALSE, FALSE, FALSE, NULL,
+    gedit_document_add_style_run(doc, a, b - a, -1, -1, -1, NULL,
                                  delta_points);
 }
 
@@ -258,12 +259,10 @@ void geditctrl_set_font_size(GtkWidget *ctrl, gint points) {
       ed++;
     }
     if (ed > st)
-      gedit_document_add_style_run(doc, st, ed - st, FALSE, FALSE, FALSE, NULL,
-                                   points);
+      gedit_document_add_style_run(doc, st, ed - st, -1, -1, -1, NULL, points);
     g_free(t);
   } else
-    gedit_document_add_style_run(doc, a, b - a, FALSE, FALSE, FALSE, NULL,
-                                 points);
+    gedit_document_add_style_run(doc, a, b - a, -1, -1, -1, NULL, points);
 }
 
 gboolean geditctrl_handle_key(GtkWidget *ctrl, guint keyval, guint keycode,
@@ -373,7 +372,7 @@ void geditctrl_change_quote_level(GtkWidget *ctrl, gint delta) {
   gtk_widget_queue_draw(area);
 }
 
-void geditctrl_insert_image(GtkWidget *ctrl, GdkPixbuf *texture, gint width,
+void geditctrl_insert_image(GtkWidget *ctrl, GdkPixbuf *pixbuf, gint width,
                             gint height) {
   if (!GTK_IS_SCROLLED_WINDOW(ctrl))
     return;
@@ -382,9 +381,13 @@ void geditctrl_insert_image(GtkWidget *ctrl, GdkPixbuf *texture, gint width,
     return;
   GEditCtrlState *s = gedit_state_for_area(area);
   geditDocument *doc = s ? s->doc : NULL;
-  if (!s || !doc)
+  if (!s || !doc || !pixbuf)
     return;
+  /* Convert GdkPixbuf → GdkTexture for GTK4 rendering */
+  GdkTexture *texture = gdk_texture_new_for_pixbuf(pixbuf);
+  if (!texture) return;
   gedit_document_insert_graphic(doc, s->caret, texture, width, height);
+  g_object_unref(texture); /* insert_graphic refs it internally */
   s->caret++;
   s->sel_start = s->caret;
   s->sel_end = s->caret;

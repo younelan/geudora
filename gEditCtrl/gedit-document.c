@@ -37,8 +37,8 @@ static void gedit_style_run_free(geditStyleRun *run);
 static void get_para_attr_unlocked(geditDocument *self, gint offset,
                                    gint length, geditParaAttr *out_attr);
 static void add_style_run_unlocked(geditDocument *self, gint offset,
-                                   gint length, gboolean bold, gboolean italic,
-                                   gboolean underline, const GdkRGBA *color,
+                                   gint length, gint bold, gint italic,
+                                   gint underline, const GdkRGBA *color,
                                    gint font_size);
 
 static geditParaAttr *gedit_para_attr_copy(const geditParaAttr *src) {
@@ -432,30 +432,138 @@ gint gedit_document_copy_range(geditDocument *src, gint src_offset,
   return 0;
 }
 
+/* Resolve effective style at offset by walking existing runs (caller holds lock) */
+static void get_style_at_unlocked(geditDocument *self, gint offset,
+                                  geditStyleRun *out) {
+  out->offset = offset;
+  out->length = 0;
+  out->bold = FALSE;
+  out->italic = FALSE;
+  out->underline = FALSE;
+  gdk_rgba_parse(&out->color, "#000000");
+  out->font_size = 0;
+  out->is_graphic = FALSE;
+  out->graphic = NULL;
+  for (GList *l = self->style_runs; l; l = l->next) {
+    geditStyleRun *r = l->data;
+    if (offset >= r->offset && offset < r->offset + r->length) {
+      if (r->bold) out->bold = TRUE;
+      if (r->italic) out->italic = TRUE;
+      if (r->underline) out->underline = TRUE;
+      if (r->font_size > 0) out->font_size = r->font_size;
+      out->color = r->color;
+      if (r->is_graphic) { out->is_graphic = TRUE; out->graphic = r->graphic; }
+    }
+  }
+}
+
+/* Compare helper for sorting style runs by offset */
+static gint style_run_cmp_offset(gconstpointer a, gconstpointer b) {
+  const geditStyleRun *ra = a, *rb = b;
+  return ra->offset - rb->offset;
+}
+
+/* Merge a style change into existing runs, preserving attributes not being changed.
+ * bold/italic/underline: -1 = preserve existing, 0 = set FALSE, 1 = set TRUE
+ * color: NULL = preserve existing per-run colors
+ * font_size: -1 = preserve existing, 0+ = set absolute value */
 static void add_style_run_unlocked(geditDocument *self, gint offset,
-                                   gint length, gboolean bold, gboolean italic,
-                                   gboolean underline, const GdkRGBA *color,
+                                   gint length, gint bold, gint italic,
+                                   gint underline, const GdkRGBA *color,
                                    gint font_size) {
-  geditStyleRun *run = g_new0(geditStyleRun, 1);
-  run->offset = offset;
-  run->length = length;
-  run->bold = bold;
-  run->italic = italic;
-  run->underline = underline;
-  if (color)
-    run->color = *color;
-  else
-    gdk_rgba_parse(&run->color, "#000000");
-  run->font_size = font_size;
-  self->style_runs = g_list_append(self->style_runs, run);
-  g_print("add_style_run_unlocked: doc=%p offset=%d length=%d bold=%d "
-          "italic=%d underline=%d font_size=%d\n",
-          self, offset, length, bold, italic, underline, font_size);
+  if (length <= 0) return;
+  gint range_end = offset + length;
+  GList *new_runs = NULL;
+  GList *mid_runs = NULL; /* merged runs within the target range */
+
+  for (GList *l = self->style_runs; l; l = l->next) {
+    geditStyleRun *run = l->data;
+    gint rs = run->offset, re = rs + run->length;
+
+    if (re <= offset || rs >= range_end) {
+      /* No overlap — keep unchanged */
+      new_runs = g_list_append(new_runs, gedit_style_run_copy(run));
+      continue;
+    }
+
+    /* Prefix before the target range */
+    if (rs < offset) {
+      geditStyleRun *pre = gedit_style_run_copy(run);
+      pre->length = offset - rs;
+      new_runs = g_list_append(new_runs, pre);
+    }
+
+    /* Overlapping middle — copy existing run then merge new attributes */
+    gint ms = MAX(rs, offset), me = MIN(re, range_end);
+    geditStyleRun *mid = gedit_style_run_copy(run);
+    mid->offset = ms;
+    mid->length = me - ms;
+    if (bold >= 0) mid->bold = (gboolean)bold;
+    if (italic >= 0) mid->italic = (gboolean)italic;
+    if (underline >= 0) mid->underline = (gboolean)underline;
+    if (color) mid->color = *color;
+    if (font_size >= 0) mid->font_size = font_size;
+    mid_runs = g_list_append(mid_runs, mid);
+
+    /* Suffix after the target range */
+    if (re > range_end) {
+      geditStyleRun *suf = gedit_style_run_copy(run);
+      suf->offset = range_end;
+      suf->length = re - range_end;
+      new_runs = g_list_append(new_runs, suf);
+    }
+  }
+
+  /* Sort mid_runs by offset so we can detect gaps */
+  mid_runs = g_list_sort(mid_runs, style_run_cmp_offset);
+
+  /* Walk the target range, inserting mid_runs and filling gaps with defaults */
+  gint cursor = offset;
+  for (GList *l = mid_runs; l; l = l->next) {
+    geditStyleRun *mr = l->data;
+    if (mr->offset > cursor) {
+      /* Gap: create a new run with defaults + specified attributes */
+      geditStyleRun *gap = g_new0(geditStyleRun, 1);
+      gap->offset = cursor;
+      gap->length = mr->offset - cursor;
+      /* Start from effective style at gap position */
+      geditStyleRun eff;
+      get_style_at_unlocked(self, cursor, &eff);
+      gap->bold = (bold >= 0) ? (gboolean)bold : eff.bold;
+      gap->italic = (italic >= 0) ? (gboolean)italic : eff.italic;
+      gap->underline = (underline >= 0) ? (gboolean)underline : eff.underline;
+      gap->color = color ? *color : eff.color;
+      gap->font_size = (font_size >= 0) ? font_size : eff.font_size;
+      new_runs = g_list_append(new_runs, gap);
+    }
+    new_runs = g_list_append(new_runs, mr);
+    cursor = mr->offset + mr->length;
+  }
+  /* Trailing gap */
+  if (cursor < range_end) {
+    geditStyleRun *gap = g_new0(geditStyleRun, 1);
+    gap->offset = cursor;
+    gap->length = range_end - cursor;
+    geditStyleRun eff;
+    get_style_at_unlocked(self, cursor, &eff);
+    gap->bold = (bold >= 0) ? (gboolean)bold : eff.bold;
+    gap->italic = (italic >= 0) ? (gboolean)italic : eff.italic;
+    gap->underline = (underline >= 0) ? (gboolean)underline : eff.underline;
+    gap->color = color ? *color : eff.color;
+    gap->font_size = (font_size >= 0) ? font_size : eff.font_size;
+    new_runs = g_list_append(new_runs, gap);
+  }
+
+  g_list_free(mid_runs); /* data moved to new_runs, don't free it */
+
+  /* Replace all runs */
+  g_list_free_full(self->style_runs, (GDestroyNotify)gedit_style_run_free);
+  self->style_runs = new_runs;
 }
 
 void gedit_document_add_style_run(geditDocument *self, gint offset, gint length,
-                                  gboolean bold, gboolean italic,
-                                  gboolean underline, const GdkRGBA *color,
+                                  gint bold, gint italic,
+                                  gint underline, const GdkRGBA *color,
                                   gint font_size) {
   g_return_if_fail(gedit_DOCUMENT(self));
   g_mutex_lock(&self->mutex);
@@ -650,8 +758,11 @@ void gedit_document_toggle_style(geditDocument *self, gint offset, gint length,
     gedit_remove_style_flags_in_range(self, offset, length, bold, italic,
                                       underline);
   } else {
-    add_style_run_unlocked(self, offset, length, bold, italic, underline, NULL,
-                           0);
+    add_style_run_unlocked(self, offset, length,
+                           bold ? 1 : -1,
+                           italic ? 1 : -1,
+                           underline ? 1 : -1,
+                           NULL, -1);
   }
 
   g_mutex_unlock(&self->mutex);
@@ -905,7 +1016,7 @@ void gedit_document_set_quote_level(geditDocument *self, gint offset,
 }
 
 void gedit_document_insert_graphic(geditDocument *self, gint offset,
-                                   GdkPixbuf *texture, gint width,
+                                   GdkTexture *texture, gint width,
                                    gint height) {
   g_print("gedit: gedit_document_insert_graphic offset=%d\n", offset);
   g_return_if_fail(gedit_DOCUMENT(self));

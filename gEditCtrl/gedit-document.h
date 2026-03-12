@@ -13,7 +13,7 @@ typedef struct {
   gint offset; /* char offset */
   gint width;  /* pixels */
   gint height; /* pixels */
-  GdkPixbuf *texture;
+  GdkTexture *texture;
 } geditGraphic;
 
 typedef struct {
@@ -94,12 +94,16 @@ gchar *gedit_document_get_text_range(geditDocument *self, gint offset,
                                      gint length);
 
 /* Style run APIs */
+/* Merge a style change into existing runs.
+ * bold/italic/underline: -1 = preserve existing, 0 = FALSE, 1 = TRUE
+ * color: NULL = preserve existing per-run colors
+ * font_size: -1 = preserve existing, 0+ = set absolute size */
 void gedit_document_add_style_run(geditDocument *self, gint offset, gint length,
-                                  gboolean bold, gboolean italic,
-                                  gboolean underline, const GdkRGBA *color,
+                                  gint bold, gint italic,
+                                  gint underline, const GdkRGBA *color,
                                   gint font_size);
 void gedit_document_insert_graphic(geditDocument *self, gint offset,
-                                   GdkPixbuf *texture, gint width,
+                                   GdkTexture *texture, gint width,
                                    gint height);
 void gedit_document_toggle_style(geditDocument *self, gint offset, gint length,
                                  gboolean bold, gboolean italic,
