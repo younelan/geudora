@@ -1000,7 +1000,7 @@ failure:
  **********************************************************************/
 int ReadMessage(TOCType * tocH, int sumN, UPtr buffer) {
   long count;
-  Str63 name;
+  char name[256];
   short sumNum;
 
   tocH = GetRealTOC(tocH, sumN, &sumNum);
@@ -1050,7 +1050,7 @@ int MoveMessageLo(TOCType * tocH, int sumNum, FSSpecPtr toSpec, bool copy,
                   bool toTemp, bool holdOpen) {
   TOCType * toTocH;
   MessHandle messH = tocH->sums[sumNum].messH;
-  Str31 name;
+  char name[256];
   long serialNum;
   short realSumNum;
   bool isIMAPtoPopTransfer = false;
@@ -3075,7 +3075,7 @@ OSErr SavePtrAsMessage(UPtr preText, long preSize, UPtr text, long size,
                        TOCType * tocH, long *fromLen) {
   OSErr err;
   long eof;
-  Str31 name;
+  char name[256];
   LineIOD lid;
   MSumType sum;
   FSSpec spec;

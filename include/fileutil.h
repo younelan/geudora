@@ -159,7 +159,7 @@ short MyResolveAlias(short *vRef, long *dirId, char *name, bool *wasAlias);
   MyResolveAlias(&(s)->vRefNum, &(s)->parID, (s)->name, wasAlias)
 void PromptGetFile(FileFilterProcPtr filter, DlgHookYDProcPtr hook,
                    long hookData, short numTypes, SFTypeList tl,
-                   StandardFileReply *reply, PStr prompt);
+                   StandardFileReply *reply, char *prompt);
 short FSWriteP(short refN, unsigned char *pString);
 short GetFileByRef(short refN, FSSpecPtr specPtr);
 OSErr AFSpSetMod(FSSpecPtr spec, uint32_t mod);
@@ -175,7 +175,7 @@ short SetEOF(short refNum, long logEOF);
 short GetFPos(short refNum, long *filePos);
 short SetFPos(short refNum, short posMode, long posOff);
 short NCWrite(short refN, long *count, unsigned char *buf);
-void SimpleMakeFSSpec(short vRef, long dirId, PStr name, FSSpecPtr spec);
+void SimpleMakeFSSpec(short vRef, long dirId, char *name, FSSpecPtr spec);
 short HGetCatInfo(short vRef, long inDirId, const char *name, CInfoPBRec *hfi);
 short HSetCatInfo(short vRef, long inDirId, const char *name, CInfoPBRec *hfi);
 short AFSpGetCatInfo(FSSpecPtr spec, FSSpecPtr newSpec, CInfoPBRec *hfi);
@@ -209,7 +209,7 @@ OSErr FSResolveFID(short vRef, long fid, FSSpecPtr spec);
 OSErr DTRef(short vRef, short *dtRef);
 OSErr DTGetAppl(short vRef, short dtRef, OSType creator, FSSpecPtr appSpec);
 short DTFindAppl(OSType creator);
-OSErr DTSetComment(FSSpecPtr spec, PStr comment);
+OSErr DTSetComment(FSSpecPtr spec, char *comment);
 OSErr MorphDesktop(short vRef, FSSpecPtr where);
 OSErr Blat(FSSpecPtr spec, Handle text, bool append);
 OSErr BlatPtr(FSSpecPtr spec, Ptr text, long size, bool append);
@@ -226,12 +226,12 @@ OSErr GetTrashSpec(short vRef, FSSpecPtr spec);
 OSErr ResolveAliasNoMount(FSSpecPtr alias, FSSpecPtr orig, bool *wasAlias);
 OSErr WipeSpec(FSSpecPtr spec);
 OSErr WipeDiskArea(short refN, long offset, long len);
-OSErr NewTempExtSpec(short vRef, PStr name, short extId, FSSpecPtr spec);
+OSErr NewTempExtSpec(short vRef, char *name, short extId, FSSpecPtr spec);
 OSErr ExchangeFiles(FSSpecPtr tmpSpec, FSSpecPtr spec);
 OSErr FSpTouch(FSSpecPtr spec);
 OSErr ExtractCreatorFromBndl(FSSpecPtr spec, OSType *creator);
-OSErr CreatorToName(OSType creator, PStr appName);
-OSErr NewTempSpec(short vRef, long dirId, PStr name, FSSpecPtr spec);
+OSErr CreatorToName(OSType creator, char *appName);
+OSErr NewTempSpec(short vRef, long dirId, char *name, FSSpecPtr spec);
 OSErr FSpExists(FSSpecPtr spec);
 OSErr AddUniqueExt(FSSpecPtr spec, short extId);
 OSErr VolumeMargin(short vRef, long spaceNeeded);
@@ -262,11 +262,11 @@ OSErr FindMyFile(FSSpecPtr spec, long whereToLook, short fileName);
 void MakeUniqueUntitledSpec(short vRefNum, long dirID, short strResID,
                             FSSpec *spec);
 OSErr MisplaceItem(FSSpec *spec);
-OSErr FSpGetLongName(FSSpec *spec, TextEncoding destEncoding, Str255 longName);
+OSErr FSpGetLongName(FSSpec *spec, TextEncoding destEncoding, char *longName);
 OSErr FSpGetLongNameUnicode(FSSpec *spec, HFSUniStr255 *longName);
 
 OSErr FSpSetLongName(FSSpec *spec, TextEncoding destEncoding,
-                     ConstStr255Param longName, FSSpec *newName);
+                     const char *longName, FSSpec *newName);
 OSErr FSpSetLongNameUnicode(FSSpec *spec, ConstHFSUniStr255Param longName,
                             FSSpec *newName);
 

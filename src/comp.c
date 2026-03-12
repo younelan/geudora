@@ -27,6 +27,7 @@ ADVISED OF THE POSSIBILITY OF SUCH DAMAGE. */
 #include "../gEditCtrl/gedit-state.h"
 #include "Globals.h"
 #include "StringDefs.h"
+#include "gtk_prefs.h"
 #include "mailbox.h"
 #include "message.h"
 #include "prefdefs.h"
@@ -565,12 +566,39 @@ static void on_comp_send_clicked(GtkButton *btn, gpointer ud) {
   CompSend(messH);
 }
 
-/* Queue button callback — save to Out with QUEUED state but don't send */
+/* Save draft callback — saves and keeps window open */
+static void on_comp_save_clicked(GtkButton *btn, gpointer ud) {
+  (void)btn;
+  MessHandle messH = (MessHandle)ud;
+  if (!messH || !*messH) return;
+  MyWindowPtr win = (*messH)->win;
+  if (CompSave(messH)) {
+    /* Show saved status in title bar */
+    if (win && win->window) {
+      const char *title = gtk_window_get_title(GTK_WINDOW(win->window));
+      if (title && !g_str_has_suffix(title, " [Saved]")) {
+        char *newTitle = g_strdup_printf("%s [Saved]", title);
+        gtk_window_set_title(GTK_WINDOW(win->window), newTitle);
+        g_free(newTitle);
+      }
+    }
+  }
+}
+
+/* Queue button callback — save, mark as queued, close window */
 static void on_comp_queue_clicked(GtkButton *btn, gpointer ud) {
   (void)btn;
   MessHandle messH = (MessHandle)ud;
   if (!messH || !*messH) return;
-  CompSave(messH);
+  if (CompSave(messH)) {
+    TOCType *tocH = (*messH)->tocH;
+    int sumNum = (*messH)->sumNum;
+    tocH->sums[sumNum].state = QUEUED;
+    TOCSetDirty(tocH, true);
+    MyWindowPtr win = (*messH)->win;
+    if (win && win->window)
+      gtk_window_close(GTK_WINDOW(win->window));
+  }
 }
 
 /**********************************************************************
@@ -635,16 +663,13 @@ MyWindowPtr OpenComp(TOCType * tocH, int sumNum, GtkWidget *winWP,
       GtkCssProvider *css = gtk_css_provider_new();
       gtk_css_provider_load_from_string(css,
         ".comp-toolbar button { min-height: 24px; min-width: 24px; padding: 2px 6px; }\n"
-        ".comp-toolbar button.flat { border: none; background: none; }\n"
-        ".comp-toolbar button.toggle:checked { background: alpha(@accent_color, 0.3); border-radius: 4px; }\n"
-        ".comp-toolbar button.toggle { border-radius: 4px; }\n"
         ".comp-fmt-bar button { min-height: 22px; min-width: 22px; padding: 1px 4px; }\n"
         ".comp-header-grid label { font-size: 13px; color: alpha(currentColor, 0.7); }\n"
         ".comp-header-grid entry { min-height: 28px; }\n"
       );
       gtk_style_context_add_provider_for_display(
         gdk_display_get_default(), GTK_STYLE_PROVIDER(css),
-        GTK_STYLE_PROVIDER_PRIORITY_APPLICATION);
+        GTK_STYLE_PROVIDER_PRIORITY_USER);
       g_object_unref(css);
       css_loaded = TRUE;
     }
@@ -676,7 +701,7 @@ MyWindowPtr OpenComp(TOCType * tocH, int sumNum, GtkWidget *winWP,
 
   GtkWidget *save_btn = gtk_button_new_from_icon_name("document-save-symbolic");
   gtk_widget_set_tooltip_text(save_btn, "Save draft");
-  g_signal_connect(save_btn, "clicked", G_CALLBACK(on_comp_queue_clicked), messH);
+  g_signal_connect(save_btn, "clicked", G_CALLBACK(on_comp_save_clicked), messH);
   gtk_box_append(GTK_BOX(toolbar), save_btn);
 
   /* Attach button — wired to attach_flow below after layout is built */
@@ -707,7 +732,6 @@ MyWindowPtr OpenComp(TOCType * tocH, int sumNum, GtkWidget *winWP,
   };
   for (int t = 0; toggles[t].label; t++) {
     GtkWidget *tb = gtk_toggle_button_new_with_label(toggles[t].label);
-    gtk_widget_add_css_class(tb, "toggle");
     gtk_widget_set_tooltip_text(tb, toggles[t].tip);
     gtk_toggle_button_set_active(GTK_TOGGLE_BUTTON(tb),
       MessFlagIsSet(messH, toggles[t].flag) ? TRUE : FALSE);
@@ -916,7 +940,7 @@ MyWindowPtr OpenComp(TOCType * tocH, int sumNum, GtkWidget *winWP,
     }
   } else {
     bufferSize = GetMessageLength(tocH, sumNum) + 1;
-    buffer = g_malloc(bufferSize);
+    buffer = g_malloc0(bufferSize);  /* zero-fill so it's null-terminated */
     if (buffer)
       ReadMessage(tocH, sumNum, (unsigned char *)buffer);
   }
@@ -938,7 +962,9 @@ MyWindowPtr OpenComp(TOCType * tocH, int sumNum, GtkWidget *winWP,
     while (cp < stop) {
       /* Blank line = end of headers */
       if (*cp == '\r' || *cp == '\n') {
-        while (cp < stop && (*cp == '\r' || *cp == '\n')) cp++;
+        /* Blank line = end of headers; skip one CRLF */
+        if (cp < stop && *cp == '\r') cp++;
+        if (cp < stop && *cp == '\n') cp++;
         break;
       }
       char *eol = cp;
@@ -957,7 +983,9 @@ MyWindowPtr OpenComp(TOCType * tocH, int sumNum, GtkWidget *winWP,
         }
       }
       cp = eol;
-      while (cp < stop && (*cp == '\r' || *cp == '\n')) cp++;
+      /* Skip exactly one line ending (CRLF, CR, or LF) */
+      if (cp < stop && *cp == '\r') cp++;
+      if (cp < stop && *cp == '\n') cp++;
     }
     body_start = cp;
   }
@@ -979,19 +1007,82 @@ MyWindowPtr OpenComp(TOCType * tocH, int sumNum, GtkWidget *winWP,
     gtk_widget_set_halign(lbl, GTK_ALIGN_END);
     gtk_grid_attach(GTK_GRID(header_grid), lbl, 0, h, 1, 1);
 
-    GtkWidget *entry = gtk_entry_new();
-    gtk_widget_set_hexpand(entry, TRUE);
-    if (header_values[h]) {
-      gtk_editable_set_text(GTK_EDITABLE(entry), header_values[h]);
-      g_free(header_values[h]);
-    }
-    if (h == 1 && !PrefIsSet(PREF_EDIT_FROM))
-      gtk_editable_set_editable(GTK_EDITABLE(entry), FALSE);
-    if (isSent)
-      gtk_editable_set_editable(GTK_EDITABLE(entry), FALSE);
+    if (h == 1) {
+      /* From: field is a dropdown populated from accounts/personalities */
+      PrefsAccount accounts[16];
+      int num_accounts = prefs_load_accounts(accounts, 16);
 
-    gtk_grid_attach(GTK_GRID(header_grid), entry, 1, h, 1, 1);
-    header_entries[h] = entry;
+      /* Build "Real Name <email>" strings for each account */
+      GtkStringList *from_model = gtk_string_list_new(NULL);
+      int active_idx = 0;
+      gchar *default_email = prefs_get_string(PREFS_GROUP_SENDING_MAIL,
+                                               "email_address", "");
+      gchar *default_name = prefs_get_string(PREFS_GROUP_SENDING_MAIL,
+                                              "real_name", "");
+
+      /* Add default personality first */
+      if (default_email && default_email[0]) {
+        gchar *from_str;
+        if (default_name && default_name[0])
+          from_str = g_strdup_printf("%s <%s>", default_name, default_email);
+        else
+          from_str = g_strdup(default_email);
+        gtk_string_list_append(from_model, from_str);
+        g_free(from_str);
+      }
+
+      /* Add additional accounts as personalities */
+      for (int a = 0; a < num_accounts; a++) {
+        if (!accounts[a].enabled || !accounts[a].email[0]) continue;
+        /* Skip if same as default */
+        if (default_email && g_ascii_strcasecmp(accounts[a].email, default_email) == 0)
+          continue;
+        gchar *from_str;
+        if (accounts[a].name[0])
+          from_str = g_strdup_printf("%s <%s>", accounts[a].name, accounts[a].email);
+        else
+          from_str = g_strdup(accounts[a].email);
+        gtk_string_list_append(from_model, from_str);
+        g_free(from_str);
+      }
+
+      /* If no accounts at all, add a blank entry */
+      if (g_list_model_get_n_items(G_LIST_MODEL(from_model)) == 0)
+        gtk_string_list_append(from_model, "");
+
+      /* If we have a value from the message, find it in the list */
+      if (header_values[h] && header_values[h][0]) {
+        guint n = g_list_model_get_n_items(G_LIST_MODEL(from_model));
+        for (guint i = 0; i < n; i++) {
+          const char *s = gtk_string_list_get_string(from_model, i);
+          if (s && strstr(s, header_values[h])) { active_idx = (int)i; break; }
+        }
+      }
+
+      GtkWidget *from_dd = gtk_drop_down_new(G_LIST_MODEL(from_model), NULL);
+      gtk_drop_down_set_selected(GTK_DROP_DOWN(from_dd), active_idx);
+      gtk_widget_set_hexpand(from_dd, TRUE);
+      if (isSent)
+        gtk_widget_set_sensitive(from_dd, FALSE);
+      gtk_grid_attach(GTK_GRID(header_grid), from_dd, 1, h, 1, 1);
+      header_entries[h] = from_dd;
+
+      g_free(default_email);
+      g_free(default_name);
+      if (header_values[h]) g_free(header_values[h]);
+    } else {
+      GtkWidget *entry = gtk_entry_new();
+      gtk_widget_set_hexpand(entry, TRUE);
+      if (header_values[h]) {
+        gtk_editable_set_text(GTK_EDITABLE(entry), header_values[h]);
+        g_free(header_values[h]);
+      }
+      if (isSent)
+        gtk_editable_set_editable(GTK_EDITABLE(entry), FALSE);
+
+      gtk_grid_attach(GTK_GRID(header_grid), entry, 1, h, 1, 1);
+      header_entries[h] = entry;
+    }
   }
 
   /* Attachments row: label + FlowBox with add button */
@@ -1062,8 +1153,14 @@ MyWindowPtr OpenComp(TOCType * tocH, int sumNum, GtkWidget *winWP,
     geditDocument *doc = geditctrl_get_document(win->pte);
 
     /* Insert body text if available */
+    g_print("OpenComp: bufferSize=%ld body_start=%p buffer=%p\n",
+            bufferSize, (void*)body_start, (void*)buffer);
+    if (body_start)
+      g_print("OpenComp: body_start offset=%ld body='%.80s'\n",
+              (long)(body_start - buffer), body_start);
     if (body_start && *body_start) {
-      if (*body_start == '\r' || *body_start == '\n') body_start++;
+      /* Skip any remaining line endings after blank line */
+      while (*body_start == '\r' || *body_start == '\n') body_start++;
       if (*body_start) {
         char *stop = buffer + strlen(buffer);
         char *bodyText = g_strndup(body_start, stop - body_start);
@@ -1497,22 +1594,83 @@ int CompGetDragContents(GtkWidget *pte, char **theText, void **theStyles,
  **********************************************************************/
 int WriteComp(MessHandle messH, short refN, long offset) {
   MyWindowPtr win = (*messH)->win;
-  geditDocument *doc;
-  char *text;
   int err = 0;
 
-  if (!win || !win->pte)
+  if (!win || !win->pte || !win->window)
     return -1;
 
-  doc = geditctrl_get_document(win->pte);
-  text = gedit_document_get_text(doc);
+  geditDocument *doc = geditctrl_get_document(win->pte);
+  char *body = gedit_document_get_text(doc);
 
-  if (text) {
-    // Write text to file (simplified)
-    long count = strlen(text);
-    err = AWrite(refN, &count, (unsigned char *)text);
-    g_free(text);
+  /* Gather headers from the widgets */
+  GtkWidget *winWP = win->window;
+  const char *to = "", *from = "", *subject = "", *cc = "", *bcc = "";
+  GtkWidget *e;
+  if ((e = g_object_get_data(G_OBJECT(winWP), "comp-to")))
+    to = gtk_editable_get_text(GTK_EDITABLE(e));
+  if ((e = g_object_get_data(G_OBJECT(winWP), "comp-from"))) {
+    /* From is a GtkDropDown — get selected string */
+    GtkStringObject *sel = GTK_STRING_OBJECT(
+        gtk_drop_down_get_selected_item(GTK_DROP_DOWN(e)));
+    if (sel)
+      from = gtk_string_object_get_string(sel);
   }
+  if ((e = g_object_get_data(G_OBJECT(winWP), "comp-subject")))
+    subject = gtk_editable_get_text(GTK_EDITABLE(e));
+  if ((e = g_object_get_data(G_OBJECT(winWP), "comp-cc")))
+    cc = gtk_editable_get_text(GTK_EDITABLE(e));
+  if ((e = g_object_get_data(G_OBJECT(winWP), "comp-bcc")))
+    bcc = gtk_editable_get_text(GTK_EDITABLE(e));
+
+  /* Build complete message: envelope + headers + blank line + body */
+  time_t now = time(NULL);
+  char dateStr[64];
+  strftime(dateStr, sizeof(dateStr), "%a %b %d %H:%M:%S %Y", localtime(&now));
+
+  char *msg = g_strdup_printf(
+      "From %s %s\r\n"
+      "To: %s\r\n"
+      "From: %s\r\n"
+      "Subject: %s\r\n"
+      "Cc: %s\r\n"
+      "Bcc: %s\r\n"
+      "\r\n"
+      "%s",
+      from[0] ? from : "user", dateStr,
+      to, from, subject, cc, bcc,
+      body ? body : "");
+
+  long count = strlen(msg);
+
+  /* Seek to the write position */
+  if (lseek(refN, offset, SEEK_SET) < 0) {
+    g_free(msg);
+    g_free(body);
+    return -1;
+  }
+
+  err = AWrite(refN, &count, (unsigned char *)msg);
+
+  /* Update the summary with the actual message length */
+  if (!err) {
+    TOCType *tocH = (*messH)->tocH;
+    int sumNum = (*messH)->sumNum;
+    tocH->sums[sumNum].offset = offset;
+    tocH->sums[sumNum].length = count;
+
+    /* Update summary fields for display in message list */
+    if (subject && subject[0])
+      g_strlcpy(tocH->sums[sumNum].subj, subject,
+                 sizeof(tocH->sums[sumNum].subj));
+    if (to && to[0])
+      g_strlcpy(tocH->sums[sumNum].from, to,
+                 sizeof(tocH->sums[sumNum].from));
+    tocH->sums[sumNum].seconds = (unsigned long)time(NULL);
+    InvalSum(tocH, sumNum);
+  }
+
+  g_free(msg);
+  g_free(body);
 
   return err;
 }
@@ -1803,12 +1961,27 @@ bool CompSave(MessHandle messH) {
   if (!win || !win->pte)
     return false;
 
-  // Save message to mailbox
-  int err = WriteComp(messH, tocH->refN, tocH->sums[sumNum].offset);
+  /* Ensure the mailbox file is open */
+  extern int BoxFOpen(TOCType *tocH);
+  extern int WriteTOC(TOCType *tocH);
+  if (tocH->refN == 0)
+    BoxFOpen(tocH);
+  if (tocH->refN <= 0)
+    return false;
+
+  /* For new/unsaved messages, append at end of mailbox file */
+  long offset = tocH->sums[sumNum].offset;
+  if (offset == 0 && tocH->sums[sumNum].length == 0) {
+    off_t end = lseek(tocH->refN, 0, SEEK_END);
+    if (end < 0) return false;
+    offset = (long)end;
+  }
+
+  int err = WriteComp(messH, tocH->refN, offset);
 
   if (!err) {
-    // win->isDirty = false; // Remove if not in MyWindow struct
     TOCSetDirty(tocH, true);
+    WriteTOC(tocH);
     return true;
   }
 
@@ -1823,28 +1996,42 @@ bool CompSave(MessHandle messH) {
  * CreateMessageBody - create a new message body
  **********************************************************************/
 int CreateMessageBody(char *buffer, unsigned long *uidHash) {
-  // Create basic message structure
   char msgId[256];
   time_t now = time(NULL);
 
   NewMessageId(msgId);
   *uidHash = Hash((unsigned char *)msgId);
 
-  // Sendmail envelope line (expected by header parser), then headers
+  /* Get configured return address */
+  gchar *email = prefs_get_string(PREFS_GROUP_SENDING_MAIL, "email_address", "");
+  gchar *name = prefs_get_string(PREFS_GROUP_SENDING_MAIL, "real_name", "");
+  gchar *from_addr;
+  if (name && name[0] && email && email[0])
+    from_addr = g_strdup_printf("%s <%s>", name, email);
+  else if (email && email[0])
+    from_addr = g_strdup(email);
+  else
+    from_addr = g_strdup("");
+
+  /* Sendmail envelope line (expected by header parser), then headers */
   char dateStr[64];
   strftime(dateStr, sizeof(dateStr), "%a %b %d %H:%M:%S %Y", localtime(&now));
   int len = snprintf(buffer, 1024,
-                     "From user %s\r\n"
+                     "From %s %s\r\n"
                      "To: \r\n"
-                     "From: \r\n"
+                     "From: %s\r\n"
                      "Subject: \r\n"
                      "Cc: \r\n"
                      "Bcc: \r\n"
                      "Attachments: \r\n"
                      "Message-ID: %s\r\n"
                      "\r\n",
-                     dateStr, msgId);
+                     email[0] ? email : "user", dateStr,
+                     from_addr, msgId);
 
+  g_free(from_addr);
+  g_free(email);
+  g_free(name);
   return len;
 }
 

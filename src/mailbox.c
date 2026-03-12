@@ -2916,7 +2916,7 @@ UPtr GetMailboxName(TOCType * tocH, short sum, UPtr name) {
   FSSpec spec;
 
   spec = GetMailboxSpec(tocH, sum);
-  PCopy(name, spec.name);
+  g_strlcpy((char *)name, spec.name, 256);
   return name;
 }
 

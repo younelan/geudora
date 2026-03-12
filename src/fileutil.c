@@ -274,7 +274,7 @@ OSErr MemError() { return noErr; }
 
 short ResError() { return noErr; }
 
-void AddResource(Handle h, ResType type, short id, ConstStr255Param name) {
+void AddResource(Handle h, ResType type, short id, const char *name) {
   // Stub - resource forks don't exist on Unix
   // In a full implementation, this would store resources in a separate file
 }
@@ -523,14 +523,14 @@ OSErr NewAlias(FSSpecPtr fromFile, FSSpecPtr target, AliasHandle *alias) {
   *alias = NULL;
   return noErr;
 }
-OSErr AddResource_(Handle theData, OSType theType, short theID, PStr name) {
+OSErr AddResource_(Handle theData, OSType theType, short theID, char *name) {
   return noErr;
 }
 OSErr CreateTextToUnicodeInfoByEncoding(OSType encoding,
                                         TextToUnicodeInfo *info) {
   return noErr;
 }
-OSErr ConvertFromPStringToUnicode(TextToUnicodeInfo info, ConstStr255Param pStr,
+OSErr ConvertFromPStringToUnicode(TextToUnicodeInfo info, const char *pStr,
                                   ByteCount maxLen, ByteCount *len,
                                   UniChar *dst) {
   *len = 0;
@@ -1413,9 +1413,9 @@ OSErr FSpTrash(FSSpecPtr spec) {
 OSErr UniqueSpec(FSSpecPtr spec, short max) {
   short i;
   CInfoPBRec hfi;
-  Str31 dfName;
-  Str31 dfQuoteExtensionUnquote;
-  Str15 iAscii;
+  char dfName[256];
+  char dfQuoteExtensionUnquote[256];
+  char iAscii[256];
   OSErr err;
 
   //
@@ -1441,7 +1441,7 @@ OSErr UniqueSpec(FSSpecPtr spec, short max) {
     /*
      * oops.  file exists.  increment number on end of filename
      */
-    PCopy((unsigned char *)spec->name, dfName);
+    g_strlcpy(spec->name, dfName, sizeof(spec->name));
     *iAscii = 0;
     PLCat(iAscii, i);
     if (*spec->name + *iAscii < max)
@@ -1523,7 +1523,7 @@ OSErr TweakFileType(FSSpecPtr spec, OSType type, OSType creator) {
 OSErr FSpTouch(FSSpecPtr spec) {
   CInfoPBRec hfi;
   OSErr err;
-  Str31 name;
+  char name[256];
 
   PSCopy(name, spec->name);
   if (!((err = HGetCatInfo(spec->vRefNum, spec->parID, name, &hfi)))) {
@@ -1627,7 +1627,7 @@ bool HFIIsFolderOrAlias(CInfoPBRec *hfi) {
  ************************************************************************/
 void FolderSizeHi(short vRef, long dirID, uint32_t *cumSize) {
   CInfoPBRec hfi;
-  Str63 name;
+  char name[256];
 
   hfi.hFileInfo.ioNamePtr = name;
   *cumSize = 0;
@@ -1960,7 +1960,7 @@ OSErr FSpDupFile(FSSpecPtr to, FSSpecPtr from, bool replace, bool progress) {
   OSErr err;
   bool hasRFork = FSpRFSize(from) != 0;
 #ifdef DEBUG
-  Str255 s;
+  char s[256];
 #endif
 
   if (hasRFork) {
@@ -2044,7 +2044,7 @@ OSErr FSpDupFolder(FSSpecPtr toSpec, FSSpecPtr fromSpec, bool replace,
   hfi.hFileInfo.ioNamePtr = (unsigned char *)from.name;
   hfi.hFileInfo.ioFDirIndex = 0;
   while (!err && !DirIterate(fromSpec, NULL, NULL)) {
-    PCopy((PStr)to.name, (PStr)from.name);
+    g_strlcpy(to.name, from.name, sizeof(to.name));
     if ((hfi.hFileInfo.ioFlAttrib & ioDirMask)) {
       //	copy folder
       long saveFrom, saveTo, createdDirID;
@@ -2106,7 +2106,7 @@ short MyResolveAlias(short *vRef, long *dirId, char *name, bool *wasAlias) {
       if (wasIt) {
         *vRef = theSpec.vRefNum;
         *dirId = theSpec.parID;
-        PCopy(name, theSpec.name);
+        g_strlcpy(name, theSpec.name, sizeof(name));
         name[*name + 1] = 0;
         if (wasAlias)
           *wasAlias = true;
@@ -2302,7 +2302,7 @@ bool AFSpIsItAFolder(FSSpecPtr spec) {
 short GetFileByRef(short refN, FSSpecPtr specPtr) {
   FCBPBRec fcb;
   short err;
-  Str63 name;
+  char name[256];
 
   fcb.ioCompletion = nil;
   fcb.ioVRefNum = 0;
@@ -2465,7 +2465,7 @@ OSErr WipeDiskArea(short refN, long offset, long len) {
  * current file position.
  ************************************************************************/
 OSErr EnsureNewline(short refN) {
-  Str15 chars;
+  char chars[256];
   long offset, count;
   short err;
 
@@ -2744,7 +2744,7 @@ OSErr ResolveAliasOrElse(FSSpecPtr spec, FSSpecPtr newSpec, bool *wasIt) {
  * SubFolderSpec - get the FSSpec for the signature folder
  **********************************************************************/
 OSErr SubFolderSpec(short nameId, FSSpecPtr spec) {
-  Str63 string;
+  char string[256];
   OSErr err;
   static StackHandle specStack;
   CSpec cSpec;
@@ -2813,7 +2813,7 @@ OSErr FindSubFolderSpec(long domain, long folder, short subfolderID,
  ************************************************************************/
 OSErr SubFolderSpecOf(FSSpecPtr inSpec, short subfolderID, bool create,
                       FSSpecPtr subSpec) {
-  Str63 subfolderName;
+  char subfolderName[256];
 
   GetRString((char *)subfolderName, subfolderID);
   return SubFolderSpecOfStr(inSpec, (const char *)subfolderName, create,
@@ -2825,7 +2825,7 @@ OSErr SubFolderSpecOfStr(FSSpecPtr inSpec, const char *subfolderName,
   FSSpec localSpec = *inSpec;
   long dirID;
 
-  PCopy(localSpec.name, subfolderName);
+  g_strlcpy(localSpec.name, subfolderName, sizeof(localSpec.name));
   if (create)
     FSpDirCreate(&localSpec, 0, &dirID);
 
@@ -2845,7 +2845,7 @@ OSErr SubFolderSpecOfStr(FSSpecPtr inSpec, const char *subfolderName,
  ************************************************************************/
 OSErr StuffFolderSpec(FSSpecPtr spec) {
   FSSpec localSpec;
-  Str31 name;
+  char name[256];
   OSErr err = GetFileByRef(AppResFile, &localSpec);
 
   if (!err)
@@ -2938,7 +2938,7 @@ void FileIDHack(void) {
 OSErr FSResolveFID(short vRef, long fid, FSSpecPtr spec) {
   HParamBlockRec fidpb;
   short err;
-  Str63 name;
+  char name[256];
 
   Zero(fidpb);
 
@@ -3040,7 +3040,7 @@ short DTFindAppl(OSType creator) {
 /************************************************************************
  * DTSetComment - set the comment for an attachment
  ************************************************************************/
-OSErr DTSetComment(FSSpecPtr spec, PStr comment) {
+OSErr DTSetComment(FSSpecPtr spec, char *comment) {
   DTPBRec pb;
   short dtRef;
   OSErr err;
@@ -3071,7 +3071,7 @@ bool SameSpec(FSSpecPtr sp1, FSSpecPtr sp2) {
 long SpecDirId(FSSpecPtr spec) {
   CInfoPBRec hfi;
   FSSpec newSpec;
-  Str31 name;
+  char name[256];
 
   Zero(hfi);
   hfi.hFileInfo.ioNamePtr = name;
@@ -3128,10 +3128,10 @@ OSErr MyFSClose(short refN) {
 /**********************************************************************
  * NewTempSpec - make a temp file spec
  **********************************************************************/
-OSErr NewTempSpec(short vRef, long dirId, PStr name, FSSpecPtr spec) {
+OSErr NewTempSpec(short vRef, long dirId, char *name, FSSpecPtr spec) {
   long tempId;
   OSErr err;
-  Str31 fName;
+  char fName[256];
   static unsigned char n;
 
   if ((err = FindTemporaryFolder(vRef, dirId, &tempId, &vRef)))
@@ -3140,7 +3140,7 @@ OSErr NewTempSpec(short vRef, long dirId, PStr name, FSSpecPtr spec) {
   n++;
 
   if (name)
-    PCopy(fName, name);
+    g_strlcpy(fName, name, sizeof(fName));
   else {
     MyNumToString(TickCount(), fName);
     PCatC(fName, '+');
@@ -3210,10 +3210,10 @@ OSErr FindTemporaryFolder(short vRef, long dirId, long *tempDirId,
 OSErr AddUniqueExt(FSSpecPtr spec, short extId) {
   FSSpec newSpec;
   short n = 0;
-  Str31 extStr, nStr;
+  char extStr[256], nStr[256];
   OSErr err;
 
-  PCopy(extStr, "\x01.");
+  g_strlcpy(extStr, ".", sizeof(extStr));
   PCatR(extStr, extId);
   *nStr = 0;
 
@@ -3231,7 +3231,7 @@ OSErr AddUniqueExt(FSSpecPtr spec, short extId) {
   if (err == fnfErr) {
     err = FSpRename(spec, newSpec.name);
     if (!err)
-      PCopy(spec->name, newSpec.name);
+      g_strlcpy(spec->name, newSpec.name, sizeof(spec->name));
   }
 
   return (err);
@@ -3240,10 +3240,10 @@ OSErr AddUniqueExt(FSSpecPtr spec, short extId) {
 /**********************************************************************
  * NewTempSpec - make a temp file spec
  **********************************************************************/
-OSErr NewTempExtSpec(short vRef, PStr name, short extId, FSSpecPtr spec) {
+OSErr NewTempExtSpec(short vRef, char *name, short extId, FSSpecPtr spec) {
   long dirId;
   OSErr err = FindTemporaryFolder(vRef, 0L, &dirId, &vRef);
-  Str31 fName;
+  char fName[256];
   static short n;
 
   if (err)
@@ -3255,7 +3255,7 @@ OSErr NewTempExtSpec(short vRef, PStr name, short extId, FSSpecPtr spec) {
       n = 0;
 
     if (name)
-      PCopy(fName, name);
+      g_strlcpy(fName, name, sizeof(fName));
     else {
       MyNumToString(TickCount(), fName);
       PCatC(fName, '+');
@@ -3345,7 +3345,7 @@ done:
 /************************************************************************
  * SimpeMakeFSSpec - make an FSSpec, but don't hit the filesystem
  ************************************************************************/
-void SimpleMakeFSSpec(short vRef, long dirId, PStr name, FSSpecPtr spec) {
+void SimpleMakeFSSpec(short vRef, long dirId, char *name, FSSpecPtr spec) {
   spec->vRefNum = vRef;
   spec->parID = dirId;
   PSCopy(spec->name, name);
@@ -3357,7 +3357,7 @@ void SimpleMakeFSSpec(short vRef, long dirId, PStr name, FSSpecPtr spec) {
 OSErr FindMyFile(FSSpecPtr spec, long whereToLook, short fileName) {
   FSSpec mySpec;
   OSErr err = fnfErr;
-  Str31 nameStr;
+  char nameStr[256];
 
   if (whereToLook & kStuffFolderBit) {
     if (!(err = GetFileByRef(AppResFile, &mySpec)))
@@ -3394,7 +3394,7 @@ OSErr MyFSpDirCreate(FSSpecPtr spec, ScriptCode scriptTag, long *createdDirID) {
 /************************************************************************
  * MyDirCreate - call DirCreate but pacify SpotLight
  ************************************************************************/
-OSErr MyDirCreate(short vRefNum, long parentDirID, PStr directoryName,
+OSErr MyDirCreate(short vRefNum, long parentDirID, char *directoryName,
                   long *createdDirID) {
   OSErr err;
   SLDisable();
@@ -3440,7 +3440,7 @@ void MakeUniqueUntitledSpec(short vRefNum, long dirID, short strResID,
                             FSSpec *spec)
 
 {
-  Str31 name, s;
+  char name[256], s[256];
   long suffix;
   Byte saveLen;
 
@@ -3488,7 +3488,7 @@ OSErr MisplaceItem(FSSpec *spec)
   return (theError);
 }
 
-OSErr FSpGetLongName(FSSpec *spec, TextEncoding destEncoding, Str255 longName) {
+OSErr FSpGetLongName(FSSpec *spec, TextEncoding destEncoding, char *longName) {
   OSErr err = noErr;
   HFSUniStr255 uniName;
 
@@ -3535,7 +3535,7 @@ OSErr FSpGetLongNameUnicode(FSSpec *spec, HFSUniStr255 *longName) {
 }
 
 OSErr FSpSetLongName(FSSpec *spec, TextEncoding srcEncoding,
-                     ConstStr255Param longName, FSSpec *newSpec) {
+                     const char *longName, FSSpec *newSpec) {
   OSErr err = noErr;
   HFSUniStr255 uniName;
   TextToUnicodeInfo info;
@@ -3578,7 +3578,7 @@ OSErr FSpSetLongNameUnicode(FSSpec *spec, ConstHFSUniStr255Param longName,
 OSErr MakeUniqueLongFileName(short vRefNum, long dirID, StringPtr name,
                              TextEncoding srcEncoding, short maxLen) {
   OSStatus err;
-  Str31 s;
+  char s[256];
   HFSUniStr255 uniName;
   TextToUnicodeInfo info;
   FSRef parent;
@@ -3602,7 +3602,7 @@ OSErr MakeUniqueLongFileName(short vRefNum, long dirID, StringPtr name,
 
   err = CreateTextToUnicodeInfoByEncoding(srcEncoding, &info);
   if (err == noErr) {
-    Str255 base, suffix;
+    char base[256], suffix[256];
     long nextFile = 1;
     FSRef ref;
 
@@ -3640,10 +3640,10 @@ OSErr MakeUniqueLongFileName(short vRefNum, long dirID, StringPtr name,
       }
 
       //	Build the whole string
-      PCopy(name, base);
-      PCat(name, s);
-      PCat(name, "\x01.");
-      PCat(name, suffix);
+      g_strlcpy(name, base, sizeof(name));
+      strncat(name, s, sizeof(name) - strlen(name) - 1);
+      strncat(name, ".", sizeof(name) - strlen(name) - 1);
+      strncat(name, suffix, sizeof(name) - strlen(name) - 1);
     }
 
     ASSERT(err != noErr);
@@ -3700,10 +3700,10 @@ bool IsPDFFile(FSSpecPtr spec, OSType fileType) {
  *  on a list?
  **********************************************************************/
 bool SpecEndsWithExtensionR(FSSpecPtr spec, short resID) {
-  Str255 longName;
+  char longName[256];
 
   if (FSpGetLongName(spec, 0, longName))
-    PCopy(longName, spec->name);
+    g_strlcpy(longName, spec->name, 256);
 
   return EndsWithItem(longName, resID);
 }
