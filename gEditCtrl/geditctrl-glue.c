@@ -379,7 +379,6 @@ void geditctrl_set_quote_level(GtkWidget *ctrl, gint level) {
 }
 
 void geditctrl_change_quote_level(GtkWidget *ctrl, gint delta) {
-  g_print("gedit: geditctrl_change_quote_level delta=%d\n", delta);
   if (!GTK_IS_SCROLLED_WINDOW(ctrl))
     return;
   GtkWidget *area = gtk_scrolled_window_get_child(GTK_SCROLLED_WINDOW(ctrl));
@@ -391,17 +390,14 @@ void geditctrl_change_quote_level(GtkWidget *ctrl, gint delta) {
     return;
   gint st, ln;
   gedit_get_active_para_range(s, doc, &st, &ln);
-  g_print("gedit: range st=%d ln=%d\n", st, ln);
   if (ln > 0) {
     geditParaAttr pattr;
     gedit_document_get_para_attr(doc, st, ln, &pattr);
     int new_level = pattr.quote_level + delta;
     if (new_level < 0)
       new_level = 0;
-    g_print("gedit: setting quote level to %d\n", new_level);
     gedit_document_set_quote_level(doc, st, ln, new_level);
   }
-  g_print("gedit: change_quote_level calling draw\n");
   gtk_widget_queue_draw(area);
 }
 
@@ -510,7 +506,6 @@ gint geditctrl_find_text(GtkWidget *ctrl, const gchar *search_text,
   
   /* If not found from current position, wrap to beginning */
   if (found < 0 && s->caret > 0) {
-    g_print("gedit: wrapping search to beginning\n");
     found = gedit_document_find_text(doc, search_text, 0, s->caret,
                                      case_sensitive);
   }
@@ -525,9 +520,7 @@ gint geditctrl_find_text(GtkWidget *ctrl, const gchar *search_text,
     g_signal_emit_by_name(doc, "selection-changed");
     gedit_scroll_to_caret(area);
     gtk_widget_queue_draw(area);
-    g_print("gedit: found at offset %d, selected %d-%d\n", found, s->sel_start, s->sel_end);
   } else {
-    g_print("gedit: text not found\n");
   }
   return found;
 }
@@ -555,7 +548,6 @@ gint geditctrl_replace_text(GtkWidget *ctrl, const gchar *search_text,
     s->sel_anchor = -1;
     g_signal_emit_by_name(doc, "selection-changed");
     gtk_widget_queue_draw(area);
-    g_print("gedit: replaced %d occurrence(s)\n", count);
   }
   return count;
 }

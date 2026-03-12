@@ -49,6 +49,12 @@ MyWindowPtr DoComposeNew(int type);
 void ApplyStationeryLo(MyWindowPtr win, FSSpecPtr spec, bool b1, bool b2,
                        bool b3);
 
+/* Helpers to fill compose window fields */
+void comp_set_field(MyWindowPtr win, const char *key, const char *value);
+void comp_set_body(MyWindowPtr win, const char *text);
+void comp_set_body_quoted(MyWindowPtr win, const char *attribution,
+                          const char *body);
+
 /* Main composition functions - ported to use gEditCtrl instead of Pete */
 bool SaveComp(MyWindowPtr win);
 MyWindowPtr OpenComp(TOCType * tocH, int sumNum, GtkWidget *winWP,

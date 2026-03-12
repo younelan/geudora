@@ -274,7 +274,6 @@ static void gedit_clipboard_paste_cb(GObject *source_object, GAsyncResult *res,
   gchar *text = gdk_clipboard_read_text_finish(clipboard, res, &error);
 
   if (error) {
-    g_print("gedit: Clipboard read error: %s\n", error->message);
     g_error_free(error);
     g_free(data);
     return;
@@ -287,7 +286,6 @@ static void gedit_clipboard_paste_cb(GObject *source_object, GAsyncResult *res,
 
     /* If plain text mode, skip JSON parsing and use text as-is */
     if (data->plain_text) {
-      g_print("gedit: Pasting as plain text (%d bytes)\n", (int)strlen(text));
       
       /* Add intelligent spacing */
       gint added_before = 0, added_after = 0;
@@ -300,8 +298,6 @@ static void gedit_clipboard_paste_cb(GObject *source_object, GAsyncResult *res,
     } else {
       /* Try to parse as JSON (formatted content) */
       if (gedit_deserialize_content(text, &plain_text, &styles)) {
-        g_print("gedit: Pasting formatted content (%d bytes, %d styles)\n",
-                plain_text ? (int)strlen(plain_text) : 0, g_list_length(styles));
 
         /* Add intelligent spacing */
         gint added_before = 0, added_after = 0;
@@ -331,7 +327,6 @@ static void gedit_clipboard_paste_cb(GObject *source_object, GAsyncResult *res,
         g_free(plain_text);
       } else {
         /* Plain text fallback */
-        g_print("gedit: Pasting plain text fallback (%d bytes)\n", (int)strlen(text));
         
         /* Add intelligent spacing */
         gint added_before = 0, added_after = 0;

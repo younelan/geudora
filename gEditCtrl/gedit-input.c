@@ -619,31 +619,26 @@ G_GNUC_INTERNAL gboolean gedit_key_pressed_cb(GtkEventControllerKey *controller,
     guint lower_key = gdk_keyval_to_lower(keyval);
     if (lower_key == GDK_KEY_z) {
       if (mods & GDK_SHIFT_MASK) {
-        g_print("gedit: Redo shortcut triggered\n");
         gedit_document_redo(doc);
       } else {
-        g_print("gedit: Undo shortcut triggered\n");
         gedit_document_undo(doc);
       }
       gtk_widget_queue_draw(area);
       return GDK_EVENT_STOP;
     }
     if (lower_key == GDK_KEY_y) {
-      g_print("gedit: Redo shortcut triggered\n");
       gedit_document_redo(doc);
       gtk_widget_queue_draw(area);
       return GDK_EVENT_STOP;
     }
     if (lower_key == GDK_KEY_c) {
       if (s->sel_start != s->sel_end) {
-        g_print("gedit: Copy shortcut triggered\n");
         gedit_clipboard_copy(area, s->sel_start, s->sel_end, doc);
       }
       return GDK_EVENT_STOP;
     }
     if (lower_key == GDK_KEY_x) {
       if (s->sel_start != s->sel_end) {
-        g_print("gedit: Cut shortcut triggered\n");
         gedit_clipboard_cut(area, s->sel_start, s->sel_end, doc);
         s->caret = MIN(s->sel_start, s->sel_end);
         s->sel_start = s->sel_end = s->caret;
@@ -652,7 +647,6 @@ G_GNUC_INTERNAL gboolean gedit_key_pressed_cb(GtkEventControllerKey *controller,
       return GDK_EVENT_STOP;
     }
     if (lower_key == GDK_KEY_v) {
-      g_print("gedit: Paste shortcut triggered\n");
       if (s->sel_start != s->sel_end) {
         gint a = MIN(s->sel_start, s->sel_end);
         gint b = MAX(s->sel_start, s->sel_end);
@@ -764,32 +758,26 @@ G_GNUC_INTERNAL gboolean gedit_key_pressed_cb(GtkEventControllerKey *controller,
     /* Ctrl+Home - go to document start */
     if ((mods & GDK_CONTROL_MASK) && keyval == GDK_KEY_Home) {
       newpos = 0;
-      g_print("gedit: Ctrl+Home - go to document start\n");
     }
     /* Ctrl+End - go to document end */
     else if ((mods & GDK_CONTROL_MASK) && keyval == GDK_KEY_End) {
       newpos = doc_len;
-      g_print("gedit: Ctrl+End - go to document end\n");
     }
     /* Home - go to line start */
     else if (keyval == GDK_KEY_Home) {
       newpos = gedit_document_find_line_start(doc, s->caret);
-      g_print("gedit: Home - go to line start (pos %d)\n", newpos);
     }
     /* End - go to line end */
     else if (keyval == GDK_KEY_End) {
       newpos = gedit_document_find_line_end(doc, s->caret);
-      g_print("gedit: End - go to line end (pos %d)\n", newpos);
     }
     /* Ctrl+Left - move by word backward */
     else if ((mods & GDK_CONTROL_MASK) && keyval == GDK_KEY_Left) {
       newpos = gedit_document_find_word_boundary_left(doc, s->caret);
-      g_print("gedit: Ctrl+Left - word boundary left (pos %d)\n", newpos);
     }
     /* Ctrl+Right - move by word forward */
     else if ((mods & GDK_CONTROL_MASK) && keyval == GDK_KEY_Right) {
       newpos = gedit_document_find_word_boundary_right(doc, s->caret);
-      g_print("gedit: Ctrl+Right - word boundary right (pos %d)\n", newpos);
     }
     /* Regular arrow keys - use existing logic */
     else {

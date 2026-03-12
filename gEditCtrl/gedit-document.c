@@ -169,9 +169,6 @@ void gedit_document_insert_text(geditDocument *self, gint offset,
   g_return_if_fail(gedit_DOCUMENT(self));
   g_mutex_lock(&self->mutex);
 
-  g_print("gedit_document_insert_text: doc=%p offset=%d text_len=%d\n", self,
-          offset, text ? (int)strlen(text) : 0);
-
   geditSnapshot *snap = gedit_snapshot_new(self);
   g_queue_push_head(self->undo_stack, snap);
   /* New edit invalidates the redo stack */
@@ -203,9 +200,6 @@ void gedit_document_delete_range(geditDocument *self, gint offset,
                                  gint length) {
   g_return_if_fail(gedit_DOCUMENT(self));
   g_mutex_lock(&self->mutex);
-
-  g_print("gedit_document_delete_range: doc=%p offset=%d length=%d\n", self,
-          offset, length);
 
   geditSnapshot *snap = gedit_snapshot_new(self);
   g_queue_push_head(self->undo_stack, snap);
@@ -276,13 +270,9 @@ void gedit_document_undo(geditDocument *self) {
   g_mutex_lock(&self->mutex);
 
   if (!self->undo_stack || g_queue_is_empty(self->undo_stack)) {
-    g_print("gedit: Undo requested but stack is empty\n");
     g_mutex_unlock(&self->mutex);
     return;
   }
-
-  g_print("gedit: Performing Undo (Stack size: %d)\n",
-          g_queue_get_length(self->undo_stack));
 
   /* current state -> redo */
   geditSnapshot *cur = gedit_snapshot_new(self);
@@ -307,13 +297,9 @@ void gedit_document_redo(geditDocument *self) {
   g_mutex_lock(&self->mutex);
 
   if (!self->redo_stack || g_queue_is_empty(self->redo_stack)) {
-    g_print("gedit: Redo requested but stack is empty\n");
     g_mutex_unlock(&self->mutex);
     return;
   }
-
-  g_print("gedit: Performing Redo (Stack size: %d)\n",
-          g_queue_get_length(self->redo_stack));
 
   /* current state -> undo */
   geditSnapshot *cur = gedit_snapshot_new(self);
@@ -1141,8 +1127,6 @@ void gedit_document_indent(geditDocument *self, gint offset, gint length,
 
 void gedit_document_set_quote_level(geditDocument *self, gint offset,
                                     gint length, gint level) {
-  g_print("gedit: gedit_document_set_quote_level offset=%d len=%d level=%d\n",
-          offset, length, level);
   g_return_if_fail(gedit_DOCUMENT(self));
   g_mutex_lock(&self->mutex);
 
@@ -1159,15 +1143,12 @@ void gedit_document_set_quote_level(geditDocument *self, gint offset,
   self->para_attrs = g_list_append(self->para_attrs, p);
 
   g_mutex_unlock(&self->mutex);
-  g_print("gedit: set_quote_level emitting signals\n");
   g_signal_emit(self, signals[DOCUMENT_CHANGED], 0);
-  g_print("gedit: set_quote_level done\n");
 }
 
 void gedit_document_insert_graphic(geditDocument *self, gint offset,
                                    GdkTexture *texture, gint width,
                                    gint height) {
-  g_print("gedit: gedit_document_insert_graphic offset=%d\n", offset);
   g_return_if_fail(gedit_DOCUMENT(self));
   g_mutex_lock(&self->mutex);
 
@@ -1283,11 +1264,6 @@ PangoAttrList *gedit_document_get_attr_list_for_range(geditDocument *self,
     col->start_index = rel_start;
     col->end_index = rel_end;
     pango_attr_list_insert(list, col);
-    g_print("gedit_document: style run offset=%d len=%d rel=%d-%d "
-            "color=%.3f,%.3f,%.3f bold=%d italic=%d underline=%d\n",
-            run->offset, run->length, rel_start, rel_end, run->color.red,
-            run->color.green, run->color.blue, run->bold, run->italic,
-            run->underline);
     if (run->font_size > 0) {
       PangoAttribute *sz = pango_attr_size_new(run->font_size * PANGO_SCALE);
       sz->start_index = rel_start;

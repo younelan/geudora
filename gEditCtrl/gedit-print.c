@@ -87,10 +87,7 @@ static gint gedit_print_get_num_pages(GtkPrintOperation *operation,
     lines_per_page = 1;
   
   gint num_pages = (ctx->num_lines + lines_per_page - 1) / lines_per_page;
-  
-  g_print("gedit: Print - %d lines, %d lines per page, %d pages\n", ctx->num_lines,
-          lines_per_page, num_pages);
-  
+
   return num_pages;
 }
 
@@ -120,7 +117,6 @@ static void gedit_print_begin(GtkPrintOperation *operation,
   gint num_pages = gedit_print_get_num_pages(operation, print_context, user_data);
   gtk_print_operation_set_n_pages(operation, num_pages);
   
-  g_print("gedit: Print begin - %d pages\n", num_pages);
 }
 
 static void gedit_print_done(GtkPrintOperation *operation,
@@ -136,9 +132,7 @@ static void gedit_print_done(GtkPrintOperation *operation,
       g_error_free(error);
     }
   } else if (result == GTK_PRINT_OPERATION_RESULT_APPLY) {
-    g_print("gedit: Print completed successfully\n");
   } else if (result == GTK_PRINT_OPERATION_RESULT_CANCEL) {
-    g_print("gedit: Print cancelled\n");
   }
   
   /* Clean up */
@@ -179,7 +173,6 @@ void gedit_print_document(GtkWidget *parent_window, geditDocument *doc,
     num_lines++;
   }
   
-  g_print("gedit: Printing document with %d lines\n", num_lines);
   
   /* Create print context */
   PrintContext *ctx = g_new0(PrintContext, 1);
@@ -210,9 +203,7 @@ void gedit_print_document(GtkWidget *parent_window, geditDocument *doc,
   if (result == GTK_PRINT_OPERATION_RESULT_ERROR) {
     g_printerr("gedit: Print operation failed\n");
   } else if (result == GTK_PRINT_OPERATION_RESULT_APPLY) {
-    g_print("gedit: PDF exported to %s\n", pdf_filename);
   } else if (result == GTK_PRINT_OPERATION_RESULT_CANCEL) {
-    g_print("gedit: Print operation cancelled\n");
   }
   
   g_free(pdf_filename);

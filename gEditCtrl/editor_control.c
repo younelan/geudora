@@ -30,18 +30,13 @@ editor_control_new(void)
     /* populate document with demo text */
     geditDocument *doc = geditctrl_get_document(ctrl);
     GtkWidget *area = gtk_scrolled_window_get_child(GTK_SCROLLED_WINDOW(ctrl));
-    g_print("editor_control_new: ctrl=%p area=%p doc=%p\n", ctrl, area, doc);
     if (doc) {
-        g_print("editor_control_new: got doc=%p\n", doc);
-        g_print("before insert, length=%d\n", gedit_document_get_length(doc));
         const char *demo =
             "gEdit editor — placeholder control\n\n"
             "This is <b>demo text</b> inside the editor control.\n"
             "Select some text and press the toolbar buttons to toggle styles.\n";
         
-        g_print("inserting demo text of length %d\n", (int)strlen(demo));
         gedit_document_insert_text(doc, 0, demo);
-        g_print("after insert, length=%d\n", gedit_document_get_length(doc));
         apply_style_by_substr(doc, "demo text", TRUE, FALSE, FALSE, NULL);
         apply_style_by_substr(doc, "placeholder control", FALSE, TRUE, FALSE, NULL);
         apply_style_by_substr(doc, "Select some text", FALSE, FALSE, TRUE, NULL);
@@ -52,7 +47,6 @@ editor_control_new(void)
         if (GTK_IS_WIDGET(area))
             gtk_widget_grab_focus(area);
     } else {
-        g_print("editor_control_new: no doc found!\n");
     }
     return ctrl;
 }

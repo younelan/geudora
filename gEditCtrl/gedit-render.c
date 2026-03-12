@@ -224,9 +224,6 @@ G_GNUC_INTERNAL void gedit_draw_cb(GtkDrawingArea *area, cairo_t *cr, int width,
       line_height = l_ext.height;
     }
 
-    g_print("gedit: align_offset=%d para_chars=%d bullet=%d width=%d\n",
-            align_offset, para_chars, pattr.bullet, width_for_layout);
-
     double x_para = x_base + pattr.indent;
     if (pattr.quote_level > 0) {
       gedit_draw_quote_marks(cr, x_para, y, pxh, pattr.quote_level);
@@ -476,15 +473,10 @@ G_GNUC_INTERNAL void gedit_scroll_to_caret(GtkWidget *area) {
         double value = gtk_adjustment_get_value(adj);
         double upper = gtk_adjustment_get_upper(adj);
 
-        g_print("gedit: scroll_to_caret caret_y=%d caret_h=%d page_size=%.0f "
-                "value=%.0f upper=%.0f content_height=%d\n",
-                caret_y, caret_height, page_size, value, upper, content_height);
-
         /* If page_size is 0, the adjustment hasn't been realized yet.
            Try to force an update by querying the scrolled window's allocation. */
         if (page_size <= 0) {
           int sw_height = gtk_widget_get_height(parent);
-          g_print("gedit: page_size is 0, scrolled window height=%d\n", sw_height);
           if (sw_height > 0) {
             page_size = sw_height;
             gtk_adjustment_set_page_size(adj, page_size);
@@ -498,18 +490,15 @@ G_GNUC_INTERNAL void gedit_scroll_to_caret(GtkWidget *area) {
           /* Caret is above visible area */
           if (caret_y < value) {
             double new_val = MAX(0, caret_y - 10);
-            g_print("gedit: caret above, scrolling to %.0f\n", new_val);
             gtk_adjustment_set_value(adj, new_val);
           }
           /* Caret is below visible area */
           else if (caret_y + caret_height > value + page_size) {
             double new_val = caret_y + caret_height - page_size + 10;
             new_val = MIN(new_val, upper - page_size);
-            g_print("gedit: caret below, scrolling to %.0f\n", new_val);
             gtk_adjustment_set_value(adj, new_val);
           }
         } else {
-          g_print("gedit: caret already visible or page_size invalid\n");
         }
       }
     }
