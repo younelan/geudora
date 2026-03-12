@@ -440,14 +440,13 @@ unsigned char *MyGetItem(MenuHandle mh, short item, unsigned char *name) {
 
   gchar *label = get_menu_item_label(mh, index);
   if (label) {
-    /* Copy to Pascal string if name is provided (Legacy Eudora uses Pascal
-     * strings) */
+    /* Copy to C string if name is provided */
     if (name) {
       size_t len = strlen(label);
       if (len > 255)
         len = 255;
-      name[0] = (unsigned char)len;
-      memcpy(name + 1, label, len);
+      memcpy(name, label, len);
+      name[len] = '\0';
     }
     g_free(label);
   } else if (name) {

@@ -2017,36 +2017,33 @@ void ParseHeaderInMemory(MSumPtr sum, Handle headersH) {
                           headerName[0])) {
         // enriched text?
         GetRString(scratch, MIME_RICHTEXT);
-        scratch[scratch[0] + 1] = 0;
-        if (strstr((char *)buf, (char *)(scratch + 1)))
+        if (strstr((char *)buf, (char *)scratch))
           sum->flags |= FLAG_RICH;
 
         // html	or x-html
         GetRString(scratch, HTMLTagsStrn + htmlTag);
-        if (strstr((char *)buf, (char *)(scratch + 1)))
+        if (strstr((char *)buf, (char *)scratch))
           sum->opts |= OPT_HTML;
 
         // multipart
         GetRString(scratch, MIME_MULTIPART);
-        scratch[scratch[0] + 1] = 0;
-        if (strstr((char *)buf, (char *)(scratch + 1))) {
+        if (strstr((char *)buf, (char *)scratch)) {
           // mixed
           GetRString(scratch, MIME_MIXED);
-          scratch[scratch[0] + 1] = 0;
-          if (strstr((char *)buf, (char *)(scratch + 1))) {
+          if (strstr((char *)buf, (char *)scratch)) {
             // remember that we saw
             // multipart/mixed
             foundMultipartMixed = true;
 
             // with a boundary ... assume this
             // message has an attachment
-            if (strstr((char *)buf, (char *)(boundary + 1)))
+            if (strstr((char *)buf, (char *)boundary))
               sum->flags |= FLAG_HAS_ATT;
           }
         }
       }
       // boundary, on it's own line
-      else if (strstr((char *)buf, (char *)(boundary + 1))) {
+      else if (strstr((char *)buf, (char *)boundary)) {
         // if we've come across multipart/mixed
         // already, and we find a boundary on
         // it's own line, there's probably and
@@ -6482,22 +6479,22 @@ bool SaveAttachmentStub(IMAPStreamPtr stream, unsigned long uid, char *section,
 
     // save the stub information to the message
     // spool file
-    buffer[0] = snprintf((char*)(buffer+1), 255, "%ld", (long)((*CurPersSafe)->persId));
+    snprintf((char*)buffer, 256, "%ld", (long)((*CurPersSafe)->persId));
     PCat(buffer, (unsigned char *)"\x01,");
     FSWriteP(stream->mailStream->refN, buffer);
 
-    buffer[0] = snprintf((char*)(buffer+1), 255, "%ld", (long)(uid));
+    snprintf((char*)buffer, 256, "%ld", (long)(uid));
     PCat(buffer, (unsigned char *)"\x01,");
     FSWriteP(stream->mailStream->refN, buffer);
 
     ComposeString(buffer, "\x03%s,", section);
     FSWriteP(stream->mailStream->refN, buffer);
 
-    buffer[0] = snprintf((char*)(buffer+1), 255, "%ld", (long)(body->size.bytes));
+    snprintf((char*)buffer, 256, "%ld", (long)(body->size.bytes));
     PCat(buffer, (unsigned char *)"\x01,");
     FSWriteP(stream->mailStream->refN, buffer);
 
-    buffer[0] = snprintf((char*)(buffer+1), 255, "%ld", (long)(body->size.lines));
+    snprintf((char*)buffer, 256, "%ld", (long)(body->size.lines));
     PCat(buffer, (unsigned char *)"\x01,");
     FSWriteP(stream->mailStream->refN, buffer);
     ;
@@ -6930,8 +6927,8 @@ void GetFilenameParameter(IMAPBODY *body, Str255 fileName) {
   // that.
   param = body->disposition.parameter;
   while (param) {
-    if (strincmp((unsigned char *)param->attribute, mimeCDName + 1,
-                 mimeCDName[0]) == 0) {
+    if (strincmp((unsigned char *)param->attribute, mimeCDName,
+                 strlen((const char *)mimeCDName)) == 0) {
       if (param->value) {
         fileName[0] = MIN(strlen(param->value), 255);
         BMD(param->value, fileName + 1, fileName[0]);
@@ -6948,10 +6945,10 @@ void GetFilenameParameter(IMAPBODY *body, Str255 fileName) {
     param = body->parameter;
     while (param) {
       if (param->attribute &&
-          (((strincmp((unsigned char *)param->attribute, mimeName + 1,
-                      mimeName[0]) == 0)) ||
-           (strincmp((unsigned char *)param->attribute, mimeCDName + 1,
-                     mimeCDName[0]) == 0))) {
+          (((strincmp((unsigned char *)param->attribute, mimeName,
+                      strlen((const char *)mimeName)) == 0)) ||
+           (strincmp((unsigned char *)param->attribute, mimeCDName,
+                     strlen((const char *)mimeCDName)) == 0))) {
         if (param->value) {
           fileName[0] = MIN(strlen(param->value), 255);
           BMD(param->value, fileName + 1, fileName[0]);
@@ -7331,9 +7328,9 @@ unsigned long DoDownloadIMAPAttachments(FSSpecHandle attachments,
 
           // leave the encoded name if it's been uniquified.  Otherwise, the
           // message will lose track of it!
-          if (otherName[0] == stubSpec.name[0]) {
-            if (!strincmp((UPtr)otherName + 1, (UPtr)stubSpec.name + 1,
-                          otherName[0])) {
+          if (strlen((const char *)otherName) == strlen((const char *)stubSpec.name)) {
+            if (!strincmp((UPtr)otherName, (UPtr)stubSpec.name,
+                          strlen((const char *)otherName))) {
               FSpRename(&stubSpec, attachSpec.name);
               PCopy(stubSpec.name, attachSpec.name);
             }

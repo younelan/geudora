@@ -26,6 +26,7 @@ ADVISED OF THE POSSIBILITY OF SUCH DAMAGE. */
 #include "sort.h"
 #include "Globals.h"
 #include "StringUtil.h"
+#include <string.h>
 
 #define FILE_NUM 36
 /* Copyright (c) 1990-1992 by the University of Illinois Board of Trustees */
@@ -129,9 +130,9 @@ void VQuickSort(short **vector, short f, short l, void *data,
 void StrSwap(UPtr s1, UPtr s2) {
   Str255 temp;
 
-  BMD(s1, temp, *(unsigned char *)s1 + 1);
-  BMD(s2, s1, *(unsigned char *)s2 + 1);
-  BMD(temp, s2, *(unsigned char *)temp + 1);
+  strcpy((char *)temp, (const char *)s1);
+  strcpy((char *)s1, (const char *)s2);
+  strcpy((char *)s2, (const char *)temp);
 }
 
 int CStrCompar(UPtr s1, UPtr s2) {

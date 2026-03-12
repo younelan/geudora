@@ -1139,7 +1139,7 @@ OSErr SendSingle(TransStream stream,FSSpecPtr spec,bool dataToo,AttMapPtr amp)
 	/*
 	 * send the name
 	 */
-	if (err=BufferSend(stream,B64Encoder,spec->name+1,*spec->name,False)) goto done;
+	if (err=BufferSend(stream,B64Encoder,spec->name,strlen((const char*)spec->name),False)) goto done;
 	
 	/*
 	 * send the info
@@ -1504,30 +1504,31 @@ void UUFileName(PStr uuName,PStr inShortName)
 	Str63 shortName;
 	
 	PCopy(shortName,inShortName);
-	ASSERT(*inShortName<=31);
-	
-	shortName[*shortName+1] = 0;
-	
-	firstDot = (UPtr)strchr((char*)shortName+1,'.');
-	lastDot = (UPtr)strrchr((char*)shortName+1,'.');
-	
-	if (!firstDot) firstDot = shortName+*shortName+1;
+	ASSERT(strlen((const char*)inShortName)<=31);
+
+	firstDot = (UPtr)strchr((char*)shortName,'.');
+	lastDot = (UPtr)strrchr((char*)shortName,'.');
+
+	if (!firstDot) firstDot = shortName+strlen((const char*)shortName);
 	if (!lastDot) lastDot = firstDot;
-	
-	len = firstDot-(UPtr)shortName-1;
+
+	len = firstDot-(UPtr)shortName;
 	len = MIN(len,8);
-	
-	*uuName = len;
-	BMD(shortName+1,uuName+1,len);
-	
-	if (lastDot<(UPtr)shortName+*shortName)
+
+	BMD(shortName,uuName,len);
+	uuName[len] = 0;
+
+	if (lastDot<(UPtr)shortName+strlen((const char*)shortName))
 	{
-		len = *shortName - (lastDot-(UPtr)shortName);
-		len = MIN(len,3);
-		
-		PCatC(uuName,'.');
-		BMD(lastDot+1,uuName+*uuName+1,len);
-		*uuName += len;
+		short extLen = strlen((const char*)shortName) - (lastDot-(UPtr)shortName);
+		extLen = MIN(extLen,3);
+
+		{
+			short baseLen = strlen((const char*)uuName);
+			uuName[baseLen] = '.';
+			BMD(lastDot+1,uuName+baseLen+1,extLen);
+			uuName[baseLen+1+extLen] = 0;
+		}
 	}
 }
 

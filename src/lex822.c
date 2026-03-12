@@ -776,8 +776,8 @@ bool Translate1342(unsigned char *text, unsigned char *charset,
  * PseudoQP - quoted-printable, kind of
  ************************************************************************/
 void PseudoQP(unsigned char *text) {
-  unsigned char *spot = text + 1;
-  unsigned char *end = spot + *text;
+  unsigned char *spot = text;
+  unsigned char *end = text + strlen((const char *)text);
   unsigned char *copySpot = spot;
 
   while (spot < end) {
@@ -799,7 +799,7 @@ void PseudoQP(unsigned char *text) {
     }
     spot++;
   }
-  *text = copySpot - text - 1;
+  *copySpot = '\0';
 }
 
 /************************************************************************
@@ -812,13 +812,13 @@ short DecodeB64String(unsigned char *s) {
   long result;
 
   Zero(d64);
-  result = Decode64(s + 1, *s, sPrime + 1, &len, &d64, true);
+  result = Decode64(s, strlen((const char *)s), sPrime, &len, &d64, true);
   if ((d64.decoderState + d64.padCount) % 4)
     result++;
 
   if (!result) {
-    *sPrime = len;
-    PCopy((PStr)s, (PStr)sPrime);
+    sPrime[len] = '\0';
+    strcpy((char *)s, (char *)sPrime);
   }
   return (result);
 }
@@ -831,8 +831,8 @@ unsigned char *Quote822(unsigned char *into, unsigned char *from, bool space) {
   unsigned char *intoSpot, *intoEnd;
   Char822Enum class;
 
-  end = from + *from + 1;
-  for (spot = from + 1; spot < end; spot++) {
+  end = from + strlen((const char *)from);
+  for (spot = from; spot < end; spot++) {
     class = Class822[*spot];
     switch (class) {
     case ALPHA822:
@@ -857,18 +857,18 @@ unsigned char *Quote822(unsigned char *into, unsigned char *from, bool space) {
 out:
   if (spot < end) {
     /* gotta quote */
-    intoSpot = into + 1;
-    intoEnd = intoSpot + 252;
+    intoSpot = into;
+    intoEnd = intoSpot + 253;
     *intoSpot++ = '"';
-    for (spot = from + 1; spot < end && intoSpot < intoEnd; spot++) {
+    for (spot = from; spot < end && intoSpot < intoEnd; spot++) {
       if (*spot == '"')
         *intoSpot++ = '\\';
       *intoSpot++ = *spot;
     }
     *intoSpot++ = '"';
-    *into = intoSpot - into - 1;
+    *intoSpot = '\0';
   } else
-    PCopy(into, from);
+    strcpy((char *)into, (const char *)from);
 
   return (into);
 }

@@ -2627,7 +2627,7 @@ char *MailboxMenuFile(short mid, short item, char *name) {
       break;
     }
     if (mid == TRANSFER_MENU)
-      PInsert(name, 31, GetRString(prefix, TRANSFER_PREFIX), name + 1);
+      PInsert(name, 31, GetRString(prefix, TRANSFER_PREFIX), name);
   } else
     MyGetItem(GetMHandle(mid), item, name);
   return (name);

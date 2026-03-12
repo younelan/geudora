@@ -1924,30 +1924,32 @@ bool CompClose(MyWindowPtr win) {
  **********************************************************************/
 bool CompSend(MessHandle messH) {
   MyWindowPtr win = (*messH)->win;
-  geditDocument *doc;
-  char *text;
-  bool success = false;
-
   if (!win || !win->pte)
     return false;
 
-  doc = geditctrl_get_document(win->pte);
-  text = gedit_document_get_text(doc);
+  /* Save the message first */
+  if (!CompSave(messH))
+    return false;
 
-  if (text) {
-    // Send the message (simplified)
-    // This would need full SMTP implementation
-    success = true;
-    g_free(text);
-  }
+  TOCType *tocH = (*messH)->tocH;
+  int sumNum = (*messH)->sumNum;
 
-  if (success) {
-    // Mark as sent
-    SumOf(messH)->state = SENT;
-    // win->isDirty = false; // Remove if not in MyWindow struct
-  }
+  /* Mark as queued for sending */
+  tocH->sums[sumNum].state = QUEUED;
+  TOCSetDirty(tocH, true);
 
-  return success;
+  extern int WriteTOC(TOCType *tocH);
+  WriteTOC(tocH);
+
+  /* Close the compose window */
+  if (win->window)
+    gtk_window_close(GTK_WINDOW(win->window));
+
+  /* TODO: actual SMTP send via MySendMessage/TransmitMessageHi
+     from sendmail.c — requires full porting of the SMTP pipeline.
+     For now, message is saved and queued in Out. */
+
+  return true;
 }
 
 /**********************************************************************

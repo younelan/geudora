@@ -159,9 +159,8 @@ bool SplitPort(PStr host, long *port) {
   long localPort;
 
   if ((colon = PIndex(host, ':')) != NULL) {
-    *colon = (unsigned char)(*host - (colon - host));
-    *host = (unsigned char)(colon - host - 1);
-    MyStringToNum(colon, &localPort);
+    *colon = 0;  /* null-terminate host at the colon */
+    MyStringToNum(colon + 1, &localPort);
     assert(localPort > 0);
     if (localPort > 0 && port)
       *port = localPort;
@@ -973,8 +972,7 @@ OSErr GetHostByAddr(struct hostInfo *hostInfoPtr, long addr) {
       (addr & 0xffff0000) == 0xC0A80000) {
     Str31 literal;
     ComposeRString(literal, NAT_FMT, addr);
-    literal[*literal + 1] = 0;
-    strcpy(hostInfoPtr->cname, (char *)literal + 1);
+    strcpy(hostInfoPtr->cname, (char *)literal);
     hostInfoPtr->addr[0] = (unsigned long)addr;
     hostInfoPtr->rtnCode = 0;
     return noErr;

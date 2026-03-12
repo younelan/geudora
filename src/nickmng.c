@@ -231,11 +231,10 @@ void AlertStr(short alertId, short type, unsigned char *str) {
   else if (type == 1)
     title = "Error"; // Stop
 
-  // Convert Pascal string to C string
+  // Copy C string
   char message[256];
-  if (str && str[0] > 0) {
-    memcpy(message, str + 1, str[0]);
-    message[str[0]] = '\0';
+  if (str && str[0] != '\0') {
+    strcpy(message, (const char *)str);
   } else {
     strcpy(message, "Alert");
   }
@@ -1878,7 +1877,7 @@ static short AddNickToTOC(short which, UPtr name, Handle hData,
   }
 
   nameOffset = GetHandleSize(This.hNames);
-  if (!PtrPlusHand_(name, This.hNames, *name + 1))
+  if (!PtrPlusHand_(name, This.hNames, strlen((const char *)name) + 1))
     return (WarnUser(ALIAS_NEW_NICK_ERR, memFullErr));
 
   // Fill in the basic data
@@ -2152,15 +2151,15 @@ void SetNickname(short ab, short nick, UPtr name)
     oldOffset = (*aliases)[nick].nameTOCOffset;
 
     //	Replace the name
-    Munger((*Aliases)[ab].hNames, oldOffset, nil, *oldName + 1, name,
-           *name + 1);
+    Munger((*Aliases)[ab].hNames, oldOffset, nil, strlen((const char *)oldName) + 1, name,
+           strlen((const char *)name) + 1);
 
     //	New hash value
     (*aliases)[nick].hashName = NickHash(name);
 
     //	Calculate new name offsets if the new name is a different length
     //	Only need to adjust those that are past the one we changed
-    if (adjustment = *name - *oldName) {
+    if (adjustment = (long)strlen((const char *)name) - (long)strlen((const char *)oldName)) {
 
       nickCount = GetHandleSize_(aliases) / sizeof(NickStruct);
       for (i = 0, pNick = *aliases; i < nickCount; i++, pNick++)
@@ -2878,7 +2877,7 @@ bool SaveIndNickFile(short which, bool saveChangeBits) {
     if ((!(*(This.theData))[i].deleted) && bytes > 0 &&
         !(err = FSWriteP(refN, aliasCmd))) {
       if (PIndex(scratch, ' ')) {
-        PInsert(scratch, sizeof(scratch), "\p\"", scratch + 1);
+        PInsert(scratch, sizeof(scratch), (UPtr)"\"", scratch);
         PCatC(scratch, '"');
       }
       PCatC(scratch, ' ');
@@ -2927,7 +2926,7 @@ bool SaveIndNickFile(short which, bool saveChangeBits) {
     if ((!(*(This.theData))[i].deleted) && bytes > 0 &&
         !(err = FSWriteP(refN, aliasCmd))) {
       if (PIndex(scratch, ' ')) {
-        PInsert(scratch, sizeof(scratch), "\p\"", scratch + 1);
+        PInsert(scratch, sizeof(scratch), (UPtr)"\"", scratch);
         PCatC(scratch, '"');
       }
       PCatC(scratch, ' ');
@@ -3227,7 +3226,7 @@ bool SaveFileFast(short which, bool saveChangeBits) {
       if ((!(*(This.theData))[i].deleted) && bytes > 0 &&
           !(err = FSWriteP(tempRefN, aliasCmd))) {
         if (PIndex(scratch, ' ')) {
-          PInsert(scratch, sizeof(scratch), "\p\"", scratch + 1);
+          PInsert(scratch, sizeof(scratch), (UPtr)"\"", scratch);
           PCatC(scratch, '"');
         }
         PCatC(scratch, ' ');
@@ -3383,7 +3382,7 @@ bool SaveFileFast(short which, bool saveChangeBits) {
         if ((!(*(This.theData))[i].deleted) && bytes > 0 &&
             !(err = FSWriteP(tempRefN, aliasCmd))) {
           if (PIndex(scratch, ' ')) {
-            PInsert(scratch, sizeof(scratch), "\p\"", scratch + 1);
+            PInsert(scratch, sizeof(scratch), (UPtr)"\"", scratch);
             PCatC(scratch, '"');
           }
           PCatC(scratch, ' ');
@@ -3824,7 +3823,7 @@ PStr ParseFirstLast(PStr realName, PStr firstName, PStr lastName)
   numPtr = &numName1;
 
   // Loop through all the tokens in the name
-  spot = realName + 1;
+  spot = realName;
   while (PToken(realName, token, &spot, " ,")) {
     PCopy(tokenCopy, token);
 
@@ -3958,7 +3957,7 @@ PStr StripQualifiersAndHonorifics(PStr name, PStr strippedName)
   lastTokenSeperator = 0;
 
   // Loop through all the tokens in the first name
-  spot = name + 1;
+  spot = name;
   while (PToken(name, token, &spot, " ,")) {
     PCopy(tokenCopy, token);
 

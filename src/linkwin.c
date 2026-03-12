@@ -1362,13 +1362,10 @@ bool PingAdServer(void) {
     // extract the host from the playlist url
     if ((err = ParseURL(PlayListURL, proto, host, query)) == noErr) {
       if (host[0]) {
-        // null terminate host ...
-        host[MIN(host[0] + 1, 255)] = 0;
-
         // figure out the server and port from the hostname ...
         p = PIndex(host, ':');
         if (p) {
-          host[0] = p - host - 1; // host now contains the hostname only;
+          *p = '\0'; // null-terminate host at the colon
           p++;
           if (port = atoi(p))
             ; // port is whatever's left over

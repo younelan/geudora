@@ -1843,9 +1843,10 @@ static int count_toc_messages(const char *mailbox_name) {
   snprintf(path, sizeof(path), "%s/%s.toc", mdir, mailbox_name);
   struct stat st;
   if (stat(path, &st) != 0) return 0;
-  long data = st.st_size - (long)sizeof(short); /* TOC version header */
+  /* TOC file: 76-byte header + 224 bytes per message summary */
+  long data = st.st_size - 76;
   if (data <= 0) return 0;
-  return (int)(data / (long)sizeof(MSumType));
+  return (int)(data / 224);
 }
 
 /* ── Stat pill widget ── */

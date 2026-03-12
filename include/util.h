@@ -96,7 +96,7 @@ typedef struct {
   short id;
   uLong used;
   uLong persId;
-  Str255 string;
+  unsigned char string[256];
 } StringCacheEntry, *SCPtr, **SCHandle;
 
 /**********************************************************************
@@ -160,7 +160,7 @@ int AccuAddPtrB64(AccuPtr a, void *bytes, long len);
 int AccuAddHandle(AccuPtr a, void **data);
 int AccuAddHandleToPtr(AccuPtr a, unsigned char *data, long size);
 OSErr AccuAddLong(AccuPtr a, uLong longVal);
-#define AccuAddHandleToStr(a, s) AccuAddHandleToPtr((a), (s) + 1, *(s))
+#define AccuAddHandleToStr(a, s) AccuAddHandleToPtr((a), (s), strlen((const char *)(s)))
 int AccuAddChar(AccuPtr a, unsigned char c);
 int AccuInsertPtr(AccuPtr a, unsigned char *bytes, long len, long offset);
 int AccuInsertChar(AccuPtr a, unsigned char c, long offset);
@@ -171,12 +171,13 @@ long Atoi(unsigned char *s);
 uint32_t ATouint32_t(unsigned char *s);
 int AccuAddRes(AccuPtr a, short res);
 int AccuWrite(AccuPtr a, short refN);
-#define AccuAddStr(a, s) AccuAddPtr(a, s + 1, *s)
-#define AccuAddStrB64(a, s) AccuAddPtrB64(a, s + 1, *s)
+#define AccuAddStr(a, s) AccuAddPtr(a, (s), strlen((const char *)(s)))
+#define AccuAddStrB64(a, s) AccuAddPtrB64(a, (s), strlen((const char *)(s)))
 #define AccuToStr(a, s)                                                        \
   do {                                                                         \
-    *(s) = min(255, (a)->offset);                                              \
-    BMD(*(a)->data, (s) + 1, *(s));                                            \
+    long _ats_len = min(255, (a)->offset);                                     \
+    BMD(*(a)->data, (s), _ats_len);                                            \
+    (s)[_ats_len] = '\0';                                                      \
   } while (0)
 int AccuStrip(AccuPtr a, long num);
 #define AccuZap(a)                                                             \

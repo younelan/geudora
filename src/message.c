@@ -2461,7 +2461,6 @@ void WeedHeaders(UHandle buffer, long *weeded, short toWeed, AccuPtr weeds) {
   short bad;
   Handle badH = GetResource('STR#', toWeed);
   UPtr badSpot; // pointer to bad header string we're currently looking for
-  Byte old;
   short res;
 
   if (badH) {
@@ -2487,10 +2486,7 @@ void WeedHeaders(UHandle buffer, long *weeded, short toWeed, AccuPtr weeds) {
       // search for the header name
       badSpot = *badH + 2;
       for (bad = 0; bad < badN; bad++) {
-        old = badSpot[*badSpot + 1];
-        badSpot[*badSpot + 1] = 0;
-        res = striscmp(spot, badSpot + 1);
-        badSpot[*badSpot + 1] = old;
+        res = striscmp(spot, badSpot);
         // found it!
         if (!res) {
           // skip the header
@@ -2504,7 +2500,7 @@ void WeedHeaders(UHandle buffer, long *weeded, short toWeed, AccuPtr weeds) {
             AccuAddPtr(weeds, found, spot - found);
           goto nextHead; // continue looking at next header
         } else
-          badSpot += *badSpot + 1;
+          badSpot += strlen((const char *)badSpot) + 1;
       }
       // copy the current header
       while (spot < end)
@@ -2637,7 +2633,7 @@ static bool CleanSpoolCallback(DirIterateInfo *info) {
   MiniEvents();
 
   if (info->isDir &&
-      AllDigits((unsigned char *)info->spec.name + 1, *info->spec.name)) {
+      AllDigits((unsigned char *)info->spec.name, strlen(info->spec.name))) {
     if (info->modifyDate < spoolAge) {
       RemoveDir(&info->spec);
     }
@@ -3648,9 +3644,9 @@ void FindFrom(UPtr who, GtkWidget *pte) {
   len = text ? (long)strlen((char *)text) : 0;
   GetRString(header, FROM_HEAD + HEADER_STRN);
   if (found = FindHeaderString(LDRef(text), header, &len, false)) {
-    *who = MIN(62, len);
-    BMD(found, who + 1, *who);
-    who[*who + 1] = 0;
+    long copyLen = MIN(62, len);
+    BMD(found, who, copyLen);
+    who[copyLen] = 0;
     BeautifyFrom(who);
   } else
     *who = 0;
@@ -3764,12 +3760,15 @@ UPtr FindHeaderString(UPtr text, UPtr headerName, long *size, bool bodyToo) {
         break;
     if (spot == text && !bodyToo)
       break;
-    *header = MIN(mLen, end - text);
-    BMD(text, header + 1, *header);
+    {
+      long hLen = MIN(mLen, end - text);
+      BMD(text, header, hLen);
+      header[hLen] = 0;
+    }
 #ifdef TWO
     if (addressee) {
       if (colon = PIndex(header, ':'))
-        *header = colon - header;
+        *colon = '\0';
     }
 #endif
     if (
@@ -3780,7 +3779,7 @@ UPtr FindHeaderString(UPtr text, UPtr headerName, long *size, bool bodyToo) {
 #ifdef TWO
       if (!any && !addressee)
 #endif
-        text += *header;
+        text += strlen((const char *)header);
       while (IsWhite(*text))
         text++;
       for (spot--; IsWhite(*spot); spot--)
@@ -3866,7 +3865,7 @@ MyWindowPtr DoReplyMessage(MyWindowPtr win, bool all, bool self, bool quote,
     CompHeadGetStr(newMessH, SUBJ_HEAD, subj);
     if (!ReMatch(subj, scratch)) {
       GetRString(scratch, REPLY_INTRO);
-      PrependMessText(newMessH, SUBJ_HEAD, scratch + 1, *scratch);
+      PrependMessText(newMessH, SUBJ_HEAD, scratch, strlen((const char *)scratch));
     }
 
     /* reply to sender */
@@ -4273,21 +4272,23 @@ void Attribute(short attrId, MessHandle origMessH, MessHandle newMessH,
   Str255 attribution;
 
   if (*GrabAttribution(attrId, (*origMessH)->win, attribution)) {
+    long attrLen = strlen((const char *)attribution);
     if (atEnd) {
       geditDocument *_doc = geditctrl_get_document((*newMessH)->bodyPTE);
       long endOfText = gedit_document_get_length(_doc);
-      gchar *_tmp = g_strndup((const gchar *)(attribution + 1), *attribution);
+      gchar *_tmp = g_strndup((const gchar *)attribution, attrLen);
       gedit_document_insert_text(_doc, endOfText - 1, _tmp);
       g_free(_tmp);
       // if (MessIsRich(newMessH) || MessIsRich(origMessH))	//quote color
       // leaking, so disable check
-      MessPlainBytes(newMessH, 0, -(short)*attribution - 1);
+      MessPlainBytes(newMessH, 0, -(short)attrLen - 1);
     } else {
       PCatC(attribution, '\015');
-      PrependMessText(newMessH, 0, attribution + 1, *attribution);
+      attrLen = strlen((const char *)attribution);
+      PrependMessText(newMessH, 0, attribution, attrLen);
       // if (MessIsRich(newMessH) || MessIsRich(origMessH))	//quote color
       // leaking, so disable check
-      MessPlainBytes(newMessH, 0, (short)*attribution);
+      MessPlainBytes(newMessH, 0, (short)attrLen);
     }
   }
 }
@@ -4587,7 +4588,7 @@ MyWindowPtr DoForwardMessage(MyWindowPtr win, void *toWhom, bool turbo) {
     XferCustomTable(origMessH, newMessH);
     if (SumOf(origMessH)->flags & FLAG_OUT) {
       BuildDateHeader(scratch, SumOf(origMessH)->seconds);
-      AppendMessText(newMessH, 0, scratch + 1, *scratch);
+      AppendMessText(newMessH, 0, scratch, strlen((const char *)scratch));
       AppendMessText(newMessH, 0, "\015", 1);
     }
 
@@ -4598,7 +4599,7 @@ MyWindowPtr DoForwardMessage(MyWindowPtr win, void *toWhom, bool turbo) {
       CompHeadGetStr(newMessH, SUBJ_HEAD, subj);
       if (!ReMatch(subj, scratch)) {
         GetRString(scratch, FWD_PREFIX);
-        PrependMessText(newMessH, SUBJ_HEAD, scratch + 1, *scratch);
+        PrependMessText(newMessH, SUBJ_HEAD, scratch, strlen((const char *)scratch));
       }
     }
 

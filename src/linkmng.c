@@ -414,7 +414,7 @@ bool InterestingProtocol(Str255 proto) {
     GetRString(insterestingProtocols, LINK_INTERESTING_PROTO);
 
     // see if proto is one of them
-    for (spot = insterestingProtocols + 1;
+    for (spot = insterestingProtocols;
          PToken(insterestingProtocols, token, &spot, ",") && !remember;) {
       if (StringSame(token, proto))
         remember = true;

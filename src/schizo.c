@@ -534,7 +534,7 @@ OSErr AEPersObj(PersHandle pers,AEDescPtr obj)
 	
 	n = Pers2Index(pers);
 		
-	if (!(err = AECreateDesc(typeChar,(*pers)->name+1,*(*pers)->name,&desc)))
+	if (!(err = AECreateDesc(typeChar,(*pers)->name,strlen((const char*)(*pers)->name),&desc)))
 	{
 		err = CreateObjSpecifier(cEuPersonality,&root,formName,&desc,False,obj);
 	}
@@ -970,11 +970,7 @@ PersHandle PersChoose(unsigned char *prompt)
 	i = 0;
 	for (pers = PersList; pers; pers = (*pers)->next)
 	{
-		char name[33];
-		unsigned int len = (unsigned int)(*pers)->name[0];
-		if (len > 32) len = 32;
-		memcpy(name, (*pers)->name + 1, len);
-		name[len] = '\0';
+		const char *name = (const char *)(*pers)->name;
 		GtkWidget *label = gtk_label_new(name);
 		gtk_widget_set_halign(label, GTK_ALIGN_START);
 		gtk_widget_set_margin_start(label, 6);

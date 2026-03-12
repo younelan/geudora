@@ -1268,11 +1268,7 @@ void SaveMessageAs(MessHandle messH) {
 
   unsigned char name[32];
   MakeMessFileName((*messH)->tocH, (*messH)->sumNum, name);
-  char cName[33];
-  int nameLen = name[0];
-  memcpy(cName, name + 1, nameLen);
-  cName[nameLen] = '\0';
-  gtk_file_chooser_set_current_name(GTK_FILE_CHOOSER(dialog), cName);
+  gtk_file_chooser_set_current_name(GTK_FILE_CHOOSER(dialog), (const char *)name);
 
   /* GTK4: run native dialog synchronously with local main loop */
   static int _save_response;
@@ -1323,8 +1319,8 @@ static short SaveAsToOpenFileLo(short refN, MessHandle messH) {
   if (!exclHead && isOut && SumOf(messH)->seconds) {
     unsigned char scratch[64];
     BuildDateHeader(scratch, SumOf(messH)->seconds);
-    int len = scratch[0];
-    write(refN, scratch + 1, len);
+    int len = strlen((const char *)scratch);
+    write(refN, scratch, len);
     write(refN, "\n", 1);
   }
 
@@ -1626,12 +1622,9 @@ int MessGonnaShow(MyWindowPtr win) {
     gtk_text_view_set_wrap_mode(GTK_TEXT_VIEW(subEntry), GTK_WRAP_NONE);
     gtk_text_view_set_accepts_tab(GTK_TEXT_VIEW(subEntry), FALSE);
     unsigned char *subj = SumOf(messH)->subj;
-    if (subj[0] > 0) {
-      char cSubj[256];
-      memcpy(cSubj, subj + 1, subj[0]);
-      cSubj[subj[0]] = '\0';
+    if (subj[0] != '\0') {
       GtkTextBuffer *buf = gtk_text_view_get_buffer(GTK_TEXT_VIEW(subEntry));
-      gtk_text_buffer_set_text(buf, cSubj, -1);
+      gtk_text_buffer_set_text(buf, (const char *)subj, -1);
       gtk_text_buffer_set_modified(buf, FALSE);
     }
     (*messH)->subPTE = subEntry;

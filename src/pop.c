@@ -829,15 +829,14 @@ void PopCapabilities(TransStream stream, bool *capabilities,
   if (!POPCmdGetReply(stream, kpcCapa, nil, buffer, &size) && *buffer == '+') {
     capabilities[0] = 1; // we have them!
     for (;;) {
-      size = sizeof(buffer) - 1;
-      if (RecvLine(stream, buffer + 1, &size))
+      size = sizeof(buffer);
+      if (RecvLine(stream, buffer, &size))
         break;
-      buffer[0] = MIN(size, 255);
-      if (buffer[*buffer] == '\015')
-        --*buffer;
-      if (buffer[0] == 1 && buffer[1] == '.')
+      if (size > 0 && buffer[size - 1] == '\015')
+        buffer[--size] = '\0';
+      if (size == 1 && buffer[0] == '.')
         break;
-      spot = buffer + 1;
+      spot = buffer;
       if (PToken(buffer, token, &spot, " ")) {
         i = FindSTRNIndex(POPCapaStrn, token);
         if (i && i < pcapaLimit)
@@ -1337,12 +1336,14 @@ int POPCmdError(short cmd, unsigned char *args, unsigned char *message) {
   GetRString(theCmd, POP_STRN + cmd);
   if (args && *args)
     PCat(theCmd, args);
-  strcpy(theError + 1, message);
-  *theError = strlen(theError + 1);
-  if (theError[*theError] == '\012')
-    (*theError)--;
-  if (theError[*theError] == '\015')
-    (*theError)--;
+  strcpy(theError, message);
+  {
+    int len = strlen(theError);
+    if (len > 0 && theError[len - 1] == '\012')
+      theError[--len] = '\0';
+    if (len > 0 && theError[len - 1] == '\015')
+      theError[--len] = '\0';
+  }
 
   if (InAThread()) {
     char c_cmd[256], c_err[256];
@@ -2099,14 +2100,14 @@ bool HasBeenRead(TransStream stream, short msgNum, short count) {
   for (size = sizeof(scratch);
        !(Prr = RecvLine(stream, scratch, &size)) && !POP_TERM(scratch, size);
        size = sizeof(scratch))
-    if (!unread && !statFound && !striscmp(scratch, status + 1)) {
+    if (!unread && !statFound && !striscmp(scratch, status)) {
       statFound = True;
       for (cp = scratch; cp < scratch + size; cp++) {
         if (*cp == ':') {
-          for (cp++; cp <= scratch + size - *terminate; cp++)
-            if (!striscmp(cp, terminate + 1))
+          for (cp++; cp <= scratch + size - strlen(terminate); cp++)
+            if (!striscmp(cp, terminate))
               break;
-          unread = cp > scratch + size - *terminate;
+          unread = cp > scratch + size - strlen(terminate);
           break;
         }
       }
@@ -2278,12 +2279,12 @@ OSErr FixLongFilename(HeaderDHandle hdh, FSSpecPtr spec) {
 
   // check for applesingle
   if (EqualStrRes(LDRef(hdh)->contentSubType, MIME_APPLEFILE))
-    if (longFilename[1] == '%' && *longFilename > 1)
-      BMD(longFilename + 2, longFilename + 1, --*longFilename);
+    if (longFilename[0] == '%' && strlen(longFilename) > 1)
+      BMD(longFilename + 1, longFilename, strlen(longFilename));
   UL(hdh);
 
   // is it a short filename?
-  if (*longFilename <= 31 && !AnyHighBits(longFilename + 1, *longFilename))
+  if (strlen(longFilename) <= 31 && !AnyHighBits(longFilename, strlen(longFilename)))
     return noErr;
 
   // Ok, it's a long filename.  Set the name of the file to it
@@ -2350,7 +2351,7 @@ PStr Un2184(PStr dest, PStr orig, PStr charset) {
   // do we have a charset?
   if (!*charset) {
     if (PIndex(orig, '\'')) {
-      unsigned char *spot = orig + 1;
+      unsigned char *spot = orig;
       PToken(orig, charset, &spot, "'"); // grab charset
       PToken(orig, dest, &spot, "'");    // skip language
       PToken(orig, dest, &spot, "'");    // put the rest into dest
@@ -2810,11 +2811,11 @@ unsigned char *ExtractStamp(unsigned char *stamp, unsigned char *banner) {
   unsigned char *cp1, *cp2;
 
   *stamp = 0;
-  banner[*banner + 1] = 0;
-  if (cp1 = strchr(banner + 1, '<'))
+  if (cp1 = strchr(banner, '<'))
     if (cp2 = strchr(cp1 + 1, '>')) {
-      *stamp = cp2 - cp1 + 1;
-      strncpy(stamp + 1, cp1, *stamp);
+      int len = cp2 - cp1 + 1;
+      strncpy(stamp, cp1, len);
+      stamp[len] = '\0';
     }
   return (stamp);
 }
@@ -3737,12 +3738,12 @@ OSErr KerbUsername(PStr name) {
   }
 
   /*
-   * convert to pascal, trim realm
+   * trim realm (everything from '@' onward)
    */
   if (!err) {
-    c2pstr(name);
-    if (atSign = PIndex(name, '@'))
-      name[0] = atSign - name - 1;
+    char *atSign = strchr((char *)name, '@');
+    if (atSign)
+      *atSign = '\0';
   }
 
   return (err);
@@ -3785,7 +3786,7 @@ OSErr KerbGetTicket(PStr serviceName, PStr inHost, PStr realm, PStr version,
   /*
    * build the service name
    */
-  spot = host + 1;
+  spot = host;
   PToken(host, shortHost, &spot, ".");
   EscapeChars(host, GetRString(fmt, KERBEROS_ESCAPES));
   EscapeChars(serviceName, GetRString(fmt, KERBEROS_ESCAPES));
@@ -3794,9 +3795,7 @@ OSErr KerbGetTicket(PStr serviceName, PStr inHost, PStr realm, PStr version,
   ProgressMessage(kpMessage,
                   ComposeRString(scratch, KERBEROS_TICK_FMT, fullName));
 
-  // Null terminate these, KCLient expects C-Strings
-  version[*version + 1] = 0;
-  fullName[*fullName + 1] = 0;
+  // Already null-terminated C strings, no conversion needed
 
   bufLen = GetRLong(KERBEROS_BSIZE);
   if (!(*ticket = NuHandle(bufLen)))

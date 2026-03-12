@@ -998,7 +998,7 @@ void PersNameToCacheName(PersHandle pers, UPtr cacheName) {
 
   LDRef(pers);
   PCopy(cacheName, (*pers)->name);
-  for (spot = cacheName + 1; spot <= cacheName + cacheName[0]; spot++)
+  for (spot = cacheName; *spot; spot++)
     if (*spot == ':')
       *spot = '-';
   HSetState((Handle)pers, state);
@@ -1971,7 +1971,7 @@ OSErr BuildIMAPMailboxName(MailboxNodeHandle parent, FSSpecPtr newSpec,
       // NULL terminate before we do the strncat
       dest[strlen((*parent)->mailboxName) + 1] = 0;
       // the new mailbox name
-      strncat(dest, (newSpec->name) + 1, newSpec->name[0]);
+      strcat(dest, (const char *)newSpec->name);
       // if we're creating a folder, add the delimiter to the end of the name
       if (folder)
         dest[len - 2] = (*parent)->delimiter;
@@ -1983,7 +1983,7 @@ OSErr BuildIMAPMailboxName(MailboxNodeHandle parent, FSSpecPtr newSpec,
       // with a delimiter
       PtoCcpy(dest, pPrefix);
       // the name of the new mailbox
-      strncat(dest, (newSpec->name) + 1, newSpec->name[0]);
+      strcat(dest, (const char *)newSpec->name);
       // if we're creating a folder, add the delimiter char at the end of the
       // name
       if (folder)
@@ -2645,7 +2645,7 @@ char *NewIMAPMailboxName(MailboxNodeHandle node, UPtr name, char *newName) {
       break;
   }
   // now add the new mailbox name
-  strncat(newName, (char *)name + 1, name[0]);
+  strcat(newName, (const char *)name);
 
   return (newName);
 }

@@ -511,9 +511,7 @@ extern void StackPush(void *item, void **stack);
 extern OSErr StackPop(void *into, void **stack);
 void MyNumToString(long n, char *s) {
   if (s)
-    sprintf(s + 1, "%ld", n);
-  if (s)
-    *s = strlen((char *)s + 1);
+    sprintf(s, "%ld", n);
 }
 OSErr MyInvalidateFolderDescriptorCache(short vRef, long dirID) {
   return noErr;
@@ -2107,7 +2105,6 @@ short MyResolveAlias(short *vRef, long *dirId, char *name, bool *wasAlias) {
         *vRef = theSpec.vRefNum;
         *dirId = theSpec.parID;
         g_strlcpy(name, theSpec.name, sizeof(name));
-        name[*name + 1] = 0;
         if (wasAlias)
           *wasAlias = true;
       }
@@ -3049,8 +3046,8 @@ OSErr DTSetComment(FSSpecPtr spec, char *comment) {
     Zero(pb);
     pb.ioNamePtr = spec->name;
     pb.ioDTRefNum = dtRef;
-    pb.ioDTBuffer = (char *)comment + 1;
-    pb.ioDTReqCount = MIN(200, *comment);
+    pb.ioDTBuffer = (char *)comment;
+    pb.ioDTReqCount = MIN(200, strlen((char *)comment));
     pb.ioDirID = spec->parID;
     return (PBDTSetCommentSync(&pb));
   }

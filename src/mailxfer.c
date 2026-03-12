@@ -1352,10 +1352,9 @@ OSErr SpecialXfer(struct XferFlags *flags) {
     // Fill with personality checkboxes
     for (pers = PersList; pers; pers = (*pers)->next) {
       char name[64];
-      // Convert PString to C string
-      int len = (*pers)->name[0];
-      memcpy(name, (*pers)->name + 1, len);
-      name[len] = '\0';
+      // Copy personality name (C string)
+      strncpy(name, (const char *)(*pers)->name, 63);
+      name[63] = '\0';
 
       GtkWidget *pers_chk = gtk_check_button_new_with_label(name);
       gtk_check_button_set_active(GTK_CHECK_BUTTON(pers_chk), (*pers)->doMeNow);

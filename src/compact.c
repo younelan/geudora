@@ -977,7 +977,7 @@ void ApplyStationeryHandle(MyWindowPtr win, unsigned char *text, long textLen, b
 	if (subj && size) {
 		MakePStr(scratch, subj, size);
 		if (IsMe((char *)scratch))
-			SetMessText(messH, FROM_HEAD, scratch + 1, *scratch);
+			SetMessText(messH, FROM_HEAD, scratch, strlen((const char *)scratch));
 	}
 
 	/* Translator header */

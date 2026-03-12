@@ -1070,15 +1070,16 @@ PStr Encode64Data(PStr encoded,UPtr data,short len)
 	
 	Zero(pb);
 	pb.input = data;
-	pb.output = encoded+1;
+	pb.output = encoded;
 	pb.inlen = len;
 	pb.noLineBreaks = true;
 	B64Encoder(kDecodeInit,&pb);
 	B64Encoder(kDecodeData,&pb);
-	*encoded = pb.outlen;
-	pb.output = encoded+*encoded+1;
+	long _enc_len = pb.outlen;
+	pb.output = encoded+strlen((const char*)encoded);
 	B64Encoder(kDecodeDone,&pb);
-	*encoded += pb.outlen;
+	_enc_len += pb.outlen;
+	encoded[_enc_len] = '\0';
 	B64Encoder(kDecodeDispose,&pb);
 	return(encoded);
 }
@@ -2677,9 +2678,9 @@ void FindMIMEMap(MIMESHandle msh,MIMEMapPtr mmp)
 	if (!(mmp->flags&mmIgnoreXType) && !AAFetchResData((*hdh)->contentAttributes,AttributeStrn+aMacType,name))
 	{
 		/* found a valid type */
-		Hex2Bytes((void*)(name+1),sizeof(OSType)*2,(void*)&mmp->type);
+		Hex2Bytes((void*)(name),sizeof(OSType)*2,(void*)&mmp->type);
 		if (!AAFetchResData((*hdh)->contentAttributes,AttributeStrn+aMacCreator,name))
-			Hex2Bytes((void*)(name+1),sizeof(OSType)*2,(void*)&mmp->creator);
+			Hex2Bytes((void*)(name),sizeof(OSType)*2,(void*)&mmp->creator);
 		if (!mapped && mmp->type=='TEXT') mmp->flags = mmIsText;
 	}
 
@@ -2711,13 +2712,12 @@ bool FindMIMEMapPtr(PStr type, PStr subType,PStr name,MIMEMapPtr mmp)
 		/*
 		 * fetch the suffix, if any
 		 */
-		name[*name+1] = 0;
-		dot = strrchr(name+1,'.');
+		dot = strrchr((char*)name,'.');
 		if (dot)
-			MakePStr(suffix,dot,*name-(dot-name-1));
+			MakePStr(suffix,dot,strlen(dot));
 		else
 			*suffix = 0;
-		
+
 		/*
 		 * search for a match
 		 */
@@ -2758,9 +2758,9 @@ bool FindMIMEMapPtr(PStr type, PStr subType,PStr name,MIMEMapPtr mmp)
 	else
 	{
 		GetRString(suffix,DEFAULT_CREATOR);
-		BMD(suffix+1,&mmp->creator,4);
+		BMD(suffix,&mmp->creator,4);
 		GetRString(suffix,DEFAULT_TYPE);
-		BMD(suffix+1,&mmp->type,4);
+		BMD(suffix,&mmp->type,4);
 	}
 	if (MMIn) {UL(MMIn);HPurge((Handle)MMIn);}
 	
@@ -2772,8 +2772,8 @@ bool FindMIMEMapPtr(PStr type, PStr subType,PStr name,MIMEMapPtr mmp)
 	{
 		Str15 scratch;
 		GetPref(scratch,PREF_CREATOR);
-		if (*scratch!=4) GetRString(scratch,TEXT_CREATOR);
-		BMD(scratch+1,&mmp->creator,4);
+		if (strlen((const char *)scratch)!=4) GetRString(scratch,TEXT_CREATOR);
+		BMD(scratch,&mmp->creator,4);
 	}
 	return(result);
 }
@@ -3272,7 +3272,7 @@ void ExtractHDHFilename(MIMESHandle msh,HeaderDHandle hdh,PStr suffix,PStr name)
 	if (!*fName) GetRString(fName,UNTITLED);
 	*name = 0;
 	if (suffix && !PIndex(fName,'.')) PCopy(name,suffix);
-	PInsert(name,32,fName,name+1);
+	PInsert(name,32,fName,name);
 }
 
 /************************************************************************
@@ -3291,13 +3291,12 @@ void FigureMIMEFromApple(OSType creator, OSType type,PStr name,PStr mimeType,PSt
 		/*
 		 * fetch the suffix, if any
 		 */
-		name[*name+1] = 0;
-		dot = strrchr(name+1,'.');
+		dot = strrchr((char*)name,'.');
 		if (dot)
-			MakePStr(suffix,dot,*name-(dot-name-1));
+			MakePStr(suffix,dot,strlen(dot));
 		else
 			*suffix = 0;
-		
+
 		/*
 		 * where does the array end?
 		 */

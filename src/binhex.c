@@ -117,7 +117,7 @@ int SendBinHex(TransStream stream, FSSpecPtr spec, AttMapPtr amp)
 	DontTranslate = True;
 	LineLength = 1;
 	State86 = CalcCrc = codedSpot = 0;
-	nameLen = *spec->name+1;
+	nameLen = strlen((const char*)spec->name) + 1;
 	for (spot=(UPtr)spec->name;nameLen--;spot++)
 		CODE(*spot);
 	CODE(0);

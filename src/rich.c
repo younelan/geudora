@@ -619,11 +619,11 @@ PStr BuildRichColorParam(PStr directive,RGBColor *color)
 {
 	Str31 scratch;
 	
-	Bytes2Hex((void*)&color->red,2,scratch+1);
-	Bytes2Hex((void*)&color->green,2,scratch+6);
-	Bytes2Hex((void*)&color->blue,2,scratch+11);
-	scratch[5] = scratch[10] = ',';
-	*scratch = 14;
+	Bytes2Hex((void*)&color->red,2,scratch);
+	Bytes2Hex((void*)&color->green,2,scratch+5);
+	Bytes2Hex((void*)&color->blue,2,scratch+10);
+	scratch[4] = scratch[9] = ',';
+	scratch[14] = 0;
 	ComposeRString(directive,MIME_RICH_PARAM,scratch);
 	return(directive);
 }
@@ -900,15 +900,15 @@ OSErr FakeAttachment(PETEHandle pte,uLong *offset,FSSpecPtr spec)
 	
 	// snide comment
 	GetRString(scratch,UNREFERENCED_PART);
-	err = PeteInsertPtr(pte,*offset,scratch+1,*scratch);
+	err = PeteInsertPtr(pte,*offset,scratch,strlen((const char*)scratch));
 	if (err) return err;
-	if (*offset!=-1) *offset += *scratch;
-	
+	if (*offset!=-1) *offset += strlen((const char*)scratch);
+
 	// attachment
 	AttachNoteLo(spec,scratch);
-	err = PeteInsertPtr(pte,*offset,scratch+1,*scratch);
+	err = PeteInsertPtr(pte,*offset,scratch,strlen((const char*)scratch));
 	if (err) return err;
-	if (*offset!=-1) *offset += *scratch;
+	if (*offset!=-1) *offset += strlen((const char*)scratch);
 	
 	return noErr;
 }
@@ -1526,7 +1526,7 @@ OSErr ParaIndent2Margin(PSMPtr marg,PStr string)
 	OSErr err = fnfErr;
 	
 	Zero(*marg);
-	for (spot=string+1;PToken(string,token,&spot,",");)
+	for (spot=string;PToken(string,token,&spot,",");)
 	{
 		err = noErr;
 		switch(FindSTRNIndex(EnrichedStrn,token))

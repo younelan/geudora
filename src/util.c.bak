@@ -56,7 +56,7 @@ typedef struct SoundEntryStruct SoundEntry, *SoundEntryPtr;
 
 struct SoundEntryStruct {
   SoundEntryPtr next;
-  unsigned char name[256];
+  Str255 name;
 };
 
 #ifdef KERBEROS
@@ -400,7 +400,7 @@ void GetPassStuff(unsigned char *persName, unsigned char *uName, unsigned char *
  * CopyPassword - retrieve the password
  ************************************************************************/
 void CopyPassword(UPtr password) {
-  strcpy((char *)password, (const char *)*PwChars);
+  BMD(*PwChars, password, **PwChars + 1);
   HPurge(PwChars);
 }
 
@@ -904,7 +904,7 @@ PStr GetRString(PStr theString, short theIndex) {
   uLong oldest = ticks;
   short oldSpot;
   long n;
-  unsigned char sizeStr[64];
+  Str63 sizeStr;
   uLong curPersId = CurThreadGlobals ? (CurPers ? (*CurPers)->persId : 0) : 0;
   bool dontReadCache = NoDominant || !StringCache || NoProxify;
   bool dontWriteCache =
@@ -920,18 +920,20 @@ PStr GetRString(PStr theString, short theIndex) {
     end = start + n;
     for (; start < end; start++) {
       if (theIndex == start->id && start->persId == curPersId) {
-        g_strlcpy((char *)theString, (const char *)start->string, 256);
+        PCopy(theString, start->string);
+        theString[*theString + 1] = 0;
         start->used = ticks;
         return (ProxifyStr(theString, theIndex));
       } else if (oldest) {
         if (!start->id) {
           oldest = 0;
           oldSpot = start - *StringCache;
-          replaceOld = true;
+          replaceOld = true; // no need to replace one
         } else if (oldest > start->used) {
+
           oldest = start->used;
           oldSpot = start - *StringCache;
-          replaceOld = true;
+          replaceOld = true; // found one we can replace
         }
       }
     }
@@ -946,8 +948,8 @@ PStr GetRString(PStr theString, short theIndex) {
    * create cache
    */
   if (!StringCache && !dontWriteCache) {
-    GetRStringLo(sizeStr, STRING_CACHE, nil);
-    StringToNum(sizeStr, &n);
+    GetRStringLo((PStr)sizeStr, STRING_CACHE, nil);
+    StringToNum((PStr)sizeStr, &n);
     StringCache = (SCHandle)NuHandleClear(n * sizeof(StringCacheEntry));
     oldSpot = 0;
   }
@@ -956,9 +958,9 @@ PStr GetRString(PStr theString, short theIndex) {
    * cache string
    */
   if (StringCache && !dontWriteCache &&
-      replaceOld)
+      replaceOld) // skip the cache just this once
   {
-    g_strlcpy((char *)(*StringCache)[oldSpot].string, (const char *)theString, 256);
+    PCopy((*StringCache)[oldSpot].string, theString);
     (*StringCache)[oldSpot].id = theIndex;
     (*StringCache)[oldSpot].used = ticks;
     (*StringCache)[oldSpot].persId = curPersId;
@@ -988,12 +990,16 @@ void SCClear(short theId) {
  * return a string from an STR# resource
  **********************************************************************/
 PStr GetRStringLo(PStr theString, int theIndex, PersHandle forPers) {
-  /* GTK Port: look up from compiled-in string table - now returns C string */
-  theString[0] = '\0';
+  /* GTK Port: look up from compiled-in string table */
+  theString[0] = 0;
   if (!NoDominant || CurPers == PersList) {
     const char *s = string_table_lookup((uint16_t)theIndex);
     if (s) {
-      g_strlcpy((char *)theString, s, 256);
+      size_t len = strlen(s);
+      if (len > 255) len = 255;
+      theString[0] = (unsigned char)len;
+      memcpy(theString + 1, s, len);
+      theString[len + 1] = '\0';
     }
   }
   return (theString);
@@ -1060,7 +1066,7 @@ RGBColor *GetRColor(RGBColor *color, int index) {
  * Color2String - convert a color to a string
  **********************************************************************/
 PStr Color2String(PStr string, RGBColor *color) {
-  ComposeString(string, (const unsigned char *)"%d,%d,%d", color->red, color->green, color->blue);
+  ComposeString(string, "\x70%d,%d,%d", color->red, color->green, color->blue);
   return (string);
 }
 
@@ -1092,14 +1098,14 @@ OSType GetROSType(int index) {
 
   if (GetRString(scratch, index) == nil)
     return ((OSType)0);
-  len = strlen((const char *)scratch);
+  len = *scratch;
   if (len > 4)
     len = 4;
   else if (len < 4) {
     for (i = len, dst = ((char *)&theType) + 3; i < 4; i++)
       *dst-- = ' ';
   }
-  for (i = 0, src = (char *)(void *)scratch, dst = (char *)(void *)&theType;
+  for (i = 0, src = (char *)(void *)scratch + 1, dst = (char *)(void *)&theType;
        i < len; i++)
     *dst++ = *src++;
   return theType;

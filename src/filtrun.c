@@ -1813,7 +1813,7 @@ static void FiltLogMatch(short filter, TOCType *tocH, short sumNum)
 
 /************************************************************************
  * NonSequitur - change the subject
- * Takes a Pascal string subject (API boundary with filtwin.c's c_to_pascal)
+ * Takes a C string subject
  ************************************************************************/
 void NonSequitur(unsigned char *subject, TOCType *tocH, short sumNum)
 {
@@ -1827,22 +1827,32 @@ void NonSequitur(unsigned char *subject, TOCType *tocH, short sumNum)
 	GetRString(replace, SUBJ_REPLACE);
 	PCopy(oldSub, tocH->sums[sumNum].subj);
 
-	if ((ampr = PPtrFindSub(replace, subject+1, *subject)))
 	{
-		MakePStr(newSub, subject+1, ampr-subject-1);
-		if (StartsWith(subject, brackets))
+		short subjLen = strlen((const char *)subject);
+		if ((ampr = PPtrFindSub(replace, subject, subjLen)))
 		{
-			BMD(newSub+1+*brackets, newSub+1, *newSub-*brackets);
-			*newSub -= *brackets;
-			TrimSquares(oldSub, true, true);
-			TrimAllWhite(oldSub);
-			TrimInternalWhite(oldSub);
+			short prefixLen = ampr - subject;
+			MakePStr(newSub, subject, prefixLen);
+			if (StartsWith(subject, brackets))
+			{
+				short brackLen = strlen((const char *)brackets);
+				memmove(newSub, newSub + brackLen, strlen((const char *)newSub) - brackLen + 1);
+				TrimSquares(oldSub, true, true);
+				TrimAllWhite(oldSub);
+				TrimInternalWhite(oldSub);
+			}
+			PSCat(newSub, oldSub);
+			/* Build remainder: skip the replace-marker in original subject */
+			short replLen = strlen((const char *)replace);
+			unsigned char remainder[256];
+			short remainLen = subjLen - (ampr - subject) - replLen;
+			if (remainLen > 0) {
+				MakePStr(remainder, ampr + replLen, remainLen);
+				PSCat(newSub, remainder);
+			}
 		}
-		PSCat(newSub, oldSub);
-		*ampr = *subject - (ampr-subject);
-		PSCat(newSub, ampr);
+		else PCopy(newSub, subject);
 	}
-	else PCopy(newSub, subject);
 	SetSubject(tocH, sumNum, newSub);
 }
 

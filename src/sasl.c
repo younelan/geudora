@@ -114,7 +114,7 @@ short SASLFind(PStr service, PStr mechStr, SASLEnum mech)
 	{
 		Str255 badMechs;
 		Str31 token;
-		UPtr spot = badMechs+1;
+		UPtr spot = badMechs;
 		Str63 servMech;
 		
 		// Build a service:mech string, and look for that, too
@@ -429,8 +429,8 @@ OSErr SASLGSSAPI(PStr service,short rounds,long *state,AccuPtr chalAcc,AccuPtr r
 		
 		// gssapi has its own idea of the service name
 		PTerminate(scratch);
-		buf.length = *scratch+1;
-		buf.value = scratch+1;
+		buf.length = strlen(scratch);
+		buf.value = scratch;
 		if (err = (gss_import_name(&min,&buf,gss_nt_service_name,&crname)!=GSS_S_COMPLETE))
 			return 501;
 		
@@ -690,7 +690,7 @@ OSErr SASLGSSAPIBuildServiceName(PStr fullService,PStr service)
 	/*
 	 * build the service name
 	 */
-	spot = host+1; PToken(host,shortHost,&spot,".");
+	spot = host; PToken(host,shortHost,&spot,".");
 	GetRString(fmt,K5_SERVICE_FMT);
 	utl_PlugParams(fmt,fullService,service,host,realm,shortHost);
 	return noErr;

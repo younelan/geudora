@@ -1021,11 +1021,11 @@ void GetFontName(short fontID, unsigned char *name)
 		   look up the Pango font family by ID */
 		fontName = "Sans";
 	}
-	/* Return as Pascal string */
+	/* Return as C string */
 	size_t slen = strlen(fontName);
 	if (slen > 255) slen = 255;
-	name[0] = (unsigned char)slen;
-	memcpy(name + 1, fontName, slen);
+	memcpy(name, fontName, slen);
+	name[slen] = '\0';
 }
 
 /***********************************************************************
@@ -1035,15 +1035,9 @@ void GetFontName(short fontID, unsigned char *name)
 int ColorParam(RGBColor *color, unsigned char *text)
 {
 	if (!color || !text) return -1;
-	/* text is a Pascal string; skip length byte */
-	unsigned char len = text[0];
-	char buf[256];
-	if (len > 255) len = 255;
-	memcpy(buf, text + 1, len);
-	buf[len] = '\0';
-
+	/* text is a C string */
 	unsigned int r, g, b;
-	if (sscanf(buf, "%x,%x,%x", &r, &g, &b) == 3) {
+	if (sscanf((const char *)text, "%x,%x,%x", &r, &g, &b) == 3) {
 		color->red = (unsigned short)r;
 		color->green = (unsigned short)g;
 		color->blue = (unsigned short)b;
