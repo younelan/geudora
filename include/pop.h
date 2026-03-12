@@ -52,7 +52,20 @@ typedef struct POPDesc {
   bool head : 1;        /* are we stubbing because of download headers? */
   bool error : 1;       /* was there an error downloading? */
   unsigned spare : 2;   /* rest of the bits */
-} POPDesc, *POPDPtr, **POPDHandle;
+} POPDesc, *POPDPtr;
+
+/* POPDHandle: dynamic array of POPDesc using direct allocation (no Mac Handles) */
+typedef struct POPDArray {
+  POPDesc *data;  /* heap-allocated array of POPDesc */
+  int count;      /* number of elements */
+} POPDArray;
+typedef POPDArray *POPDHandle;
+
+/* Helper functions for POPDHandle (replaces Mac Handle operations) */
+POPDHandle POPDNew(int count);
+void POPDFree(POPDHandle *pH);
+int POPDAppend(POPDHandle h, const POPDesc *item);
+void POPDRemoveAt(POPDHandle h, int index);
 
 bool GenKeyedDigest(unsigned char *banner, unsigned char *secret,
                     unsigned char *digest);
@@ -67,7 +80,7 @@ POPLineType ReadPOPLine(TransStream stream, unsigned char *buf, long bSize,
 short GetMyMail(TransStream stream, bool quietly, short *gotSome,
                 XferFlags *flags);
 int POPError(void);
-OSErr RecordAttachment(FSSpecPtr spec, HeaderDHandle hdh);
+OSErr RecordAttachment(const char *path, HeaderDHandle hdh);
 void AddAttachInfo(short theIndex, long result);
 OSErr WriteAttachNote(short refN);
 int FetchMessageText(TransStream stream, long estSize, POPDPtr pd,
@@ -82,7 +95,7 @@ int POPCmdGetReply(TransStream stream, short cmd, unsigned char *args,
 int POPCmdError(short cmd, unsigned char *args, unsigned char *message);
 int EndPOP(TransStream stream);
 int StartPOP(TransStream stream, unsigned char *serverName, long port);
-void AttachNoteLo(FSSpecPtr spec, PStr theMessage);
+void AttachNoteLo(const char *path, const char *theMessage);
 #ifdef BATCH_DELIVERY_ON
 TOCType * RenameInTemp(TOCType * tocH);
 #endif

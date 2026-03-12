@@ -678,7 +678,7 @@ int ForkRoll(void)
 		FSSpec spec = Spec;
 		GotOne = True;
 		PCopy((unsigned char *)fileName,(unsigned char *)Name);
-		if ((err=RecordAttachment(&spec,HBG ? (*HBG)->hdh : nil)))
+		if ((err=RecordAttachment(spec.path,HBG ? (*HBG)->hdh : nil)))
 		{
 			AbortHexBin(True);
 			return(HexDone);

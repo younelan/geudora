@@ -30,24 +30,18 @@ ADVISED OF THE POSSIBILITY OF SUCH DAMAGE. */
 
 /* Copyright (c) 1990-1992 by the University of Illinois Board of Trustees */
 typedef struct LineIODesc {
-  char *buffer;    /* Standard C pointer buffer */
+  char *buffer;    /* heap-allocated read buffer */
   long bufferSize; /* how big our buffer is */
   long bFilled;    /* the number of chars in the buffer */
   int fd;          /* the file descriptor of the open file */
   long bSpot;      /* index of next character to transfer */
-  long
-      lastSpot; /* the file position of beginning of
-                                                                                                        the last line read */
-  long
-      fSpot; /* the position in the file of the start
-                                                                                     of the buffer */
-  bool eof;  /* have we hit eof? */
-} LineIOD, *LineIOP, **LineIOH;
+  long lastSpot;   /* file position of beginning of last line read */
+  long fSpot;      /* position in the file of the start of the buffer */
+  bool eof;        /* have we hit eof? */
+} LineIOD, *LineIOP;
 
-short OpenLine(short vRef, long dirId, unsigned char * name, short perm, LineIOP lip);
-short OpenLineDirect(const char *path, short perm, LineIOP lip);
-#define FSpOpenLine(spec, perm, lip)                                           \
-  OpenLine((spec)->vRefNum, (spec)->parID, (spec)->name, perm, lip)
+short OpenLine(const char *path, short perm, LineIOP lip);
+#define FSpOpenLine(spec, perm, lip) OpenLine((spec)->path, perm, lip)
 int GetLine(unsigned char * line, int size, long *len, LineIOP lip);
 void CloseLine(LineIOP lip);
 long TellLine(LineIOP lip);

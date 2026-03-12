@@ -4173,7 +4173,7 @@ bool IMAPAutoExpunge(void) {
 
       // let this expunge finish before we start another.
       if (bPerformed) {
-        ComposeLogS(LOG_MOVE, 0, "\pAuto-expunging mailbox %p", spec.name);
+        ComposeLogS(LOG_MOVE, 0, (UPtr)"Auto-expunging mailbox %p", spec.name);
         break;
       }
     }

@@ -51,7 +51,7 @@ void HexLog(unsigned long level, short format, unsigned char *data,
 #ifdef DEBUG
 #define LOGFLOW(x)                                                             \
   do {                                                                         \
-    ComposeLogS(LOG_FLOW, NULL, (unsigned char *)"\p{%r:%d}:%d",               \
+    ComposeLogS(LOG_FLOW, NULL, (unsigned char *)"{%r:%d}:%d",                \
                 FNAME_STRN + FILE_NUM, __LINE__, x);                           \
   } while (0)
 #else

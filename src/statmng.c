@@ -716,7 +716,7 @@ OSErr LoadStats(void) {
     // exist yet 	or there was a file error. In the latter case, rename
     // the bad file so we have 	a backup and so we can create a new one.
     renameSpec = spec;
-    PSCat(renameSpec.name, "\p.bad");
+    PSCat(renameSpec.name, (UPtr)".bad");
     UniqueSpec(&renameSpec, 31);
     FSpRename(&spec, renameSpec.name);
   }

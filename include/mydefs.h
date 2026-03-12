@@ -66,6 +66,18 @@ typedef int OTEventCode;
 struct TCPiopb;
 typedef struct TCPiopb TCPiopb;
 
+/* GrowBuf: simple growing byte buffer (replaces Handle-based buffers) */
+typedef struct {
+  char *data;
+  long size;
+  long capacity;
+} GrowBuf;
+
+void GrowBuf_Init(GrowBuf *buf);
+int GrowBuf_Append(GrowBuf *buf, const void *ptr, long len);
+void GrowBuf_Reset(GrowBuf *buf);
+void GrowBuf_Free(GrowBuf *buf);
+
 #ifndef MIN
 #define MIN(a, b) ((a) < (b) ? (a) : (b))
 #endif
@@ -355,8 +367,8 @@ typedef AppleEvent *AppleEventPtr;
   } while (0)
 #define DBLINE                                                                 \
   do {                                                                         \
-    Str255 s;                                                                  \
-    DebugStr(ComposeString(s, "\p%s %d;hc;sc;g", __FILE__, __LINE__));         \
+    unsigned char s[256];                                                       \
+    DebugStr(ComposeString(s, (const unsigned char *)"%s %d;hc;sc;g", __FILE__, __LINE__)); \
   } while (0)
 #include <assert.h>
 #define ASSERT assert
@@ -370,7 +382,7 @@ typedef AppleEvent *AppleEventPtr;
 #endif
 #define MEM_CRITICAL (SPARE_SIZE / 4)
 #ifdef DEBUG
-#define LOGLINE ComposeLogS(-1, nil, "\p%r:%d", FNAME_STRN + FILE_NUM, __LINE__)
+#define LOGLINE ComposeLogS(-1, nil, (UPtr)"%r:%d", FNAME_STRN + FILE_NUM, __LINE__)
 #else
 #define LOGLINE
 #endif

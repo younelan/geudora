@@ -820,7 +820,7 @@ OSErr AddHeaderAttribute(HeaderDHandle hdh, PStr value, bool etl)
 	switch (attributeNum = FindSTRNIndex(AttributeStrn,(void*)(*hdh)->attributeName))
 	{		
 		case aUnknown:
-			if (!BeginsWith((*hdh)->attributeName,"\px-")) Ungrok(hdh);
+			if (!BeginsWith((*hdh)->attributeName,(UPtr)"x-")) Ungrok(hdh);
 			break;
 	}
 	

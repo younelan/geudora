@@ -643,84 +643,8 @@ long AFPopUpMenuSelect(MenuHandle mh, short top, short left, short item) {
  * returns True if the resource had to be changed
  ************************************************************************/
 bool RecountStrn(short resId) {
-  Handle resH = GetResource_('STR#', resId);
-  UPtr spot, end;
-  short count;
-  short realCount = 0;
-  bool changed = False;
-
-  /*
-   * no resource?
-   */
-  if (resId <= 0)
-    return (False);
-  /* Mocked for GTK: no direct STR# counting */
-  spot = (UPtr) "\0\0";
-
-  /*
-   * does it have a count?
-   */
-  end = spot + GetHandleSize_(resH);
-
-  if (end - spot < 2) {
-    RemoveResource(resH);
-    ZapHandle(resH);
-    return (True);
-  } // not even two bytes long!
-
-  if (end - spot == 2 && !spot[0] && !spot[1])
-    return false; // empty but that's ok
-
-  /*
-   * what's the current count?
-   */
-  count = spot[0] * 256 + spot[1];
-
-  /*
-   * count the actual strings, stopping if we go beyond the end of the
-   * resource
-   */
-  for (spot += 2; spot + *spot + 1 < end; spot += *spot + 1)
-    realCount++;
-
-  /*
-   * if the last string hits the very end of the resource, we count it, too
-   */
-  if (spot + *spot + 1 == end) {
-    spot += *spot + 1;
-    realCount++;
-  }
-
-  /*
-   * ok, at this point:
-   *
-   * spot points just AFTER the last valid string in the resource
-   * realCount is the actual count of the strings contained in the resource
-   */
-
-  /*
-   * remove extra data from resource
-   */
-  if (spot != end) {
-    SetHandleBig_(resH, spot - (UPtr)*resH);
-    ChangedResource(resH);
-    HNoPurge_(resH);
-    changed = True;
-  }
-
-  /*
-   * repair the count
-   */
-  if (realCount != count) {
-    spot = *resH;
-    spot[0] = realCount / 256;
-    spot[1] = realCount % 256;
-    ChangedResource(resH);
-    HNoPurge_(resH);
-    changed = True;
-  }
-
-  return (changed);
+  /* GTK port: STR# resources not used; strings come from string_table_lookup */
+  return false;
 }
 
 /************************************************************************
@@ -1068,7 +992,7 @@ PStr Color2String(PStr string, RGBColor *color) {
  * Get a long out of a resource file
  **********************************************************************/
 long GetRLong(int index) {
-  Str255 scratch;
+  unsigned char scratch[256];
   long aLong;
 
   if (GetRString(scratch, index) == nil)
@@ -1083,7 +1007,7 @@ long GetRLong(int index) {
  * Get an OSType out of a resource file
  **********************************************************************/
 OSType GetROSType(int index) {
-  Str255 scratch;
+  unsigned char scratch[256];
   long len;
   OSType theType;
   char *src;
@@ -1370,7 +1294,7 @@ void StackCompact(StackHandle stack) {
  * StackStringFind - find an item in the stack
  **********************************************************************/
 short StackStringFind(PStr find, StackHandle stack) {
-  Str255 s;
+  unsigned char s[256];
   short item;
 
   if (!stack)
@@ -1408,7 +1332,7 @@ AAHandle AANew(short keySize, short dataSize) {
 OSErr AAAddItem(AAHandle aa, bool replace, PStr key, UPtr data) {
   short count = AACountItems(aa);
   short spot = AAFindKey(aa, key);
-  Str255 lwrKey;
+  unsigned char lwrKey[256];
 
   if (spot > 0) {
     /* already exists */
@@ -1435,7 +1359,7 @@ OSErr AAAddItem(AAHandle aa, bool replace, PStr key, UPtr data) {
  *a key
  ************************************************************************/
 OSErr AAAddResItem(AAHandle aa, bool replace, short keyId, UPtr data) {
-  Str255 key;
+  unsigned char key[256];
 
   GetRString(key, keyId);
   return (AAAddItem(aa, replace, key, data));
@@ -1473,7 +1397,7 @@ OSErr AAFetchData(AAHandle aa, PStr key, UPtr data) {
  * AAFetchResData - fetch data from an assoc array, by a resource key
  ************************************************************************/
 OSErr AAFetchResData(AAHandle aa, short keyId, UPtr data) {
-  Str255 key;
+  unsigned char key[256];
 
   return (AAFetchData(aa, GetRString(key, keyId), data));
 }
@@ -1507,7 +1431,7 @@ short AAFindKey(AAHandle aa, PStr key) {
   short mid;
   short greater = count + 1;
   short result;
-  Str255 lwrKey;
+  unsigned char lwrKey[256];
 
   PCopy(lwrKey, key);
   MyLowerStr(lwrKey);
@@ -1743,7 +1667,7 @@ OSErr AccuAddSortedLong(AccuPtr a, long addVal) {
  *
  **********************************************************************/
 OSErr AccuAddRes(AccuPtr a, short res) {
-  Str255 s;
+  unsigned char s[256];
 
   GetRString(s, res);
   return (AccuAddStr(a, s));
@@ -1974,8 +1898,8 @@ OSErr AccuStrip(AccuPtr a, long num)
  * Long2Hex - write a long in 8 hex bytes
  ************************************************************************/
 PStr Long2Hex(PStr hex, long aLong) {
-  Bytes2Hex((void *)&aLong, sizeof(aLong), (void *)(hex + 1));
-  *hex = 8;
+  Bytes2Hex((void *)&aLong, sizeof(aLong), (void *)hex);
+  hex[8] = '\0';
   return (hex);
 }
 
@@ -2174,53 +2098,18 @@ Handle NewIOBHandle(long min, long max) {
  * GetTableCName - get the canonical name of a table
  ************************************************************************/
 bool GetTableCName(short tid, PStr name) {
-  UHandle res;
-  short spot, end;
-  short idFromResource;
-  short rIndex;
-
-  for (rIndex = 1; (res = GetIndResource_('euTM', rIndex)) != NULL; rIndex++) {
-    HNoPurge_(res);
-    end = GetHandleSize_(res);
-    spot = 0;
-    for (spot = 0; spot < end; spot += (*res)[spot + 2] + 3) {
-      idFromResource = (*res)[spot] * 256 + (*res)[spot + 1]; /* read id */
-      if (idFromResource == tid)                              /* found it */
-      {
-        PCopy(name, (*res) + spot + 2); /* copy name */
-        HPurge(res);
-        return (True);
-      }
-    }
-    HPurge(res);
-  }
-  return (False);
+  /* GTK port: euTM resources not used */
+  name[0] = '\0';
+  return false;
 }
 
 /************************************************************************
  * GetTableID - get the id of a named table
  ************************************************************************/
 bool GetTableID(PStr name, short *tid) {
-  UHandle res;
-  short spot, end;
-  Str63 nameFromResource;
-  short rIndex;
-
-  for (rIndex = 1; (res = GetIndResource_('euTM', rIndex)) != NULL; rIndex++) {
-    HNoPurge_(res);
-    end = GetHandleSize_(res);
-    spot = 0;
-    for (spot = 0; spot < end; spot += (*res)[spot + 2] + 3) {
-      PCopy((PStr)nameFromResource, (PStr)((*res) + spot + 2));
-      if (StringSame((const char *)nameFromResource, (const char *)name)) {
-        *tid = (*res)[spot] * 256 + (*res)[spot + 1]; /* read id */
-        HPurge(res);
-        return (True);
-      }
-    }
-    HPurge(res);
-  }
-  return (False);
+  /* GTK port: euTM resources not used */
+  *tid = 0;
+  return false;
 }
 
 /************************************************************************

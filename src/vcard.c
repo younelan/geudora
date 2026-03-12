@@ -160,7 +160,7 @@ Handle MakeVCard (Handle addresses, Handle notes)
 	
 	// VERSION:2.1
 	if (!theError)
-		theError = VCardAccuAddAVPairStr (&vCard, vcVersion, "\p2.1");
+		theError = VCardAccuAddAVPairStr (&vCard, vcVersion, (UPtr)"2.1");
 
 	// Add the body of the vCard
 	
@@ -360,9 +360,9 @@ static OSErr VCardAccuAddValueQuotedPrintable (AccuPtr a, Handle value)
 					if (!theError)
 						theError = AccuAddFromHandle (a, value, offset, spot - *value - offset);
 					if (!theError)
-						theError = AccuAddStr (a, "\p=0D=0A");
+						theError = AccuAddStr (a, "=0D=0A");
 					if (!theError && spot + 1 < end)
-						theError = AccuAddStr (a, "\p=\r\n");
+						theError = AccuAddStr (a, "=\r\n");
 					offset = spot - *value + 1;
 					count = 0;
 					break;
@@ -386,7 +386,7 @@ static OSErr VCardAccuMaybeQuotedPrintableSoftline (AccuPtr a, Handle value, lon
 	if (*count >= maxChar) {
 		theError = AccuAddFromHandle (a, value, *offset, maxChar);
 		if (!theError)
-			theError = AccuAddStr (a, "\p=\r\n");
+			theError = AccuAddStr (a, "=\r\n");
 		*offset += maxChar;
 		*count = 0;
 	}
@@ -438,7 +438,7 @@ static OSErr VCardAccuAddPropertiesAndValue (AccuPtr a, short count, short *vcPr
 		if (!theError)
 			theError = VCardAccuAddValue (a, value, quotedPrintable);
 		if (!theError)
-			theError = AccuAddStr (a, "\p\r\n");
+			theError = AccuAddStr (a, "\r\n");
 	}
 	return (theError);
 }
@@ -497,7 +497,7 @@ static OSErr VCardAccuAddValueList (AccuPtr a, Handle notes, short count, short 
 				theError = AccuAddChar (a, ';');
 		}
 		if (!theError)
-			theError = AccuAddStr (a, "\p\r\n");
+			theError = AccuAddStr (a, "\r\n");
 	}
 
 	// Dispose of the memory we allocated
@@ -526,7 +526,7 @@ static OSErr VCardAccuAddAVPairStr (AccuPtr a, short attributeResIndex, PStr val
 	if (!theError)
 		theError = AccuAddStr (a, value);
 	if (!theError)
-		theError = AccuAddStr (a, "\p\r\n");
+		theError = AccuAddStr (a, "\r\n");
 	return (theError);
 }
 

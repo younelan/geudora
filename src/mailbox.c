@@ -2513,7 +2513,7 @@ void AddBoxCountMenu(short menuID, short item, short vRef, long dirId,
                       thisDirId, true);
     } else {
       GetMenuItemText(mh, item, s);
-      if (StringSame(s, "\p-")) {
+      if (StringSame((const char *)s, "-")) {
         if (menuID == MAILBOX_MENU && !includeIMAP)
           return; // don't add IMAP folders
       } else
@@ -2746,7 +2746,7 @@ int AppendXferSelection(PETEHandle pte, MenuHandle contextMenu) {
                   if (CountMenuItems(contextMenu) &&
                       !MenuItemIsSeparator(contextMenu,
                                            CountMenuItems(contextMenu)))
-                    AppendMenu(contextMenu, "\p-"); // add a divider
+                    AppendMenu(contextMenu, (UPtr)"-"); // add a divider
                 }
                 CopyMenuItem(GetMHandle(realMenu), item, contextMenu, REAL_BIG);
                 MyGetItem(GetMHandle(menu), item, name);
@@ -4030,9 +4030,7 @@ void DecodeIMAPMessages(TOCType * toc, FSSpecPtr spec) {
     for (curIMAPIndex = 0; curIMAPIndex < countIMAP; curIMAPIndex++) {
       BadBinHex = False;
       BadEncoding = 0;
-      if (!AttachedFiles)
-        AttachedFiles = NuHandle(0);
-      SetHandleBig_(AttachedFiles, 0);
+      GrowBuf_Reset(&AttachedFiles);
 
       IMAPIdx = (*hIMAPIndex)[curIMAPIndex];
       //	search for the summary
@@ -4048,7 +4046,7 @@ void DecodeIMAPMessages(TOCType * toc, FSSpecPtr spec) {
           count = FetchMessageTextLo(nil, toc->sums[sumNum].length, nil,
                                      sumNum, toc, true, false);
           CurTrans = saveCurTrans;
-          SetHandleBig_(AttachedFiles, 0);
+          GrowBuf_Reset(&AttachedFiles);
           SaveAbomination(nil, 0);
 #ifdef BAD_ENCODING_HANDLING
           if (BadBinHex || BadEncoding)

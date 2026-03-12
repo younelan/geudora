@@ -58,7 +58,7 @@ struct decoderGlobals_ {
   bool AnyFlow;                   /* any body parts with flow? */
   bool AnyDelSP;                  /* any body parts with flow? */
   bool AnyCharset;                /* any body parts with charset */
-  FSSpecHandle LastAttSpec;       /* the received attachments */
+  char *LastAttPath;              /* path of last received attachment */
   bool BadBinHex;                 /* a bad binhex file was found */
   bool BadEncoding;               /* errors were found in encoding */
   bool Headering;                 /* we're fetching only headers */
@@ -68,7 +68,7 @@ struct decoderGlobals_ {
   FSSpecHandle SingleSpec;        /* an appledouble attachment */
   MIMEMapHandle MMIn;             /* incoming MIME map */
   MIMEMapHandle MMOut;            /* outgoing MIME map */
-  UHandle AttachedFiles;          /* list of attachments saved */
+  GrowBuf AttachedFiles;          /* list of attachments saved */
   PGPRecvContextPtr PGPRContext;  /* PGP globals */
   UUGlobalsHandle UUG;            /* uudecoder globals */
   HBGHandle HBG;                  /* hexbin globals */
@@ -150,7 +150,7 @@ extern threadGlobalsRec ThreadGlobals; // Main thread globals
 #define AnyFlow (CurThreadGlobals->decoderG.AnyFlow)
 #define AnyDelSP (CurThreadGlobals->decoderG.AnyDelSP)
 #define AnyCharset (CurThreadGlobals->decoderG.AnyCharset)
-#define LastAttSpec (CurThreadGlobals->decoderG.LastAttSpec)
+#define LastAttPath (CurThreadGlobals->decoderG.LastAttPath)
 #define Prr (CurThreadGlobals->decoderG.Prr)
 #define BadBinHex (CurThreadGlobals->decoderG.BadBinHex)
 #define BadEncoding (CurThreadGlobals->decoderG.BadEncoding)

@@ -138,7 +138,7 @@ extern int PeteSetExcerptLevelAt(PETEHandle pte, long offset, short level);
 extern bool PeteIsExcerptAt(PETEHandle pte, long offset);
 extern int PeteGetStyleLo(PETEHandle pte, long offset, long *len, bool allowGraphics, PETEStyleEntry *style);
 extern bool IsEmoticonStyle(PETEGraphicStylePtr gs);
-extern void AttachNoteLo(FSSpecPtr spec, unsigned char *theMessage);
+extern void AttachNoteLo(const char *path, const char *theMessage);
 extern int ColorParam(RGBColor *color, unsigned char *text);
 
 int UnwindRich(short *counters,StackHandle openStack,StackHandle redoStack,AccuPtr enriched);
@@ -905,7 +905,7 @@ OSErr FakeAttachment(PETEHandle pte,uLong *offset,FSSpecPtr spec)
 	if (*offset!=-1) *offset += strlen((const char*)scratch);
 
 	// attachment
-	AttachNoteLo(spec,scratch);
+	AttachNoteLo(spec->path,(const char *)scratch);
 	err = PeteInsertPtr(pte,*offset,scratch,strlen((const char*)scratch));
 	if (err) return err;
 	if (*offset!=-1) *offset += strlen((const char*)scratch);

@@ -3620,7 +3620,7 @@ OSErr AddTextToNick(short which, PStr name, Handle text, bool append) {
     UL(This.theData);
   }
 
-  NickUniq(text, "\p,", True);
+  NickUniq(text, (UPtr)",", True);
   ReplaceNicknameAddresses(which, name, text);
   SetAliasDirty(which);
   if (AliasWinIsOpen())
@@ -4056,7 +4056,7 @@ OSErr NickBackup(FSSpecPtr spec) {
   if ((err = SubFolderSpec(SPOOL_FOLDER, &spoolSpec)) == noErr) {
     GetTime(&dtr);
     FSMakeFSSpec(spoolSpec.vRefNum, spoolSpec.parID,
-                 ComposeString(name, "\p%p.%d.%d.%d.%d", spec->name, dtr.day,
+                 ComposeString(name, (const unsigned char *)"%p.%d.%d.%d.%d", spec->name, dtr.day,
                                dtr.hour, dtr.minute, dtr.second),
                  &spoolSpec);
     err = FSpDupFile(&spoolSpec, spec, False, False);

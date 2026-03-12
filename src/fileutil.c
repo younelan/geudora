@@ -1431,7 +1431,7 @@ OSErr UniqueSpec(FSSpecPtr spec, short max) {
                       &hfi);
 #ifdef NEVER
     if (RunType != Production)
-      Dprintf("\pHGetCatInfo %p: %d;sc;g", spec->name, err);
+      Dprintf("HGetCatInfo %p: %d;sc;g", spec->name, err);
 #endif
     if (err == fnfErr)
       return (noErr);
@@ -3413,7 +3413,7 @@ OSErr MyFSpDelete(FSSpecPtr spec) {
 #ifdef NEVER
   if (RunType != Production && spec.vRefNum == AttFolderSpec.vRefNum &&
       spec.parID == AttFolderspec.parID)
-    Dprintf("\pFSpDelete %d.%d.�%p�", spec->vRefNum, spec->parID, spec->name);
+    Dprintf("FSpDelete %d.%d.�%p�", spec->vRefNum, spec->parID, spec->name);
 #endif
   return err;
 }

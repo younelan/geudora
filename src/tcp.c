@@ -253,7 +253,7 @@ OSErr OTTCPConnectTrans(TransStream stream, unsigned char *serverName,
 
   gaierr = getaddrinfo(hostName, portStr, &hints, &res);
   if (gaierr != 0) {
-    ComposeLogS(LOG_PROTO, NULL, "\pDNS lookup of '%s' failed: %s", hostName,
+    ComposeLogS(LOG_PROTO, NULL, (UPtr)"DNS lookup of '%s' failed: %s", hostName,
                 gai_strerror(gaierr));
     err = stream->streamErr = errDNR;
     if (!silently)
@@ -266,12 +266,12 @@ OSErr OTTCPConnectTrans(TransStream stream, unsigned char *serverName,
     struct addrinfo *p;
     Str63 logHost;
     MakePStr(logHost, hostName, strlen(hostName));
-    ComposeLogS(LOG_PROTO, NULL, "\pDNS Lookup of \"%p\"", logHost);
+    ComposeLogS(LOG_PROTO, NULL, (UPtr)"DNS Lookup of \"%p\"", logHost);
     for (p = res; p; p = p->ai_next) {
       char ip[INET_ADDRSTRLEN];
       struct sockaddr_in *in4 = (struct sockaddr_in *)p->ai_addr;
       inet_ntop(AF_INET, &in4->sin_addr, ip, sizeof(ip));
-      ComposeLogS(LOG_PROTO, NULL, "\p    %s", ip);
+      ComposeLogS(LOG_PROTO, NULL, (UPtr)"    %s", ip);
     }
   }
 
@@ -282,7 +282,7 @@ OSErr OTTCPConnectTrans(TransStream stream, unsigned char *serverName,
     char ip[INET_ADDRSTRLEN];
     struct sockaddr_in *in4 = (struct sockaddr_in *)rp->ai_addr;
     inet_ntop(AF_INET, &in4->sin_addr, ip, sizeof(ip));
-    ComposeLogS(LOG_PROTO, NULL, "\pConnecting to %s:%ld", ip, port);
+    ComposeLogS(LOG_PROTO, NULL, (UPtr)"Connecting to %s:%ld", ip, port);
 
     sockfd = socket(rp->ai_family, rp->ai_socktype, rp->ai_protocol);
     if (sockfd < 0)
@@ -326,7 +326,7 @@ OSErr OTTCPConnectTrans(TransStream stream, unsigned char *serverName,
   res = NULL;
 
   if (sockfd < 0) {
-    ComposeLogS(LOG_PROTO, NULL, "\pConnection to %s:%ld failed", hostName,
+    ComposeLogS(LOG_PROTO, NULL, (UPtr)"Connection to %s:%ld failed", hostName,
                 port);
     err = stream->streamErr = errOpenStream;
     if (!silently)
@@ -347,7 +347,7 @@ OSErr OTTCPConnectTrans(TransStream stream, unsigned char *serverName,
     char ip[INET_ADDRSTRLEN];
     getpeername(sockfd, (struct sockaddr *)&peer, &plen);
     inet_ntop(AF_INET, &peer.sin_addr, ip, sizeof(ip));
-    ComposeLogS(LOG_PROTO, NULL, "\pConnected to %s:%ld", ip, port);
+    ComposeLogS(LOG_PROTO, NULL, (UPtr)"Connected to %s:%ld", ip, port);
   }
 
 done:
@@ -660,7 +660,7 @@ OSErr OTGetHostByName(InetDomainName hostName, InetHostInfo *hostInfoPtr) {
     if (LogLevel & LOG_PROTO) {
       Str63 logHost;
       MakePStr(logHost, hostName, strlen(hostName));
-      ComposeLogS(LOG_PROTO, NULL, "\pDNS Lookup of \"%p\" failed: %s", logHost,
+      ComposeLogS(LOG_PROTO, NULL, (UPtr)"DNS Lookup of \"%p\" failed: %s", logHost,
                   gai_strerror(rc));
     }
     return errDNR;
@@ -676,13 +676,13 @@ OSErr OTGetHostByName(InetDomainName hostName, InetHostInfo *hostInfoPtr) {
     int i;
     Str63 logHost;
     MakePStr(logHost, hostName, strlen(hostName));
-    ComposeLogS(LOG_PROTO, NULL, "\pDNS Lookup of \"%p\"", logHost);
+    ComposeLogS(LOG_PROTO, NULL, (UPtr)"DNS Lookup of \"%p\"", logHost);
     for (i = 0; i < count; i++) {
       char ip[INET_ADDRSTRLEN];
       struct in_addr ia;
       ia.s_addr = hostInfoPtr->addrs[i];
       inet_ntop(AF_INET, &ia, ip, sizeof(ip));
-      ComposeLogS(LOG_PROTO, NULL, "\p    %s (%d)", ip, i + 1);
+      ComposeLogS(LOG_PROTO, NULL, (UPtr)"    %s (%d)", ip, i + 1);
     }
   }
   return noErr;

@@ -1904,7 +1904,7 @@ int AddAdToLinkHistory(AdId adId, char *pUrl, unsigned char adTitle[256],
           // find the ad this graphic belongs to
           if (!LocateAdInHistories(adId, &which, &index)) {
             // it does not exist.  Add it now, using a bogus name and hashname
-            err = AddHistoryToTOC(MAIN_HISTORY_FILE, "\p", -1, ltAd,
+            err = AddHistoryToTOC(MAIN_HISTORY_FILE, (UPtr)"", -1, ltAd,
                                   llNotDisplayed, true, hUrl, adId);
           } else {
             // (*gHistories)[which] history entry now has a thumbnail ...

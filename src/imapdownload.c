@@ -7819,9 +7819,7 @@ bool SpoolFileToAttachment(MailboxNodeHandle mailbox, unsigned long uid,
 
   BadBinHex = false;
   BadEncoding = 0;
-  if (!AttachedFiles)
-    AttachedFiles = NuHandle(0);
-  SetHandleBig_(AttachedFiles, 0);
+  GrowBuf_Reset(&AttachedFiles);
 
   SeekLine(0, Lip);
   lastHeaderTokenType = ReadHeader(nil, hdh, 0, scratchRefN, false);
@@ -7834,7 +7832,7 @@ bool SpoolFileToAttachment(MailboxNodeHandle mailbox, unsigned long uid,
     // information we need.
     FindFirstAttachmentInSpec(&scratchSpec, attachSpec);
 
-    SetHandleBig_(AttachedFiles, 0);
+    GrowBuf_Reset(&AttachedFiles);
     SaveAbomination(nil, 0);
   }
   CurTrans = saveCurTrans;

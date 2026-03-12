@@ -53,14 +53,14 @@ long FindTOCSpot(TOCType * tocH, long length);
 void BeautifyFrom(unsigned char * fromStr);
 uint32_t BeautifyDate(unsigned char * dateStr, long *zoneSecs);
 uint32_t UnixDate2Secs(const char *date);
-void BeautifySubj(PStr subject, short size);
+void BeautifySubj(unsigned char *subject, short size);
 bool IsFromLine(unsigned char * line);
 bool IsBulk(unsigned char * line);
 void GleanFrom(unsigned char * line, MSumPtr sum);
 short MonthNum(const char *cp);
 long CStr2Zone(const char *s);
-PStr TrimWrap(unsigned char * str, int openC, int closeC);
-PStr TrimNonWord(PStr str);
+unsigned char *TrimWrap(unsigned char * str, int openC, int closeC);
+unsigned char *TrimNonWord(unsigned char *str);
 short SalvageTOC(TOCType * oldToc, TOCType * newToc);
 
 /* Unicode / UTF-8 helpers (GLib-based portable implementations) */
@@ -69,6 +69,10 @@ typedef unsigned char *BytePtr;
 typedef unsigned long ByteCount;
 ByteCount GoodUTF8Len(BytePtr utf8, ByteCount bufLen);
 OSStatus HeaderToUTF8(unsigned char *head);
-#define TrimUTF8(s) ((s)[0] = (unsigned char)GoodUTF8Len(&(s)[1], (s)[0]))
+#define TrimUTF8(s) do { \
+  size_t _tlen = strlen((const char *)(s)); \
+  size_t _good = GoodUTF8Len((s), _tlen); \
+  (s)[_good] = '\0'; \
+} while(0)
 
 #endif

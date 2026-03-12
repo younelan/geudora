@@ -16,6 +16,7 @@ INTERRUPTION) HOWEVER CAUSED AND ON ANY THEORY OF LIABILITY, WHETHER IN CONTRACT
 NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH 
 DAMAGE. */
 
+#include <libgen.h>
 #include "mime.h"
 #include "Globals.h"
 #include "MyRes.h"
@@ -1368,8 +1369,8 @@ BoundaryType ReadMulti(TransStream stream,short refN,MIMESHandle mimeSList,char 
 			{
 				// made it.
 				// record it
-				RecordAttachment(&spec,(*msh)->hdh);
-				
+				RecordAttachment(spec.path,(*msh)->hdh);
+
 				// Zero the name in the spec, since we want the folder itself
 				*CurrentAttFolderSpec.name = 0;
 				CurrentAttFolderSpec.parID = newDirID;
@@ -1521,8 +1522,23 @@ BoundaryType ReadMulti(TransStream stream,short refN,MIMESHandle mimeSList,char 
 			 * if so, record the last attachment we grabbed in SingleSpec, so
 			 * ReadGeneric will pick it up later
 			 */
-			if (wasApplefile && areDouble && LastAttSpec && !AFSpIsItAFolder((FSSpecPtr)LastAttSpec))
-				SingleSpec = LastAttSpec;
+			if (wasApplefile && areDouble && LastAttPath) {
+				/* Build a temp FSSpec from LastAttPath for SingleSpec */
+				FSSpec tmpLastAtt = {0};
+				strncpy(tmpLastAtt.path, LastAttPath, sizeof(tmpLastAtt.path) - 1);
+				{
+					char tmpCopy[1024];
+					strncpy(tmpCopy, LastAttPath, sizeof(tmpCopy) - 1);
+					tmpCopy[sizeof(tmpCopy) - 1] = '\0';
+					strncpy(tmpLastAtt.name, basename(tmpCopy), sizeof(tmpLastAtt.name) - 1);
+				}
+				if (!AFSpIsItAFolder(&tmpLastAtt)) {
+					if (!SingleSpec) SingleSpec = NewH(FSSpec);
+					if (SingleSpec) **(FSSpec**)SingleSpec = tmpLastAtt;
+				} else {
+					SingleSpec = nil;
+				}
+			}
 			else
 				SingleSpec = nil;
 			UL(hdh);
@@ -1706,7 +1722,7 @@ bool FinishDigest(short refN,short origRefN)
 	
 	GetFileByRef(refN,&spec);
 	MyFSClose(refN);
-	err = RecordAttachment(&spec,nil);
+	err = RecordAttachment(spec.path,nil);
 	WriteAttachNote(origRefN);
 	PopProgress(False);
 	return err == noErr;
@@ -2422,7 +2438,7 @@ BoundaryType ReadPGP(TransStream stream,short refN,MIMESHandle mimeSList,char *b
 		 */
 		if (!err)
 		{
-			err = RecordAttachment(&spec,nil);
+			err = RecordAttachment(spec.path,nil);
 			WriteAttachNote(refN);
 		}
 		else
@@ -2472,7 +2488,7 @@ OSErr WriteBoundary(short refN,BoundaryType boundaryType,MIMESHandle msh)
 	EnsureNewline(refN);
 	PCopy(bound,LDRef(msh)->boundary);
 	UL(msh);
-	if (boundaryType==btOuterBoundary) PCat(bound,"\p--");
+	if (boundaryType==btOuterBoundary) PCat(bound,(UPtr)"--");
 	PCatC(bound,'\015');
 	if (err=FSWriteP(refN,bound))
 		FileSystemError(WRITE_MBOX,"",err);
@@ -2885,7 +2901,7 @@ BoundaryType ReadGeneric(TransStream stream,short refN,MIMESHandle mimeSList,cha
 	if (attachRefN)
 	{
 		if (mm.type=='euEn') AddUniqueExt(&spec,PGP_PROTOCOL);	/* hack for pgp */
-		err = RecordAttachment(&spec,hdh);
+		err = RecordAttachment(spec.path,hdh);
 #ifndef SAVE_MIME
 		if ((*hdh)->grokked && mm.type!='????') TruncOpenFile(refN,(*hdh)->diskStart);
 #endif
@@ -3019,7 +3035,7 @@ BoundaryType ReadTLNow(TransStream stream,short refN,MIMESHandle mimeSList,char 
 	 */
 	if (bt!=btError)
 	{
-		if (RecordAttachment(&spec,(*mimeSList)->hdh)) bt=btError;
+		if (RecordAttachment(spec.path,(*mimeSList)->hdh)) bt=btError;
 		WriteAttachNote(refN);
 	}
 
@@ -3051,7 +3067,7 @@ BoundaryType ReadTLNotNow(TransStream stream,short refN,MIMESHandle mimeSList,ch
 	 */
 	if (bt!=btError)
 	{
-		if (RecordAttachment(&spec,(*msh)->hdh)) bt = btError;
+		if (RecordAttachment(spec.path,(*msh)->hdh)) bt = btError;
 		WriteAttachNote(refN);
 	}
 	return(bt);
@@ -3093,7 +3109,7 @@ BoundaryType ReadExternalMulti(TransStream stream,short refN,MIMESHandle mimeSLi
 	 */
 	if (bt!=btError)
 	{
-		if (RecordAttachment(&spec,(*msh)->hdh)) bt=btError;
+		if (RecordAttachment(spec.path,(*msh)->hdh)) bt=btError;
 		WriteAttachNote(refN);
 	}
 	return(bt);

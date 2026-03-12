@@ -48,7 +48,7 @@ void QuickSort(UPtr array, int size, int f, int l, int (*compare)(),
     return;
 
 #ifdef NEVER
-  ComposeLogS(-1, nil, "\pSort %d %d", f, l);
+  ComposeLogS(-1, nil, (UPtr)"Sort %d %d", f, l);
 #endif
   CycleBalls();
 
@@ -96,7 +96,7 @@ void VQuickSort(short **vector, short f, short l, void *data,
     return;
 
 #ifdef NEVER
-  ComposeLogS(-1, nil, "\pSort %d %d", f, l);
+  ComposeLogS(-1, nil, (UPtr)"Sort %d %d", f, l);
 #endif
   CycleBalls();
 
@@ -128,7 +128,7 @@ void VQuickSort(short **vector, short f, short l, void *data,
 }
 
 void StrSwap(UPtr s1, UPtr s2) {
-  Str255 temp;
+  unsigned char temp[256];
 
   strcpy((char *)temp, (const char *)s1);
   strcpy((char *)s1, (const char *)s2);

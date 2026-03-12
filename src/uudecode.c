@@ -457,7 +457,7 @@ bool JustDataWanna(MIMEMapPtr hintMM)
 	
 	PCopy(spec.name,Name);
 	if (!*spec.name) GetRString(spec.name,UNTITLED);
-	if (!hintMM) FindMIMEMapPtr("\p?","\p?",spec.name,&mm);
+	if (!hintMM) FindMIMEMapPtr((unsigned char *)"?",(unsigned char *)"?",spec.name,&mm);
 	else mm = *hintMM;
 	
 	if (AutoWantTheFile(&spec,False,Hdh ? (*Hdh)->relatedPart:false)/*|| WantTheFile(&spec)*/)
@@ -477,7 +477,7 @@ bool JustDataWanna(MIMEMapPtr hintMM)
 		if (err = AbOpen()) return(False);
 		State = AbJustData;
 		IsText = (mm.flags & mmIsText)!=0;
-		err = RecordAttachment(&spec,Hdh);
+		err = RecordAttachment(spec.path,Hdh);
 		Spec = spec;	// RecordAttachment may have changed the name....
 		if (err) ClearAbomination();
 		return(True);
@@ -801,7 +801,7 @@ bool AbNameStuff(uShort byte)
 					AbNextState();
 					BSpot = 0;
 					if( SeenName && SeenFinfo && !NoteAttached){
-									err = RecordAttachment(&spec,Hdh);
+									err = RecordAttachment(spec.path,Hdh);
 									Spec = spec;	// RecordAttachment may have changed the name
 									NoteAttached = true;
 									if (err) ClearAbomination();
@@ -836,7 +836,7 @@ bool AbNameStuff(uShort byte)
 		AbNextState();
 		BSpot = 0;
 		if( SeenName && SeenFinfo && !NoteAttached){
-						err = RecordAttachment(&spec,Hdh);
+						err = RecordAttachment(spec.path,Hdh);
 						Spec = spec;	// RecordAttachment may have changed the name
 						if (err) ClearAbomination();
 						NoteAttached = true;
@@ -872,7 +872,7 @@ bool AbSetFinfo(uShort byte)
 				}
 				FSpSetFXInfo(&spec,&fxInfo);
 				if( SeenName && SeenFinfo && !NoteAttached){
-								err = RecordAttachment(&spec,Hdh);
+								err = RecordAttachment(spec.path,Hdh);
 								Spec = spec;	// RecordAttachment may have changed the name
 								if (err) ClearAbomination();
 								NoteAttached = true;
@@ -1032,7 +1032,7 @@ bool AbNextState( void )
 					FInfo info = Info;
 					
 					if (SeenFinfo) FSpSetFInfo(&spec,&info);
-					if (RecordAttachment(&spec,Hdh)) ClearAbomination();
+					if (RecordAttachment(spec.path,Hdh)) ClearAbomination();
 					Spec = spec;	// RecordAttachment may have changed the name
 					NoteAttached = true;
 				}
@@ -1211,7 +1211,7 @@ OSErr SendDouble(TransStream stream,FSSpecPtr spec,long flags,short tableID, Att
 	/*
 	 * build the internal boundary
 	 */
-	BuildBoundary(nil,boundary,"\pD");
+	BuildBoundary(nil,boundary,(UPtr)"D");
 	
 	/*
 	 * send the multipart header
@@ -1250,7 +1250,7 @@ OSErr SendDouble(TransStream stream,FSSpecPtr spec,long flags,short tableID, Att
 	/*
 	 * and the terminal boundary
 	 */
-	PCat(boundary,"\p--");
+	PCat(boundary,(UPtr)"--");
 	return(SendBoundary(stream));
 }
 

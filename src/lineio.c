@@ -26,11 +26,13 @@
 #include "lineio.h"
 #include "StringDefs.h"
 #include "fileutil.h"
+#include <errno.h>
+#include <fcntl.h>
 #include <string.h>
-#define FILE_NUM 20
-/* Copyright (c) 1990-1992 by the University of Illinois Board of Trustees */
+#include <sys/stat.h>
+#include <unistd.h>
 
-// #pragma segment FileUtil
+#define FILE_NUM 20
 
 #define LIKE_BUFFER 8192
 
@@ -43,34 +45,22 @@
 #define Eof lip->eof
 #define fd lip->fd
 
-#include <errno.h>
-#include <fcntl.h>
-#include <sys/stat.h>
-#include <sys/types.h>
-#include <unistd.h>
-
-#define MemError() 0
-#define eofErr (-39)
-#define CycleBalls()
-
-/* Removed macro wrappers for Handles, using standard C pointers now */
-
-short OpenLine(short vRef, long dirId, unsigned char *name, short perm,
-               LineIOP lip) {
-  /* Bridge legacy call to portable OpenLineDirect.
-     We assume 'name' holds a usable path or filename.
-     vRef and dirId are ignored as they are Mac legacy. */
-  if (name == NULL)
-    return -1;
-  return OpenLineDirect((const char *)name, perm, lip);
-}
-
-short OpenLineDirect(const char *path, short perm, LineIOP lip) {
+/************************************************************************
+ * OpenLine - open a file for line-oriented reading
+ *
+ * path: full filesystem path to the file
+ * perm: fsRdPerm (0x01), fsWrPerm (0x02), or fsRdWrPerm (0x03)
+ * lip:  pointer to caller-allocated LineIOD struct
+ ************************************************************************/
+short OpenLine(const char *path, short perm, LineIOP lip) {
   int err = 0;
   int localFd;
   struct stat st;
 
-  Zero(*lip);
+  if (path == NULL || *path == '\0')
+    return -1;
+
+  memset(lip, 0, sizeof(*lip));
 
   int flags = O_RDONLY;
   if (perm == fsWrPerm)
@@ -91,12 +81,10 @@ short OpenLineDirect(const char *path, short perm, LineIOP lip) {
     err = errno;
     goto failure;
   }
-  BufferSize = st.st_size;
-  BufferSize += 2;
+  BufferSize = st.st_size + 2;
   if (BufferSize > LIKE_BUFFER)
     BufferSize = LIKE_BUFFER;
 
-  /* Direct malloc instead of NewHandle */
   if ((Buffer = malloc(BufferSize)) == NULL) {
     err = ENOMEM;
     goto failure;
@@ -105,19 +93,18 @@ short OpenLineDirect(const char *path, short perm, LineIOP lip) {
   /*
    * fill the first buffer
    */
-  /* Read directly into buffer, no handle dereferencing */
   BFilled = read(fd, Buffer, BufferSize - 1);
   if (BFilled < 0) {
     err = errno;
     goto failure;
   }
   BSpot = LastSpot = FSpot = 0;
-  Buffer[BFilled] = '\015'; /* a marker, to expedite searches */
-  return (noErr);
+  Buffer[BFilled] = '\015'; /* sentinel to expedite line-end searches */
+  return 0;
 
 failure:
   CloseLine(lip);
-  return (err);
+  return err;
 }
 
 /************************************************************************
@@ -131,9 +118,6 @@ int SeekLine(long spot, LineIOP lip) {
     goto failure;
   }
 
-  /*
-   * fill the first buffer
-   */
   BFilled = read(fd, Buffer, BufferSize - 1);
   if (BFilled < 0) {
     err = errno;
@@ -142,26 +126,26 @@ int SeekLine(long spot, LineIOP lip) {
   Eof = 0;
   BSpot = 0;
   LastSpot = FSpot = spot;
-  Buffer[BFilled] = '\015'; /* a marker, to expedite searches */
-  return (noErr);
+  Buffer[BFilled] = '\015'; /* sentinel */
+  return 0;
 
 failure:
   CloseLine(lip);
-  return (err);
+  return err;
 }
 
 /**********************************************************************
- * NLGetLine - get a line, possiby preceeded by a linefeed
+ * NLGetLine - get a line, possibly preceded by a linefeed
  **********************************************************************/
 int NLGetLine(unsigned char *line, int size, long *len, LineIOP lip) {
   short l = GetLine(line, size, len, lip);
 
   if (l == LINE_START && *len && *line == '\012') {
-    memmove(line, line + 1, --*len); /* Replaces BMD(line + 1, line, --*len) */
+    memmove(line, line + 1, --*len);
     if (!*len)
       l = 0;
   }
-  return (l);
+  return l;
 }
 
 /**********************************************************************
@@ -176,11 +160,9 @@ int GetLine(unsigned char *line, int size, long *len, LineIOP lip) {
   int err;
 
   if (!BFilled)
-    return (0); /* we have no chars */
-  size--;       // make sure we don't overrun buffer
-  CycleBalls();
+    return 0; /* we have no chars */
+  size--;     /* make sure we don't overrun buffer */
 
-  /* Buffer is now a char pointer, no dereferencing needed */
   bp = (unsigned char *)Buffer + BSpot;
   where = (bp == (unsigned char *)Buffer || bp[-1] == '\015') ? LINE_START
                                                               : LINE_MIDDLE;
@@ -200,15 +182,15 @@ int GetLine(unsigned char *line, int size, long *len, LineIOP lip) {
       if (BFilled < 0) {
         err = errno;
         FileSystemError(READ_MBOX, "", err);
-        return (err);
+        return err;
       }
       if (BFilled == 0) {
         *cp = 0;
         if (len)
           *len = cp - line;
-        return (where);
+        return where;
       }
-      Buffer[BFilled] = '\015'; /* a marker, to expedite searches */
+      Buffer[BFilled] = '\015'; /* sentinel */
       BSpot = 0;
       bp = (unsigned char *)Buffer;
     } else {
@@ -219,13 +201,14 @@ int GetLine(unsigned char *line, int size, long *len, LineIOP lip) {
       *cp = 0;
       if (len)
         *len = cp - line;
-      return (where);
+      return where;
     }
   }
 }
 
 /**********************************************************************
- * CloseLine - shut up shop.	Calling it on closed file does no harm.
+ * CloseLine - close the file and free the buffer.
+ * Calling on an already-closed file does no harm.
  **********************************************************************/
 void CloseLine(LineIOP lip) {
   if (lip) {
@@ -234,12 +217,11 @@ void CloseLine(LineIOP lip) {
       fd = 0;
     }
     if (Buffer != NULL) {
-      free(Buffer); /* Standard C free */
+      free(Buffer);
       Buffer = NULL;
     }
-    BFilled = 0;
-    Zero(*lip);
+    memset(lip, 0, sizeof(*lip));
   }
 }
 
-long TellLine(LineIOP lip) { return (LastSpot); }
+long TellLine(LineIOP lip) { return LastSpot; }

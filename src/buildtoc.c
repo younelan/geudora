@@ -49,8 +49,7 @@ ADVISED OF THE POSSIBILITY OF SUCH DAMAGE. */
 
 #define FILE_NUM 45
 
-#define fnfErr (-43)
-#define noErr 0
+/* fnfErr and noErr defined in mailbox.h */
 
 #ifndef IsWhite
 #define IsWhite(c) ((c) == ' ' || (c) == '\t')
@@ -550,8 +549,7 @@ long FindTOCSpot(TOCType * tocH, long length) {
 /************************************************************************
  * TrimWrap - trim wrapping characters from a string
  ************************************************************************/
-PStr TrimWrap(unsigned char *str, int openC, int closeC) {
-  (void)str;
+unsigned char *TrimWrap(unsigned char *str, int openC, int closeC) {
   (void)openC;
   (void)closeC;
   return str;
@@ -560,7 +558,7 @@ PStr TrimWrap(unsigned char *str, int openC, int closeC) {
 /************************************************************************
  * TrimNonWord - trim non-word characters
  ************************************************************************/
-PStr TrimNonWord(PStr str) { return str; }
+unsigned char *TrimNonWord(unsigned char *str) { return str; }
 
 /************************************************************************
  * MatchHeader - match a header name (case-insensitive).
@@ -935,7 +933,7 @@ TOCType * BuildTOC(const char *path) {
     return NULL;
   }
 
-  if ((err = OpenLineDirect(path, fsRdWrPerm, &lid))) {
+  if ((err = OpenLine(path, fsRdWrPerm, &lid))) {
     g_warning("BuildTOC: cannot open mailbox %s: error %d", filename, err);
     return NULL;
   }

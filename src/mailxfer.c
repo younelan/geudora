@@ -38,7 +38,7 @@ ADVISED OF THE POSSIBILITY OF SUCH DAMAGE. */
 #include "prefdefs.h"
 #include "schizo.h"
 #include "sendmail.h"
-#include "threading.h" // For CurThreadGlobals, ThreadGlobals, LastAttSpec
+#include "threading.h" // For CurThreadGlobals, ThreadGlobals, LastAttPath
 #include "toc.h"
 #include "compact.h"
 #include "imapmailboxes.h"
@@ -169,7 +169,7 @@ extern bool Offline;
 #undef CommandPeriod
 extern bool CommandPeriod;
 #ifndef THREADING_ON
-void **LastAttSpec = NULL;
+char *LastAttPath = NULL;
 void **SingleSpec = NULL;
 #endif
 
@@ -962,7 +962,7 @@ short XferMailRun(bool check, bool send, bool manual, bool ae, XferFlags flags,
   if (check)
     ResetCheckTime(true); // Reset intervals for *all* personalities that were
                           // supposed to be checked. JDB 12-16-98
-  ZapHandle(LastAttSpec);
+  if (LastAttPath) { free(LastAttPath); LastAttPath = NULL; }
 
   ASSERT(!InAThread() || CurThreadGlobals != &ThreadGlobals);
 
@@ -1632,7 +1632,7 @@ short SendTheQueue(TransStream stream, XferFlags flags) {
             actualBytes = GetProgressBytes() - beforeBytes;
             rate =
                 (actualBytes * 600) / ((TickCount() - beforeTicks + 1) * 1024);
-            ComposeLogS(LOG_TPUT, nil, "\p%d.%d KBps", rate / 10, rate % 10);
+            ComposeLogS(LOG_TPUT, nil, (UPtr)"%d.%d KBps", rate / 10, rate % 10);
             approxBytes = (ApproxMessageSize(messH) K);
             if (actualBytes < approxBytes)
               ByteProgress(0, actualBytes - approxBytes, 0);
@@ -1884,7 +1884,7 @@ short CheckForMail(TransStream stream, short *gotSome, XferFlags *flags) {
 
 #ifdef DEBUG
   if (BUG15)
-    Dprintf("\p%d;sc;g", err);
+    Dprintf("%d;sc;g", err);
 #endif
 
   /*
@@ -1897,8 +1897,8 @@ short CheckForMail(TransStream stream, short *gotSome, XferFlags *flags) {
 
 #ifdef DEBUG
   if (BUG15) {
-    Str63 dts;
-    Dprintf("\pp;log;g", LocalDateTimeShortStr(dts));
+    unsigned char dts[64];
+    Dprintf("p;log;g", LocalDateTimeShortStr(dts));
   }
 #endif
 

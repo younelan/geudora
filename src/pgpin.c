@@ -159,7 +159,7 @@ void ClosePGP(PGPCPtr pgpc,bool abort)
 	if (pgpc->refN)
 	{
 		if (!(err=MyFSClose(pgpc->refN)) && !abort)
-			err = RecordAttachment(&pgpc->spec,nil);
+			err = RecordAttachment(pgpc->spec.path,nil);
 		if (err && !abort)
 			FileSystemError(BINHEX_WRITE,pgpc->spec.name,err);
 		pgpc->refN = 0;
