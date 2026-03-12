@@ -72,6 +72,9 @@ gint geditctrl_replace_text(GtkWidget *ctrl, const gchar *search_text,
                             const gchar *replace_text, gboolean replace_all,
                             gboolean case_sensitive);
 
+/* Clear all formatting on the current selection */
+void geditctrl_clear_style(GtkWidget *ctrl);
+
 /* Hyperlink helpers */
 void geditctrl_set_link(GtkWidget *ctrl, const gchar *url);
 gchar *geditctrl_get_link_at(GtkWidget *ctrl, gint offset);

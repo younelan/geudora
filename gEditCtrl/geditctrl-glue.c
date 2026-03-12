@@ -711,6 +711,22 @@ void gedit_document_insert_markup(geditDocument *self, gint offset,
   g_string_free(plain, TRUE);
 }
 
+/* Clear all formatting on the current selection */
+void geditctrl_clear_style(GtkWidget *ctrl) {
+  if (!GTK_IS_SCROLLED_WINDOW(ctrl)) return;
+  GtkWidget *area = gtk_scrolled_window_get_child(GTK_SCROLLED_WINDOW(ctrl));
+  GEditCtrlState *s = area ? gedit_state_for_area(area) : NULL;
+  geditDocument *doc = s ? s->doc : NULL;
+  if (!s || !doc) return;
+  gint a = MIN(s->sel_start, s->sel_end);
+  gint b = MAX(s->sel_start, s->sel_end);
+  if (b <= a) return;
+  GdkRGBA black = {0, 0, 0, 1};
+  gedit_document_add_style_run(doc, a, b - a, 0, 0, 0, &black, 0);
+  gedit_document_set_link(doc, a, b - a, NULL);
+  gtk_widget_queue_draw(area);
+}
+
 /* Set a hyperlink on the current selection */
 void geditctrl_set_link(GtkWidget *ctrl, const gchar *url) {
   if (!GTK_IS_SCROLLED_WINDOW(ctrl)) return;

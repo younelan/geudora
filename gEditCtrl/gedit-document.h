@@ -24,6 +24,7 @@ typedef struct {
   gboolean underline;
   GdkRGBA color;
   gint font_size;      /* points, 0 == default */
+  gchar *font_family;  /* NULL = default font */
   gboolean is_graphic; /* TRUE if this style run is a graphic */
   geditGraphic *graphic;
   gchar *link_url;     /* non-NULL if this run is a hyperlink */

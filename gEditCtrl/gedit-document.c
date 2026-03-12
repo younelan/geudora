@@ -590,6 +590,7 @@ static geditStyleRun *gedit_style_run_copy(const geditStyleRun *src) {
     r->graphic = gedit_graphic_copy(r->graphic);
   }
   r->link_url = g_strdup(src->link_url); /* NULL-safe */
+  r->font_family = g_strdup(src->font_family); /* NULL-safe */
   return r;
 }
 
@@ -598,6 +599,7 @@ static void gedit_style_run_free(geditStyleRun *run) {
     gedit_graphic_free(run->graphic);
   }
   g_free(run->link_url);
+  g_free(run->font_family);
   g_free(run);
 }
 
