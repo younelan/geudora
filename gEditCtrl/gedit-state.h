@@ -12,6 +12,15 @@ typedef struct {
     gboolean dragging;
     gboolean caret_visible;
     gint preferred_x;     /* pixels, -1 = unset */
+
+    /* Image resize state */
+    gboolean resizing;          /* TRUE while dragging a resize handle */
+    gint resize_graphic_offset; /* char offset of the graphic being resized */
+    gdouble resize_start_x;    /* mouse x at drag start */
+    gdouble resize_start_y;    /* mouse y at drag start */
+    gint resize_orig_w;        /* original width at drag start */
+    gint resize_orig_h;        /* original height at drag start */
+    gint selected_graphic;     /* char offset of selected graphic, -1 if none */
 } GEditCtrlState;
 
 /* UTF-8 helpers */

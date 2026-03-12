@@ -7,7 +7,7 @@ gedit_layout_for_paragraph(GtkWidget *area, const gchar *text, int width) {
   PangoLayout *pl = gtk_widget_create_pango_layout(area, text ? text : "");
   pango_layout_set_width(pl, MAX(10, width) * PANGO_SCALE);
   pango_layout_set_wrap(pl, PANGO_WRAP_WORD_CHAR);
-  
+
   /* Set up default tab stops (every 40 pixels) */
   PangoTabArray *tabs = pango_tab_array_new(10, TRUE);
   for (int i = 0; i < 10; i++) {
@@ -15,7 +15,23 @@ gedit_layout_for_paragraph(GtkWidget *area, const gchar *text, int width) {
   }
   pango_layout_set_tabs(pl, tabs);
   pango_tab_array_free(tabs);
-  
+
+  return pl;
+}
+
+/* Create a PangoLayout for a paragraph with document attrs (shapes, styles) applied.
+ * This ensures image placeholders (U+FFFC) get correct height. */
+static PangoLayout *
+gedit_layout_for_paragraph_with_attrs(GtkWidget *area, geditDocument *doc,
+                                      const gchar *text, int width,
+                                      gint char_offset, gint para_chars) {
+  PangoLayout *pl = gedit_layout_for_paragraph(area, text, width);
+  PangoAttrList *alist =
+      gedit_document_get_attr_list_for_range(doc, char_offset, para_chars);
+  if (alist) {
+    pango_layout_set_attributes(pl, alist);
+    pango_attr_list_unref(alist);
+  }
   return pl;
 }
 
@@ -260,6 +276,9 @@ G_GNUC_INTERNAL void gedit_draw_cb(GtkDrawingArea *area, cairo_t *cr, int width,
         double gx = x_draw + crect.x / (double)PANGO_SCALE;
         double gy = y + crect.y / (double)PANGO_SCALE;
 
+        int gw = run->graphic->width;
+        int gh = run->graphic->height;
+
         if (run->graphic->texture) {
           GdkTexture *tex = run->graphic->texture;
           int tw = gdk_texture_get_width(tex);
@@ -274,8 +293,8 @@ G_GNUC_INTERNAL void gedit_draw_cb(GtkDrawingArea *area, cairo_t *cr, int width,
 
           cairo_save(cr);
           cairo_translate(cr, gx, gy);
-          double sw = (double)run->graphic->width / tw;
-          double sh = (double)run->graphic->height / th;
+          double sw = (double)gw / tw;
+          double sh = (double)gh / th;
           cairo_scale(cr, sw, sh);
           cairo_set_source_surface(cr, img, 0, 0);
           cairo_paint(cr);
@@ -285,12 +304,48 @@ G_GNUC_INTERNAL void gedit_draw_cb(GtkDrawingArea *area, cairo_t *cr, int width,
           /* Placeholder: draw a gray box */
           cairo_save(cr);
           cairo_set_source_rgb(cr, 0.7, 0.7, 0.7);
-          cairo_rectangle(cr, gx, gy, run->graphic->width,
-                          run->graphic->height);
+          cairo_rectangle(cr, gx, gy, gw, gh);
           cairo_fill(cr);
           cairo_set_source_rgb(cr, 0.4, 0.4, 0.4);
           cairo_set_line_width(cr, 1.0);
           cairo_stroke(cr);
+          cairo_restore(cr);
+        }
+
+        /* Draw selection border and resize handle if this graphic is selected */
+        if (s && s->selected_graphic == run->offset) {
+          cairo_save(cr);
+          /* Blue selection border */
+          cairo_set_source_rgb(cr, 0.2, 0.5, 1.0);
+          cairo_set_line_width(cr, 2.0);
+          cairo_rectangle(cr, gx - 1, gy - 1, gw + 2, gh + 2);
+          cairo_stroke(cr);
+
+          /* Bottom-right resize handle (8x8 square) */
+          double hx = gx + gw - 4;
+          double hy = gy + gh - 4;
+          cairo_set_source_rgb(cr, 1, 1, 1);
+          cairo_rectangle(cr, hx, hy, 8, 8);
+          cairo_fill(cr);
+          cairo_set_source_rgb(cr, 0.2, 0.5, 1.0);
+          cairo_set_line_width(cr, 1.5);
+          cairo_rectangle(cr, hx, hy, 8, 8);
+          cairo_stroke(cr);
+
+          /* Small resize handles at other corners too */
+          double corners[][2] = {
+            {gx - 4, gy - 4},         /* top-left */
+            {gx + gw - 4, gy - 4},    /* top-right */
+            {gx - 4, gy + gh - 4},    /* bottom-left */
+          };
+          for (int ci = 0; ci < 3; ci++) {
+            cairo_set_source_rgb(cr, 1, 1, 1);
+            cairo_rectangle(cr, corners[ci][0], corners[ci][1], 8, 8);
+            cairo_fill(cr);
+            cairo_set_source_rgb(cr, 0.2, 0.5, 1.0);
+            cairo_rectangle(cr, corners[ci][0], corners[ci][1], 8, 8);
+            cairo_stroke(cr);
+          }
           cairo_restore(cr);
         }
       }
@@ -363,7 +418,8 @@ G_GNUC_INTERNAL void gedit_scroll_to_caret(GtkWidget *area) {
 
     gint para_bytes = (gint)(p - start_ptr);
     gchar *para_text = g_strndup(start_ptr, para_bytes);
-    PangoLayout *pl = gedit_layout_for_paragraph(area, para_text, width);
+    PangoLayout *pl = gedit_layout_for_paragraph_with_attrs(
+        area, doc, para_text, width, cur, para_chars);
     int pxw, pxh;
     pango_layout_get_pixel_size(pl, &pxw, &pxh);
 
@@ -475,8 +531,8 @@ G_GNUC_INTERNAL void gedit_doc_changed_cb(geditDocument *doc,
 
           gint para_bytes = (gint)(p - start_ptr);
           gchar *para_text = g_strndup(start_ptr, para_bytes);
-          PangoLayout *pl =
-              gedit_layout_for_paragraph(area, para_text, width);
+          PangoLayout *pl = gedit_layout_for_paragraph_with_attrs(
+              area, doc, para_text, width, cur, para_chars);
           int pxw, pxh;
           pango_layout_get_pixel_size(pl, &pxw, &pxh);
 

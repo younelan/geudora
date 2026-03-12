@@ -5,6 +5,23 @@
 #include <gtk/gtk.h>
 #include <string.h>
 
+/* Scroll event handler for mouse wheel */
+static gboolean gedit_scroll_cb(GtkEventControllerScroll *controller,
+                                gdouble dx, gdouble dy, gpointer user_data) {
+  (void)controller; (void)dx;
+  GtkWidget *scrolled = GTK_WIDGET(user_data);
+  GtkAdjustment *adj = gtk_scrolled_window_get_vadjustment(
+      GTK_SCROLLED_WINDOW(scrolled));
+  if (!adj) return GDK_EVENT_PROPAGATE;
+  double step = 40.0; /* pixels per scroll step */
+  double val = gtk_adjustment_get_value(adj);
+  double upper = gtk_adjustment_get_upper(adj);
+  double page = gtk_adjustment_get_page_size(adj);
+  double new_val = CLAMP(val + dy * step, 0, MAX(0, upper - page));
+  gtk_adjustment_set_value(adj, new_val);
+  return GDK_EVENT_STOP;
+}
+
 GtkWidget *geditctrl_new(void) {
   GtkWidget *scrolled = gtk_scrolled_window_new();
   GtkWidget *area = gtk_drawing_area_new();
@@ -14,13 +31,18 @@ GtkWidget *geditctrl_new(void) {
   gtk_widget_set_focusable(area, TRUE);
   gtk_widget_set_can_focus(scrolled, TRUE);
   gtk_widget_set_focusable(scrolled, TRUE);
-  
+
   /* Set minimum size for the drawing area */
   gtk_widget_set_size_request(area, 200, 200);
-  
-  /* Configure scrolled window to use content-based sizing */
-  gtk_scrolled_window_set_propagate_natural_height(GTK_SCROLLED_WINDOW(scrolled), TRUE);
-  gtk_scrolled_window_set_propagate_natural_width(GTK_SCROLLED_WINDOW(scrolled), TRUE);
+
+  /* Scrollbar policy: always show vertical scrollbar, auto horizontal */
+  gtk_scrolled_window_set_policy(GTK_SCROLLED_WINDOW(scrolled),
+                                 GTK_POLICY_AUTOMATIC, GTK_POLICY_AUTOMATIC);
+  /* Do NOT propagate natural height — let the scrolled window clip and scroll */
+  gtk_scrolled_window_set_propagate_natural_height(
+      GTK_SCROLLED_WINDOW(scrolled), FALSE);
+  gtk_scrolled_window_set_propagate_natural_width(
+      GTK_SCROLLED_WINDOW(scrolled), FALSE);
 
   geditDocument *doc = gedit_document_new();
   GEditCtrlState *s = g_new0(GEditCtrlState, 1);
@@ -32,6 +54,9 @@ GtkWidget *geditctrl_new(void) {
   s->dragging = FALSE;
   s->caret_visible = TRUE;
   s->preferred_x = -1;
+  s->resizing = FALSE;
+  s->resize_graphic_offset = -1;
+  s->selected_graphic = -1;
 
   g_object_set_data_full(G_OBJECT(area), "gedit-document", doc, g_object_unref);
   g_object_ref(doc);
@@ -51,6 +76,14 @@ GtkWidget *geditctrl_new(void) {
       GTK_EVENT_CONTROLLER(gtk_event_controller_motion_new());
   gtk_widget_add_controller(area, motion);
   g_signal_connect(motion, "motion", G_CALLBACK(gedit_motion_cb), area);
+
+  /* Mouse wheel and trackpad scroll on the drawing area */
+  GtkEventController *scroll_ctrl = GTK_EVENT_CONTROLLER(
+      gtk_event_controller_scroll_new(GTK_EVENT_CONTROLLER_SCROLL_VERTICAL));
+  gtk_event_controller_set_propagation_phase(
+      scroll_ctrl, GTK_PHASE_CAPTURE);
+  gtk_widget_add_controller(scrolled, scroll_ctrl);
+  g_signal_connect(scroll_ctrl, "scroll", G_CALLBACK(gedit_scroll_cb), scrolled);
 
   GtkEventController *k1 = GTK_EVENT_CONTROLLER(gtk_event_controller_key_new());
   gtk_widget_add_controller(scrolled, k1);

@@ -1,6 +1,103 @@
 #include "gedit-state.h"
 #include "gedit-clipboard.h"
 #include <pango/pangocairo.h>
+#include <math.h>
+
+/* Helper: find graphic screen rect at a given char offset.
+ * Returns TRUE if found, and fills gx/gy/gw/gh in widget coords. */
+static gboolean gedit_find_graphic_rect(GtkWidget *area, geditDocument *doc,
+                                        gint graphic_offset,
+                                        double *out_gx, double *out_gy,
+                                        int *out_gw, int *out_gh) {
+  gchar *full = gedit_document_get_text(doc);
+  if (!full) return FALSE;
+
+  int awidth = MAX(10, gtk_widget_get_width(area) - 12);
+  double x_base = 6.0, yy = 6.0;
+  gint cur = 0;
+  gboolean found = FALSE;
+
+  while (cur <= g_utf8_strlen(full, -1)) {
+    const gchar *sp = g_utf8_offset_to_pointer(full, cur);
+    if (!sp || !*sp) break;
+    const gchar *p = sp;
+    gint pc = 0;
+    while (*p && *p != '\n') { p = g_utf8_next_char(p); pc++; }
+    gchar *pt = g_strndup(sp, (gsize)(p - sp));
+    PangoLayout *pl = gedit_layout_for_paragraph(area, pt, awidth);
+    /* Apply shape attrs so image placeholders have correct dimensions */
+    PangoAttrList *alist =
+        gedit_document_get_attr_list_for_range(doc, cur, pc);
+    if (alist) {
+      pango_layout_set_attributes(pl, alist);
+      pango_attr_list_unref(alist);
+    }
+    int pxw, pxh;
+    pango_layout_get_pixel_size(pl, &pxw, &pxh);
+
+    if (graphic_offset >= cur && graphic_offset < cur + pc) {
+      const gchar *gr_ptr = g_utf8_offset_to_pointer(full, graphic_offset);
+      gint rb = (gint)(gr_ptr - sp);
+      PangoRectangle crect, wrect;
+      pango_layout_get_cursor_pos(pl, rb, &crect, &wrect);
+      *out_gx = x_base + crect.x / (double)PANGO_SCALE;
+      *out_gy = yy + crect.y / (double)PANGO_SCALE;
+
+      /* Look up the graphic's width/height */
+      GList *runs = gedit_document_get_style_runs(doc);
+      for (GList *l = runs; l; l = l->next) {
+        geditStyleRun *r = l->data;
+        if (r->is_graphic && r->graphic && r->offset == graphic_offset) {
+          *out_gw = r->graphic->width;
+          *out_gh = r->graphic->height;
+          found = TRUE;
+          break;
+        }
+      }
+      g_list_free(runs);
+    }
+    g_object_unref(pl);
+    g_free(pt);
+    if (found) break;
+    cur += pc;
+    if (*p == '\n') cur++;
+    yy += pxh > 0 ? pxh : 14;
+  }
+  g_free(full);
+  return found;
+}
+
+/* Helper: check if point (x,y) hits a graphic.
+ * Returns the graphic's char offset or -1.
+ * If near a resize handle, sets *on_handle = TRUE. */
+static gint gedit_hit_test_graphic(GtkWidget *area, geditDocument *doc,
+                                   double mx, double my,
+                                   gboolean *on_handle) {
+  *on_handle = FALSE;
+  GList *runs = gedit_document_get_style_runs(doc);
+  gint hit = -1;
+  for (GList *l = runs; l; l = l->next) {
+    geditStyleRun *r = l->data;
+    if (!r->is_graphic || !r->graphic) continue;
+    double gx, gy; int gw, gh;
+    if (!gedit_find_graphic_rect(area, doc, r->offset, &gx, &gy, &gw, &gh))
+      continue;
+    /* Check resize handle at bottom-right corner (12x12 hit zone) */
+    if (mx >= gx + gw - 8 && mx <= gx + gw + 4 &&
+        my >= gy + gh - 8 && my <= gy + gh + 4) {
+      *on_handle = TRUE;
+      hit = r->offset;
+      break;
+    }
+    /* Check if inside the image bounds */
+    if (mx >= gx && mx <= gx + gw && my >= gy && my <= gy + gh) {
+      hit = r->offset;
+      break;
+    }
+  }
+  g_list_free(runs);
+  return hit;
+}
 
 G_GNUC_INTERNAL void gedit_pressed_cb(GtkGestureClick *gesture, gint n_press,
                                       gdouble x, gdouble y,
@@ -14,6 +111,50 @@ G_GNUC_INTERNAL void gedit_pressed_cb(GtkGestureClick *gesture, gint n_press,
     return;
 
   gtk_widget_grab_focus(area);
+
+  /* Check if clicking on a graphic or its resize handle */
+  gboolean on_handle = FALSE;
+  gint graphic_hit = gedit_hit_test_graphic(area, doc, x, y, &on_handle);
+
+  if (graphic_hit >= 0 && on_handle) {
+    /* Start resize drag */
+    s->selected_graphic = graphic_hit;
+    s->resizing = TRUE;
+    s->resize_graphic_offset = graphic_hit;
+    s->resize_start_x = x;
+    s->resize_start_y = y;
+    /* Find current size */
+    GList *runs = gedit_document_get_style_runs(doc);
+    for (GList *l = runs; l; l = l->next) {
+      geditStyleRun *r = l->data;
+      if (r->is_graphic && r->graphic && r->offset == graphic_hit) {
+        s->resize_orig_w = r->graphic->width;
+        s->resize_orig_h = r->graphic->height;
+        break;
+      }
+    }
+    g_list_free(runs);
+    s->dragging = FALSE;
+    gtk_widget_queue_draw(area);
+    return;
+  }
+
+  if (graphic_hit >= 0) {
+    /* Clicked on graphic body — select it */
+    s->selected_graphic = graphic_hit;
+    s->caret = graphic_hit;
+    s->sel_anchor = graphic_hit;
+    s->sel_start = graphic_hit;
+    s->sel_end = graphic_hit + 1;
+    s->dragging = FALSE;
+    g_signal_emit_by_name(doc, "selection-changed");
+    gtk_widget_queue_draw(area);
+    return;
+  }
+
+  /* Clear graphic selection */
+  s->selected_graphic = -1;
+  s->resizing = FALSE;
 
   gchar *full = gedit_document_get_text(doc);
   if (!full)
@@ -30,7 +171,7 @@ G_GNUC_INTERNAL void gedit_pressed_cb(GtkGestureClick *gesture, gint n_press,
   double y_off = 6.0;
   int width = MAX(10, gtk_widget_get_width(area) - 12);
   gboolean found = FALSE;
-  
+
   while (cur <= g_utf8_strlen(full, -1)) {
     const gchar *start_ptr = g_utf8_offset_to_pointer(full, cur);
     if (!start_ptr || *start_ptr == '\0')
@@ -44,9 +185,12 @@ G_GNUC_INTERNAL void gedit_pressed_cb(GtkGestureClick *gesture, gint n_press,
     gint para_bytes = (gint)(p - start_ptr);
     gchar *para_text = g_strndup(start_ptr, para_bytes);
     PangoLayout *pl = gedit_layout_for_paragraph(area, para_text, width);
+    /* Apply attrs so image shapes affect paragraph height */
+    PangoAttrList *al = gedit_document_get_attr_list_for_range(doc, cur, para_chars);
+    if (al) { pango_layout_set_attributes(pl, al); pango_attr_list_unref(al); }
     int pxw, pxh;
     pango_layout_get_pixel_size(pl, &pxw, &pxh);
-    
+
     if ((int)y >= (int)y_off && (int)y < (int)(y_off + pxh)) {
       /* Click is within this paragraph's vertical bounds */
       int byte_index = 0, trailing = 0;
@@ -54,12 +198,12 @@ G_GNUC_INTERNAL void gedit_pressed_cb(GtkGestureClick *gesture, gint n_press,
                                (iy - (int)y_off) * PANGO_SCALE, &byte_index,
                                &trailing);
       gint char_index = gedit_byte_to_char(para_text, byte_index) + cur;
-      
+
       /* If click is beyond the text width, move to end of line */
       if (ix > pxw) {
         char_index = cur + para_chars;
       }
-      
+
       s->caret = char_index;
       s->sel_anchor = char_index;
       s->sel_start = char_index;
@@ -100,7 +244,42 @@ G_GNUC_INTERNAL void gedit_motion_cb(GtkEventControllerMotion *controller,
   GtkWidget *area = GTK_WIDGET(user_data);
   GEditCtrlState *s = gedit_state_for_area(area);
   geditDocument *doc = s ? s->doc : NULL;
-  if (!s || !doc || !s->dragging)
+  if (!s || !doc)
+    return;
+
+  /* Handle image resize drag */
+  if (s->resizing && s->resize_graphic_offset >= 0) {
+    double dx = x - s->resize_start_x;
+    double dy = y - s->resize_start_y;
+    /* Maintain aspect ratio using the larger delta */
+    double aspect = (s->resize_orig_h > 0) ?
+        (double)s->resize_orig_w / s->resize_orig_h : 1.0;
+    int new_w, new_h;
+    if (fabs(dx) > fabs(dy)) {
+      new_w = MAX(32, s->resize_orig_w + (int)dx);
+      new_h = MAX(32, (int)(new_w / aspect));
+    } else {
+      new_h = MAX(32, s->resize_orig_h + (int)dy);
+      new_w = MAX(32, (int)(new_h * aspect));
+    }
+    /* Update the graphic dimensions */
+    GList *runs = gedit_document_get_style_runs(doc);
+    for (GList *l = runs; l; l = l->next) {
+      geditStyleRun *r = l->data;
+      if (r->is_graphic && r->graphic && r->offset == s->resize_graphic_offset) {
+        r->graphic->width = new_w;
+        r->graphic->height = new_h;
+        break;
+      }
+    }
+    g_list_free(runs);
+    /* Update the Pango shape attribute for the resized graphic */
+    g_signal_emit_by_name(doc, "document-changed");
+    gtk_widget_queue_draw(area);
+    return;
+  }
+
+  if (!s->dragging)
     return;
 
   gchar *full = gedit_document_get_text(doc);
@@ -132,6 +311,8 @@ G_GNUC_INTERNAL void gedit_motion_cb(GtkEventControllerMotion *controller,
     gint para_bytes = (gint)(p - start_ptr);
     gchar *para_text = g_strndup(start_ptr, para_bytes);
     PangoLayout *pl = gedit_layout_for_paragraph(area, para_text, width);
+    PangoAttrList *al2 = gedit_document_get_attr_list_for_range(doc, cur, para_chars);
+    if (al2) { pango_layout_set_attributes(pl, al2); pango_attr_list_unref(al2); }
     int pxw, pxh;
     pango_layout_get_pixel_size(pl, &pxw, &pxh);
     if ((int)y >= (int)y_off && (int)y < (int)(y_off + pxh)) {
@@ -140,12 +321,12 @@ G_GNUC_INTERNAL void gedit_motion_cb(GtkEventControllerMotion *controller,
                                (iy - (int)y_off) * PANGO_SCALE, &byte_index,
                                &trailing);
       gint char_index = gedit_byte_to_char(para_text, byte_index) + cur;
-      
+
       /* If drag is beyond the text width, move to end of line */
       if (ix > pxw) {
         char_index = cur + para_chars;
       }
-      
+
       s->sel_end = char_index;
       s->caret = char_index;
       found = TRUE;
@@ -186,6 +367,8 @@ G_GNUC_INTERNAL void gedit_released_cb(GtkGestureClick *gesture, gint n_press,
   if (!s)
     return;
   s->dragging = FALSE;
+  s->resizing = FALSE;
+  s->resize_graphic_offset = -1;
   gtk_widget_queue_draw(area);
 }
 
