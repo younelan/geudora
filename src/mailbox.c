@@ -54,6 +54,7 @@ int AddMesgError(TOCType * tocH, short sum, unsigned char *errorStr,
 #include "prefdefs.h" /* For PREF_THREADING_OFF */
 #include <stdlib.h>
 
+#include "comp.h"
 #include "gtk_menus.h"
 #include "log.h"
 #include "uudecode.h"
@@ -564,23 +565,49 @@ int OpenMailbox(FSSpecPtr spec, bool showIt, TOCType * toc) {
 void BoxCursor(Point mouse) {}
 void MBDrawerOpen(MyWindowPtr win) {}
 
+/* Column indices for mailbox list */
+enum {
+  COL_STATUS = 0,    /* message state icon/text */
+  COL_PRIORITY,      /* priority 1-5 */
+  COL_ATTACH,        /* attachment indicator */
+  COL_LABEL,         /* label/color number */
+  COL_WHO,           /* From (incoming) or To (outgoing) */
+  COL_DATE,          /* date string */
+  COL_SIZE,          /* size string */
+  COL_JUNK,          /* junk score */
+  COL_SUBJECT,       /* subject */
+  COL_INDEX,         /* hidden: TOC index */
+  NUM_MBOX_COLS
+};
+
+/* Context for message list selection callback */
+typedef struct {
+  TOCType *toc;
+  GtkWidget *preview;  /* GtkTextView for message preview */
+} MboxSelCtx;
+
+/* Forward declarations for callbacks */
+static void on_mbox_row_activated(GtkTreeView *tree_view, GtkTreePath *path,
+                                  GtkTreeViewColumn *column, gpointer data);
+static void attach_mbox_context_menu(GtkWidget *tree, TOCType *toc);
+
 /* Message list selection callback */
 static void on_mbox_msg_selected(GtkTreeSelection *sel, gpointer data) {
-  TOCType *toc = (TOCType *)data;
+  MboxSelCtx *ctx = (MboxSelCtx *)data;
+  TOCType *toc = ctx->toc;
+  GtkWidget *preview = ctx->preview;
   GtkTreeModel *model;
   GtkTreeIter iter;
   if (!gtk_tree_selection_get_selected(sel, &model, &iter)) return;
   int idx = -1;
-  gtk_tree_model_get(model, &iter, 5, &idx, -1);
+  gtk_tree_model_get(model, &iter, COL_INDEX, &idx, -1);
   if (idx < 0 || idx >= toc->count) return;
 
   /* Read the message body from the mailbox file */
   MSumPtr sum = &toc->sums[idx];
-  GtkTextView *preview = GTK_TEXT_VIEW(
-      g_object_get_data(G_OBJECT(toc->win->window), "preview"));
   if (!preview) return;
 
-  GtkTextBuffer *buf = gtk_text_view_get_buffer(preview);
+  GtkTextBuffer *buf = gtk_text_view_get_buffer(GTK_TEXT_VIEW(preview));
   FILE *fp = fopen(toc->mailbox.spec.path, "r");
   if (!fp) {
     gtk_text_buffer_set_text(buf, "(cannot open mailbox file)", -1);
@@ -602,8 +629,54 @@ static void on_mbox_msg_selected(GtkTreeSelection *sel, gpointer data) {
 
 
 /* Populate the message list from TOC summaries */
+/* State to display string */
+static const char *state_str(StateEnum s) {
+  switch (s) {
+    case UNREAD:       return "\xe2\x97\x8f"; /* ● */
+    case READ:         return "";
+    case REPLIED:      return "\xe2\x86\xa9"; /* ↩ */
+    case FORWARDED:    return "\xe2\x86\x92"; /* → */
+    case REDIST:       return "\xe2\x87\x89"; /* ⇉ */
+    case UNSENDABLE:   return "\xe2\x9c\x8f"; /* ✏ */
+    case SENDABLE:     return "\xe2\x9c\x93"; /* ✓ */
+    case QUEUED:       return "\xe2\x8f\xb3"; /* ⏳ */
+    case SENT:         return "\xe2\x9c\x89"; /* ✉ */
+    case UNSENT:       return "\xe2\x9c\x8f"; /* ✏ */
+    case TIMED:        return "\xe2\x8f\xb0"; /* ⏰ */
+    case BUSY_SENDING: return "\xe2\x87\xa7"; /* ⇧ */
+    case MESG_ERR:     return "\xe2\x9a\xa0"; /* ⚠ */
+    case REBUILT:      return "";
+    default:           return "";
+  }
+}
+
+/* Priority to display string */
+static const char *priority_str(int priority) {
+  int p = priority / 40;  /* convert 0-200 range to 0-5 */
+  if (p <= 0) return "";
+  switch (p) {
+    case 1: return "\xe2\x86\x91\xe2\x86\x91"; /* ↑↑ Highest */
+    case 2: return "\xe2\x86\x91";              /* ↑  High */
+    case 3: return "";                           /*    Normal */
+    case 4: return "\xe2\x86\x93";              /* ↓  Low */
+    case 5: return "\xe2\x86\x93\xe2\x86\x93"; /* ↓↓ Lowest */
+    default: return "";
+  }
+}
+
+/* Label number from flags (0=none, 1-7) */
+static int label_from_flags(unsigned long flags) {
+  int hue = 0;
+  if (flags & FLAG_HUE1) hue |= 1;
+  if (flags & FLAG_HUE2) hue |= 2;
+  if (flags & FLAG_HUE3) hue |= 4;
+  if (flags & FLAG_HUE4) hue |= 8;
+  return hue;
+}
+
 static void populate_mbox_list(GtkListStore *store, TOCType *toc) {
   gtk_list_store_clear(store);
+  bool isOut = (toc->which == OUT);
   for (int i = 0; i < toc->count; i++) {
     MSumPtr sum = &toc->sums[i];
     /* Format date */
@@ -620,20 +693,39 @@ static void populate_mbox_list(GtkListStore *store, TOCType *toc) {
     else
       snprintf(sizebuf, sizeof(sizebuf), "%ld", sum->length);
 
-    const char *status = (sum->state == UNREAD) ? "N" :
-                         (sum->state == REPLIED) ? "R" :
-                         (sum->state == SENT) ? "S" : "";
+    /* Attachment indicator */
+    const char *attach = (sum->flags & FLAG_HAS_ATT) ? "\xf0\x9f\x93\x8e" : "";  /* 📎 */
+
+    /* Label */
+    int label = label_from_flags(sum->flags);
+    char labelbuf[8] = "";
+    if (label > 0) snprintf(labelbuf, sizeof(labelbuf), "%d", label);
+
+    /* Junk score */
+    char junkbuf[8] = "";
+    if (sum->spamScore > 0)
+      snprintf(junkbuf, sizeof(junkbuf), "%ld", (long)sum->spamScore);
+
+    /* Ensure UTF-8 for display strings */
+    gchar *safe_who = ensure_utf8(sum->from);
+    gchar *safe_subj = ensure_utf8(sum->subj);
 
     GtkTreeIter iter;
     gtk_list_store_append(store, &iter);
     gtk_list_store_set(store, &iter,
-                       0, status,
-                       1, sum->from,
-                       2, sum->subj,
-                       3, datebuf,
-                       4, sizebuf,
-                       5, i, /* hidden index */
+                       COL_STATUS,   state_str(sum->state),
+                       COL_PRIORITY, priority_str(sum->priority),
+                       COL_ATTACH,   attach,
+                       COL_LABEL,    labelbuf,
+                       COL_WHO,      safe_who,
+                       COL_DATE,     datebuf,
+                       COL_SIZE,     sizebuf,
+                       COL_JUNK,     junkbuf,
+                       COL_SUBJECT,  safe_subj,
+                       COL_INDEX,    i,
                        -1);
+    g_free(safe_who);
+    g_free(safe_subj);
   }
 }
 
@@ -671,24 +763,42 @@ void InitMailboxWin(MyWindowPtr win, TOCType * toc, bool showIt) {
   gtk_paned_set_position(GTK_PANED(vpaned), 250);
 
   /* --- Message list (GtkTreeView) --- */
-  /* Columns: 0=Status 1=From 2=Subject 3=Date 4=Size 5=Index(hidden) */
-  GtkListStore *store = gtk_list_store_new(6,
-      G_TYPE_STRING, G_TYPE_STRING, G_TYPE_STRING,
-      G_TYPE_STRING, G_TYPE_STRING, G_TYPE_INT);
+  /* Columns match original Eudora: Status, Priority, Attach, Label,
+     Who (From/To), Date, Size, Junk, Subject, Index(hidden) */
+  GtkListStore *store = gtk_list_store_new(NUM_MBOX_COLS,
+      G_TYPE_STRING, G_TYPE_STRING, G_TYPE_STRING, G_TYPE_STRING,
+      G_TYPE_STRING, G_TYPE_STRING, G_TYPE_STRING, G_TYPE_STRING,
+      G_TYPE_STRING, G_TYPE_INT);
   GtkWidget *tree = gtk_tree_view_new_with_model(GTK_TREE_MODEL(store));
   g_object_unref(store);
 
-  const char *col_titles[] = {"", "From", "Subject", "Date", "Size"};
-  int col_widths[] = {30, 150, -1, 120, 60};
-  for (int c = 0; c < 5; c++) {
+  bool isOut = (toc && toc->which == OUT);
+
+  /* Column definitions: title, model column, width (-1 = expand), visible */
+  struct { const char *title; int col; int width; bool visible; } cols[] = {
+    {"",         COL_STATUS,   28,  true},
+    {"!",        COL_PRIORITY, 28,  true},
+    {"\xf0\x9f\x93\x8e", COL_ATTACH, 28, true},  /* 📎 */
+    {"Label",    COL_LABEL,    40,  true},
+    {isOut ? "To" : "From", COL_WHO, 150, true},
+    {"Date",     COL_DATE,    130,  true},
+    {"Size",     COL_SIZE,     60,  true},
+    {"Junk",     COL_JUNK,     40,  false}, /* hidden by default */
+    {"Subject",  COL_SUBJECT,  -1,  true},
+  };
+  int ncols = sizeof(cols) / sizeof(cols[0]);
+  for (int c = 0; c < ncols; c++) {
     GtkCellRenderer *r = gtk_cell_renderer_text_new();
     GtkTreeViewColumn *col = gtk_tree_view_column_new_with_attributes(
-        col_titles[c], r, "text", c, NULL);
+        cols[c].title, r, "text", cols[c].col, NULL);
     gtk_tree_view_column_set_resizable(col, TRUE);
-    if (col_widths[c] > 0)
-      gtk_tree_view_column_set_fixed_width(col, col_widths[c]);
+    gtk_tree_view_column_set_reorderable(col, TRUE);
+    if (cols[c].width > 0)
+      gtk_tree_view_column_set_fixed_width(col, cols[c].width);
     else
       gtk_tree_view_column_set_expand(col, TRUE);
+    gtk_tree_view_column_set_visible(col, cols[c].visible);
+    gtk_tree_view_column_set_sort_column_id(col, cols[c].col);
     gtk_tree_view_append_column(GTK_TREE_VIEW(tree), col);
   }
   gtk_tree_view_set_headers_visible(GTK_TREE_VIEW(tree), TRUE);
@@ -717,11 +827,497 @@ void InitMailboxWin(MyWindowPtr win, TOCType * toc, bool showIt) {
   gtk_paned_set_resize_end_child(GTK_PANED(vpaned), TRUE);
 
   /* Connect selection change to preview */
+  MboxSelCtx *ctx = g_new0(MboxSelCtx, 1);
+  ctx->toc = toc;
+  ctx->preview = preview;
   GtkTreeSelection *sel = gtk_tree_view_get_selection(GTK_TREE_VIEW(tree));
-  g_signal_connect(sel, "changed", G_CALLBACK(on_mbox_msg_selected), toc);
+  g_signal_connect_data(sel, "changed", G_CALLBACK(on_mbox_msg_selected),
+                        ctx, (GClosureNotify)g_free, 0);
+
+  /* Double-click / Enter opens message */
+  g_signal_connect(tree, "row-activated", G_CALLBACK(on_mbox_row_activated), toc);
+
+  /* Right-click context menu */
+  attach_mbox_context_menu(tree, toc);
 
   /* Replace the empty scrolled-window content with our paned layout */
   gtk_window_set_child(GTK_WINDOW(winWP), vpaned);
+}
+
+/* Double-click / Enter on tree row → open message window */
+static void on_mbox_row_activated(GtkTreeView *tree_view, GtkTreePath *path,
+                                  GtkTreeViewColumn *column, gpointer data) {
+  (void)column;
+  TOCType *toc = (TOCType *)data;
+  if (!toc) return;
+
+  GtkTreeModel *model = gtk_tree_view_get_model(tree_view);
+  GtkTreeIter iter;
+  if (!gtk_tree_model_get_iter(model, &iter, path)) return;
+
+  int idx = -1;
+  gtk_tree_model_get(model, &iter, COL_INDEX, &idx, -1);
+  if (idx < 0 || idx >= toc->count) return;
+
+  MSumPtr sum = &toc->sums[idx];
+
+  /* Outgoing/draft messages open in compose window */
+  if (toc->which == OUT ||
+      sum->state == UNSENDABLE || sum->state == SENDABLE ||
+      sum->state == QUEUED || sum->state == UNSENT ||
+      sum->state == TIMED) {
+    MyWindowPtr win = OpenComp(toc, idx, NULL, NULL, true, false);
+    if (win && win->window)
+      gtk_window_present(GTK_WINDOW(win->window));
+    return;
+  }
+
+  /* Incoming messages: open read-only viewer window */
+  FILE *fp = fopen(toc->mailbox.spec.path, "rb");
+  if (!fp) fp = fopen(toc->path, "rb");
+  if (!fp) return;
+
+  if (fseek(fp, sum->offset, SEEK_SET) != 0) { fclose(fp); return; }
+  long len = sum->length;
+  if (len <= 0 || len > 10 * 1024 * 1024) { fclose(fp); return; }
+
+  char *raw = g_malloc(len + 1);
+  size_t nread = fread(raw, 1, len, fp);
+  fclose(fp);
+  raw[nread] = '\0';
+
+  /* Ensure UTF-8 */
+  if (!g_utf8_validate(raw, nread, NULL)) {
+    gchar *utf8 = ensure_utf8(raw);
+    g_free(raw);
+    raw = utf8;
+  }
+
+  GtkWidget *win = gtk_window_new();
+  gchar *safe_from = ensure_utf8(sum->from);
+  gchar *safe_subj = ensure_utf8(sum->subj);
+  gchar *title = g_strdup_printf("%s — %s", safe_from, safe_subj);
+  gtk_window_set_title(GTK_WINDOW(win), title);
+  g_free(title);
+  g_free(safe_from);
+  g_free(safe_subj);
+  gtk_window_set_default_size(GTK_WINDOW(win), 700, 550);
+
+  /* Simple message view: scrolled text view with the raw message */
+  GtkTextBuffer *buf = gtk_text_buffer_new(NULL);
+  gtk_text_buffer_set_text(buf, raw, -1);
+  GtkWidget *view = gtk_text_view_new_with_buffer(buf);
+  gtk_text_view_set_editable(GTK_TEXT_VIEW(view), FALSE);
+  gtk_text_view_set_wrap_mode(GTK_TEXT_VIEW(view), GTK_WRAP_WORD_CHAR);
+  gtk_text_view_set_left_margin(GTK_TEXT_VIEW(view), 12);
+  gtk_text_view_set_right_margin(GTK_TEXT_VIEW(view), 12);
+  g_object_unref(buf);
+  g_free(raw);
+
+  GtkWidget *scroll = gtk_scrolled_window_new();
+  gtk_scrolled_window_set_child(GTK_SCROLLED_WINDOW(scroll), view);
+  gtk_window_set_child(GTK_WINDOW(win), scroll);
+
+  /* Make transient to the toplevel */
+  GtkWidget *toplevel = gtk_widget_get_ancestor(GTK_WIDGET(tree_view),
+                                                 GTK_TYPE_WINDOW);
+  if (toplevel)
+    gtk_window_set_transient_for(GTK_WINDOW(win), GTK_WINDOW(toplevel));
+
+  gtk_window_present(GTK_WINDOW(win));
+}
+
+/**********************************************************************
+ * CreateMailboxPanel - build mailbox content as an embeddable widget.
+ * Same layout as InitMailboxWin but returns the vpaned instead of
+ * attaching to a window.  Used by main_eudora.c for notebook tabs.
+ **********************************************************************/
+/* ── Context menu helpers ── */
+
+/* Get selected message index from tree view, -1 if none */
+static int mbox_tree_selected_index(GtkTreeView *tree) {
+  GtkTreeSelection *sel = gtk_tree_view_get_selection(tree);
+  GtkTreeModel *model;
+  GtkTreeIter iter;
+  if (!gtk_tree_selection_get_selected(sel, &model, &iter)) return -1;
+  int idx = -1;
+  gtk_tree_model_get(model, &iter, COL_INDEX, &idx, -1);
+  return idx;
+}
+
+/* Read raw message from mailbox file */
+static gchar *mbox_read_raw(TOCType *toc, int idx) {
+  if (!toc || idx < 0 || idx >= toc->count) return NULL;
+  MSumPtr sum = &toc->sums[idx];
+  FILE *fp = fopen(toc->mailbox.spec.path, "rb");
+  if (!fp) fp = fopen(toc->path, "rb");
+  if (!fp) return NULL;
+  if (fseek(fp, sum->offset, SEEK_SET) != 0) { fclose(fp); return NULL; }
+  long len = sum->length;
+  if (len <= 0 || len > 10*1024*1024) { fclose(fp); return NULL; }
+  char *buf = g_malloc(len + 1);
+  size_t nread = fread(buf, 1, len, fp);
+  fclose(fp);
+  buf[nread] = '\0';
+  if (!g_utf8_validate(buf, nread, NULL)) {
+    gchar *utf8 = ensure_utf8(buf);
+    g_free(buf);
+    return utf8;
+  }
+  return buf;
+}
+
+/* Find body start in raw message (after blank line) */
+static const char *mbox_find_body(const char *raw) {
+  if (!raw) return "";
+  const char *p = raw;
+  while (*p) {
+    if (*p == '\n') {
+      if (p[1] == '\n') return p + 2;
+      if (p[1] == '\r' && p[2] == '\n') return p + 3;
+    }
+    if (*p == '\r' && p[1] == '\n' && p[2] == '\r' && p[3] == '\n')
+      return p + 4;
+    p++;
+  }
+  return p;
+}
+
+/* Quote text for reply */
+static gchar *mbox_quote_text(const char *text) {
+  if (!text || !*text) return g_strdup("");
+  GString *q = g_string_new(NULL);
+  const char *p = text;
+  while (*p) {
+    g_string_append(q, "> ");
+    const char *eol = strchr(p, '\n');
+    if (eol) {
+      g_string_append_len(q, p, eol - p + 1);
+      p = eol + 1;
+    } else {
+      g_string_append(q, p);
+      g_string_append_c(q, '\n');
+      break;
+    }
+  }
+  return g_string_free(q, FALSE);
+}
+
+/* Context menu action callbacks — user_data is the GtkTreeView */
+static void on_ctx_reply(GSimpleAction *a, GVariant *p, gpointer ud) {
+  (void)a; (void)p;
+  GtkTreeView *tree = GTK_TREE_VIEW(ud);
+  TOCType *toc = g_object_get_data(G_OBJECT(tree), "toc");
+  int idx = mbox_tree_selected_index(tree);
+  if (idx < 0 || !toc) return;
+
+  MSumPtr sum = &toc->sums[idx];
+  gchar *raw = mbox_read_raw(toc, idx);
+  const char *body = mbox_find_body(raw);
+
+  MyWindowPtr win = DoComposeNew(0);
+  if (!win || !win->window) { g_free(raw); return; }
+
+  comp_set_field(win, "comp-to", sum->from);
+  const char *subj = sum->subj;
+  gchar *re_subj = (subj && g_ascii_strncasecmp(subj, "Re:", 3) == 0)
+      ? g_strdup(subj) : g_strdup_printf("Re: %s", subj ? subj : "");
+  comp_set_field(win, "comp-subject", re_subj);
+
+  /* Insert body with quote bars (not "> " prefix) */
+  gchar *attribution = g_strdup_printf("On %s wrote:\n", sum->from);
+  comp_set_body_quoted(win, attribution, body);
+  g_free(attribution);
+
+  gtk_window_present(GTK_WINDOW(win->window));
+  g_free(raw); g_free(re_subj);
+}
+
+static void on_ctx_forward(GSimpleAction *a, GVariant *p, gpointer ud) {
+  (void)a; (void)p;
+  GtkTreeView *tree = GTK_TREE_VIEW(ud);
+  TOCType *toc = g_object_get_data(G_OBJECT(tree), "toc");
+  int idx = mbox_tree_selected_index(tree);
+  if (idx < 0 || !toc) return;
+
+  MSumPtr sum = &toc->sums[idx];
+  gchar *raw = mbox_read_raw(toc, idx);
+  const char *body = mbox_find_body(raw);
+
+  MyWindowPtr win = DoComposeNew(0);
+  if (!win || !win->window) { g_free(raw); return; }
+
+  const char *subj = sum->subj;
+  gchar *fwd_subj = g_strdup_printf("Fwd: %s", subj ? subj : "");
+  comp_set_field(win, "comp-subject", fwd_subj);
+
+  if (body && *body) {
+    gchar *fb = g_strdup_printf(
+        "---------- Forwarded message ----------\n"
+        "From: %s\nSubject: %s\n\n%s",
+        sum->from, subj ? subj : "", body);
+    comp_set_body(win, fb);
+    g_free(fb);
+  }
+  gtk_window_present(GTK_WINDOW(win->window));
+  g_free(raw); g_free(fwd_subj);
+}
+
+static void on_ctx_delete(GSimpleAction *a, GVariant *p, gpointer ud) {
+  (void)a; (void)p;
+  GtkTreeView *tree = GTK_TREE_VIEW(ud);
+  TOCType *toc = g_object_get_data(G_OBJECT(tree), "toc");
+  int idx = mbox_tree_selected_index(tree);
+  if (idx < 0 || !toc) return;
+
+  toc->sums[idx].opts |= OPT_DELETED;
+  toc->sums[idx].state = MESG_ERR;
+  TOCSetDirty(toc, true);
+
+  /* Remove from visible list */
+  GtkTreeModel *model = gtk_tree_view_get_model(tree);
+  GtkTreeIter iter;
+  if (gtk_tree_model_get_iter_first(model, &iter)) {
+    do {
+      int row_idx = -1;
+      gtk_tree_model_get(model, &iter, COL_INDEX, &row_idx, -1);
+      if (row_idx == idx) {
+        gtk_list_store_remove(GTK_LIST_STORE(model), &iter);
+        break;
+      }
+    } while (gtk_tree_model_iter_next(model, &iter));
+  }
+}
+
+static void on_ctx_mark_read(GSimpleAction *a, GVariant *p, gpointer ud) {
+  (void)a; (void)p;
+  GtkTreeView *tree = GTK_TREE_VIEW(ud);
+  TOCType *toc = g_object_get_data(G_OBJECT(tree), "toc");
+  int idx = mbox_tree_selected_index(tree);
+  if (idx < 0 || !toc) return;
+
+  toc->sums[idx].state = READ;
+  TOCSetDirty(toc, true);
+
+  /* Update status column in tree */
+  GtkTreeModel *model = gtk_tree_view_get_model(tree);
+  GtkTreeIter iter;
+  if (gtk_tree_model_get_iter_first(model, &iter)) {
+    do {
+      int row_idx = -1;
+      gtk_tree_model_get(model, &iter, COL_INDEX, &row_idx, -1);
+      if (row_idx == idx) {
+        gtk_list_store_set(GTK_LIST_STORE(model), &iter,
+                           COL_STATUS, state_str(READ), -1);
+        break;
+      }
+    } while (gtk_tree_model_iter_next(model, &iter));
+  }
+}
+
+static void on_ctx_mark_unread(GSimpleAction *a, GVariant *p, gpointer ud) {
+  (void)a; (void)p;
+  GtkTreeView *tree = GTK_TREE_VIEW(ud);
+  TOCType *toc = g_object_get_data(G_OBJECT(tree), "toc");
+  int idx = mbox_tree_selected_index(tree);
+  if (idx < 0 || !toc) return;
+
+  toc->sums[idx].state = UNREAD;
+  TOCSetDirty(toc, true);
+
+  GtkTreeModel *model = gtk_tree_view_get_model(tree);
+  GtkTreeIter iter;
+  if (gtk_tree_model_get_iter_first(model, &iter)) {
+    do {
+      int row_idx = -1;
+      gtk_tree_model_get(model, &iter, COL_INDEX, &row_idx, -1);
+      if (row_idx == idx) {
+        gtk_list_store_set(GTK_LIST_STORE(model), &iter,
+                           COL_STATUS, state_str(UNREAD), -1);
+        break;
+      }
+    } while (gtk_tree_model_iter_next(model, &iter));
+  }
+}
+
+static void on_ctx_junk(GSimpleAction *a, GVariant *p, gpointer ud) {
+  (void)a; (void)p;
+  GtkTreeView *tree = GTK_TREE_VIEW(ud);
+  TOCType *toc = g_object_get_data(G_OBJECT(tree), "toc");
+  int idx = mbox_tree_selected_index(tree);
+  if (idx < 0 || !toc) return;
+  toc->sums[idx].spamScore = 100;
+  TOCSetDirty(toc, true);
+}
+
+static void on_ctx_not_junk(GSimpleAction *a, GVariant *p, gpointer ud) {
+  (void)a; (void)p;
+  GtkTreeView *tree = GTK_TREE_VIEW(ud);
+  TOCType *toc = g_object_get_data(G_OBJECT(tree), "toc");
+  int idx = mbox_tree_selected_index(tree);
+  if (idx < 0 || !toc) return;
+  toc->sums[idx].spamScore = 0;
+  TOCSetDirty(toc, true);
+}
+
+/* Right-click handler — show context popover */
+static void on_mbox_right_click(GtkGestureClick *gesture, int n_press,
+                                double x, double y, gpointer ud) {
+  (void)gesture; (void)n_press;
+  GtkWidget *tree = GTK_WIDGET(ud);
+  GtkWidget *popover = g_object_get_data(G_OBJECT(tree), "ctx-popover");
+  if (!popover) return;
+  GdkRectangle rect = { (int)x, (int)y, 1, 1 };
+  gtk_popover_set_pointing_to(GTK_POPOVER(popover), &rect);
+  gtk_popover_popup(GTK_POPOVER(popover));
+}
+
+/* Build and attach a right-click context menu to the tree view */
+static void attach_mbox_context_menu(GtkWidget *tree, TOCType *toc) {
+  g_object_set_data(G_OBJECT(tree), "toc", toc);
+
+  /* Action group for context menu */
+  GSimpleActionGroup *grp = g_simple_action_group_new();
+  const GActionEntry entries[] = {
+    { "reply",       on_ctx_reply,       NULL, NULL, NULL },
+    { "forward",     on_ctx_forward,     NULL, NULL, NULL },
+    { "delete",      on_ctx_delete,      NULL, NULL, NULL },
+    { "mark-read",   on_ctx_mark_read,   NULL, NULL, NULL },
+    { "mark-unread", on_ctx_mark_unread, NULL, NULL, NULL },
+    { "junk",        on_ctx_junk,        NULL, NULL, NULL },
+    { "not-junk",    on_ctx_not_junk,    NULL, NULL, NULL },
+  };
+  g_action_map_add_action_entries(G_ACTION_MAP(grp), entries,
+                                  G_N_ELEMENTS(entries), tree);
+  gtk_widget_insert_action_group(tree, "msg", G_ACTION_GROUP(grp));
+
+  /* Menu model */
+  GMenu *menu = g_menu_new();
+  GMenu *section1 = g_menu_new();
+  g_menu_append(section1, "Reply",   "msg.reply");
+  g_menu_append(section1, "Forward", "msg.forward");
+  g_menu_append_section(menu, NULL, G_MENU_MODEL(section1));
+
+  GMenu *section2 = g_menu_new();
+  g_menu_append(section2, "Mark as Read",   "msg.mark-read");
+  g_menu_append(section2, "Mark as Unread", "msg.mark-unread");
+  g_menu_append_section(menu, NULL, G_MENU_MODEL(section2));
+
+  GMenu *section3 = g_menu_new();
+  g_menu_append(section3, "Junk",     "msg.junk");
+  g_menu_append(section3, "Not Junk", "msg.not-junk");
+  g_menu_append_section(menu, NULL, G_MENU_MODEL(section3));
+
+  GMenu *section4 = g_menu_new();
+  g_menu_append(section4, "Delete", "msg.delete");
+  g_menu_append_section(menu, NULL, G_MENU_MODEL(section4));
+
+  /* Popover menu */
+  GtkWidget *popover = gtk_popover_menu_new_from_model(G_MENU_MODEL(menu));
+  gtk_popover_set_has_arrow(GTK_POPOVER(popover), FALSE);
+  gtk_widget_set_parent(popover, tree);
+  g_object_set_data(G_OBJECT(tree), "ctx-popover", popover);
+
+  g_object_unref(section1);
+  g_object_unref(section2);
+  g_object_unref(section3);
+  g_object_unref(section4);
+  g_object_unref(menu);
+  g_object_unref(grp);
+
+  /* Right-click gesture */
+  GtkGesture *gesture = gtk_gesture_click_new();
+  gtk_gesture_single_set_button(GTK_GESTURE_SINGLE(gesture), 3);
+  g_signal_connect(gesture, "pressed",
+                   G_CALLBACK(on_mbox_right_click), tree);
+  gtk_widget_add_controller(tree, GTK_EVENT_CONTROLLER(gesture));
+}
+
+GtkWidget *CreateMailboxPanel(TOCType *toc) {
+  if (!toc) return gtk_label_new("No mailbox loaded.");
+
+  GtkWidget *vpaned = gtk_paned_new(GTK_ORIENTATION_VERTICAL);
+  gtk_paned_set_position(GTK_PANED(vpaned), 250);
+
+  /* --- Message list (GtkTreeView) --- */
+  GtkListStore *store = gtk_list_store_new(NUM_MBOX_COLS,
+      G_TYPE_STRING, G_TYPE_STRING, G_TYPE_STRING, G_TYPE_STRING,
+      G_TYPE_STRING, G_TYPE_STRING, G_TYPE_STRING, G_TYPE_STRING,
+      G_TYPE_STRING, G_TYPE_INT);
+  GtkWidget *tree = gtk_tree_view_new_with_model(GTK_TREE_MODEL(store));
+  g_object_unref(store);
+
+  bool isOut = (toc->which == OUT);
+
+  struct { const char *title; int col; int width; bool visible; } cols[] = {
+    {"",         COL_STATUS,   28,  true},
+    {"!",        COL_PRIORITY, 28,  true},
+    {"\xf0\x9f\x93\x8e", COL_ATTACH, 28, true},
+    {"Label",    COL_LABEL,    40,  true},
+    {isOut ? "To" : "From", COL_WHO, 150, true},
+    {"Date",     COL_DATE,    130,  true},
+    {"Size",     COL_SIZE,     60,  true},
+    {"Junk",     COL_JUNK,     40,  false},
+    {"Subject",  COL_SUBJECT,  -1,  true},
+  };
+  int ncols = sizeof(cols) / sizeof(cols[0]);
+  for (int c = 0; c < ncols; c++) {
+    GtkCellRenderer *r = gtk_cell_renderer_text_new();
+    GtkTreeViewColumn *col = gtk_tree_view_column_new_with_attributes(
+        cols[c].title, r, "text", cols[c].col, NULL);
+    gtk_tree_view_column_set_resizable(col, TRUE);
+    gtk_tree_view_column_set_reorderable(col, TRUE);
+    if (cols[c].width > 0)
+      gtk_tree_view_column_set_fixed_width(col, cols[c].width);
+    else
+      gtk_tree_view_column_set_expand(col, TRUE);
+    gtk_tree_view_column_set_visible(col, cols[c].visible);
+    gtk_tree_view_column_set_sort_column_id(col, cols[c].col);
+    gtk_tree_view_append_column(GTK_TREE_VIEW(tree), col);
+  }
+  gtk_tree_view_set_headers_visible(GTK_TREE_VIEW(tree), TRUE);
+
+  populate_mbox_list(store, toc);
+
+  GtkWidget *scroll1 = gtk_scrolled_window_new();
+  gtk_scrolled_window_set_child(GTK_SCROLLED_WINDOW(scroll1), tree);
+  gtk_widget_set_vexpand(scroll1, TRUE);
+  gtk_paned_set_start_child(GTK_PANED(vpaned), scroll1);
+  gtk_paned_set_resize_start_child(GTK_PANED(vpaned), TRUE);
+
+  /* --- Message preview --- */
+  GtkTextBuffer *prevBuf = gtk_text_buffer_new(NULL);
+  gtk_text_buffer_set_text(prevBuf, "Select a message to preview.", -1);
+  GtkWidget *preview = gtk_text_view_new_with_buffer(prevBuf);
+  gtk_text_view_set_editable(GTK_TEXT_VIEW(preview), FALSE);
+  gtk_text_view_set_wrap_mode(GTK_TEXT_VIEW(preview), GTK_WRAP_WORD_CHAR);
+
+  GtkWidget *scroll2 = gtk_scrolled_window_new();
+  gtk_scrolled_window_set_child(GTK_SCROLLED_WINDOW(scroll2), preview);
+  gtk_widget_set_vexpand(scroll2, TRUE);
+  gtk_paned_set_end_child(GTK_PANED(vpaned), scroll2);
+  gtk_paned_set_resize_end_child(GTK_PANED(vpaned), TRUE);
+
+  /* Store refs on vpaned for later use */
+  g_object_set_data(G_OBJECT(vpaned), "toc", toc);
+  g_object_set_data(G_OBJECT(vpaned), "tree-view", tree);
+  g_object_set_data(G_OBJECT(vpaned), "preview", preview);
+
+  /* Connect selection change to preview */
+  MboxSelCtx *ctx = g_new0(MboxSelCtx, 1);
+  ctx->toc = toc;
+  ctx->preview = preview;
+  GtkTreeSelection *sel = gtk_tree_view_get_selection(GTK_TREE_VIEW(tree));
+  g_signal_connect_data(sel, "changed", G_CALLBACK(on_mbox_msg_selected),
+                        ctx, (GClosureNotify)g_free, 0);
+
+  /* Double-click / Enter opens message */
+  g_signal_connect(tree, "row-activated", G_CALLBACK(on_mbox_row_activated), toc);
+
+  /* Right-click context menu */
+  attach_mbox_context_menu(tree, toc);
+
+  return vpaned;
 }
 
 /**********************************************************************

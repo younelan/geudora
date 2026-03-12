@@ -509,37 +509,25 @@ static void setup_cb(GtkSignalListItemFactory *self, GtkListItem *list_item,
   gtk_list_item_set_child(list_item, label);
 }
 
-static void bind_from_cb(GtkSignalListItemFactory *self, GtkListItem *list_item,
-                         gpointer user_data) {
-  GtkMessageListItem *msg =
-      GTK_MESSAGELIST_ITEM(gtk_list_item_get_item(list_item));
-  GtkWidget *label = gtk_list_item_get_child(list_item);
-  gtk_label_set_text(GTK_LABEL(label), gtk_messagelist_item_get_from(msg));
-}
+/* Bind callbacks for each column — one per column type */
+#define BIND_CB(name, getter)                                                  \
+  static void name(GtkSignalListItemFactory *self, GtkListItem *list_item,     \
+                   gpointer user_data) {                                       \
+    (void)self; (void)user_data;                                               \
+    GtkMessageListItem *msg =                                                  \
+        GTK_MESSAGELIST_ITEM(gtk_list_item_get_item(list_item));               \
+    GtkWidget *label = gtk_list_item_get_child(list_item);                     \
+    gtk_label_set_text(GTK_LABEL(label), getter(msg));                         \
+  }
 
-static void bind_subject_cb(GtkSignalListItemFactory *self,
-                            GtkListItem *list_item, gpointer user_data) {
-  GtkMessageListItem *msg =
-      GTK_MESSAGELIST_ITEM(gtk_list_item_get_item(list_item));
-  GtkWidget *label = gtk_list_item_get_child(list_item);
-  gtk_label_set_text(GTK_LABEL(label), gtk_messagelist_item_get_subject(msg));
-}
-
-static void bind_date_cb(GtkSignalListItemFactory *self, GtkListItem *list_item,
-                         gpointer user_data) {
-  GtkMessageListItem *msg =
-      GTK_MESSAGELIST_ITEM(gtk_list_item_get_item(list_item));
-  GtkWidget *label = gtk_list_item_get_child(list_item);
-  gtk_label_set_text(GTK_LABEL(label), gtk_messagelist_item_get_date(msg));
-}
-
-static void bind_size_cb(GtkSignalListItemFactory *self, GtkListItem *list_item,
-                         gpointer user_data) {
-  GtkMessageListItem *msg =
-      GTK_MESSAGELIST_ITEM(gtk_list_item_get_item(list_item));
-  GtkWidget *label = gtk_list_item_get_child(list_item);
-  gtk_label_set_text(GTK_LABEL(label), gtk_messagelist_item_get_size(msg));
-}
+BIND_CB(bind_status_cb,   gtk_messagelist_item_get_status)
+BIND_CB(bind_priority_cb, gtk_messagelist_item_get_priority)
+BIND_CB(bind_attach_cb,   gtk_messagelist_item_get_attach)
+BIND_CB(bind_label_cb,    gtk_messagelist_item_get_label)
+BIND_CB(bind_from_cb,     gtk_messagelist_item_get_from)
+BIND_CB(bind_subject_cb,  gtk_messagelist_item_get_subject)
+BIND_CB(bind_date_cb,     gtk_messagelist_item_get_date)
+BIND_CB(bind_size_cb,     gtk_messagelist_item_get_size)
 
 /* Double-click / Enter on mailbox list → open a tab on the right */
 static void on_mailbox_activated(GtkListBox *box, GtkListBoxRow *row,
@@ -725,7 +713,7 @@ static void action_select_all(GSimpleAction *action, GVariant *parameter,
 }
 
 /* Helper: set a GtkEntry field on a comp window by g_object_set_data key */
-static void comp_set_field(MyWindowPtr win, const char *key, const char *value) {
+void comp_set_field(MyWindowPtr win, const char *key, const char *value) {
   if (!win || !win->window || !value) return;
   GtkWidget *entry = g_object_get_data(G_OBJECT(win->window), key);
   if (entry)
@@ -733,11 +721,34 @@ static void comp_set_field(MyWindowPtr win, const char *key, const char *value) 
 }
 
 /* Helper: set the body text on a comp window's gEditCtrl */
-static void comp_set_body(MyWindowPtr win, const char *text) {
+void comp_set_body(MyWindowPtr win, const char *text) {
   if (!win || !win->pte || !text) return;
   geditDocument *doc = geditctrl_get_document(win->pte);
   if (doc)
     gedit_document_insert_text(doc, 0, text);
+}
+
+/* Insert text as quoted (with quote bars, not "> " prefix) */
+void comp_set_body_quoted(MyWindowPtr win, const char *attribution,
+                          const char *body) {
+  if (!win || !win->pte) return;
+  geditDocument *doc = geditctrl_get_document(win->pte);
+  if (!doc) return;
+
+  /* Insert attribution line first (unquoted) */
+  int attr_len = 0;
+  if (attribution && *attribution) {
+    gedit_document_insert_text(doc, 0, attribution);
+    attr_len = (int)strlen(attribution);
+  }
+
+  /* Insert body text after attribution */
+  if (body && *body) {
+    int body_len = (int)strlen(body);
+    gedit_document_insert_text(doc, attr_len, body);
+    /* Set quote level 1 on the body portion */
+    gedit_document_set_quote_level(doc, attr_len, body_len, 1);
+  }
 }
 
 static void action_reply(GSimpleAction *action, GVariant *parameter,
@@ -756,7 +767,6 @@ static void action_reply(GSimpleAction *action, GVariant *parameter,
   MessageSummary *sum = &toc->sums[idx];
   gchar *reply_addr = extract_reply_address(toc, idx);
   gchar *body = ({ gchar *_raw = read_message_raw(toc, idx); gchar *_b = _raw ? g_strdup(find_body(_raw)) : NULL; g_free(_raw); _b; });
-  gchar *quoted = quote_text(body);
 
   extern MyWindowPtr DoComposeNew(int type);
   MyWindowPtr win = DoComposeNew(0);
@@ -775,12 +785,11 @@ static void action_reply(GSimpleAction *action, GVariant *parameter,
     re_subj = g_strdup_printf("Re: %s", subj ? subj : "");
   comp_set_field(win, "comp-subject", re_subj);
 
-  /* Set quoted body */
-  if (quoted) {
-    gchar *reply_body = g_strdup_printf("On %s wrote:\n%s",
-                                         sum->from, quoted);
-    comp_set_body(win, reply_body);
-    g_free(reply_body);
+  /* Insert body with quote bars */
+  {
+    gchar *attribution = g_strdup_printf("On %s wrote:\n", sum->from);
+    comp_set_body_quoted(win, attribution, body);
+    g_free(attribution);
   }
 
   gtk_window_present(GTK_WINDOW(win->window));
@@ -788,7 +797,6 @@ static void action_reply(GSimpleAction *action, GVariant *parameter,
 cleanup:
   g_free(reply_addr);
   g_free(body);
-  g_free(quoted);
   g_free(re_subj);
 }
 
@@ -810,7 +818,6 @@ static void action_reply_all(GSimpleAction *action, GVariant *parameter,
   gchar *orig_to = NULL, *orig_cc = NULL;
   extract_all_recipients(toc, idx, &orig_to, &orig_cc);
   gchar *body = ({ gchar *_raw = read_message_raw(toc, idx); gchar *_b = _raw ? g_strdup(find_body(_raw)) : NULL; g_free(_raw); _b; });
-  gchar *quoted = quote_text(body);
 
   extern MyWindowPtr DoComposeNew(int type);
   MyWindowPtr win = DoComposeNew(0);
@@ -838,11 +845,11 @@ static void action_reply_all(GSimpleAction *action, GVariant *parameter,
     re_subj = g_strdup_printf("Re: %s", subj ? subj : "");
   comp_set_field(win, "comp-subject", re_subj);
 
-  if (quoted) {
-    gchar *reply_body = g_strdup_printf("On %s wrote:\n%s",
-                                         sum->from, quoted);
-    comp_set_body(win, reply_body);
-    g_free(reply_body);
+  /* Insert body with quote bars */
+  {
+    gchar *attribution = g_strdup_printf("On %s wrote:\n", sum->from);
+    comp_set_body_quoted(win, attribution, body);
+    g_free(attribution);
   }
 
   gtk_window_present(GTK_WINDOW(win->window));
@@ -852,7 +859,6 @@ cleanup:
   g_free(orig_to);
   g_free(orig_cc);
   g_free(body);
-  g_free(quoted);
   g_free(re_subj);
 }
 
@@ -1348,45 +1354,36 @@ static GtkWidget *create_message_list(void) {
   gtk_column_view_set_show_row_separators(GTK_COLUMN_VIEW(view), TRUE);
   gtk_column_view_set_show_column_separators(GTK_COLUMN_VIEW(view), TRUE);
 
-  /* From Column */
-  GtkListItemFactory *factory = gtk_signal_list_item_factory_new();
-  g_signal_connect(factory, "setup", G_CALLBACK(setup_cb), NULL);
-  g_signal_connect(factory, "bind", G_CALLBACK(bind_from_cb), NULL);
-  GtkColumnViewColumn *column = gtk_column_view_column_new("From", factory);
-  gtk_column_view_column_set_resizable(column, TRUE);
-  gtk_column_view_column_set_fixed_width(column, 150);
-  gtk_column_view_append_column(GTK_COLUMN_VIEW(view), column);
-  g_object_unref(column);
-
-  /* Subject Column */
-  factory = gtk_signal_list_item_factory_new();
-  g_signal_connect(factory, "setup", G_CALLBACK(setup_cb), NULL);
-  g_signal_connect(factory, "bind", G_CALLBACK(bind_subject_cb), NULL);
-  column = gtk_column_view_column_new("Subject", factory);
-  gtk_column_view_column_set_resizable(column, TRUE);
-  gtk_column_view_column_set_expand(column, TRUE);
-  gtk_column_view_append_column(GTK_COLUMN_VIEW(view), column);
-  g_object_unref(column);
-
-  /* Date Column */
-  factory = gtk_signal_list_item_factory_new();
-  g_signal_connect(factory, "setup", G_CALLBACK(setup_cb), NULL);
-  g_signal_connect(factory, "bind", G_CALLBACK(bind_date_cb), NULL);
-  column = gtk_column_view_column_new("Date", factory);
-  gtk_column_view_column_set_resizable(column, TRUE);
-  gtk_column_view_column_set_fixed_width(column, 120);
-  gtk_column_view_append_column(GTK_COLUMN_VIEW(view), column);
-  g_object_unref(column);
-
-  /* Size Column */
-  factory = gtk_signal_list_item_factory_new();
-  g_signal_connect(factory, "setup", G_CALLBACK(setup_cb), NULL);
-  g_signal_connect(factory, "bind", G_CALLBACK(bind_size_cb), NULL);
-  column = gtk_column_view_column_new("Size", factory);
-  gtk_column_view_column_set_resizable(column, TRUE);
-  gtk_column_view_column_set_fixed_width(column, 80);
-  gtk_column_view_append_column(GTK_COLUMN_VIEW(view), column);
-  g_object_unref(column);
+  /* Column definitions matching original Eudora mailbox list */
+  struct {
+    const char *title;
+    GCallback bind_cb;
+    int width;       /* fixed width, or -1 for expand */
+  } col_defs[] = {
+    {"",        G_CALLBACK(bind_status_cb),   28},
+    {"!",       G_CALLBACK(bind_priority_cb), 28},
+    {"\xf0\x9f\x93\x8e", G_CALLBACK(bind_attach_cb), 28}, /* 📎 */
+    {"Label",   G_CALLBACK(bind_label_cb),    40},
+    {"From",    G_CALLBACK(bind_from_cb),    150},
+    {"Date",    G_CALLBACK(bind_date_cb),    130},
+    {"Size",    G_CALLBACK(bind_size_cb),     70},
+    {"Subject", G_CALLBACK(bind_subject_cb),  -1},
+  };
+  int ncols = sizeof(col_defs) / sizeof(col_defs[0]);
+  for (int c = 0; c < ncols; c++) {
+    GtkListItemFactory *factory = gtk_signal_list_item_factory_new();
+    g_signal_connect(factory, "setup", G_CALLBACK(setup_cb), NULL);
+    g_signal_connect(factory, "bind", col_defs[c].bind_cb, NULL);
+    GtkColumnViewColumn *column =
+        gtk_column_view_column_new(col_defs[c].title, factory);
+    gtk_column_view_column_set_resizable(column, TRUE);
+    if (col_defs[c].width > 0)
+      gtk_column_view_column_set_fixed_width(column, col_defs[c].width);
+    else
+      gtk_column_view_column_set_expand(column, TRUE);
+    gtk_column_view_append_column(GTK_COLUMN_VIEW(view), column);
+    g_object_unref(column);
+  }
 
   return view;
 }
@@ -1715,94 +1712,10 @@ static void on_tab_selection_changed(GtkSelectionModel *model,
 /* Create a mailbox tab: VPaned with message list on top, preview on bottom.
  * Like original Eudora mailbox window. */
 static GtkWidget *create_mailbox_tab_content(TOCType *toc) {
-  GtkWidget *vpaned = gtk_paned_new(GTK_ORIENTATION_VERTICAL);
-  gtk_paned_set_position(GTK_PANED(vpaned), 250);
-
-  /* Message list (top) — same columns as create_message_list */
-  GListStore *store = g_list_store_new(GTK_TYPE_MESSAGELIST_ITEM);
-
-  if (toc) {
-    for (int i = 0; i < toc->count; i++) {
-      GtkMessageListItem *item = gtk_messagelist_item_new(&toc->sums[i], i);
-      g_list_store_append(store, item);
-      g_object_unref(item);
-    }
-  }
-
-  GtkSingleSelection *sel = gtk_single_selection_new(G_LIST_MODEL(store));
-  GtkWidget *col_view = gtk_column_view_new(GTK_SELECTION_MODEL(sel));
-  gtk_column_view_set_show_row_separators(GTK_COLUMN_VIEW(col_view), TRUE);
-  gtk_column_view_set_show_column_separators(GTK_COLUMN_VIEW(col_view), TRUE);
-
-  /* From column */
-  GtkListItemFactory *f = gtk_signal_list_item_factory_new();
-  g_signal_connect(f, "setup", G_CALLBACK(setup_cb), NULL);
-  g_signal_connect(f, "bind", G_CALLBACK(bind_from_cb), NULL);
-  GtkColumnViewColumn *c = gtk_column_view_column_new("From", f);
-  gtk_column_view_column_set_resizable(c, TRUE);
-  gtk_column_view_column_set_fixed_width(c, 150);
-  gtk_column_view_append_column(GTK_COLUMN_VIEW(col_view), c);
-  g_object_unref(c);
-
-  /* Subject column */
-  f = gtk_signal_list_item_factory_new();
-  g_signal_connect(f, "setup", G_CALLBACK(setup_cb), NULL);
-  g_signal_connect(f, "bind", G_CALLBACK(bind_subject_cb), NULL);
-  c = gtk_column_view_column_new("Subject", f);
-  gtk_column_view_column_set_resizable(c, TRUE);
-  gtk_column_view_column_set_expand(c, TRUE);
-  gtk_column_view_append_column(GTK_COLUMN_VIEW(col_view), c);
-  g_object_unref(c);
-
-  /* Date column */
-  f = gtk_signal_list_item_factory_new();
-  g_signal_connect(f, "setup", G_CALLBACK(setup_cb), NULL);
-  g_signal_connect(f, "bind", G_CALLBACK(bind_date_cb), NULL);
-  c = gtk_column_view_column_new("Date", f);
-  gtk_column_view_column_set_resizable(c, TRUE);
-  gtk_column_view_column_set_fixed_width(c, 120);
-  gtk_column_view_append_column(GTK_COLUMN_VIEW(col_view), c);
-  g_object_unref(c);
-
-  /* Size column */
-  f = gtk_signal_list_item_factory_new();
-  g_signal_connect(f, "setup", G_CALLBACK(setup_cb), NULL);
-  g_signal_connect(f, "bind", G_CALLBACK(bind_size_cb), NULL);
-  c = gtk_column_view_column_new("Size", f);
-  gtk_column_view_column_set_resizable(c, TRUE);
-  gtk_column_view_column_set_fixed_width(c, 80);
-  gtk_column_view_append_column(GTK_COLUMN_VIEW(col_view), c);
-  g_object_unref(c);
-
-  /* Double-click / Enter opens message in its own window */
-  g_signal_connect(col_view, "activate", G_CALLBACK(on_message_activated), NULL);
-
-  GtkWidget *list_scroll = gtk_scrolled_window_new();
-  gtk_scrolled_window_set_child(GTK_SCROLLED_WINDOW(list_scroll), col_view);
-  gtk_paned_set_start_child(GTK_PANED(vpaned), list_scroll);
-  gtk_paned_set_resize_start_child(GTK_PANED(vpaned), TRUE);
-
-  /* Preview (bottom) — a plain container whose child gets swapped */
-  GtkWidget *preview_box = gtk_box_new(GTK_ORIENTATION_VERTICAL, 0);
-  GtkWidget *placeholder = gtk_label_new("Select a message to preview.");
-  gtk_widget_set_opacity(placeholder, 0.5);
-  gtk_widget_set_vexpand(placeholder, TRUE);
-  gtk_widget_set_valign(placeholder, GTK_ALIGN_CENTER);
-  gtk_box_append(GTK_BOX(preview_box), placeholder);
-  gtk_paned_set_end_child(GTK_PANED(vpaned), preview_box);
-  gtk_paned_set_resize_end_child(GTK_PANED(vpaned), TRUE);
-
-  /* Store refs on the vpaned for later use */
-  g_object_set_data(G_OBJECT(vpaned), "toc", toc);
-  g_object_set_data(G_OBJECT(vpaned), "store", store);
-  g_object_set_data(G_OBJECT(vpaned), "selection", sel);
-  g_object_set_data(G_OBJECT(vpaned), "preview-box", preview_box);
-
-  /* Selection change → update preview pane */
-  g_signal_connect(sel, "selection-changed",
-                   G_CALLBACK(on_tab_selection_changed), vpaned);
-
-  return vpaned;
+  /* Use the real mailbox panel from mailbox.c with all original
+     Eudora columns (Status, Priority, Attach, Label, Who, Date,
+     Size, Junk, Subject) and preview pane */
+  return CreateMailboxPanel(toc);
 }
 
 /* Close button callback for mailbox tabs */

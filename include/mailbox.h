@@ -700,6 +700,7 @@ void SetWTitle(void *winWP, unsigned char *title);
 /* Mailbox open/close */
 int OpenMailbox(FSSpecPtr spec, bool showIt, TOCType * toc);
 void InitMailboxWin(MyWindowPtr win, TOCType * toc, bool showIt);
+GtkWidget *CreateMailboxPanel(TOCType *toc);
 void OpenMBWin(void);
 
 /* Mailbox function prototypes */

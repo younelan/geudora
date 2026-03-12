@@ -19,11 +19,16 @@ G_DECLARE_FINAL_TYPE(GtkMessageListItem, gtk_messagelist_item, GTK,
 GtkMessageListItem *gtk_messagelist_item_new(MessageSummary *summary,
                                              int index);
 
-/* Getters */
+/* Getters - matches original Eudora mailbox columns */
+const char *gtk_messagelist_item_get_status(GtkMessageListItem *msg);
+const char *gtk_messagelist_item_get_priority(GtkMessageListItem *msg);
+const char *gtk_messagelist_item_get_attach(GtkMessageListItem *msg);
+const char *gtk_messagelist_item_get_label(GtkMessageListItem *msg);
 const char *gtk_messagelist_item_get_from(GtkMessageListItem *msg);
 const char *gtk_messagelist_item_get_subject(GtkMessageListItem *msg);
 const char *gtk_messagelist_item_get_date(GtkMessageListItem *msg);
 const char *gtk_messagelist_item_get_size(GtkMessageListItem *msg);
+const char *gtk_messagelist_item_get_junk(GtkMessageListItem *msg);
 int gtk_messagelist_item_get_index(GtkMessageListItem *msg);
 
 G_END_DECLS

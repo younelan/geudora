@@ -301,12 +301,9 @@ static char *generate_css(const ThemePalette *p) {
     ".navigation-sidebar > row label { color: %s; }"
     ".navigation-sidebar > row image { color: %s; }"
 
-    /* Treeview (deprecated but still used) */
-    "treeview { background: %s; color: %s; }"
+    /* Treeview — let the theme handle selection styling */
     "treeview header button { background: %s; color: %s;"
-    "  border-bottom: 1px solid %s; }"
-    "treeview:selected, treeview row:selected { background: %s; color: %s; }"
-    "treeview.view { background: %s; color: %s; }",
+    "  border-bottom: 1px solid %s; }",
 
     /* list */ p->surface, p->text,
     /* row */ p->text, p->border,
@@ -320,10 +317,7 @@ static char *generate_css(const ThemePalette *p) {
     /* nav sel label/img */ p->accent, p->accent,
     /* nav row:hover */ p->surface2, p->text, p->text,
     /* nav row label/img */ p->text, p->text2,
-    /* tree */ p->surface, p->text,
-    /* tree header */ p->surface2, p->text2, p->border,
-    /* tree:sel */ p->accent, p->hero_text,
-    /* tree.view */ p->surface, p->text
+    /* tree header */ p->surface2, p->text2, p->border
   );
 
   /* ── Mailbox sidebar ── */
