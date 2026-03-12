@@ -684,6 +684,16 @@ MyWindowPtr OpenComp(TOCType * tocH, int sumNum, GtkWidget *winWP,
   gtk_widget_set_tooltip_text(attach_btn, "Attach file");
   gtk_box_append(GTK_BOX(toolbar), attach_btn);
 
+  /* Insert image — signal connected below after body_ctrl is created */
+  GtkWidget *img_b = gtk_button_new_from_icon_name("image-x-generic-symbolic");
+  gtk_widget_set_tooltip_text(img_b, "Insert Image");
+  gtk_box_append(GTK_BOX(toolbar), img_b);
+
+  /* Insert link — signal connected below after body_ctrl is created */
+  GtkWidget *link_b = gtk_button_new_from_icon_name("insert-link-symbolic");
+  gtk_widget_set_tooltip_text(link_b, "Insert Link");
+  gtk_box_append(GTK_BOX(toolbar), link_b);
+
   gtk_box_append(GTK_BOX(toolbar), gtk_separator_new(GTK_ORIENTATION_VERTICAL));
 
   /* ── Icon bar toggle buttons (matching original Eudora compose icon bar) ── */
@@ -873,20 +883,6 @@ MyWindowPtr OpenComp(TOCType * tocH, int sumNum, GtkWidget *winWP,
   g_signal_connect(hr_b, "clicked", G_CALLBACK(on_comp_insert_hr), body_ctrl);
   gtk_box_append(GTK_BOX(fmt_bar), hr_b);
 
-  /* Insert image */
-  GtkWidget *img_b = gtk_button_new_from_icon_name("image-x-generic-symbolic");
-  gtk_widget_set_tooltip_text(img_b, "Insert Image");
-  gtk_widget_set_can_focus(img_b, FALSE);
-  g_signal_connect(img_b, "clicked", G_CALLBACK(on_comp_insert_image), body_ctrl);
-  gtk_box_append(GTK_BOX(fmt_bar), img_b);
-
-  /* Insert link */
-  GtkWidget *link_b = gtk_button_new_from_icon_name("insert-link-symbolic");
-  gtk_widget_set_tooltip_text(link_b, "Insert Link");
-  gtk_widget_set_can_focus(link_b, FALSE);
-  g_signal_connect(link_b, "clicked", G_CALLBACK(on_comp_insert_link), body_ctrl);
-  gtk_box_append(GTK_BOX(fmt_bar), link_b);
-
   /* Store toolbar widget refs on body_ctrl for style tracking */
   g_object_set_data(G_OBJECT(body_ctrl), "fmt-bold", bold_tb);
   g_object_set_data(G_OBJECT(body_ctrl), "fmt-italic", italic_tb);
@@ -1040,6 +1036,10 @@ MyWindowPtr OpenComp(TOCType * tocH, int sumNum, GtkWidget *winWP,
   /* Wire the toolbar attach button to the same flow */
   g_signal_connect(attach_btn, "clicked",
                    G_CALLBACK(on_comp_attach_clicked), attach_flow);
+
+  /* Wire image and link buttons now that body_ctrl exists */
+  g_signal_connect(img_b, "clicked", G_CALLBACK(on_comp_insert_image), body_ctrl);
+  g_signal_connect(link_b, "clicked", G_CALLBACK(on_comp_insert_link), body_ctrl);
 
   g_object_set_data(G_OBJECT(winWP), "comp-to", header_entries[0]);
   g_object_set_data(G_OBJECT(winWP), "comp-from", header_entries[1]);

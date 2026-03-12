@@ -97,6 +97,7 @@ G_GNUC_INTERNAL void gedit_draw_cb(GtkDrawingArea *area, cairo_t *cr, int width,
 
   gint total = g_utf8_strlen(full, -1);
   gint cur = 0;
+  gboolean caret_drawn = FALSE;
   while (cur <= total) {
     const gchar *start_ptr = g_utf8_offset_to_pointer(full, cur);
     if (!start_ptr || *start_ptr == '\0')
@@ -365,6 +366,7 @@ G_GNUC_INTERNAL void gedit_draw_cb(GtkDrawingArea *area, cairo_t *cr, int width,
         cairo_set_line_width(cr, 1.0);
         cairo_move_to(cr, cx, cy);
         cairo_line_to(cr, cx, cy + crect.height / (double)PANGO_SCALE);
+        caret_drawn = TRUE;
         cairo_stroke(cr);
       }
     }
@@ -377,6 +379,16 @@ G_GNUC_INTERNAL void gedit_draw_cb(GtkDrawingArea *area, cairo_t *cr, int width,
     y += pxh > 0 ? pxh : 14;
     if (cur > total)
       break;
+  }
+
+  /* Draw caret if it wasn't drawn inside the loop (empty doc, or caret
+   * after trailing newline where the last paragraph is empty) */
+  if (s && s->caret_visible && !caret_drawn) {
+    cairo_set_source_rgb(cr, 0, 0, 0);
+    cairo_set_line_width(cr, 1.0);
+    cairo_move_to(cr, x_base, y);
+    cairo_line_to(cr, x_base, y + 14);
+    cairo_stroke(cr);
   }
 
   g_free(full);
