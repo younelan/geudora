@@ -710,3 +710,24 @@ void gedit_document_insert_markup(geditDocument *self, gint offset,
     gedit_document_insert_text(self, offset, plain->str);
   g_string_free(plain, TRUE);
 }
+
+/* Set a hyperlink on the current selection */
+void geditctrl_set_link(GtkWidget *ctrl, const gchar *url) {
+  if (!GTK_IS_SCROLLED_WINDOW(ctrl)) return;
+  GtkWidget *area = gtk_scrolled_window_get_child(GTK_SCROLLED_WINDOW(ctrl));
+  GEditCtrlState *s = area ? gedit_state_for_area(area) : NULL;
+  geditDocument *doc = s ? s->doc : NULL;
+  if (!s || !doc) return;
+  gint a = MIN(s->sel_start, s->sel_end);
+  gint b = MAX(s->sel_start, s->sel_end);
+  if (b > a)
+    gedit_document_set_link(doc, a, b - a, url);
+  gtk_widget_queue_draw(area);
+}
+
+/* Get link URL at a character offset */
+gchar *geditctrl_get_link_at(GtkWidget *ctrl, gint offset) {
+  geditDocument *doc = geditctrl_get_document(ctrl);
+  if (!doc) return NULL;
+  return gedit_document_get_link_at(doc, offset);
+}

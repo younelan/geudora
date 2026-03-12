@@ -589,6 +589,7 @@ static geditStyleRun *gedit_style_run_copy(const geditStyleRun *src) {
   if (r->is_graphic && r->graphic) {
     r->graphic = gedit_graphic_copy(r->graphic);
   }
+  r->link_url = g_strdup(src->link_url); /* NULL-safe */
   return r;
 }
 
@@ -596,6 +597,7 @@ static void gedit_style_run_free(geditStyleRun *run) {
   if (run->is_graphic && run->graphic) {
     gedit_graphic_free(run->graphic);
   }
+  g_free(run->link_url);
   g_free(run);
 }
 
@@ -878,6 +880,94 @@ GList *gedit_document_get_style_runs(geditDocument *self) {
   GList *res = g_list_copy(self->style_runs);
   g_mutex_unlock(&self->mutex);
   return res;
+}
+
+/* Set a hyperlink URL on a range of text. Pass NULL to remove link. */
+void gedit_document_set_link(geditDocument *self, gint offset, gint length,
+                             const gchar *url) {
+  g_return_if_fail(gedit_DOCUMENT(self));
+  if (length <= 0) return;
+
+  g_mutex_lock(&self->mutex);
+
+  gint range_end = offset + length;
+  GList *new_runs = NULL;
+
+  for (GList *l = self->style_runs; l; l = l->next) {
+    geditStyleRun *run = l->data;
+    gint rs = run->offset, re = rs + run->length;
+
+    if (re <= offset || rs >= range_end) {
+      new_runs = g_list_append(new_runs, gedit_style_run_copy(run));
+      continue;
+    }
+
+    /* Prefix before target range */
+    if (rs < offset) {
+      geditStyleRun *pre = gedit_style_run_copy(run);
+      pre->length = offset - rs;
+      new_runs = g_list_append(new_runs, pre);
+    }
+
+    /* Middle: set the link */
+    gint ms = MAX(rs, offset), me = MIN(re, range_end);
+    geditStyleRun *mid = gedit_style_run_copy(run);
+    mid->offset = ms;
+    mid->length = me - ms;
+    g_free(mid->link_url);
+    mid->link_url = g_strdup(url);
+    /* Auto-style links: blue + underline if setting, restore if removing */
+    if (url && *url) {
+      mid->underline = TRUE;
+      mid->color = (GdkRGBA){0.0, 0.0, 0.8, 1.0};
+    }
+    new_runs = g_list_append(new_runs, mid);
+
+    /* Suffix after target range */
+    if (re > range_end) {
+      geditStyleRun *suf = gedit_style_run_copy(run);
+      suf->offset = range_end;
+      suf->length = re - range_end;
+      new_runs = g_list_append(new_runs, suf);
+    }
+  }
+
+  /* If no existing runs covered this range, create one */
+  if (!self->style_runs) {
+    geditStyleRun *nr = g_new0(geditStyleRun, 1);
+    nr->offset = offset;
+    nr->length = length;
+    nr->link_url = g_strdup(url);
+    if (url && *url) {
+      nr->underline = TRUE;
+      nr->color = (GdkRGBA){0.0, 0.0, 0.8, 1.0};
+    }
+    new_runs = g_list_append(new_runs, nr);
+  }
+
+  g_list_free_full(self->style_runs, (GDestroyNotify)gedit_style_run_free);
+  self->style_runs = new_runs;
+
+  g_mutex_unlock(&self->mutex);
+  g_signal_emit(self, signals[DOCUMENT_CHANGED], 0);
+}
+
+/* Get link URL at a character offset. Returns newly-allocated string or NULL. */
+gchar *gedit_document_get_link_at(geditDocument *self, gint offset) {
+  g_return_val_if_fail(gedit_DOCUMENT(self), NULL);
+
+  g_mutex_lock(&self->mutex);
+  gchar *result = NULL;
+  for (GList *l = self->style_runs; l; l = l->next) {
+    geditStyleRun *run = l->data;
+    if (offset >= run->offset && offset < run->offset + run->length &&
+        run->link_url && run->link_url[0]) {
+      result = g_strdup(run->link_url);
+      break;
+    }
+  }
+  g_mutex_unlock(&self->mutex);
+  return result;
 }
 
 gchar *gedit_document_get_text(geditDocument *self) {

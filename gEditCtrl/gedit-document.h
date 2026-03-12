@@ -26,6 +26,7 @@ typedef struct {
   gint font_size;      /* points, 0 == default */
   gboolean is_graphic; /* TRUE if this style run is a graphic */
   geditGraphic *graphic;
+  gchar *link_url;     /* non-NULL if this run is a hyperlink */
 } geditStyleRun;
 
 typedef enum {
@@ -162,6 +163,11 @@ void gedit_document_get_para_attr(geditDocument *self, gint offset, gint length,
                                   geditParaAttr *out_attr);
 
 GList *gedit_document_get_style_runs(geditDocument *self);
+
+/* Hyperlink APIs */
+void gedit_document_set_link(geditDocument *self, gint offset, gint length,
+                             const gchar *url);
+gchar *gedit_document_get_link_at(geditDocument *self, gint offset);
 
 /* Undo/redo */
 void gedit_document_undo(geditDocument *self);
