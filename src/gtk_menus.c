@@ -194,7 +194,6 @@ GtkWidget *create_menu_bar(GtkWidget *window) {
   /* Message menu */
   GMenu *message_menu = g_menu_new();
   g_menu_append(message_menu, "_New Message", "app.new-message");
-  g_menu_append(message_menu, "_Old Compose", "app.old-compose");
   g_menu_append(message_menu, "_Reply", "app.reply");
   g_menu_append(message_menu, "Reply _All", "app.reply-all");
   g_menu_append(message_menu, "_Forward", "app.forward");

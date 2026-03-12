@@ -657,11 +657,11 @@ int PETESetStyle(PETEInst pi, PETEHandle pte, long start, long stop, PETEStyleIn
 	}
 
 	gedit_document_add_style_run(doc, start, len,
-		(validBits & peBoldValid) && (style->textStyle.tsFace & 1),
-		(validBits & peItalicValid) && (style->textStyle.tsFace & 2),
-		(validBits & peUnderlineValid) && (style->textStyle.tsFace & 4),
+		(validBits & peBoldValid) ? ((style->textStyle.tsFace & 1) ? 1 : 0) : -1,
+		(validBits & peItalicValid) ? ((style->textStyle.tsFace & 2) ? 1 : 0) : -1,
+		(validBits & peUnderlineValid) ? ((style->textStyle.tsFace & 4) ? 1 : 0) : -1,
 		(validBits & peColorValid) ? &color : NULL,
-		(validBits & peSizeValid) ? style->textStyle.tsSize : 0);
+		(validBits & peSizeValid) ? style->textStyle.tsSize : -1);
 
 	return 0;
 }

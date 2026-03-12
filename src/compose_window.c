@@ -300,6 +300,10 @@ static void on_send_clicked(GtkWidget *widget, gpointer user_data)
     g_string_append_printf(msg, "Subject: %s\n", subject);
     g_string_append_printf(msg, "Date: %s\n", date_str);
     g_string_append_printf(msg, "X-Priority: %d\n", data->priority);
+    if (data->return_receipt)
+        g_string_append(msg, "Disposition-Notification-To: \n");
+    if (data->qp_encoding)
+        g_string_append(msg, "Content-Transfer-Encoding: quoted-printable\n");
     g_string_append_printf(msg, "Status: Q\n");
     g_string_append_printf(msg, "X-Mailer: gEudora\n");
     g_string_append_printf(msg, "\n%s", body);
@@ -351,21 +355,18 @@ static void on_save_clicked(GtkWidget *widget, gpointer user_data)
 /* Format toolbar toggle */
 static void on_format_toolbar_toggle(GtkWidget *widget, gpointer user_data)
 {
-    (void)widget;
     ComposeWindowData *data = (ComposeWindowData *)user_data;
     if (!data || !data->format_toolbar) return;
-    data->format_toolbar_visible = !data->format_toolbar_visible;
+    data->format_toolbar_visible = gtk_toggle_button_get_active(GTK_TOGGLE_BUTTON(widget));
     gtk_widget_set_visible(data->format_toolbar, data->format_toolbar_visible);
 }
 
 /* QP encoding toggle */
 static void on_qp_toggle(GtkWidget *widget, gpointer user_data)
 {
-    (void)widget;
     ComposeWindowData *data = (ComposeWindowData *)user_data;
     if (!data) return;
-    data->qp_encoding = !data->qp_encoding;
-    g_print("Quoted-Printable encoding: %s\n", data->qp_encoding ? "ON" : "OFF");
+    data->qp_encoding = gtk_toggle_button_get_active(GTK_TOGGLE_BUTTON(widget));
     data->dirty = TRUE;
 }
 
@@ -385,10 +386,9 @@ static void on_attach_type_changed(GtkDropDown *dropdown, GParamSpec *pspec, gpo
 /* Word wrap toggle */
 static void on_word_wrap_toggle(GtkWidget *widget, gpointer user_data)
 {
-    (void)widget;
     ComposeWindowData *data = (ComposeWindowData *)user_data;
     if (!data || !data->editor) return;
-    data->word_wrap = !data->word_wrap;
+    data->word_wrap = gtk_toggle_button_get_active(GTK_TOGGLE_BUTTON(widget));
     gtk_text_view_set_wrap_mode(GTK_TEXT_VIEW(data->editor),
                                 data->word_wrap ? GTK_WRAP_WORD : GTK_WRAP_NONE);
 }
@@ -396,21 +396,17 @@ static void on_word_wrap_toggle(GtkWidget *widget, gpointer user_data)
 /* Keep copy toggle */
 static void on_keep_copy_toggle(GtkWidget *widget, gpointer user_data)
 {
-    (void)widget;
     ComposeWindowData *data = (ComposeWindowData *)user_data;
     if (!data) return;
-    data->keep_copy = !data->keep_copy;
-    g_print("Keep copy: %s\n", data->keep_copy ? "ON" : "OFF");
+    data->keep_copy = gtk_toggle_button_get_active(GTK_TOGGLE_BUTTON(widget));
 }
 
 /* Receipt toggle */
 static void on_receipt_toggle(GtkWidget *widget, gpointer user_data)
 {
-    (void)widget;
     ComposeWindowData *data = (ComposeWindowData *)user_data;
     if (!data) return;
-    data->return_receipt = !data->return_receipt;
-    g_print("Return receipt: %s\n", data->return_receipt ? "ON" : "OFF");
+    data->return_receipt = gtk_toggle_button_get_active(GTK_TOGGLE_BUTTON(widget));
 }
 
 /* Priority dropdown changed */
@@ -919,13 +915,13 @@ GtkWidget* create_compose_window(GtkWindow *parent) {
     data->format_toolbar_toggle = gtk_toggle_button_new_with_label("Format");
     gtk_toggle_button_set_active(GTK_TOGGLE_BUTTON(data->format_toolbar_toggle), TRUE);
     gtk_widget_set_tooltip_text(data->format_toolbar_toggle, "Show/Hide Format Bar");
-    g_signal_connect(data->format_toolbar_toggle, "clicked", G_CALLBACK(on_format_toolbar_toggle), data);
+    g_signal_connect(data->format_toolbar_toggle, "toggled", G_CALLBACK(on_format_toolbar_toggle), data);
     gtk_box_append(GTK_BOX(compose_toolbar_box), data->format_toolbar_toggle);
 
     /* QP Encoding toggle (original icon bar button 1 — FLAG_CAN_ENC / QP_SICN) */
     data->qp_toggle = gtk_toggle_button_new_with_label("QP");
     gtk_widget_set_tooltip_text(data->qp_toggle, "Quoted-Printable Encoding");
-    g_signal_connect(data->qp_toggle, "clicked", G_CALLBACK(on_qp_toggle), data);
+    g_signal_connect(data->qp_toggle, "toggled", G_CALLBACK(on_qp_toggle), data);
     gtk_box_append(GTK_BOX(compose_toolbar_box), data->qp_toggle);
 
     /* Attachment type dropdown (original: MIME/BinHex/Uuencode popup) */
@@ -941,20 +937,20 @@ GtkWidget* create_compose_window(GtkWindow *parent) {
     data->word_wrap_toggle = gtk_toggle_button_new_with_label("Wrap");
     gtk_toggle_button_set_active(GTK_TOGGLE_BUTTON(data->word_wrap_toggle), TRUE);
     gtk_widget_set_tooltip_text(data->word_wrap_toggle, "Wrap on Send");
-    g_signal_connect(data->word_wrap_toggle, "clicked", G_CALLBACK(on_word_wrap_toggle), data);
+    g_signal_connect(data->word_wrap_toggle, "toggled", G_CALLBACK(on_word_wrap_toggle), data);
     gtk_box_append(GTK_BOX(compose_toolbar_box), data->word_wrap_toggle);
 
     /* Keep copy toggle (original icon bar button 4 — FLAG_KEEP_COPY / KEEPCOPY_SICN) */
     data->keep_copy_toggle = gtk_toggle_button_new_with_label("Keep Copy");
     gtk_toggle_button_set_active(GTK_TOGGLE_BUTTON(data->keep_copy_toggle), TRUE);
     gtk_widget_set_tooltip_text(data->keep_copy_toggle, "Keep Copy in Out Mailbox");
-    g_signal_connect(data->keep_copy_toggle, "clicked", G_CALLBACK(on_keep_copy_toggle), data);
+    g_signal_connect(data->keep_copy_toggle, "toggled", G_CALLBACK(on_keep_copy_toggle), data);
     gtk_box_append(GTK_BOX(compose_toolbar_box), data->keep_copy_toggle);
 
     /* Return receipt toggle (original: FLAG_RR) */
     data->receipt_toggle = gtk_toggle_button_new_with_label("Receipt");
     gtk_widget_set_tooltip_text(data->receipt_toggle, "Request Return Receipt");
-    g_signal_connect(data->receipt_toggle, "clicked", G_CALLBACK(on_receipt_toggle), data);
+    g_signal_connect(data->receipt_toggle, "toggled", G_CALLBACK(on_receipt_toggle), data);
     gtk_box_append(GTK_BOX(compose_toolbar_box), data->receipt_toggle);
 
     /* Separator */

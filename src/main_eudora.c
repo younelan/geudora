@@ -4,8 +4,9 @@
  */
 
 #include "../gEditCtrl/editor_control.h"
+#include "../gEditCtrl/gedit-document.h"
 #include "../gEditCtrl/geditctrl.h"
-#include "compose_window.h"
+#include "comp.h"
 #include "gtk_icons.h"
 #include "gtk_mailbox.h"
 #include "gtk_menus.h"
@@ -576,34 +577,16 @@ static void on_message_selection_changed(GtkSelectionModel *model,
 }
 
 /*
- * Open a compose window pre-populated with an existing outgoing/draft message.
- * Parses the raw message to fill To, Subject, Cc, Bcc, and body.
+ * Open a comp.c compose window for an existing outgoing/draft message.
+ * Uses OpenComp which parses headers and body from the stored message.
  */
-static void open_compose_window_with_message(GtkApplication *app,
-                                              const char *raw,
-                                              TOCType *toc, int sumNum) {
-  (void)toc; (void)sumNum;
-  GtkWindow *parent = app ? gtk_application_get_active_window(app)
-                          : GTK_WINDOW(app_state.window);
-
-  GtkWidget *comp = create_compose_window(parent);
-  if (!comp) return;
-
-  gchar *to = extract_header(raw, "To");
-  gchar *subj = extract_header(raw, "Subject");
-  gchar *cc = extract_header(raw, "Cc");
-  gchar *bcc = extract_header(raw, "Bcc");
-
-  if (to) { compose_window_set_to(comp, to); g_free(to); }
-  if (subj) { compose_window_set_subject(comp, subj); g_free(subj); }
-  if (cc) { compose_window_set_cc(comp, cc); g_free(cc); }
-  if (bcc) { compose_window_set_bcc(comp, bcc); g_free(bcc); }
-
-  const char *body = find_body(raw);
-  if (body && *body)
-    compose_window_set_text(comp, body);
-
-  gtk_window_present(GTK_WINDOW(comp));
+static void open_comp_window_for_message(TOCType *toc, int sumNum) {
+  bool isSent = (toc->sums[sumNum].state == SENT ||
+                 toc->sums[sumNum].state == BUSY_SENDING);
+  MyWindowPtr win = OpenComp(toc, sumNum, NULL, NULL, true, false);
+  if (win && win->window)
+    gtk_window_present(GTK_WINDOW(win->window));
+  (void)isSent;
 }
 
 /* Double-click / Enter on message list → open message in its own window.
@@ -623,17 +606,12 @@ static void on_message_activated(GtkColumnView *col_view, guint position,
 
   MessageSummary *sum = &toc->sums[position];
 
-  /* Outgoing/draft messages open in the compose window */
+  /* Outgoing/draft messages open in the comp.c compose window */
   if (toc->which == MBX_OUT || toc->which == MBX_OUT_TEMP ||
       sum->state == UNSENDABLE || sum->state == SENDABLE ||
       sum->state == QUEUED || sum->state == UNSENT ||
       sum->state == TIMED) {
-    gchar *raw = read_message_raw(toc, (int)position);
-    if (raw) {
-      open_compose_window_with_message(
-          GTK_APPLICATION(g_application_get_default()), raw, toc, position);
-      g_free(raw);
-    }
+    open_comp_window_for_message(toc, (int)position);
     return;
   }
 
@@ -670,47 +648,17 @@ static void action_quit(GSimpleAction *action, GVariant *parameter,
 
 static void action_new_message(GSimpleAction *action, GVariant *parameter,
                                gpointer user_data) {
-  /* Handle both action system calls and direct button clicks */
-  GtkApplication *app = NULL;
-
-  if (action != NULL) {
-    /* Called from action system */
-    app = GTK_APPLICATION(user_data);
-  } else {
-    /* Called from toolbar button - user_data is NULL, use app from app_state */
-    app = NULL;
-  }
-
-  GtkWindow *main_window = app ? gtk_application_get_active_window(app)
-                               : GTK_WINDOW(app_state.window);
-  if (!main_window) {
-    g_warning("No main window available");
-    return;
-  }
-
-  /* Create a new compose window */
-  GtkWidget *compose_window = create_compose_window(main_window);
-  gtk_window_present(GTK_WINDOW(compose_window));
-}
-
-static void action_old_compose(GSimpleAction *action, GVariant *parameter,
-                               gpointer user_data) {
   (void)action;
   (void)parameter;
   (void)user_data;
 
-  /* Open the original comp.c compose window via DoComposeNew */
   extern MyWindowPtr DoComposeNew(int type);
-  g_print("action_old_compose: calling DoComposeNew\n");
   MyWindowPtr win = DoComposeNew(0);
-  g_print("action_old_compose: DoComposeNew returned %p\n", (void*)win);
-  if (win && win->window) {
-    g_print("action_old_compose: presenting window %p\n", (void*)win->window);
+  if (win && win->window)
     gtk_window_present(GTK_WINDOW(win->window));
-  } else {
-    g_print("action_old_compose: no window returned\n");
-  }
 }
+
+/* action_old_compose removed — action_new_message now uses comp.c directly */
 
 static void action_open(GSimpleAction *action, GVariant *parameter,
                         gpointer user_data) {
@@ -776,6 +724,22 @@ static void action_select_all(GSimpleAction *action, GVariant *parameter,
   g_print("Select All\n");
 }
 
+/* Helper: set a GtkEntry field on a comp window by g_object_set_data key */
+static void comp_set_field(MyWindowPtr win, const char *key, const char *value) {
+  if (!win || !win->window || !value) return;
+  GtkWidget *entry = g_object_get_data(G_OBJECT(win->window), key);
+  if (entry)
+    gtk_editable_set_text(GTK_EDITABLE(entry), value);
+}
+
+/* Helper: set the body text on a comp window's gEditCtrl */
+static void comp_set_body(MyWindowPtr win, const char *text) {
+  if (!win || !win->pte || !text) return;
+  geditDocument *doc = geditctrl_get_document(win->pte);
+  if (doc)
+    gedit_document_insert_text(doc, 0, text);
+}
+
 static void action_reply(GSimpleAction *action, GVariant *parameter,
                          gpointer user_data) {
   (void)action;
@@ -794,11 +758,12 @@ static void action_reply(GSimpleAction *action, GVariant *parameter,
   gchar *body = ({ gchar *_raw = read_message_raw(toc, idx); gchar *_b = _raw ? g_strdup(find_body(_raw)) : NULL; g_free(_raw); _b; });
   gchar *quoted = quote_text(body);
 
-  GtkWindow *main_window = GTK_WINDOW(app_state.window);
-  GtkWidget *compose = create_compose_window(main_window);
+  extern MyWindowPtr DoComposeNew(int type);
+  MyWindowPtr win = DoComposeNew(0);
+  if (!win || !win->window) goto cleanup;
 
   if (reply_addr)
-    compose_window_set_to(compose, reply_addr);
+    comp_set_field(win, "comp-to", reply_addr);
 
   /* Build Re: subject */
   const char *subj = sum->subj;
@@ -808,18 +773,19 @@ static void action_reply(GSimpleAction *action, GVariant *parameter,
     re_subj = g_strdup(subj);
   else
     re_subj = g_strdup_printf("Re: %s", subj ? subj : "");
-  compose_window_set_subject(compose, re_subj);
+  comp_set_field(win, "comp-subject", re_subj);
 
   /* Set quoted body */
   if (quoted) {
     gchar *reply_body = g_strdup_printf("On %s wrote:\n%s",
                                          sum->from, quoted);
-    compose_window_set_text(compose, reply_body);
+    comp_set_body(win, reply_body);
     g_free(reply_body);
   }
 
-  gtk_window_present(GTK_WINDOW(compose));
+  gtk_window_present(GTK_WINDOW(win->window));
 
+cleanup:
   g_free(reply_addr);
   g_free(body);
   g_free(quoted);
@@ -846,21 +812,22 @@ static void action_reply_all(GSimpleAction *action, GVariant *parameter,
   gchar *body = ({ gchar *_raw = read_message_raw(toc, idx); gchar *_b = _raw ? g_strdup(find_body(_raw)) : NULL; g_free(_raw); _b; });
   gchar *quoted = quote_text(body);
 
-  GtkWindow *main_window = GTK_WINDOW(app_state.window);
-  GtkWidget *compose = create_compose_window(main_window);
+  extern MyWindowPtr DoComposeNew(int type);
+  MyWindowPtr win = DoComposeNew(0);
+  if (!win || !win->window) goto cleanup;
 
   if (reply_addr)
-    compose_window_set_to(compose, reply_addr);
+    comp_set_field(win, "comp-to", reply_addr);
 
   /* Combine original To + Cc into Cc field */
   if (orig_to && orig_cc) {
     gchar *combined = g_strdup_printf("%s, %s", orig_to, orig_cc);
-    compose_window_set_cc(compose, combined);
+    comp_set_field(win, "comp-cc", combined);
     g_free(combined);
   } else if (orig_to) {
-    compose_window_set_cc(compose, orig_to);
+    comp_set_field(win, "comp-cc", orig_to);
   } else if (orig_cc) {
-    compose_window_set_cc(compose, orig_cc);
+    comp_set_field(win, "comp-cc", orig_cc);
   }
 
   const char *subj = sum->subj;
@@ -869,17 +836,18 @@ static void action_reply_all(GSimpleAction *action, GVariant *parameter,
     re_subj = g_strdup(subj);
   else
     re_subj = g_strdup_printf("Re: %s", subj ? subj : "");
-  compose_window_set_subject(compose, re_subj);
+  comp_set_field(win, "comp-subject", re_subj);
 
   if (quoted) {
     gchar *reply_body = g_strdup_printf("On %s wrote:\n%s",
                                          sum->from, quoted);
-    compose_window_set_text(compose, reply_body);
+    comp_set_body(win, reply_body);
     g_free(reply_body);
   }
 
-  gtk_window_present(GTK_WINDOW(compose));
+  gtk_window_present(GTK_WINDOW(win->window));
 
+cleanup:
   g_free(reply_addr);
   g_free(orig_to);
   g_free(orig_cc);
@@ -904,13 +872,14 @@ static void action_forward(GSimpleAction *action, GVariant *parameter,
   MessageSummary *sum = &toc->sums[idx];
   gchar *body = ({ gchar *_raw = read_message_raw(toc, idx); gchar *_b = _raw ? g_strdup(find_body(_raw)) : NULL; g_free(_raw); _b; });
 
-  GtkWindow *main_window = GTK_WINDOW(app_state.window);
-  GtkWidget *compose = create_compose_window(main_window);
+  extern MyWindowPtr DoComposeNew(int type);
+  MyWindowPtr win = DoComposeNew(0);
+  if (!win || !win->window) { g_free(body); return; }
 
   /* Fwd: subject */
   const char *subj = sum->subj;
   gchar *fwd_subj = g_strdup_printf("Fwd: %s", subj ? subj : "");
-  compose_window_set_subject(compose, fwd_subj);
+  comp_set_field(win, "comp-subject", fwd_subj);
 
   /* Forwarded body */
   if (body) {
@@ -918,11 +887,11 @@ static void action_forward(GSimpleAction *action, GVariant *parameter,
         "---------- Forwarded message ----------\n"
         "From: %s\nSubject: %s\n\n%s",
         sum->from, subj ? subj : "", body);
-    compose_window_set_text(compose, fwd_body);
+    comp_set_body(win, fwd_body);
     g_free(fwd_body);
   }
 
-  gtk_window_present(GTK_WINDOW(compose));
+  gtk_window_present(GTK_WINDOW(win->window));
 
   g_free(body);
   g_free(fwd_subj);
@@ -2490,11 +2459,6 @@ static void activate(GtkApplication *app, gpointer user_data) {
 
   action = g_simple_action_new("new-message", NULL);
   g_signal_connect(action, "activate", G_CALLBACK(action_new_message), app);
-  g_action_map_add_action(G_ACTION_MAP(app), G_ACTION(action));
-  g_object_unref(action);
-
-  action = g_simple_action_new("old-compose", NULL);
-  g_signal_connect(action, "activate", G_CALLBACK(action_old_compose), NULL);
   g_action_map_add_action(G_ACTION_MAP(app), G_ACTION(action));
   g_object_unref(action);
 

@@ -7,6 +7,13 @@
 typedef struct { uint16_t id; const char *str; } StrEntry;
 
 static const StrEntry string_table[] = {
+  /* HeaderStrn (1600+n): compose window header labels */
+  {1601, "To:"},          /* TO_HEAD */
+  {1602, "From:"},        /* FROM_HEAD */
+  {1603, "Subject:"},     /* SUBJ_HEAD */
+  {1604, "Cc:"},          /* CC_HEAD */
+  {1605, "Bcc:"},         /* BCC_HEAD */
+  {1606, "Attachments:"}, /* ATTACH_HEAD */
   {4501, ".pdf"}, /* PDF_QUOTE_EXTENSION_UNQUOTE */
   {4502, "Error while filtering for %p:"}, /* ERR_PERS_FILTERING */
   {4503, "Filtering messages for %p."}, /* IMAP_FILTERING_MESSAGES */

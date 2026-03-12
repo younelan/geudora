@@ -24,6 +24,7 @@ OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE OF THIS SOFTWARE, EVEN IF
 ADVISED OF THE POSSIBILITY OF SUCH DAMAGE. */
 
 #include "../gEditCtrl/geditctrl.h"
+#include "../gEditCtrl/gedit-state.h"
 #include "Globals.h"
 #include "StringDefs.h"
 #include "mailbox.h"
@@ -64,6 +65,21 @@ extern short AWrite(short refNum, long *count, unsigned char *buffer);
 #endif
 #ifndef PREF_COMP_TOOLBAR
 #define PREF_COMP_TOOLBAR PREF_188
+#endif
+#ifndef FLAG_CAN_ENC
+#define FLAG_CAN_ENC   (1L<<9)
+#endif
+#ifndef FLAG_BX_TEXT
+#define FLAG_BX_TEXT   (1L<<2)
+#endif
+#ifndef FLAG_WRAP_OUT
+#define FLAG_WRAP_OUT  (1L<<3)
+#endif
+#ifndef FLAG_KEEP_COPY
+#define FLAG_KEEP_COPY (1L<<4)
+#endif
+#ifndef FLAG_RR
+#define FLAG_RR        (1L<<5)
 #endif
 #ifndef MessZoomSize
 #define MessZoomSize 0
@@ -106,20 +122,481 @@ bool CompSave(MessHandle messH);
 int CreateMessageBody(char *buffer, unsigned long *uidHash);
 int GatherCompAddresses(MyWindowPtr win, char *addrList);
 
+/* ── Style tracking: update toolbar to reflect caret style ── */
+static void on_comp_selection_changed(geditDocument *doc, gpointer ud) {
+  GtkWidget *body_ctrl = GTK_WIDGET(ud);
+
+  GtkWidget *bold_tb = g_object_get_data(G_OBJECT(body_ctrl), "fmt-bold");
+  GtkWidget *italic_tb = g_object_get_data(G_OBJECT(body_ctrl), "fmt-italic");
+  GtkWidget *underline_tb = g_object_get_data(G_OBJECT(body_ctrl), "fmt-underline");
+  GtkWidget *color_btn = g_object_get_data(G_OBJECT(body_ctrl), "fmt-color");
+  GtkWidget *font_dd = g_object_get_data(G_OBJECT(body_ctrl), "fmt-font");
+  GtkWidget *size_dd = g_object_get_data(G_OBJECT(body_ctrl), "fmt-size");
+
+  gint caret = geditctrl_get_caret_offset(body_ctrl);
+  geditStyleRun style = {0};
+  gedit_document_get_style_at(doc, caret > 0 ? caret - 1 : 0, &style);
+
+  /* Block signals to avoid feedback loops */
+  if (bold_tb) {
+    g_signal_handlers_block_matched(bold_tb, G_SIGNAL_MATCH_DATA, 0, 0, NULL, NULL, body_ctrl);
+    gtk_toggle_button_set_active(GTK_TOGGLE_BUTTON(bold_tb), style.bold);
+    g_signal_handlers_unblock_matched(bold_tb, G_SIGNAL_MATCH_DATA, 0, 0, NULL, NULL, body_ctrl);
+  }
+  if (italic_tb) {
+    g_signal_handlers_block_matched(italic_tb, G_SIGNAL_MATCH_DATA, 0, 0, NULL, NULL, body_ctrl);
+    gtk_toggle_button_set_active(GTK_TOGGLE_BUTTON(italic_tb), style.italic);
+    g_signal_handlers_unblock_matched(italic_tb, G_SIGNAL_MATCH_DATA, 0, 0, NULL, NULL, body_ctrl);
+  }
+  if (underline_tb) {
+    g_signal_handlers_block_matched(underline_tb, G_SIGNAL_MATCH_DATA, 0, 0, NULL, NULL, body_ctrl);
+    gtk_toggle_button_set_active(GTK_TOGGLE_BUTTON(underline_tb), style.underline);
+    g_signal_handlers_unblock_matched(underline_tb, G_SIGNAL_MATCH_DATA, 0, 0, NULL, NULL, body_ctrl);
+  }
+  if (color_btn) {
+    gtk_color_dialog_button_set_rgba(GTK_COLOR_DIALOG_BUTTON(color_btn), &style.color);
+  }
+  if (size_dd) {
+    static const gint sizes[] = {8, 10, 12, 14, 16, 18, 20, 24, 28, 36};
+    gint sz = style.font_size > 0 ? style.font_size : 12;
+    guint best = 2; /* default to 12pt */
+    for (guint i = 0; i < G_N_ELEMENTS(sizes); i++) {
+      if (sizes[i] == sz) { best = i; break; }
+    }
+    g_signal_handlers_block_matched(size_dd, G_SIGNAL_MATCH_DATA, 0, 0, NULL, NULL, body_ctrl);
+    gtk_drop_down_set_selected(GTK_DROP_DOWN(size_dd), best);
+    g_signal_handlers_unblock_matched(size_dd, G_SIGNAL_MATCH_DATA, 0, 0, NULL, NULL, body_ctrl);
+  }
+  if (font_dd) {
+    static const char *families[] = {"Sans", "Serif", "Monospace",
+                                     "Helvetica", "Times", "Courier"};
+    guint best = 0;
+    if (style.font_family) {
+      for (guint i = 0; i < G_N_ELEMENTS(families); i++) {
+        if (g_ascii_strcasecmp(style.font_family, families[i]) == 0) {
+          best = i; break;
+        }
+      }
+    }
+    g_signal_handlers_block_matched(font_dd, G_SIGNAL_MATCH_DATA, 0, 0, NULL, NULL, body_ctrl);
+    gtk_drop_down_set_selected(GTK_DROP_DOWN(font_dd), best);
+    g_signal_handlers_unblock_matched(font_dd, G_SIGNAL_MATCH_DATA, 0, 0, NULL, NULL, body_ctrl);
+  }
+}
+
+/* ── Formatting toolbar callbacks ── */
+static void on_comp_bold(GtkButton *btn, gpointer ud) {
+  (void)btn;
+  geditctrl_toggle_style((GtkWidget *)ud, TRUE, FALSE, FALSE);
+}
+static void on_comp_italic(GtkButton *btn, gpointer ud) {
+  (void)btn;
+  geditctrl_toggle_style((GtkWidget *)ud, FALSE, TRUE, FALSE);
+}
+static void on_comp_underline(GtkButton *btn, gpointer ud) {
+  (void)btn;
+  geditctrl_toggle_style((GtkWidget *)ud, FALSE, FALSE, TRUE);
+}
+static void on_comp_clear_style(GtkButton *btn, gpointer ud) {
+  (void)btn;
+  geditctrl_clear_style((GtkWidget *)ud);
+}
+static void on_comp_zoom_in(GtkButton *btn, gpointer ud) {
+  (void)btn;
+  geditctrl_change_font_size((GtkWidget *)ud, 2);
+}
+static void on_comp_zoom_out(GtkButton *btn, gpointer ud) {
+  (void)btn;
+  geditctrl_change_font_size((GtkWidget *)ud, -2);
+}
+static void on_comp_align_left(GtkButton *btn, gpointer ud) {
+  (void)btn;
+  geditctrl_set_alignment((GtkWidget *)ud, gedit_ALIGN_LEFT);
+}
+static void on_comp_align_center(GtkButton *btn, gpointer ud) {
+  (void)btn;
+  geditctrl_set_alignment((GtkWidget *)ud, gedit_ALIGN_CENTER);
+}
+static void on_comp_align_right(GtkButton *btn, gpointer ud) {
+  (void)btn;
+  geditctrl_set_alignment((GtkWidget *)ud, gedit_ALIGN_RIGHT);
+}
+static void on_comp_indent(GtkButton *btn, gpointer ud) {
+  (void)btn;
+  geditctrl_indent((GtkWidget *)ud, 20);
+}
+static void on_comp_outdent(GtkButton *btn, gpointer ud) {
+  (void)btn;
+  geditctrl_indent((GtkWidget *)ud, -20);
+}
+static void on_comp_bullet(GtkButton *btn, gpointer ud) {
+  (void)btn;
+  geditctrl_toggle_bullet((GtkWidget *)ud);
+}
+static void on_comp_insert_hr(GtkButton *btn, gpointer ud) {
+  (void)btn;
+  geditctrl_insert_hr((GtkWidget *)ud);
+}
+static void on_comp_quote_inc(GtkButton *btn, gpointer ud) {
+  (void)btn;
+  geditctrl_change_quote_level((GtkWidget *)ud, 1);
+}
+static void on_comp_quote_dec(GtkButton *btn, gpointer ud) {
+  (void)btn;
+  geditctrl_change_quote_level((GtkWidget *)ud, -1);
+}
+static void on_comp_color_changed(GtkColorDialogButton *btn, GParamSpec *pspec,
+                                  gpointer ud) {
+  (void)pspec;
+  const GdkRGBA *color = gtk_color_dialog_button_get_rgba(btn);
+  if (color)
+    geditctrl_set_color((GtkWidget *)ud, color);
+}
+static void on_comp_font_size_changed(GtkDropDown *dd, GParamSpec *pspec,
+                                      gpointer ud) {
+  (void)pspec;
+  static const gint sizes[] = {8, 10, 12, 14, 16, 18, 20, 24, 28, 36};
+  guint sel = gtk_drop_down_get_selected(dd);
+  if (sel < G_N_ELEMENTS(sizes))
+    geditctrl_set_font_size((GtkWidget *)ud, sizes[sel]);
+}
+static void on_comp_font_family_changed(GtkDropDown *dd, GParamSpec *pspec,
+                                        gpointer ud) {
+  (void)pspec;
+  static const char *families[] = {"Sans", "Serif", "Monospace",
+                                   "Helvetica", "Times", "Courier"};
+  guint sel = gtk_drop_down_get_selected(dd);
+  if (sel < G_N_ELEMENTS(families))
+    geditctrl_set_font_family((GtkWidget *)ud, families[sel]);
+}
+/* Insert image via file dialog */
+static void on_comp_image_selected(GObject *src, GAsyncResult *res, gpointer ud) {
+  GtkFileDialog *dlg = GTK_FILE_DIALOG(src);
+  GError *err = NULL;
+  GFile *file = gtk_file_dialog_open_finish(dlg, res, &err);
+  if (file) {
+    char *path = g_file_get_path(file);
+    if (path) {
+      GdkPixbuf *pixbuf = gdk_pixbuf_new_from_file(path, NULL);
+      if (pixbuf) {
+        int w = gdk_pixbuf_get_width(pixbuf);
+        int h = gdk_pixbuf_get_height(pixbuf);
+        /* Scale down if too large */
+        if (w > 640) { h = h * 640 / w; w = 640; }
+        geditctrl_insert_image((GtkWidget *)ud, pixbuf, w, h);
+        g_object_unref(pixbuf);
+      }
+      g_free(path);
+    }
+    g_object_unref(file);
+  }
+  if (err) g_error_free(err);
+}
+static void on_comp_insert_image(GtkButton *btn, gpointer ud) {
+  (void)btn;
+  GtkWidget *ctrl = (GtkWidget *)ud;
+  GtkWidget *toplevel = GTK_WIDGET(gtk_widget_get_root(ctrl));
+  GtkFileDialog *dlg = gtk_file_dialog_new();
+  gtk_file_dialog_set_title(dlg, "Insert Image");
+  GtkFileFilter *filter = gtk_file_filter_new();
+  gtk_file_filter_set_name(filter, "Images");
+  gtk_file_filter_add_pattern(filter, "*.png");
+  gtk_file_filter_add_pattern(filter, "*.jpg");
+  gtk_file_filter_add_pattern(filter, "*.jpeg");
+  gtk_file_filter_add_pattern(filter, "*.gif");
+  gtk_file_filter_add_pattern(filter, "*.bmp");
+  GListStore *filters = g_list_store_new(GTK_TYPE_FILE_FILTER);
+  g_list_store_append(filters, filter);
+  gtk_file_dialog_set_filters(dlg, G_LIST_MODEL(filters));
+  gtk_file_dialog_open(dlg, GTK_WINDOW(toplevel), NULL,
+                       on_comp_image_selected, ctrl);
+  g_object_unref(filter);
+  g_object_unref(filters);
+  g_object_unref(dlg);
+}
+
+/* Insert/edit link via a small dialog */
+static void on_comp_link_ok(GtkWidget *btn, gpointer ud) {
+  (void)btn;
+  GtkWidget *dlg = GTK_WIDGET(ud);
+  GtkWidget *url_entry = g_object_get_data(G_OBJECT(dlg), "url-entry");
+  GtkWidget *text_entry = g_object_get_data(G_OBJECT(dlg), "text-entry");
+  GtkWidget *ctrl = g_object_get_data(G_OBJECT(dlg), "body-ctrl");
+  const gchar *url = gtk_editable_get_text(GTK_EDITABLE(url_entry));
+  const gchar *text = gtk_editable_get_text(GTK_EDITABLE(text_entry));
+
+  if (!url || !url[0]) {
+    gtk_window_destroy(GTK_WINDOW(dlg));
+    return;
+  }
+
+  /* If text is empty, use the URL as display text */
+  if (!text || !text[0])
+    text = url;
+
+  geditctrl_insert_link(ctrl, url, text);
+  gtk_window_destroy(GTK_WINDOW(dlg));
+}
+static void on_comp_insert_link(GtkButton *btn, gpointer ud) {
+  (void)btn;
+  GtkWidget *ctrl = (GtkWidget *)ud;
+  GtkWidget *toplevel = GTK_WIDGET(gtk_widget_get_root(ctrl));
+
+  /* Check if caret is already on a link */
+  gint caret = geditctrl_get_caret_offset(ctrl);
+  gchar *existing_url = geditctrl_get_link_at(ctrl, caret);
+
+  /* Get selected text if any */
+  gchar *sel_text = NULL;
+  geditDocument *doc = geditctrl_get_document(ctrl);
+  if (doc) {
+    GtkWidget *area = gtk_scrolled_window_get_child(GTK_SCROLLED_WINDOW(ctrl));
+    GEditCtrlState *s = area ? gedit_state_for_area(area) : NULL;
+    if (s && s->sel_start != s->sel_end) {
+      gint a = MIN(s->sel_start, s->sel_end);
+      gint b = MAX(s->sel_start, s->sel_end);
+      sel_text = gedit_document_get_text_range(doc, a, b - a);
+    }
+  }
+
+  GtkWidget *dlg = gtk_window_new();
+  gtk_window_set_title(GTK_WINDOW(dlg), "Insert Link");
+  gtk_window_set_modal(GTK_WINDOW(dlg), TRUE);
+  gtk_window_set_transient_for(GTK_WINDOW(dlg), GTK_WINDOW(toplevel));
+  gtk_window_set_default_size(GTK_WINDOW(dlg), 400, -1);
+  gtk_window_set_resizable(GTK_WINDOW(dlg), FALSE);
+
+  GtkWidget *box = gtk_box_new(GTK_ORIENTATION_VERTICAL, 8);
+  gtk_widget_set_margin_start(box, 12);
+  gtk_widget_set_margin_end(box, 12);
+  gtk_widget_set_margin_top(box, 12);
+  gtk_widget_set_margin_bottom(box, 12);
+  gtk_window_set_child(GTK_WINDOW(dlg), box);
+
+  GtkWidget *text_label = gtk_label_new("Text:");
+  gtk_widget_set_halign(text_label, GTK_ALIGN_START);
+  gtk_box_append(GTK_BOX(box), text_label);
+
+  GtkWidget *text_entry = gtk_entry_new();
+  gtk_editable_set_text(GTK_EDITABLE(text_entry), sel_text ? sel_text : "");
+  gtk_entry_set_placeholder_text(GTK_ENTRY(text_entry), "Link text (leave empty to use URL)");
+  gtk_box_append(GTK_BOX(box), text_entry);
+
+  GtkWidget *url_label = gtk_label_new("URL:");
+  gtk_widget_set_halign(url_label, GTK_ALIGN_START);
+  gtk_box_append(GTK_BOX(box), url_label);
+
+  GtkWidget *url_entry = gtk_entry_new();
+  gtk_editable_set_text(GTK_EDITABLE(url_entry),
+                        existing_url ? existing_url : "https://");
+  gtk_box_append(GTK_BOX(box), url_entry);
+
+  GtkWidget *btn_box = gtk_box_new(GTK_ORIENTATION_HORIZONTAL, 8);
+  gtk_widget_set_halign(btn_box, GTK_ALIGN_END);
+  gtk_box_append(GTK_BOX(box), btn_box);
+
+  GtkWidget *cancel_btn = gtk_button_new_with_label("Cancel");
+  GtkWidget *ok_btn = gtk_button_new_with_label("OK");
+  gtk_box_append(GTK_BOX(btn_box), cancel_btn);
+  gtk_box_append(GTK_BOX(btn_box), ok_btn);
+
+  g_object_set_data(G_OBJECT(dlg), "url-entry", url_entry);
+  g_object_set_data(G_OBJECT(dlg), "text-entry", text_entry);
+  g_object_set_data(G_OBJECT(dlg), "body-ctrl", ctrl);
+
+  g_signal_connect_swapped(cancel_btn, "clicked",
+                           G_CALLBACK(gtk_window_destroy), dlg);
+  g_signal_connect(ok_btn, "clicked", G_CALLBACK(on_comp_link_ok), dlg);
+
+  g_free(existing_url);
+  g_free(sel_text);
+  gtk_window_present(GTK_WINDOW(dlg));
+}
+
+/* ── Icon bar toggle callbacks ── */
+static void on_comp_qp_toggled(GtkToggleButton *btn, gpointer ud) {
+  MessHandle messH = (MessHandle)ud;
+  if (!messH || !*messH) return;
+  if (gtk_toggle_button_get_active(btn))
+    SetMessFlag(messH, FLAG_CAN_ENC);
+  else
+    ClearMessFlag(messH, FLAG_CAN_ENC);
+}
+static void on_comp_textonly_toggled(GtkToggleButton *btn, gpointer ud) {
+  MessHandle messH = (MessHandle)ud;
+  if (!messH || !*messH) return;
+  if (gtk_toggle_button_get_active(btn))
+    SetMessFlag(messH, FLAG_BX_TEXT);
+  else
+    ClearMessFlag(messH, FLAG_BX_TEXT);
+}
+static void on_comp_wrap_toggled(GtkToggleButton *btn, gpointer ud) {
+  MessHandle messH = (MessHandle)ud;
+  if (!messH || !*messH) return;
+  if (gtk_toggle_button_get_active(btn))
+    SetMessFlag(messH, FLAG_WRAP_OUT);
+  else
+    ClearMessFlag(messH, FLAG_WRAP_OUT);
+}
+static void on_comp_keep_toggled(GtkToggleButton *btn, gpointer ud) {
+  MessHandle messH = (MessHandle)ud;
+  if (!messH || !*messH) return;
+  if (gtk_toggle_button_get_active(btn))
+    SetMessFlag(messH, FLAG_KEEP_COPY);
+  else
+    ClearMessFlag(messH, FLAG_KEEP_COPY);
+}
+static void on_comp_rr_toggled(GtkToggleButton *btn, gpointer ud) {
+  MessHandle messH = (MessHandle)ud;
+  if (!messH || !*messH) return;
+  if (gtk_toggle_button_get_active(btn))
+    SetMessFlag(messH, FLAG_RR);
+  else
+    ClearMessFlag(messH, FLAG_RR);
+}
+
+/* ── Dropdown changed callbacks ── */
+static void on_comp_priority_changed(GObject *dd, GParamSpec *pspec, gpointer ud) {
+  (void)pspec;
+  MessHandle messH = (MessHandle)ud;
+  if (!messH || !*messH) return;
+  guint sel = gtk_drop_down_get_selected(GTK_DROP_DOWN(dd));
+  /* 0=Highest(1) 1=High(2) 2=Normal(3) 3=Low(4) 4=Lowest(5) */
+  SumOf(messH)->priority = (short)(sel + 1);
+}
+static void on_comp_encoding_changed(GObject *dd, GParamSpec *pspec, gpointer ud) {
+  (void)pspec;
+  MessHandle messH = (MessHandle)ud;
+  if (!messH || !*messH) return;
+  guint sel = gtk_drop_down_get_selected(GTK_DROP_DOWN(dd));
+  /* 0=MIME 1=BinHex 2=Uuencode */
+  SumOf(messH)->tableId = (short)sel;
+}
+static void on_comp_signature_changed(GObject *dd, GParamSpec *pspec, gpointer ud) {
+  (void)pspec;
+  MessHandle messH = (MessHandle)ud;
+  if (!messH || !*messH) return;
+  guint sel = gtk_drop_down_get_selected(GTK_DROP_DOWN(dd));
+  /* 0=None 1=Standard 2=Alternate */
+  SumOf(messH)->sigId = (short)sel;
+}
+
+/* ── Attachment management ── */
+
+/* Remove a single attachment chip from the list */
+static void on_attach_remove(GtkButton *btn, gpointer ud) {
+  GtkWidget *chip = gtk_widget_get_parent(GTK_WIDGET(btn));
+  if (!chip) return;
+  GtkWidget *flow = gtk_widget_get_parent(chip);
+  if (!flow) return;
+  gtk_flow_box_remove(GTK_FLOW_BOX(flow), chip);
+}
+
+/* Add a file path as an attachment chip to the flow box */
+static void comp_add_attachment(GtkWidget *attach_flow, const char *path) {
+  if (!attach_flow || !path || !*path) return;
+
+  /* Create a chip: [icon] filename [x] */
+  GtkWidget *chip = gtk_box_new(GTK_ORIENTATION_HORIZONTAL, 4);
+  gtk_widget_set_margin_start(chip, 2);
+  gtk_widget_set_margin_end(chip, 2);
+  gtk_widget_set_margin_top(chip, 1);
+  gtk_widget_set_margin_bottom(chip, 1);
+
+  GtkWidget *icon = gtk_image_new_from_icon_name("mail-attachment-symbolic");
+  gtk_box_append(GTK_BOX(chip), icon);
+
+  /* Show just the filename, store full path */
+  const char *basename = strrchr(path, '/');
+  basename = basename ? basename + 1 : path;
+  GtkWidget *lbl = gtk_label_new(basename);
+  gtk_widget_set_tooltip_text(lbl, path);
+  gtk_label_set_ellipsize(GTK_LABEL(lbl), PANGO_ELLIPSIZE_MIDDLE);
+  gtk_label_set_max_width_chars(GTK_LABEL(lbl), 30);
+  gtk_box_append(GTK_BOX(chip), lbl);
+
+  /* Store full path on the chip for later retrieval */
+  g_object_set_data_full(G_OBJECT(chip), "attach-path", g_strdup(path), g_free);
+
+  GtkWidget *rm_btn = gtk_button_new_from_icon_name("window-close-symbolic");
+  gtk_widget_add_css_class(rm_btn, "flat");
+  gtk_widget_add_css_class(rm_btn, "circular");
+  gtk_widget_set_tooltip_text(rm_btn, "Remove attachment");
+  g_signal_connect(rm_btn, "clicked", G_CALLBACK(on_attach_remove), NULL);
+  gtk_box_append(GTK_BOX(chip), rm_btn);
+
+  gtk_flow_box_insert(GTK_FLOW_BOX(attach_flow), chip, -1);
+}
+
+/* File dialog callback — add selected file as attachment */
+static void on_attach_response(GObject *source, GAsyncResult *res, gpointer ud) {
+  GtkFileDialog *dlg = GTK_FILE_DIALOG(source);
+  GtkWidget *attach_flow = (GtkWidget *)ud;
+  GError *err = NULL;
+  GFile *file = gtk_file_dialog_open_finish(dlg, res, &err);
+  if (file) {
+    char *path = g_file_get_path(file);
+    if (path) {
+      comp_add_attachment(attach_flow, path);
+      g_free(path);
+    }
+    g_object_unref(file);
+  }
+  if (err) g_error_free(err);
+}
+
+static void on_comp_attach_clicked(GtkButton *btn, gpointer ud) {
+  (void)btn;
+  GtkWidget *attach_flow = (GtkWidget *)ud;
+  if (!attach_flow) return;
+  GtkWidget *toplevel = GTK_WIDGET(gtk_widget_get_root(attach_flow));
+  GtkFileDialog *dlg = gtk_file_dialog_new();
+  gtk_file_dialog_set_title(dlg, "Attach File");
+  gtk_file_dialog_open(dlg, GTK_WINDOW(toplevel), NULL,
+                       on_attach_response, attach_flow);
+  g_object_unref(dlg);
+}
+
+/* Send button callback for old-style compose */
+static void on_comp_send_clicked(GtkButton *btn, gpointer ud) {
+  (void)btn;
+  MessHandle messH = (MessHandle)ud;
+  if (!messH || !*messH) return;
+  CompSend(messH);
+}
+
+/* Queue button callback — save to Out with QUEUED state but don't send */
+static void on_comp_queue_clicked(GtkButton *btn, gpointer ud) {
+  (void)btn;
+  MessHandle messH = (MessHandle)ud;
+  if (!messH || !*messH) return;
+  CompSave(messH);
+}
+
 /**********************************************************************
  * OpenComp - open an outgoing message - ported to use gEditCtrl
+ *
+ * Original Eudora layout (top to bottom):
+ *   1. Compose toolbar: [Send Now] [Queue] [Save] ... Priority dropdown
+ *   2. Formatting bar:  B I U  font-size  color  alignment  quote
+ *   3. Header area (GtkGrid): To: [entry]  From: [entry]  Subject: [entry]
+ *                              Cc: [entry]  Bcc: [entry]  Attachments: [entry]
+ *   4. Separator
+ *   5. gEditCtrl body editor (scrolled, fills rest of window)
+ *
+ * Headers are separate GtkEntry fields (not inline in the editor) so
+ * they can be locked/unlocked individually, matching original behaviour.
+ * The gEditCtrl holds only the message body.
  **********************************************************************/
 MyWindowPtr OpenComp(TOCType * tocH, int sumNum, GtkWidget *winWP,
                      MyWindowPtr win, bool showIt, bool new) {
   char title[256];
   MessHandle messH;
-  void *grumble;
 
-  // Remove Mac-specific CycleBalls()
   if ((messH = NewZH(MessType)) == NULL)
     return (NULL);
 
-  // Create GTK window instead of Mac window
+  /* Create window and MyWindowPtr */
   if (!win) {
     win = (MyWindowPtr)g_malloc0(sizeof(MyWindow));
     if (!win) {
@@ -128,10 +605,6 @@ MyWindowPtr OpenComp(TOCType * tocH, int sumNum, GtkWidget *winWP,
     }
     win->window = gtk_window_new();
     win->pte = NULL;
-  }
-  if (!win) {
-    DisposeHandle((Handle)messH);
-    return (NULL);
   }
 
   winWP = (GtkWidget *)GetMyWindowWindowPtr(win);
@@ -143,74 +616,506 @@ MyWindowPtr OpenComp(TOCType * tocH, int sumNum, GtkWidget *winWP,
   (*messH)->sumNum = sumNum;
   (*messH)->tocH = tocH;
 
-  // Handle signature validation (simplified)
-  // long sigID = SigValidate(SumOf(messH)->sigId);
-  // SumOf(messH)->sigId = sigID;
-
   SetMyWindowPrivateData(win, (void *)messH);
   win->close = CompClose;
-  // win->curAddr = CompCurAddr; // Remove if not in MyWindow struct
 
   LL_Push(MessList, messH);
 
-  /* formatting toolbar - simplified for GTK */
   tocH->sums[sumNum].flags |= FLAG_ICON_BAR;
   if (PrefIsSet(PREF_COMP_TOOLBAR))
     SetMessOpt(messH, OPT_COMP_TOOLBAR_VISIBLE);
 
-  // Create send button using GTK
-  grumble = gtk_button_new_with_label("Send Now");
-  (*messH)->sendButton = grumble;
+  bool isSent = (tocH->sums[sumNum].state == SENT ||
+                 tocH->sums[sumNum].state == BUSY_SENDING);
 
-  // Set button state based on message state
-  bool isGreyed = (tocH->sums[sumNum].state == SENT ||
-                   tocH->sums[sumNum].state == BUSY_SENDING);
-  gtk_widget_set_sensitive(GTK_WIDGET(grumble), !isGreyed);
-
-  if (GetCompTexts(messH, new)) {
-    // Clean up gEditCtrl instead of Pete
-    if (win->pte) {
-      g_object_unref(win->pte);
-      win->pte = NULL;
+  /* ── CSS for flat toolbar buttons ── */
+  {
+    static gboolean css_loaded = FALSE;
+    if (!css_loaded) {
+      GtkCssProvider *css = gtk_css_provider_new();
+      gtk_css_provider_load_from_string(css,
+        ".comp-toolbar button { min-height: 24px; min-width: 24px; padding: 2px 6px; }\n"
+        ".comp-toolbar button.flat { border: none; background: none; }\n"
+        ".comp-toolbar button.toggle:checked { background: alpha(@accent_color, 0.3); border-radius: 4px; }\n"
+        ".comp-toolbar button.toggle { border-radius: 4px; }\n"
+        ".comp-fmt-bar button { min-height: 22px; min-width: 22px; padding: 1px 4px; }\n"
+        ".comp-header-grid label { font-size: 13px; color: alpha(currentColor, 0.7); }\n"
+        ".comp-header-grid entry { min-height: 28px; }\n"
+      );
+      gtk_style_context_add_provider_for_display(
+        gdk_display_get_default(), GTK_STYLE_PROVIDER(css),
+        GTK_STYLE_PROVIDER_PRIORITY_APPLICATION);
+      g_object_unref(css);
+      css_loaded = TRUE;
     }
-    // win->isDirty = false; // Remove if not in MyWindow struct
-    CloseMyWindow(winWP);
-    return (NULL);
   }
 
-  // Set up window callbacks - simplified for GTK
-  // win->didResize = CompDidResize; // Remove if not in MyWindow struct
-  // win->click = CompClick; // Remove if not in MyWindow struct
-  // win->menu = CompMenu; // Remove if not in MyWindow struct
-  // win->key = CompKey; // Remove if not in MyWindow struct
-  // win->button = CompButton; // Remove if not in MyWindow struct
-  // win->position = MessagePosition; // Remove if not in MyWindow struct
-  // win->help = CompHelp; // Remove if not in MyWindow struct
-  // win->gonnaShow = CompGonnaShow; // Remove if not in MyWindow struct
-  // win->zoomSize = (SumOf(messH)->state == SENT) ? MessZoomSize :
-  // CompZoomSize; // Remove if not in MyWindow struct win->drag =
-  // CompDragHandler; // Remove if not in MyWindow struct win->idle = CompIdle;
-  // // Remove if not in MyWindow struct win->userSave = true; // Remove if not
-  // in MyWindow struct win->find = MessFind; // Remove if not in MyWindow
-  // struct
-  SetWinMinSize(win, 280, 160);
+  /* ── Build the window layout ── */
+  GtkWidget *vbox = gtk_box_new(GTK_ORIENTATION_VERTICAL, 0);
+
+  /* ── 1. Compose toolbar ── */
+  GtkWidget *toolbar = gtk_box_new(GTK_ORIENTATION_HORIZONTAL, 4);
+  gtk_widget_add_css_class(toolbar, "comp-toolbar");
+  gtk_widget_set_margin_start(toolbar, 6);
+  gtk_widget_set_margin_end(toolbar, 6);
+  gtk_widget_set_margin_top(toolbar, 4);
+  gtk_widget_set_margin_bottom(toolbar, 4);
+
+  GtkWidget *send_btn = gtk_button_new_from_icon_name("mail-send-symbolic");
+  gtk_widget_set_tooltip_text(send_btn, "Send Now");
+  gtk_widget_set_sensitive(send_btn, !isSent);
+  g_signal_connect(send_btn, "clicked", G_CALLBACK(on_comp_send_clicked), messH);
+  gtk_box_append(GTK_BOX(toolbar), send_btn);
+  (*messH)->sendButton = send_btn;
+
+  GtkWidget *queue_btn = gtk_button_new_from_icon_name("mail-send-receive-symbolic");
+  gtk_widget_set_tooltip_text(queue_btn, "Queue for later");
+  gtk_widget_set_sensitive(queue_btn, !isSent);
+  g_signal_connect(queue_btn, "clicked", G_CALLBACK(on_comp_queue_clicked), messH);
+  gtk_box_append(GTK_BOX(toolbar), queue_btn);
+
+  GtkWidget *save_btn = gtk_button_new_from_icon_name("document-save-symbolic");
+  gtk_widget_set_tooltip_text(save_btn, "Save draft");
+  g_signal_connect(save_btn, "clicked", G_CALLBACK(on_comp_queue_clicked), messH);
+  gtk_box_append(GTK_BOX(toolbar), save_btn);
+
+  /* Attach button — wired to attach_flow below after layout is built */
+  GtkWidget *attach_btn = gtk_button_new_from_icon_name("mail-attachment-symbolic");
+  gtk_widget_set_tooltip_text(attach_btn, "Attach file");
+  gtk_box_append(GTK_BOX(toolbar), attach_btn);
+
+  gtk_box_append(GTK_BOX(toolbar), gtk_separator_new(GTK_ORIENTATION_VERTICAL));
+
+  /* ── Icon bar toggle buttons (matching original Eudora compose icon bar) ── */
+  struct { const char *label; const char *tip; GCallback cb; long flag; } toggles[] = {
+    {"QP",   "Allow Quoted-Printable encoding",   G_CALLBACK(on_comp_qp_toggled),      FLAG_CAN_ENC},
+    {"Text", "Send attachments as plain data",     G_CALLBACK(on_comp_textonly_toggled), FLAG_BX_TEXT},
+    {"Wrap", "Word-wrap message when sent",        G_CALLBACK(on_comp_wrap_toggled),     FLAG_WRAP_OUT},
+    {"Keep", "Keep copy after sending",            G_CALLBACK(on_comp_keep_toggled),     FLAG_KEEP_COPY},
+    {"RR",   "Request return receipt",             G_CALLBACK(on_comp_rr_toggled),       FLAG_RR},
+    {NULL, NULL, NULL, 0}
+  };
+  for (int t = 0; toggles[t].label; t++) {
+    GtkWidget *tb = gtk_toggle_button_new_with_label(toggles[t].label);
+    gtk_widget_add_css_class(tb, "toggle");
+    gtk_widget_set_tooltip_text(tb, toggles[t].tip);
+    gtk_toggle_button_set_active(GTK_TOGGLE_BUTTON(tb),
+      MessFlagIsSet(messH, toggles[t].flag) ? TRUE : FALSE);
+    gtk_widget_set_can_focus(tb, FALSE);
+    g_signal_connect(tb, "toggled", toggles[t].cb, messH);
+    gtk_box_append(GTK_BOX(toolbar), tb);
+  }
+
+  gtk_box_append(GTK_BOX(toolbar), gtk_separator_new(GTK_ORIENTATION_VERTICAL));
+
+  /* Spacer pushes dropdowns to right */
+  GtkWidget *spacer = gtk_label_new("");
+  gtk_widget_set_hexpand(spacer, TRUE);
+  gtk_box_append(GTK_BOX(toolbar), spacer);
+
+  /* Encoding dropdown */
+  const char *enc_types[] = {"MIME", "BinHex", "Uuencode", NULL};
+  GtkWidget *enc_dd = gtk_drop_down_new_from_strings(enc_types);
+  gtk_drop_down_set_selected(GTK_DROP_DOWN(enc_dd), SumOf(messH)->tableId);
+  gtk_widget_set_tooltip_text(enc_dd, "Attachment encoding");
+  g_signal_connect(enc_dd, "notify::selected", G_CALLBACK(on_comp_encoding_changed), messH);
+  gtk_box_append(GTK_BOX(toolbar), enc_dd);
+
+  /* Priority dropdown */
+  const char *priorities[] = {"Highest", "High", "Normal", "Low", "Lowest", NULL};
+  GtkWidget *priority_dd = gtk_drop_down_new_from_strings(priorities);
+  { short pri = SumOf(messH)->priority;
+    gtk_drop_down_set_selected(GTK_DROP_DOWN(priority_dd),
+      (pri >= 1 && pri <= 5) ? (guint)(pri - 1) : 2); }
+  gtk_widget_set_tooltip_text(priority_dd, "Priority");
+  g_signal_connect(priority_dd, "notify::selected", G_CALLBACK(on_comp_priority_changed), messH);
+  gtk_box_append(GTK_BOX(toolbar), priority_dd);
+
+  /* Signature dropdown */
+  const char *sigs[] = {"None", "Standard", "Alternate", NULL};
+  GtkWidget *sig_dd = gtk_drop_down_new_from_strings(sigs);
+  { short sig = SumOf(messH)->sigId;
+    gtk_drop_down_set_selected(GTK_DROP_DOWN(sig_dd),
+      (sig >= 0 && sig <= 2) ? (guint)sig : 1); }
+  gtk_widget_set_tooltip_text(sig_dd, "Signature");
+  g_signal_connect(sig_dd, "notify::selected", G_CALLBACK(on_comp_signature_changed), messH);
+  gtk_box_append(GTK_BOX(toolbar), sig_dd);
+
+  gtk_box_append(GTK_BOX(vbox), toolbar);
+  gtk_box_append(GTK_BOX(vbox), gtk_separator_new(GTK_ORIENTATION_HORIZONTAL));
+
+  /* ── 2. Formatting toolbar ──
+   * Create the gEditCtrl early so formatting buttons can reference it. */
+  GtkWidget *body_ctrl = geditctrl_new();
+
+  GtkWidget *fmt_bar = gtk_box_new(GTK_ORIENTATION_HORIZONTAL, 2);
+  gtk_widget_add_css_class(fmt_bar, "comp-fmt-bar");
+  gtk_widget_set_margin_start(fmt_bar, 6);
+  gtk_widget_set_margin_end(fmt_bar, 6);
+  gtk_widget_set_margin_top(fmt_bar, 3);
+  gtk_widget_set_margin_bottom(fmt_bar, 3);
+
+  /* B / I / U as toggle buttons */
+  GtkWidget *bold_tb = gtk_toggle_button_new();
+  gtk_button_set_icon_name(GTK_BUTTON(bold_tb), "format-text-bold-symbolic");
+  gtk_widget_set_tooltip_text(bold_tb, "Bold (Ctrl+B)");
+  gtk_widget_set_can_focus(bold_tb, FALSE);
+  g_signal_connect(bold_tb, "clicked", G_CALLBACK(on_comp_bold), body_ctrl);
+  gtk_box_append(GTK_BOX(fmt_bar), bold_tb);
+
+  GtkWidget *italic_tb = gtk_toggle_button_new();
+  gtk_button_set_icon_name(GTK_BUTTON(italic_tb), "format-text-italic-symbolic");
+  gtk_widget_set_tooltip_text(italic_tb, "Italic (Ctrl+I)");
+  gtk_widget_set_can_focus(italic_tb, FALSE);
+  g_signal_connect(italic_tb, "clicked", G_CALLBACK(on_comp_italic), body_ctrl);
+  gtk_box_append(GTK_BOX(fmt_bar), italic_tb);
+
+  GtkWidget *underline_tb = gtk_toggle_button_new();
+  gtk_button_set_icon_name(GTK_BUTTON(underline_tb), "format-text-underline-symbolic");
+  gtk_widget_set_tooltip_text(underline_tb, "Underline (Ctrl+U)");
+  gtk_widget_set_can_focus(underline_tb, FALSE);
+  g_signal_connect(underline_tb, "clicked", G_CALLBACK(on_comp_underline), body_ctrl);
+  gtk_box_append(GTK_BOX(fmt_bar), underline_tb);
+
+  /* Clear formatting */
+  GtkWidget *clear_b = gtk_button_new_from_icon_name("edit-clear-symbolic");
+  gtk_widget_set_tooltip_text(clear_b, "Clear Formatting");
+  gtk_widget_set_can_focus(clear_b, FALSE);
+  g_signal_connect(clear_b, "clicked", G_CALLBACK(on_comp_clear_style), body_ctrl);
+  gtk_box_append(GTK_BOX(fmt_bar), clear_b);
+
+  gtk_box_append(GTK_BOX(fmt_bar), gtk_separator_new(GTK_ORIENTATION_VERTICAL));
+
+  /* Color picker */
+  GtkColorDialog *color_dlg = gtk_color_dialog_new();
+  GtkWidget *color_btn = gtk_color_dialog_button_new(color_dlg);
+  gtk_widget_set_can_focus(color_btn, FALSE);
+  gtk_widget_set_tooltip_text(color_btn, "Text Color");
+  g_signal_connect(color_btn, "notify::rgba", G_CALLBACK(on_comp_color_changed), body_ctrl);
+  gtk_box_append(GTK_BOX(fmt_bar), color_btn);
+
+  /* Font family dropdown */
+  const char *font_families[] = {"Sans", "Serif", "Monospace",
+                                 "Helvetica", "Times", "Courier", NULL};
+  GtkWidget *font_dd = gtk_drop_down_new_from_strings(font_families);
+  gtk_drop_down_set_selected(GTK_DROP_DOWN(font_dd), 0); /* Sans default */
+  gtk_widget_set_tooltip_text(font_dd, "Font");
+  gtk_widget_set_can_focus(font_dd, FALSE);
+  g_signal_connect(font_dd, "notify::selected", G_CALLBACK(on_comp_font_family_changed), body_ctrl);
+  gtk_box_append(GTK_BOX(fmt_bar), font_dd);
+
+  /* Font size dropdown */
+  const char *sizes_str[] = {"8", "10", "12", "14", "16", "18", "20", "24", "28", "36", NULL};
+  GtkWidget *size_dd = gtk_drop_down_new_from_strings(sizes_str);
+  gtk_drop_down_set_selected(GTK_DROP_DOWN(size_dd), 2); /* 12pt default */
+  gtk_widget_set_tooltip_text(size_dd, "Font Size");
+  gtk_widget_set_can_focus(size_dd, FALSE);
+  g_signal_connect(size_dd, "notify::selected", G_CALLBACK(on_comp_font_size_changed), body_ctrl);
+  gtk_box_append(GTK_BOX(fmt_bar), size_dd);
+
+  gtk_box_append(GTK_BOX(fmt_bar), gtk_separator_new(GTK_ORIENTATION_VERTICAL));
+
+  /* Alignment */
+  struct { const char *icon; const char *tip; GCallback cb; } align[] = {
+    {"format-justify-left-symbolic",   "Align Left",   G_CALLBACK(on_comp_align_left)},
+    {"format-justify-center-symbolic", "Center",        G_CALLBACK(on_comp_align_center)},
+    {"format-justify-right-symbolic",  "Align Right",   G_CALLBACK(on_comp_align_right)},
+    {NULL, NULL, NULL}
+  };
+  for (int i = 0; align[i].icon; i++) {
+    GtkWidget *b = gtk_button_new_from_icon_name(align[i].icon);
+    gtk_widget_set_tooltip_text(b, align[i].tip);
+    gtk_widget_set_can_focus(b, FALSE);
+    g_signal_connect(b, "clicked", align[i].cb, body_ctrl);
+    gtk_box_append(GTK_BOX(fmt_bar), b);
+  }
+
+  gtk_box_append(GTK_BOX(fmt_bar), gtk_separator_new(GTK_ORIENTATION_VERTICAL));
+
+  /* Indent / Outdent / Bullets */
+  GtkWidget *indent_b = gtk_button_new_from_icon_name("format-indent-more-symbolic");
+  gtk_widget_set_tooltip_text(indent_b, "Indent");
+  gtk_widget_set_can_focus(indent_b, FALSE);
+  g_signal_connect(indent_b, "clicked", G_CALLBACK(on_comp_indent), body_ctrl);
+  gtk_box_append(GTK_BOX(fmt_bar), indent_b);
+
+  GtkWidget *outdent_b = gtk_button_new_from_icon_name("format-indent-less-symbolic");
+  gtk_widget_set_tooltip_text(outdent_b, "Outdent");
+  gtk_widget_set_can_focus(outdent_b, FALSE);
+  g_signal_connect(outdent_b, "clicked", G_CALLBACK(on_comp_outdent), body_ctrl);
+  gtk_box_append(GTK_BOX(fmt_bar), outdent_b);
+
+  GtkWidget *bullet_b = gtk_button_new_from_icon_name("view-list-symbolic");
+  gtk_widget_set_tooltip_text(bullet_b, "Bullet List");
+  gtk_widget_set_can_focus(bullet_b, FALSE);
+  g_signal_connect(bullet_b, "clicked", G_CALLBACK(on_comp_bullet), body_ctrl);
+  gtk_box_append(GTK_BOX(fmt_bar), bullet_b);
+
+  gtk_box_append(GTK_BOX(fmt_bar), gtk_separator_new(GTK_ORIENTATION_VERTICAL));
+
+  /* Quote level increase / decrease */
+  GtkWidget *qi = gtk_button_new_from_icon_name("format-text-direction-ltr-symbolic");
+  gtk_widget_set_tooltip_text(qi, "Increase Quote Level");
+  gtk_widget_set_can_focus(qi, FALSE);
+  g_signal_connect(qi, "clicked", G_CALLBACK(on_comp_quote_inc), body_ctrl);
+  gtk_box_append(GTK_BOX(fmt_bar), qi);
+
+  GtkWidget *qd = gtk_button_new_from_icon_name("format-text-direction-rtl-symbolic");
+  gtk_widget_set_tooltip_text(qd, "Decrease Quote Level");
+  gtk_widget_set_can_focus(qd, FALSE);
+  g_signal_connect(qd, "clicked", G_CALLBACK(on_comp_quote_dec), body_ctrl);
+  gtk_box_append(GTK_BOX(fmt_bar), qd);
+
+  /* Horizontal rule */
+  GtkWidget *hr_b = gtk_button_new_from_icon_name("object-select-symbolic");
+  gtk_widget_set_tooltip_text(hr_b, "Insert Horizontal Rule");
+  gtk_widget_set_can_focus(hr_b, FALSE);
+  g_signal_connect(hr_b, "clicked", G_CALLBACK(on_comp_insert_hr), body_ctrl);
+  gtk_box_append(GTK_BOX(fmt_bar), hr_b);
+
+  /* Insert image */
+  GtkWidget *img_b = gtk_button_new_from_icon_name("image-x-generic-symbolic");
+  gtk_widget_set_tooltip_text(img_b, "Insert Image");
+  gtk_widget_set_can_focus(img_b, FALSE);
+  g_signal_connect(img_b, "clicked", G_CALLBACK(on_comp_insert_image), body_ctrl);
+  gtk_box_append(GTK_BOX(fmt_bar), img_b);
+
+  /* Insert link */
+  GtkWidget *link_b = gtk_button_new_from_icon_name("insert-link-symbolic");
+  gtk_widget_set_tooltip_text(link_b, "Insert Link");
+  gtk_widget_set_can_focus(link_b, FALSE);
+  g_signal_connect(link_b, "clicked", G_CALLBACK(on_comp_insert_link), body_ctrl);
+  gtk_box_append(GTK_BOX(fmt_bar), link_b);
+
+  /* Store toolbar widget refs on body_ctrl for style tracking */
+  g_object_set_data(G_OBJECT(body_ctrl), "fmt-bold", bold_tb);
+  g_object_set_data(G_OBJECT(body_ctrl), "fmt-italic", italic_tb);
+  g_object_set_data(G_OBJECT(body_ctrl), "fmt-underline", underline_tb);
+  g_object_set_data(G_OBJECT(body_ctrl), "fmt-color", color_btn);
+  g_object_set_data(G_OBJECT(body_ctrl), "fmt-font", font_dd);
+  g_object_set_data(G_OBJECT(body_ctrl), "fmt-size", size_dd);
+
+  /* Connect to document's selection-changed to update toolbar */
+  geditDocument *fmt_doc = geditctrl_get_document(body_ctrl);
+  if (fmt_doc)
+    g_signal_connect(fmt_doc, "selection-changed",
+                     G_CALLBACK(on_comp_selection_changed), body_ctrl);
+
+  gtk_box_append(GTK_BOX(vbox), fmt_bar);
+  gtk_box_append(GTK_BOX(vbox), gtk_separator_new(GTK_ORIENTATION_HORIZONTAL));
+
+  /* ── 3. Header area + Body in a GtkPaned splitter ── */
+  char *buffer = NULL;
+  long bufferSize;
+  unsigned long uidHash;
+
+  if (new) {
+    bufferSize = 1024;
+    buffer = g_malloc(bufferSize);
+    if (buffer) {
+      short len = CreateMessageBody(buffer, &uidHash);
+      buffer = g_realloc(buffer, len + 1);
+      DBNoteUIDHash(SumOf(messH)->uidHash, uidHash);
+      SumOf(messH)->uidHash = SumOf(messH)->msgIdHash = uidHash;
+    }
+  } else {
+    bufferSize = GetMessageLength(tocH, sumNum) + 1;
+    buffer = g_malloc(bufferSize);
+    if (buffer)
+      ReadMessage(tocH, sumNum, (unsigned char *)buffer);
+  }
+
+  /* Parse headers from the buffer */
+  static const char *header_labels[] = {
+    "To:", "From:", "Subject:", "Cc:", "Bcc:", "Attachments:", NULL
+  };
+  char *header_values[6] = {NULL, NULL, NULL, NULL, NULL, NULL};
+  char *body_start = NULL;
+
+  if (buffer) {
+    char *cp = buffer;
+    char *stop = cp + strlen(buffer);
+    /* Skip sendmail "From " envelope line */
+    while (cp < stop && *cp != '\r' && *cp != '\n') cp++;
+    while (cp < stop && (*cp == '\r' || *cp == '\n')) cp++;
+    /* Parse header lines until blank line */
+    while (cp < stop) {
+      /* Blank line = end of headers */
+      if (*cp == '\r' || *cp == '\n') {
+        while (cp < stop && (*cp == '\r' || *cp == '\n')) cp++;
+        break;
+      }
+      char *eol = cp;
+      while (eol < stop && *eol != '\r' && *eol != '\n') eol++;
+      char *colon = memchr(cp, ':', eol - cp);
+      if (colon) {
+        size_t name_len = colon - cp + 1;
+        for (int h = 0; header_labels[h]; h++) {
+          if (strlen(header_labels[h]) == name_len &&
+              g_ascii_strncasecmp(cp, header_labels[h], name_len) == 0) {
+            char *val = colon + 1;
+            while (val < eol && *val == ' ') val++;
+            header_values[h] = g_strndup(val, eol - val);
+            break;
+          }
+        }
+      }
+      cp = eol;
+      while (cp < stop && (*cp == '\r' || *cp == '\n')) cp++;
+    }
+    body_start = cp;
+  }
+
+  /* Header grid */
+  GtkWidget *header_grid = gtk_grid_new();
+  gtk_widget_add_css_class(header_grid, "comp-header-grid");
+  gtk_grid_set_row_spacing(GTK_GRID(header_grid), 4);
+  gtk_grid_set_column_spacing(GTK_GRID(header_grid), 8);
+  gtk_widget_set_margin_start(header_grid, 8);
+  gtk_widget_set_margin_end(header_grid, 8);
+  gtk_widget_set_margin_top(header_grid, 6);
+  gtk_widget_set_margin_bottom(header_grid, 6);
+
+  /* Text entry headers: To, From, Subject, Cc, Bcc (indices 0-4) */
+  GtkWidget *header_entries[5];
+  for (int h = 0; h < 5; h++) {
+    GtkWidget *lbl = gtk_label_new(header_labels[h]);
+    gtk_widget_set_halign(lbl, GTK_ALIGN_END);
+    gtk_grid_attach(GTK_GRID(header_grid), lbl, 0, h, 1, 1);
+
+    GtkWidget *entry = gtk_entry_new();
+    gtk_widget_set_hexpand(entry, TRUE);
+    if (header_values[h]) {
+      gtk_editable_set_text(GTK_EDITABLE(entry), header_values[h]);
+      g_free(header_values[h]);
+    }
+    if (h == 1 && !PrefIsSet(PREF_EDIT_FROM))
+      gtk_editable_set_editable(GTK_EDITABLE(entry), FALSE);
+    if (isSent)
+      gtk_editable_set_editable(GTK_EDITABLE(entry), FALSE);
+
+    gtk_grid_attach(GTK_GRID(header_grid), entry, 1, h, 1, 1);
+    header_entries[h] = entry;
+  }
+
+  /* Attachments row: label + FlowBox with add button */
+  GtkWidget *attach_lbl = gtk_label_new("Attachments:");
+  gtk_widget_set_halign(attach_lbl, GTK_ALIGN_END);
+  gtk_widget_set_valign(attach_lbl, GTK_ALIGN_START);
+  gtk_grid_attach(GTK_GRID(header_grid), attach_lbl, 0, 5, 1, 1);
+
+  GtkWidget *attach_box = gtk_box_new(GTK_ORIENTATION_HORIZONTAL, 4);
+  gtk_widget_set_hexpand(attach_box, TRUE);
+
+  GtkWidget *attach_flow = gtk_flow_box_new();
+  gtk_flow_box_set_selection_mode(GTK_FLOW_BOX(attach_flow), GTK_SELECTION_NONE);
+  gtk_flow_box_set_max_children_per_line(GTK_FLOW_BOX(attach_flow), 20);
+  gtk_widget_set_hexpand(attach_flow, TRUE);
+  gtk_box_append(GTK_BOX(attach_box), attach_flow);
+
+  /* Small "+" button to add more attachments inline */
+  GtkWidget *add_attach_btn = gtk_button_new_from_icon_name("list-add-symbolic");
+  gtk_widget_add_css_class(add_attach_btn, "flat");
+  gtk_widget_set_tooltip_text(add_attach_btn, "Add attachment");
+  gtk_widget_set_valign(add_attach_btn, GTK_ALIGN_START);
+  g_signal_connect(add_attach_btn, "clicked",
+                   G_CALLBACK(on_comp_attach_clicked), attach_flow);
+  gtk_box_append(GTK_BOX(attach_box), add_attach_btn);
+
+  gtk_grid_attach(GTK_GRID(header_grid), attach_box, 1, 5, 1, 1);
+
+  /* Populate existing attachments from header */
+  if (header_values[5]) {
+    char **parts = g_strsplit(header_values[5], ",", -1);
+    for (int i = 0; parts && parts[i]; i++) {
+      char *trimmed = g_strstrip(g_strdup(parts[i]));
+      if (*trimmed)
+        comp_add_attachment(attach_flow, trimmed);
+      g_free(trimmed);
+    }
+    g_strfreev(parts);
+    g_free(header_values[5]);
+  }
+
+  /* Wire the toolbar attach button to the same flow */
+  g_signal_connect(attach_btn, "clicked",
+                   G_CALLBACK(on_comp_attach_clicked), attach_flow);
+
+  g_object_set_data(G_OBJECT(winWP), "comp-to", header_entries[0]);
+  g_object_set_data(G_OBJECT(winWP), "comp-from", header_entries[1]);
+  g_object_set_data(G_OBJECT(winWP), "comp-subject", header_entries[2]);
+  g_object_set_data(G_OBJECT(winWP), "comp-cc", header_entries[3]);
+  g_object_set_data(G_OBJECT(winWP), "comp-bcc", header_entries[4]);
+  g_object_set_data(G_OBJECT(winWP), "comp-attach-flow", attach_flow);
+
+  /* Vertical paned: headers on top, body below */
+  GtkWidget *paned = gtk_paned_new(GTK_ORIENTATION_VERTICAL);
+  gtk_paned_set_start_child(GTK_PANED(paned), header_grid);
+  gtk_paned_set_resize_start_child(GTK_PANED(paned), FALSE);
+  gtk_paned_set_shrink_start_child(GTK_PANED(paned), FALSE);
+  gtk_widget_set_vexpand(paned, TRUE);
+  gtk_widget_set_hexpand(paned, TRUE);
+
+  /* ── 4. gEditCtrl body editor (created above for formatting toolbar) ── */
+  win->pte = body_ctrl;
+  if (win->pte) {
+    geditDocument *doc = geditctrl_get_document(win->pte);
+
+    /* Insert body text if available */
+    if (body_start && *body_start) {
+      if (*body_start == '\r' || *body_start == '\n') body_start++;
+      if (*body_start) {
+        char *stop = buffer + strlen(buffer);
+        char *bodyText = g_strndup(body_start, stop - body_start);
+        gedit_document_insert_text(doc, 0, bodyText);
+        g_free(bodyText);
+      }
+    }
+
+    gtk_widget_set_vexpand(win->pte, TRUE);
+    gtk_widget_set_hexpand(win->pte, TRUE);
+
+    /* Put body into the paned bottom half */
+    gtk_paned_set_end_child(GTK_PANED(paned), win->pte);
+    gtk_paned_set_resize_end_child(GTK_PANED(paned), TRUE);
+    gtk_paned_set_shrink_end_child(GTK_PANED(paned), FALSE);
+
+    /* Set initial split position (headers get ~200px) */
+    gtk_paned_set_position(GTK_PANED(paned), 200);
+
+    if (isSent)
+      geditctrl_set_editable(win->pte, false);
+  }
+
+  if (buffer) g_free(buffer);
+
+  /* Add the paned (headers + body) to main vbox */
+  gtk_box_append(GTK_BOX(vbox), paned);
+
+  /* Set the vbox as the window child */
+  gtk_window_set_child(GTK_WINDOW(winWP), vbox);
 
   win->dontControl = true;
   if (IsColorWin(winWP))
     win->label = GetSumColor((*messH)->tocH, (*messH)->sumNum);
+
+  gtk_window_set_title(GTK_WINDOW(winWP), title);
+  gtk_window_set_default_size(GTK_WINDOW(winWP), 640, 520);
+  AttachSelect(messH);
+
   if (showIt)
     ShowMyWindow(winWP);
-  InvalContent(win);
-  gtk_window_set_title(GTK_WINDOW(winWP), title);
-  AttachSelect(messH);
-  // win->isDirty = false; // Remove if not in MyWindow struct
 
-  // Clean up gEditCtrl list instead of Pete
+  /* Initialize toolbar to reflect style at caret position */
+  if (win->pte && fmt_doc)
+    on_comp_selection_changed(fmt_doc, win->pte);
+
+  /* Grab focus on the body editor so key events work immediately */
   if (win->pte) {
-    // gEditCtrl cleanup
+    GtkWidget *area = gtk_scrolled_window_get_child(GTK_SCROLLED_WINDOW(win->pte));
+    if (area)
+      gtk_widget_grab_focus(area);
   }
-
-  UpdateMyWindow(winWP);
 
   return (win);
 }
@@ -925,15 +1830,20 @@ int CreateMessageBody(char *buffer, unsigned long *uidHash) {
   NewMessageId(msgId);
   *uidHash = Hash((unsigned char *)msgId);
 
-  // Basic message template
+  // Sendmail envelope line (expected by header parser), then headers
+  char dateStr[64];
+  strftime(dateStr, sizeof(dateStr), "%a %b %d %H:%M:%S %Y", localtime(&now));
   int len = snprintf(buffer, 1024,
-                     "From: \r\n"
+                     "From user %s\r\n"
                      "To: \r\n"
+                     "From: \r\n"
                      "Subject: \r\n"
+                     "Cc: \r\n"
+                     "Bcc: \r\n"
+                     "Attachments: \r\n"
                      "Message-ID: %s\r\n"
-                     "Date: %s\r\n"
                      "\r\n",
-                     msgId, ctime(&now));
+                     dateStr, msgId);
 
   return len;
 }
