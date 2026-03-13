@@ -34,4 +34,7 @@ void theme_cycle(void);
 /* Get the root window (for external callers) */
 GtkWidget *theme_get_root(void);
 
+/* Apply current theme colors to a gEditCtrl widget */
+void theme_apply_to_editor(GtkWidget *editor_ctrl);
+
 #endif /* GEUDORA_THEME_H */

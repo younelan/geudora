@@ -26,6 +26,7 @@ ADVISED OF THE POSSIBILITY OF SUCH DAMAGE. */
 #include "../gEditCtrl/geditctrl.h"
 #include "../gEditCtrl/gedit-state.h"
 #include "Globals.h"
+#include "theme.h"
 #include "StringDefs.h"
 #include "gtk_prefs.h"
 #include "mailbox.h"
@@ -845,6 +846,7 @@ MyWindowPtr OpenComp(TOCType * tocH, int sumNum, GtkWidget *winWP,
   /* ── 2. Formatting toolbar ──
    * Create the gEditCtrl early so formatting buttons can reference it. */
   GtkWidget *body_ctrl = geditctrl_new();
+  theme_apply_to_editor(body_ctrl);
 
   GtkWidget *fmt_bar = gtk_box_new(GTK_ORIENTATION_HORIZONTAL, 2);
   gtk_widget_add_css_class(fmt_bar, "comp-fmt-bar");
@@ -1474,6 +1476,7 @@ int GetCompTexts(MessHandle messH, bool new) {
     err = -1;
     goto failure;
   }
+  theme_apply_to_editor(messWin->pte);
 
   // Get the document from gEditCtrl
   doc = geditctrl_get_document(messWin->pte);

@@ -57,6 +57,7 @@ int AddMesgError(TOCType * tocH, short sum, unsigned char *errorStr,
 #include "comp.h"
 #include "gtk_menus.h"
 #include "log.h"
+#include "theme.h"
 #include "uudecode.h"
 #include <stdbool.h>
 int ReallyDoAnAlert(int templ, int which);
@@ -883,8 +884,7 @@ void InitMailboxWin(MyWindowPtr win, TOCType * toc, bool showIt) {
   GtkWidget *preview_body = geditctrl_new();
   geditctrl_set_editable(preview_body, FALSE);
   gtk_widget_set_vexpand(preview_body, TRUE);
-  gedit_document_insert_text(geditctrl_get_document(preview_body), 0,
-                             "Select a message to preview.");
+  theme_apply_to_editor(preview_body);
   gtk_box_append(GTK_BOX(preview_box), preview_body);
 
   g_object_set_data(G_OBJECT(winWP), "preview-hdr", preview_hdr);
@@ -913,6 +913,13 @@ void InitMailboxWin(MyWindowPtr win, TOCType * toc, bool showIt) {
 
   /* Right-click context menu */
   attach_mbox_context_menu(tree, toc);
+
+  /* Auto-select first message */
+  if (toc->count > 0) {
+    GtkTreePath *first = gtk_tree_path_new_first();
+    gtk_tree_selection_select_path(sel, first);
+    gtk_tree_path_free(first);
+  }
 
   /* Replace the empty scrolled-window content with our paned layout */
   gtk_window_set_child(GTK_WINDOW(winWP), vpaned);
@@ -1293,8 +1300,9 @@ static void on_mbox_row_activated(GtkTreeView *tree_view, GtkTreePath *path,
   gtk_scrolled_window_set_child(GTK_SCROLLED_WINDOW(body_scroll), mwin->pte);
   gtk_widget_set_vexpand(body_scroll, TRUE);
 
-  /* Make body read-only */
+  /* Make body read-only and apply theme */
   geditctrl_set_editable(mwin->pte, false);
+  theme_apply_to_editor(mwin->pte);
 
   /* ── Connect toolbar button handlers ── */
   g_object_set_data(G_OBJECT(trash_btn), "messH", messH);
@@ -1699,8 +1707,7 @@ GtkWidget *CreateMailboxPanel(TOCType *toc) {
   GtkWidget *preview_body = geditctrl_new();
   geditctrl_set_editable(preview_body, FALSE);
   gtk_widget_set_vexpand(preview_body, TRUE);
-  gedit_document_insert_text(geditctrl_get_document(preview_body), 0,
-                             "Select a message to preview.");
+  theme_apply_to_editor(preview_body);
   gtk_box_append(GTK_BOX(preview_box), preview_body);
 
   GtkWidget *scroll2 = gtk_scrolled_window_new();
@@ -1729,6 +1736,13 @@ GtkWidget *CreateMailboxPanel(TOCType *toc) {
 
   /* Right-click context menu */
   attach_mbox_context_menu(tree, toc);
+
+  /* Auto-select first message */
+  if (toc->count > 0) {
+    GtkTreePath *first = gtk_tree_path_new_first();
+    gtk_tree_selection_select_path(sel, first);
+    gtk_tree_path_free(first);
+  }
 
   return vpaned;
 }

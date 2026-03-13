@@ -38,6 +38,7 @@ ADVISED OF THE POSSIBILITY OF SUCH DAMAGE. */
 
 #include "../gEditCtrl/geditctrl.h"
 #include "Globals.h"
+#include "theme.h"
 
 #include "message.h"
 #include "portable-compat.h"
@@ -496,6 +497,7 @@ MyWindowPtr OpenMessage(TOCType * tocH, short sumNum, GtkWidget *winWP,
   win->pte = geditctrl_new();
   if (!win->pte || !text)
     goto Abort;
+  theme_apply_to_editor(win->pte);
   TheBody = win->pte;
 
   if (MessFlagIsSet(messH, FLAG_FIXED_WIDTH)) {
@@ -537,15 +539,17 @@ MyWindowPtr OpenMessage(TOCType * tocH, short sumNum, GtkWidget *winWP,
     /* Auto-detect HTML if flags aren't set — look for <html or <body tag
      * in the first 4K of the body */
     {
+      size_t textLen = strlen(text);
       long bodyOff = SumOf(messH)->bodyOffset - messH->weeded;
       if (bodyOff < 0) bodyOff = 0;
+      if ((size_t)bodyOff > textLen) bodyOff = 0;
       const char *body = text + bodyOff;
       if (!MessOptIsSet(messH, OPT_HTML)) {
         /* Quick scan for HTML indicators */
         const char *scan = body;
-        size_t scanLen = strlen(scan);
+        size_t scanLen = textLen - bodyOff;
         if (scanLen > 4096) scanLen = 4096;
-        for (size_t si = 0; si < scanLen - 5; si++) {
+        for (size_t si = 0; si + 5 <= scanLen; si++) {
           if (scan[si] == '<' &&
               (g_ascii_strncasecmp(scan + si, "<html", 5) == 0 ||
                g_ascii_strncasecmp(scan + si, "<body", 5) == 0 ||

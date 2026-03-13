@@ -25,6 +25,7 @@ static gboolean gedit_scroll_cb(GtkEventControllerScroll *controller,
 GtkWidget *geditctrl_new(void) {
   GtkWidget *scrolled = gtk_scrolled_window_new();
   GtkWidget *area = gtk_drawing_area_new();
+  gtk_widget_add_css_class(area, "gedit-view");
   gtk_widget_set_hexpand(area, TRUE);
   gtk_widget_set_vexpand(area, TRUE);
   gtk_widget_set_can_focus(area, TRUE);

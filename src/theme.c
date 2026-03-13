@@ -4,6 +4,7 @@
 
 #include "theme.h"
 #include "gtk_prefs.h"
+#include "../gEditCtrl/geditctrl.h"
 #include <string.h>
 
 #define PREFS_GROUP_THEME "theme"
@@ -301,9 +302,15 @@ static char *generate_css(const ThemePalette *p) {
     ".navigation-sidebar > row label { color: %s; }"
     ".navigation-sidebar > row image { color: %s; }"
 
-    /* Treeview — let the theme handle selection styling */
+    /* Treeview — message list */
+    "treeview { background: %s; color: %s; }"
     "treeview header button { background: %s; color: %s;"
-    "  border-bottom: 1px solid %s; }",
+    "  border-bottom: 1px solid %s; }"
+    "treeview > row { background: transparent; color: %s; }"
+    "treeview > row:nth-child(even) { background: alpha(%s, 0.3); }"
+    "treeview > row:selected { background: alpha(%s, 0.2); color: %s; }"
+    "treeview > row:selected:focus { background: alpha(%s, 0.3); color: %s; }"
+    "treeview > row:hover { background: alpha(%s, 0.1); }",
 
     /* list */ p->surface, p->text,
     /* row */ p->text, p->border,
@@ -317,7 +324,13 @@ static char *generate_css(const ThemePalette *p) {
     /* nav sel label/img */ p->accent, p->accent,
     /* nav row:hover */ p->surface2, p->text, p->text,
     /* nav row label/img */ p->text, p->text2,
-    /* tree header */ p->surface2, p->text2, p->border
+    /* treeview bg */ p->surface, p->text,
+    /* tree header */ p->surface2, p->text2, p->border,
+    /* row */ p->text,
+    /* row:even */ p->border,
+    /* row:selected */ p->accent, p->text,
+    /* row:selected:focus */ p->accent, p->text,
+    /* row:hover */ p->accent
   );
 
   /* ── Mailbox sidebar ── */
@@ -668,7 +681,8 @@ static char *generate_css(const ThemePalette *p) {
     /* Dockable panel */
     ".dockable-panel { background: %s; }"
 
-    /* Viewport (inside scrolled windows) */
+    /* Viewport and scrolled windows */
+    "scrolledwindow { background: %s; }"
     "viewport { background: %s; color: %s; }"
 
     /* Scale/slider */
@@ -688,6 +702,7 @@ static char *generate_css(const ThemePalette *p) {
     /* boxed-list */ p->surface, p->border,
     /* bl row */ p->surface, p->text, p->text,
     /* dockable-panel */ p->bg,
+    /* scrolledwindow */ p->bg,
     /* viewport */ p->bg, p->text,
     /* scale */ p->bar_bg, p->accent, p->surface,
     /* tooltip */ p->surface2, p->text, p->border, p->text,
@@ -710,9 +725,25 @@ static char *generate_css(const ThemePalette *p) {
   return result;
 }
 
+/* ── Tracked editor list for live theme updates ── */
+static GPtrArray *tracked_editors = NULL;
+
+static void on_editor_destroyed(gpointer data, GObject *where_the_object_was) {
+  (void)data;
+  if (tracked_editors)
+    g_ptr_array_remove_fast(tracked_editors, where_the_object_was);
+}
+
+static void reapply_all_editors(void) {
+  if (!tracked_editors) return;
+  for (guint i = 0; i < tracked_editors->len; i++)
+    theme_apply_to_editor(g_ptr_array_index(tracked_editors, i));
+}
+
 /* ═══════════════════════════════════════════════════════════════════ */
 
 void theme_init(GtkWidget *rw) {
+  tracked_editors = g_ptr_array_new();
   root_window = rw;
   theme_provider = gtk_css_provider_new();
   gtk_style_context_add_provider_for_display(
@@ -740,9 +771,41 @@ void theme_apply(GeudoraTheme theme) {
   GtkSettings *settings = gtk_settings_get_default();
   gboolean dark = (theme == THEME_DARK || theme == THEME_NORD || theme == THEME_MONOKAI);
   g_object_set(settings, "gtk-application-prefer-dark-theme", dark, NULL);
+
+  /* Re-apply theme colors to all tracked gEditCtrl widgets */
+  reapply_all_editors();
 }
 
 void theme_cycle(void) {
   GeudoraTheme next = (current_theme + 1) % THEME_COUNT;
   theme_apply(next);
+}
+
+static gboolean parse_color(const char *spec, GdkRGBA *out) {
+  return gdk_rgba_parse(out, spec);
+}
+
+void theme_apply_to_editor(GtkWidget *editor_ctrl) {
+  if (!editor_ctrl) return;
+  /* Track this editor for live theme updates */
+  if (tracked_editors) {
+    gboolean found = FALSE;
+    for (guint i = 0; i < tracked_editors->len; i++) {
+      if (g_ptr_array_index(tracked_editors, i) == editor_ctrl) {
+        found = TRUE;
+        break;
+      }
+    }
+    if (!found) {
+      g_ptr_array_add(tracked_editors, editor_ctrl);
+      g_object_weak_ref(G_OBJECT(editor_ctrl), on_editor_destroyed, NULL);
+    }
+  }
+  const ThemePalette *p = &palettes[current_theme];
+  GdkRGBA bg, text, caret, sel_bg;
+  if (!parse_color(p->surface, &bg)) bg = (GdkRGBA){1, 1, 1, 1};
+  if (!parse_color(p->text, &text)) text = (GdkRGBA){0, 0, 0, 1};
+  caret = text; /* caret same as text color */
+  if (!parse_color(p->accent, &sel_bg)) sel_bg = (GdkRGBA){0.3, 0.4, 0.6, 1};
+  geditctrl_set_theme_colors(editor_ctrl, &bg, &text, &caret, &sel_bg);
 }
