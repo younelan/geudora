@@ -40,9 +40,7 @@ void BuildSigMenu(void);
 void CleanTempFolder(void);
 bool DateWarning(bool uiOK);
 
-#ifdef THREADING_ON
 void CreateTempBox(short which);
-#endif
 
 #ifdef HAVE_KEYCHAIN
 void KeychainConvert(void);

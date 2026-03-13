@@ -102,10 +102,8 @@ bool DateWarning(bool uiOK)
     return false;
 }
 
-#ifdef THREADING_ON
 void CreateTempBox(short which)
 {
     (void)which;
     g_print("Creating temp box\n");
 }
-#endif

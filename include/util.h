@@ -326,6 +326,7 @@ bool GetTableID(unsigned char *name, short *tid);
 bool EventPending(void);
 void ShowDragRectHilite(DragReference drag, Rect *r, bool inside);
 unsigned char *WeekDay(unsigned char *string, long secs);
+void TimeString(long secs, bool wantSeconds, unsigned char *str, void *intlHandle);
 int ZapResourceLo(uint32_t type, short id, bool one);
 #define ZapResource(x, y) ZapResourceLo(x, y, False)
 #define Zap1Resource(x, y) ZapResourceLo(x, y, True)

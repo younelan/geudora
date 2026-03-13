@@ -10,6 +10,7 @@
 #include <stdint.h>
 #include <stdlib.h>
 #include <string.h>
+#include <time.h>
 
 /* Portable legacy typedefs to support non-Carbon builds. These are kept
    minimal and guarded so they won't conflict with system headers on
@@ -260,20 +261,9 @@ static inline void PCopy_SHIM(unsigned char *dst, const unsigned char *src) {
 /* PCopy provided by StringUtil.h */
 
 /* Stubs for missing legacy functions */
-static inline void ComputeLocalDate(void *sum, unsigned char *dateStr) {
-  if (dateStr) {
-    /* valid pascal string "Date" */
-    dateStr[0] = 4;
-    memcpy(dateStr + 1, "Date", 4);
-  }
-}
+void ComputeLocalDate(void *sum, unsigned char *dateStr);
 
-static inline void TimeString(long secs, bool b, unsigned char *str, void *p) {
-  if (str) {
-    str[0] = 4;
-    memcpy(str + 1, "Time", 4);
-  }
-}
+/* TimeString: real implementation in util.c, declared in util.h */
 
 static inline void ShortAddr(unsigned char *src, unsigned char *dst) {
   if (src != dst)
@@ -302,7 +292,7 @@ static inline void DateString(long secs, int fmt, unsigned char *str, void *p) {
 #ifndef BMD
 #define BMD(s, d, l) memmove(d, s, l)
 #endif
-static inline void CycleBalls(void) {}
+/* CycleBalls: real implementation in fileutil.c */
 static inline void HPurge(void *h) {}
 static inline void HNoPurge(void *h) {}
 
@@ -359,7 +349,10 @@ static inline bool Black(void *color) { return false; }
 
 /* String Stubs */
 static inline bool EqualString(void *s1, void *s2, bool caseSens, bool diac) {
-  return false;
+  (void)diac;
+  if (caseSens)
+    return strcmp((const char *)s1, (const char *)s2) == 0;
+  return strcasecmp((const char *)s1, (const char *)s2) == 0;
 }
 // static inline void *FindHeaderString(void *text, void *headerName, long
 // *size,
@@ -370,10 +363,10 @@ static inline bool EqualString(void *s1, void *s2, bool caseSens, bool diac) {
 /* Message/Window Stubs */
 
 /* Message/Window Stubs */
-static inline void ReZoomMyWindow(void *w) {}
+/* ReZoomMyWindow: real implementation in mywindow.c, declared in mailbox.h */
 /* InvalContent - real impl in mywindow.c */
 // static inline void ShowMessageSeparator(void *pte, bool center) {}
-static inline bool CloseMyWindow(void *w) { return true; }
+/* CloseMyWindow: real implementation in mywindow.c, declared in mailbox.h */
 
 /* UpdateMyWindow - real impl in mywindow.c */
 // static inline void EnsureMessNewline(void *messH) {}
@@ -404,7 +397,7 @@ static inline bool PositionPrefsTitle(bool save, void *win) { return true; }
 static inline void CheckBox(void *win, bool checked) {}
 static inline void *MyFrontNonFloatingWindow(void) { return 0; }
 #define FrontWindow_ MyFrontNonFloatingWindow
-static inline void *GetNextWindow(void *win) { return NULL; }
+/* GetNextWindow: real implementation in mywindow.c, declared in mailbox.h */
 /* GetMHandle is provided by gtk_menus.h as MenuHandle GetMHandle(short) */
 
 /* File IO Stubs */
@@ -448,7 +441,7 @@ static inline void DBNoteUIDHash(unsigned long hash, unsigned long uid) {}
 #define PREF_188 188
 #endif
 static inline bool GoOnline(void) { return true; }
-static inline int PtrPlusHand_(void *ptr, void *h, long size) { return 0; }
+/* PtrPlusHand_: macro in mydefs.h routes to PtrAndHand() in fileutil.c */
 /* NoteFreeSpace is provided by the project's TOC implementation; do not
   define a stub that conflicts with its signature. If a stub is required
   for standalone builds, provide it under a unique name. */

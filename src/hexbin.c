@@ -25,9 +25,7 @@ DAMAGE. */
 #include "util.h"
 #include "progress.h"
 #include "mailbox.h"
-#ifdef IMAP
 #include "imapmailboxes.h"
-#endif
 
 #define FILE_NUM 17
 /* Copyright (c) 1990-1992 by the University of Illinois Board of Trustees */
@@ -707,7 +705,6 @@ int FlushBuffer(void)
 	return(err);
 }
 
-#ifdef	IMAP
 /************************************************************************
  * AutoWantTheFile - see if we can auto-receive the file
  * ohYesYouDo is true if we have no choice (ie, the stanfile timed out)
@@ -722,9 +719,6 @@ bool AutoWantTheFile(FSSpecPtr specPtr,bool ohYesYouDo,bool relatedPart)
  * ohYesYouDo is true if we have no choice (ie, the stanfile timed out)
  ************************************************************************/
 bool AutoWantTheFileLo(FSSpecPtr specPtr,bool ohYesYouDo,bool relatedPart, bool imapStub)
-#else
-bool AutoWantTheFile(FSSpecPtr specPtr,bool ohYesYouDo,bool relatedPart)
-#endif
 {
 	Str127 message;
 	FSSpec attFSpec;
@@ -734,10 +728,8 @@ bool AutoWantTheFile(FSSpecPtr specPtr,bool ohYesYouDo,bool relatedPart)
 	 */
 	if (relatedPart)
 		SubFolderSpec(PARTS_FOLDER,&attFSpec);
-#ifdef	IMAP
 	else if (imapStub)
 		GetIMAPAttachFolder(&attFSpec);
-#endif		
 	else {
 		GetCurrentAttFolderSpec(&attFSpec);
 		if ( attFSpec.vRefNum == 0 || attFSpec.parID == 0 )

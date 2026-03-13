@@ -1291,12 +1291,10 @@ int POPGetMessage(TransStream stream, long messageNumber, short *gotSome,
 
   if (CommandPeriod && StackLowErr) {
     StackLowErr = false;
-#ifdef THREADING_ON
     // increase thread stack size for next try
     if (InAThread()) {
       WarnUser(THREAD_LOW_STACK, 0);
     } else
-#endif
       // try lowering appllimit for non-threaded operation????
       // ...Will look into if users frequently experience
       WarnUser(LOW_STACK, 0);
@@ -2612,14 +2610,12 @@ POPLineType ReadPOPLine(TransStream stream, unsigned char *buf, long bSize,
   long freeStack;
 
 // sniff the stack to see if we're low
-#ifdef THREADING_ON
   if (InAThread()) {
     ThreadID threadID;
 
     GetCurrentThread(&threadID);
     ThreadCurrentStackSpace(threadID, &freeStack);
   } else
-#endif
     freeStack = StackSpace();
 
   if (freeStack < kLowStackSize) {
@@ -2992,12 +2988,10 @@ OSErr BuildPOPD(TransStream stream, POPDHandle *popDH, short count,
   bool plentyRoom;
   short popMode = GetPrefLong(PREF_POP_MODE);
   int total = 0;
-#ifdef THREADING_ON
   TOCType * tempInTocH = nil;
 
   if (InAThread())
     tempInTocH = GetTempInTOC();
-#endif
 
   age = (age && lmos) ? (GMTDateTime() - 24 * 3600 * age) : 0;
   /*
@@ -3054,7 +3048,6 @@ OSErr BuildPOPD(TransStream stream, POPDHandle *popDH, short count,
       old.retred = i < lastRead;
       old.stubbed = i < lastRead;
 
-#ifdef THREADING_ON
       /*
        * if the message is already in in.temp and we don't have a popd entry,
        * machine probably crashed during download before popd could get updated.
@@ -3078,7 +3071,6 @@ OSErr BuildPOPD(TransStream stream, POPDHandle *popDH, short count,
           }
         }
       }
-#endif
     } else {
       old = oldDH->data[spot];
       new = old;

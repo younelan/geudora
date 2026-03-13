@@ -2816,10 +2816,8 @@ BoundaryType ReadGeneric(TransStream stream,short refN,MIMESHandle mimeSList,cha
 	
 	(void)bt;  // Set but not used - legacy code
 	Handle xlate;
-#ifdef	IMAP
 	bool imapStub = false;
 	Str255 scratch;
-#endif
 	
 	spec.vRefNum = spec.parID = 0;
 
@@ -2863,12 +2861,8 @@ BoundaryType ReadGeneric(TransStream stream,short refN,MIMESHandle mimeSList,cha
 	/*
 	 * does the user wish to convert it?
 	 */
-#ifdef	IMAP
 	imapStub = StringSame(GetRString(scratch, IMAP_STUB_ENCODING), (*hdh)->contentEnco);	
 	if (SingleSpec || AutoWantTheFileLo(&spec,False,(*hdh)->relatedPart,imapStub)/*|| WantTheFile(&spec)*/)
-#else
-	if (SingleSpec || AutoWantTheFile(&spec,False,(*hdh)->relatedPart)/*|| WantTheFile(&spec)*/)
-#endif
 	{
 		ASSERT ( SingleSpec || ( spec.vRefNum != 0 && spec.parID != 0 ));
 		if (SingleSpec) {

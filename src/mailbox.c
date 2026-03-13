@@ -307,7 +307,6 @@ int AddOutgoingMesgError(short sumNum, uLong uidHash, int errorCode,
   Str255 fmtdError, error;
   va_list args;
 
-#ifdef THREADING_ON
 
   if (InAThread()) {
     tocH = GetRealOutTOC();
@@ -315,9 +314,6 @@ int AddOutgoingMesgError(short sumNum, uLong uidHash, int errorCode,
     outSumNum = FindSumByHash(tocH, uidHash);
   } else
     tempTocH = tocH = GetRealOutTOC();
-#else
-  tempTocH = tocH = GetOutTOC();
-#endif
 
   if (tempTocH && tocH) {
     // get message error string
@@ -1800,12 +1796,10 @@ void SetStateLo(TOCType * tocH, int sumNum, int state) {
 short FindSumByHash(TOCType * tocH, uint32_t hash) {
   short sumNum, myCount;
 
-#ifdef THREADING_ON
   // check toc sanity-- InsaneTOC doesn't work unless we WriteTOC immediately
   // before
   myCount = tocH->count; /* Was GetHandleSize_-based, now direct */
   if (myCount > tocH->count)
-#endif
     myCount = tocH->count;
 
   for (sumNum = myCount - 1; sumNum >= 0; sumNum--)
@@ -1871,68 +1865,6 @@ int RedoWho(TOCType * tocH, short sumNum) {
   return (err);
 }
 
-#ifdef TWO
-
-/**********************************************************************
- * GetSumColor - get a message's color from its summary.
- **********************************************************************/
-short GetSumColor(TOCType * tocH, short sumNum) {
-  return (SumColor(tocH->sums + sumNum));
-}
-
-/**********************************************************************
- * SetSumColor - set a message's color in its summary,
- * handle virtual TOCs, too
- **********************************************************************/
-void SetSumColor(TOCType * tocH, short sumNum, short color) {
-  TOCType * realTOC;
-  short realSum;
-
-  SetSumColorLo(tocH, sumNum, color);
-  realTOC = GetRealTOC(tocH, sumNum, &realSum);
-  if (realTOC && realTOC != tocH) {
-    // do real mailbox also if working in virtual mailbox
-    SetSumColorLo(realTOC, realSum, color);
-    tocH = realTOC;
-    sumNum = realSum;
-  }
-  SearchUpdateSum(tocH, sumNum, tocH, tocH->sums[sumNum].serialNum, false,
-                  false); //	Notify search window
-}
-
-/**********************************************************************
- * SetSumColorLo - set a message's color in its summary.
- **********************************************************************/
-void SetSumColorLo(TOCType * tocH, short sumNum, short color) {
-  int oldColor = GetSumColor(tocH, sumNum);
-  MessHandle messH;
-
-  if (oldColor == color)
-    return; /* nothing to do */
-
-  InvalSum(tocH, sumNum);
-
-  tocH->sums[sumNum].flags &=
-      ~(FLAG_HUE1 | FLAG_HUE2 | FLAG_HUE3 | FLAG_HUE4);
-  tocH->sums[sumNum].flags |= (color << 14);
-  TOCSetDirty(tocH, true);
-
-  /* set the priority display in the message */
-  if (messH = tocH->sums[sumNum].messH) {
-    WindowPtr messWinWP = GetMyWindowWindowPtr((*messH)->win);
-    (*messH)->win->label = color;
-    if (IsColorWin(messWinWP)) {
-      if (IsWindowVisible(messWinWP))
-        InvalTopMargin((*messH)->win);
-      AppCdefBGChange((*messH)->win);
-    }
-  }
-
-  /* If this is an IMAP message, tell the server about the label change */
-  if (tocH->imapTOC)
-    QueueMessFlagChange(tocH, sumNum, tocH->sums[sumNum].state, false);
-}
-#endif
 
 /**********************************************************************
  * BoxFOpen - open the mailbox file represented by a toc
@@ -2687,18 +2619,6 @@ bool GetTransferParams(short menu, short item, FSSpecPtr spec, bool *xfer) {
           return (False);
       } while (folder);
     }
-#ifdef TWO
-    else if (root ? item == TRANSFER_OTHER_ITEM
-                  : item == TRANSFER_OTHER_ITEM - TRANSFER_BAR1_ITEM) {
-      // if this is the "This Mailbox" item, return a spec pointing to the
-      // parent folder.
-      GetMenuTitle(mh, spec->name);
-      if (IsIMAPVD(spec->vRefNum, spec->parID))
-        return (true);
-      else
-        return (!AskGraft(spec->vRefNum, spec->parID, spec));
-    }
-#endif
     else {
       MailboxMenuFile(menu, item, spec->name);
       TrimPrefix(spec->name, GetRString(fix, TRANSFER_PREFIX));
@@ -3198,125 +3118,6 @@ bool IsMailbox(FSSpecPtr spec) {
   return (from);
 }
 
-#ifdef TWO
-/************************************************************************
- * AskGraft - ask the user for a mailbox to graft
- ************************************************************************/
-int AskGraft(short vRef, long dirId, FSSpecPtr spec) {
-  SFTypeList types;
-  FSSpec fetchedSpec;
-  Str255 prompt;
-  int theError;
-  Boolean good;
-
-  types[0] = 'TEXT';
-  types[1] = 0;
-
-  GetRString(prompt, CHOOSE_MBOX);
-
-  /*
-   * fetch file
-   */
-  theError = GetFileNav(types, CHOOSE_MAILBOX_NAV_TITLE, prompt, 0, false,
-                        &fetchedSpec, &good, nil);
-  /*
-   * is it a mailbox?
-   */
-  if (good && !IsMailbox(&fetchedSpec)) {
-    FileSystemError(NOT_MAILBOX, fetchedSpec.name, 0);
-    return (userCancelled);
-  }
-
-  /*
-   * make & return alias
-   */
-  if (good)
-    return (GraftMailbox(vRef, dirId, &fetchedSpec, spec,
-                         vRef == MailRoot.vRef && dirId == MailRoot.dirId));
-  else
-    return (userCancelled);
-}
-
-/************************************************************************
- * GraftMailbox - graft a mailbox into the tree
- ************************************************************************/
-int GraftMailbox(short vRef, long dirId, FSSpecPtr realSpec, FSSpecPtr boxSpec,
-                 bool temporary) {
-  short err = 1;
-  FSSpec tocSpec, localSpec, realTocSpec;
-  FInfo info;
-  bool wasThere = !HGetFInfo(vRef, dirId, realSpec->name, &info);
-
-  /*
-   * if mailbox exists and is in the current tree, just return, do not
-   * graft
-   */
-  if (FindDirLevel(realSpec->vRefNum, realSpec->parID) >= 0) {
-    *boxSpec = *realSpec;
-    return (noErr);
-  }
-
-  /*
-   * if mailbox is currently aliased in the folder in question, just return
-   */
-  if (!FSMakeFSSpec(vRef, dirId, realSpec->name, &localSpec) &&
-      IsAlias(&localSpec, &tocSpec) && SameSpec(&tocSpec, realSpec)) {
-    *boxSpec = localSpec;
-    return (noErr);
-  }
-
-  if (!(err = MakeAFinderAlias(realSpec, &localSpec))) {
-    /*
-     * if the graft is temporary, mark the alias
-     */
-    if (temporary && !FSpGetFInfo(&localSpec, &info)) {
-      // set the stationery bit.  Yeah, it's a hack.
-      info.fdFlags |= kIsStationery;
-      FSpSetFInfo(&localSpec, &info);
-    }
-
-    /*
-     * is there an external toc?
-     */
-    Box2TOCSpec(realSpec, &tocSpec);
-    if (!FSpGetFInfo(&tocSpec, &info)) {
-      if (PrefIsSet(PREF_NEW_TOC)) {
-        {
-          TOCType * tocH = CheckTOC(realSpec);
-          if (tocH)
-            WriteTOC(tocH);
-          g_free(tocH);
-        }
-      } else {
-        realTocSpec = tocSpec;
-        tocSpec.vRefNum = vRef;
-        tocSpec.parID = dirId;
-        err = MakeAFinderAlias(&realTocSpec, &tocSpec);
-        if (temporary && !FSpGetFInfo(&tocSpec, &info)) {
-          // set the stationery bit.  Yeah, it's a hack.
-          info.fdFlags |= kIsStationery;
-          FSpSetFInfo(&tocSpec, &info);
-        }
-      }
-    }
-
-    if (!err) {
-      /*
-       * ok.  aliases in place; all is well with the world
-       */
-      /*BuildBoxMenus();*/
-      AddBoxHigh(&localSpec);
-    }
-  }
-
-  if (err)
-    FileSystemError(OPEN_MBOX, realSpec->name, err);
-  else
-    *boxSpec = localSpec;
-  return (err);
-}
-
-#endif
 
 /**********************************************************************
  * RemoveBoxHigh - remove a box from the menus

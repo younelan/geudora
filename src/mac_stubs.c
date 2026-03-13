@@ -434,7 +434,7 @@ void SearchStrPtr() {}
 void SecondsToDate() {}
 /* SelectBoxRange — real implementation elsewhere */
 void SelectDialogItemText() {}
-void SendBehind() {}
+/* SendBehind: real implementation in mywindow.c */
 /* SendImmediately, SendQueue, SendThreadRunning are global variables — not stubs */
 /* SendThreadError — real implementation elsewhere */
 /* ServerMenuChoice — real implementation elsewhere */
@@ -563,8 +563,7 @@ void AdjustSpecialMenuSelection(void *tocH, short sum) {}
 /* Mac key event — replace with GDK */
 short UnadornKey(short key, short modifiers) { return key; }
 
-/* Mac window list — replace with GTK window tracking */
-void *GetWindowList(void) { return NULL; }
+/* GetWindowList: real implementation in mywindow.c */
 bool IsKnownWindowMyWindow(void *win) { return false; }
 
 /* Mac graphics — not needed */

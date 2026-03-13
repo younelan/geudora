@@ -624,10 +624,6 @@ OSErr ReadHeaderLo(TransStream stream, HeaderDHandle hdh, long estSize, short re
 							{
 								PSCopy((*hdh)->contentSubType,l822s.token);
 							}
-#ifdef TWO
-							else if (attr==aAccessType && !EqualStrRes(l822s.token,MAIL_SERVER))
-								Ungrok(hdh);
-#endif
 							else if (attr==aFormat && EqualStrRes(l822s.token,FORMAT_FLOWED))
 								(*hdh)->hasFlow = AnyFlow = true;
 							else if (attr==aDelSP && (l822s.token[1]=='y' || l822s.token[1]=='Y' || l822s.token[1]=='t' || l822s.token[1]=='T'))

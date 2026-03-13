@@ -290,3 +290,93 @@ void SetBotMargin(MyWindowPtr win, short h) {
   (void)win;
   (void)h;
 }
+
+/**********************************************************************
+ * Window iteration — GTK port of Mac GetWindowList/GetNextWindow
+ *
+ * Mac used a linked list of WindowRecords. GTK tracks windows via
+ * GtkApplication. We snapshot the list on GetWindowList() and walk
+ * it with GetNextWindow().
+ **********************************************************************/
+static GList *gWindowIterList = NULL;
+static GList *gWindowIterCurrent = NULL;
+
+void *GetWindowList(void) {
+  if (gWindowIterList)
+    g_list_free(gWindowIterList);
+  gWindowIterList = NULL;
+  gWindowIterCurrent = NULL;
+
+  GtkApplication *app = GTK_APPLICATION(g_application_get_default());
+  if (!app)
+    return NULL;
+
+  /* gtk_application_get_windows returns the list in MRU order (front-to-back),
+     which matches the Mac GetWindowList behaviour. We copy the list so
+     GetNextWindow can walk it safely even if windows change. */
+  GList *appWindows = gtk_application_get_windows(app);
+  for (GList *l = appWindows; l; l = l->next) {
+    gWindowIterList = g_list_append(gWindowIterList, l->data);
+  }
+
+  gWindowIterCurrent = gWindowIterList;
+  return gWindowIterCurrent ? gWindowIterCurrent->data : NULL;
+}
+
+void *GetNextWindow(void *win) {
+  (void)win;
+  if (!gWindowIterCurrent)
+    return NULL;
+  gWindowIterCurrent = gWindowIterCurrent->next;
+  return gWindowIterCurrent ? gWindowIterCurrent->data : NULL;
+}
+
+/**********************************************************************
+ * ReZoomMyWindow - resize window to fill available space
+ *
+ * Mac: toggled between user-size and "standard" (maximized) size.
+ * GTK: maximize the window. If already maximized, restore.
+ **********************************************************************/
+void ReZoomMyWindow(void *winWP) {
+  if (!winWP || !GTK_IS_WINDOW(winWP))
+    return;
+  GtkWindow *win = GTK_WINDOW(winWP);
+  if (gtk_window_is_maximized(win))
+    gtk_window_unmaximize(win);
+  else
+    gtk_window_maximize(win);
+}
+
+/**********************************************************************
+ * SendBehind - place winWP behind behindWP in the window stack
+ *
+ * Mac: Carbon Window Manager SendBehind.
+ * GTK4/Wayland: compositors control stacking, apps can't force z-order.
+ * Best approximation: present the "behind" window to bring it to front,
+ * which effectively pushes winWP behind it.
+ **********************************************************************/
+void SendBehind(void *winWP, void *behindWP) {
+  if (behindWP && GTK_IS_WINDOW(behindWP))
+    gtk_window_present(GTK_WINDOW(behindWP));
+}
+
+/**********************************************************************
+ * CloseMyWindow - close and destroy a window
+ *
+ * Mac: DisposeWindow + cleanup.
+ * GTK: destroy the window via gtk_window_destroy.
+ **********************************************************************/
+bool CloseMyWindow(void *winWP) {
+  if (!winWP)
+    return false;
+
+  MyWindowPtr myWin = GetWindowMyWindowPtr(winWP);
+  if (myWin && myWin->close) {
+    /* Let the window's close handler run first (may veto the close) */
+    if (!myWin->close(myWin))
+      return false;
+  }
+
+  MyDisposeWindow(winWP);
+  return true;
+}

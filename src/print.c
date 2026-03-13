@@ -719,11 +719,9 @@ int PrintSelectedMessages(TOCType *tocH, bool select, bool now,
         if (!tocH->sums[sumNum].selected)
             continue;
 
-#ifdef IMAP
         /* Original: if ((*tocH)->imapTOC) EnsureMsgDownloaded(tocH, sumNum, false); */
         if (tocH->imapTOC)
             EnsureMsgDownloaded(tocH, sumNum, false);
-#endif
 
         /* Original: win = GetAMessage(tocH, sumNum, nil, nil, False);
            Opens the message window (or returns existing one). */

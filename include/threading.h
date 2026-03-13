@@ -118,7 +118,6 @@ struct threadGlobals_ {
 
 extern _Thread_local threadGlobalsPtr CurThreadGlobals;
 extern threadGlobalsRec ThreadGlobals; // Main thread globals
-#ifdef THREADING_ON
 
 #include <pthread.h>
 #include "mailxfer.h"
@@ -189,7 +188,6 @@ typedef struct xferMailParams_ {
   XferFlags flags;
 } xferMailParamsRec;
 
-#ifdef IMAP
 // special structs used inside the IMAPTransferRec_
 typedef struct MailboxNode MailboxNode, *MailboxNodePtr, **MailboxNodeHandle;
 typedef struct IMAPSCStruct IMAPSCStruct, *IMAPSCPtr, **IMAPSCHandle;
@@ -231,13 +229,10 @@ struct IMAPTransferRec_ {
 };
 #endif
 
-#endif
 
 typedef struct threadContextData_ threadContextDataRec, *threadContextDataPtr;
 typedef struct threadData_ threadDataRec, *threadDataPtr, **threadDataHandle;
-#ifdef IMAP
 typedef struct IMAPTransferRec_ IMAPTransferRec, *IMAPTransferPtr;
-#endif
 
 /* data structures */
 struct threadData_ {
@@ -256,9 +251,7 @@ struct threadData_ {
 #if __profile__
   ProfilerThreadRef threadRef;
 #endif
-#ifdef IMAP
   IMAPTransferRec imapInfo;
-#endif
   threadDataHandle next;
 };
 
@@ -290,13 +283,8 @@ void MyYieldToAnyThread(void);
 OSErr PushThreadPrefChange(short pref);
 void SetCurrentTaskKind(TaskKindEnum taskKind);
 void SetThreadGlobalCommandPeriod(ThreadID threadID, bool value);
-#ifdef IMAP
 OSErr SetupXferMailThread(bool check, bool send, bool manual, bool ae,
                           XferFlags flags, IMAPTransferPtr imapInfo);
-#else
-OSErr SetupXferMailThread(bool check, bool send, bool manual, bool ae,
-                          XferFlags flags);
-#endif
 bool ThreadsAvailable(void);
 void RemoveTaskErrors(TaskKindEnum taskKind, long persId);
 OSErr SetThreadStackSize(long newSize);
@@ -314,16 +302,5 @@ OSErr AddMyResourceMainThread(Handle h, OSType type, short id,
 #define AddMyResourceMainThread_(h, t, i, n)                                   \
   AddMyResourceMainThread((void *)(h), (ResType)(t), i, (ConstStr255Param)(n))
 
-#else // threading off
-#define InAThread() false
-#define GetCurrentTaskKind() ((TaskKindEnum)0)
-#define SetCurrentTaskKind(t)
-#define ProgWindow (NULL)
-#define CurPers (NULL)
-#define GetResourceMainThread_ GetResource_
-#define ZapSettingsResourceMainThread ZapSettingsResource
-#define AddMyResourceMainThread_(h, t, i, n) AddMyRsource_
-
-#endif // THREADING_ON
 
 #endif // THREADING_H

@@ -27,11 +27,7 @@ DAMAGE. */
 
 typedef enum {kEuSendNow, kEuSendNext, kEuSendLater, kEuSendNever} SendTypeEnum;
 
-#ifdef THREADING_ON
 #define SENT_OR_SENDING(state) ((state)==SENT || (state)==BUSY_SENDING)
-#else
-#define SENT_OR_SENDING(state) ((state)==SENT)
-#endif
 
 #ifndef FLAG_ATYPE_LO
 #define FLAG_ATYPE_LO (1L<<6)

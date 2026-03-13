@@ -406,7 +406,28 @@ void PSCat(char *dst, const char *src) {}
 void PSCatC(char *dst, char c) {}
 extern char *PRIndex(char *str, char c);
 int FSpRename(FSSpecPtr spec, const char *newName) { return noErr; }
-void CycleBalls(void) {}
+/**********************************************************************
+ * CycleBalls - animate progress indicator and yield to the event loop
+ *
+ * Mac original: spun a beach-ball cursor every 10 ticks (~167ms) and
+ * called MiniEventsLo to let other threads run.
+ *
+ * GTK port: process pending GLib/GTK events so the UI stays responsive
+ * during long-running filter/download loops. Throttled to avoid
+ * burning CPU on event iteration.
+ **********************************************************************/
+void CycleBalls(void) {
+  static uint32_t lastTick = 0;
+  uint32_t now = TickCount();
+
+  if (now > lastTick + 10) {
+    lastTick = now;
+    /* Process pending GTK events to keep UI responsive */
+    GMainContext *ctx = g_main_context_default();
+    while (g_main_context_pending(ctx))
+      g_main_context_iteration(ctx, FALSE);
+  }
+}
 void ModernProgress(short id, short percent, void *p1, void *p2, void *p3) {}
 void MakePStr(PStr p, const void *c, int len) {
   if (p && c) {

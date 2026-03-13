@@ -25,7 +25,6 @@ ADVISED OF THE POSSIBILITY OF SUCH DAMAGE. */
 
 /* Copyright (c) 1997 by QUALCOMM Incorporated */
 #define FILE_NUM 112
-#ifdef IMAP
 
 /**********************************************************************
  *	imapnetlib.c
@@ -2364,7 +2363,6 @@ void mm_fatal(char *string)
     g_critical("IMAP fatal: %s", string ? string : "(null)");
 }
 
-#endif // IMAP
 
 #ifdef DEBUG
 /**********************************************************************

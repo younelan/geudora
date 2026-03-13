@@ -49,7 +49,6 @@ typedef struct XferFlags {
   bool isAuto;
 } XferFlags;
 
-#ifdef IMAP
 /* IMAP Transfer structure - complete definition */
 #ifndef IMAP_TRANSFER_REC_DEFINED
 #define IMAP_TRANSFER_REC_DEFINED
@@ -77,28 +76,21 @@ typedef struct IMAPTransferRec_ {
 } IMAPTransferRec, *IMAPTransferPtr;
 #endif
 
-#endif
 
 short XferMail(bool check, bool send, bool manual, bool ae, bool thread,
                short modifiers);
 short XferMailSetup(bool *check, bool *send, bool manual, bool ae,
                     XferFlags *flags, short modifiers);
-#ifdef IMAP
 short XferMailRun(bool check, bool send, bool manual, bool ae, XferFlags flags,
                   IMAPTransferPtr imapInfo);
-#else
-short XferMailRun(bool check, bool send, bool manual, bool ae, XferFlags flags);
-#endif
 void GrabSignature(uint32_t fid);
 OSErr SigSpec(FSSpecPtr spec, long id);
 OSErr TransmitMessageHi(TransStream stream, MessHandle messH, bool chatter,
                         bool sendDataCmd);
 void ShowBoxAt(TOCType * tocH, short selectMe, WindowPtr behindWin);
 short FumLub(TOCType * tocH);
-#ifdef THREADING_ON
 void FilterXferMessages(void);
 void ResetCheckTime(bool force);
-#endif
 #ifdef BATCH_DELIVERY_ON
 void NotifyNewMail(short gotSome, bool noXfer, TOCType * tocH,
                    FilterPB *fpbDelivery);

@@ -409,11 +409,9 @@ TOCType * ReadTOC(FSSpecPtr spec) {
     tocH->userActive = 0;
     tocH->drawerWin = NULL;
 
-#ifdef IMAP
     /* Check if this is an IMAP mailbox */
     tocH->imapTOC =
         IsIMAPMailboxFileLo(spec, &(tocH->imapMBH)) ? (void *)1 : NULL;
-#endif
 
     /* Make sure it hasn't become special or unspecial */
     tocH->which = GetMailboxType(spec);
@@ -793,10 +791,8 @@ int FlushTOCs(bool andClose, bool canSkip) {
   static short delay;
   bool dontCloseIMAPToc;
 
-#ifdef THREADING_ON
   if (GetNumBackgroundThreads())
     return noErr;
-#endif
 
   /* Skip if we recently failed and backoff hasn't expired */
   if (canSkip && lastTime && (long)(time(NULL) - lastTime) < delay)
@@ -870,14 +866,12 @@ TOCType * GetSpecialTOC(short nameId) {
   case JUNK:
     name = "Junk";
     break;
-#ifdef THREADING_ON
   case IN_TEMP:
     name = "In.temp";
     break;
   case OUT_TEMP:
     name = "Out.temp";
     break;
-#endif
   default:
     return NULL;
   }
@@ -1017,14 +1011,12 @@ static short GetMailboxType(FSSpecPtr spec) {
     return TRASH;
   if (strcasecmp(spec->name, "Junk") == 0)
     return JUNK;
-#ifdef THREADING_ON
   if (IsSpool(spec)) {
     if (strcasecmp(spec->name, "In.temp") == 0)
       return IN_TEMP;
     if (strcasecmp(spec->name, "Out.temp") == 0)
       return OUT_TEMP;
   }
-#endif
   return 0;
 }
 
@@ -1071,12 +1063,10 @@ short WantRebuildTOC(const char *boxName, int why, bool isIMAP) {
  * Ported from Mac: WantRebuildTOC dialog + RebuildTOC
  ************************************************************************/
 static TOCType * FixErrantTOC(FSSpecPtr spec, TOCType * tocH, short why) {
-#ifdef THREADING_ON
   /* Temp tocs: automatically rebuild */
   short which = GetMailboxType(spec);
   if (which == IN_TEMP || which == OUT_TEMP)
     return RebuildTOC(spec->path, tocH, false, true);
-#endif
 
   short result = WantRebuildTOC(spec->name, why,
                                 tocH && tocH->imapTOC != NULL);

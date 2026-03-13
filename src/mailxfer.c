@@ -114,20 +114,17 @@ extern bool NeedToFilterIn; // Global
 extern bool NeedToNotify;
 extern bool AttentionNeeded;
 #define eMailArrive 1 // Stub enum if not found
-extern void ReZoomMyWindow(WindowPtr win);
-extern void UpdateMyWindow(WindowPtr win);
+/* ReZoomMyWindow, GetNextWindow, SendBehind, CloseMyWindow declared in mailbox.h */
 extern long CountFlaggedMessages(TOCType * toc);
 struct NMRec;
 extern struct NMRec *MyNMRec;
 
 /* Legacy Mac Externs */
-extern WindowPtr GetNextWindow(WindowPtr w);
 extern void *GetWindowPrivateData(WindowPtr w);
 extern void SelectBoxRange(TOCType * toc, short a, short b, bool c, short d,
                            short e);
 extern void ScrollIt(WindowPtr w, short a, long b);
 extern bool SortedDescending(TOCType * toc);
-extern void SendBehind(WindowPtr a, WindowPtr b);
 extern void ShowMyWindowBehind(WindowPtr a, WindowPtr b);
 extern void GetResName(unsigned char *name, uint32_t type, short id);
 // REAL_BIG is defined in mydefs.h - don't redefine
@@ -153,10 +150,6 @@ extern int FindOpenWazoo(int win);
 
 // Global Stubs for UI state (threading globals are in threading.c when
 // THREADING_ON is defined)
-#ifndef THREADING_ON
-void *CurThreadGlobals = NULL;
-void *ThreadGlobals = NULL;
-#endif
 MyWindowPtr TaskProgressWindow = NULL;
 void *ModalWindow = NULL;
 bool gPPPConnectFailed = false;
@@ -168,10 +161,6 @@ bool gStayConnected = false;
 extern bool Offline;
 #undef CommandPeriod
 extern bool CommandPeriod;
-#ifndef THREADING_ON
-char *LastAttPath = NULL;
-void **SingleSpec = NULL;
-#endif
 
 // Enums and Defines
 #define eHasConnected 1
@@ -468,7 +457,6 @@ short XferMailLo(bool check, bool send, bool manual, XferFlags flags,
                  long *totalGot, OSErr *dialErrPtr);
 bool NeedPassword(bool check, bool send);
 void ResetPersCheckTime(bool force);
-#ifdef THREADING_ON
 bool OKToThread(bool check, bool send, bool manual, bool ae);
 long FindTotalQueuedSize(TOCType * tocH, long gmtSecs);
 bool AddSigIntro(GtkWidget *pte, void **text);
@@ -524,7 +512,6 @@ bool OKToThread(bool check, bool send, bool manual, bool ae) {
 #endif
   return (threadOK);
 }
-#endif // THREADING_ON
 
 /************************************************************************
  * XferMail - do the right thing
@@ -620,15 +607,11 @@ short XferMail(bool check, bool send, bool manual, bool ae, bool thread,
     }
   }
 
-#ifdef THREADING_ON
   if (PrefIsSet(PREF_THREADING_OFF) || !OKToThread(check, send, manual, ae) ||
       !ThreadsAvailable() || !thread)
     err = XferMailRun(check, send, manual, ae, flags, NULL);
   else
     err = SetupXferMailThread(check, send, manual, ae, flags, NULL);
-#else
-  err = XferMailRun(check, send, manual, ae);
-#endif
   if (send)
     SetSendQueue();        // redo sendqueue if need be
   SendImmediately = false; // clear this for next time around
@@ -792,7 +775,6 @@ short XferMailRun(bool check, bool send, bool manual, bool ae, XferFlags flags,
 
   anyErr = err = noErr;
 
-#ifdef THREADING_ON
   if (InAThread()) {
     if (PrefIsSet(PREF_TASK_PROGRESS_AUTO) && !TaskProgressWindow &&
         !FindOpenWazoo(TASKS_WIN)) {
@@ -804,7 +786,6 @@ short XferMailRun(bool check, bool send, bool manual, bool ae, XferFlags flags,
     }
   }
   NoXfer = flags.stub;
-#endif // THREADING_ON
 
   gotSome = 0;
   dialErr = noErr;
@@ -929,7 +910,6 @@ short XferMailRun(bool check, bool send, bool manual, bool ae, XferFlags flags,
                             // longer needed.
   }
 
-#ifdef THREADING_ON
   if (InAThread()) {
 #ifndef BATCH_DELIVERY_ON
     if (send)
@@ -948,7 +928,6 @@ short XferMailRun(bool check, bool send, bool manual, bool ae, XferFlags flags,
       if (popChecked && !IMAPCheckThreadRunning && !gNewMessages)
         NoNewMailMe = gotSome == 0;
   } else
-#endif
   {
     /*
      * notify the user if new mail arrived (or not, in some cases)
@@ -997,14 +976,12 @@ short XferMailLo(bool check, bool send, bool manual, XferFlags flags,
    */
   if (send && !(*CurPers)->sendQueue)
     send = False;
-#ifdef THREADING_ON
   /*
    * Set which task we're about to do in case we need to report it if we're
    * low on memory
    */
   SetCurrentTaskKind((check && !((*CurPers)->popSecure && send)) ? CheckingTask
                                                                  : SendingTask);
-#endif
   FlushTOCs(True, True); /* flush unnecessary TOC's */
   if (MonitorGrow(True) || CommandPeriod)
     goto done;
@@ -1075,14 +1052,12 @@ short XferMailLo(bool check, bool send, bool manual, XferFlags flags,
      */
     willCheck = !CommandPeriod && check && (!UseCTB || !err);
 
-#ifdef THREADING_ON
     /*
      * Set task we're about to do in case we need to report it if we're low on
      * memory
      */
     if (willCheck)
       SetCurrentTaskKind(CheckingTask);
-#endif
     if (MonitorGrow(True))
       return (0);
     if (willCheck) {
@@ -1141,14 +1116,12 @@ short XferMailLo(bool check, bool send, bool manual, XferFlags flags,
      */
     willSend =
         !CommandPeriod && send && (!UseCTB || !err) && !gPPPConnectFailed;
-#ifdef THREADING_ON
     /*
      * Set task we're about to do in case we need to report it if we're low on
      * memory
      */
     if (willSend)
       SetCurrentTaskKind(SendingTask);
-#endif
     if (MonitorGrow(True))
       return (0);
 
@@ -1470,11 +1443,9 @@ short SendTheQueue(TransStream stream, XferFlags flags) {
   long count;
   CSpecHandle fccList = (CSpecHandle)NuHandle(0);
   bool openedFilters = False;
-#ifdef THREADING_ON
   TOCType * realTocH = nil;
   bool inThread = InAThread();
   short realSumNum = -1;
-#endif
   static uint32_t sessionID;
   uint32_t numSent;
   uint32_t beforeBytes, actualBytes, approxBytes;
@@ -1482,7 +1453,6 @@ short SendTheQueue(TransStream stream, XferFlags flags) {
   Str255 s;
   PersHandle relayPers = nil;
 
-#ifdef THREADING_ON
   if (inThread) {
     SetCurrentTaskKind(SendingTask);
     RemoveTaskErrors(SendingTask, (*CurPers)->persId);
@@ -1495,7 +1465,6 @@ short SendTheQueue(TransStream stream, XferFlags flags) {
     UL(CurPers);
   }
   ProgressMessage(kpTitle, s);
-#endif
   /*
    * clear this stupid error condition
    */
@@ -1571,11 +1540,7 @@ short SendTheQueue(TransStream stream, XferFlags flags) {
 
   ByteProgress(0, 0, TotalQueuedSize);
 
-#ifdef THREADING_ON
   if (inThread || (openedFilters = !RegenerateFilters()))
-#else
-    if (openedFilters = !RegenerateFilters())
-#endif
     for (sumNum = 0; sumNum < tocH->count && code < 600 && !CommandPeriod &&
                      !EjectBuckaroo;
          sumNum++)
@@ -1645,7 +1610,6 @@ short SendTheQueue(TransStream stream, XferFlags flags) {
             code = 600;
             break;
           } /* happy, Dave? */
-#ifdef THREADING_ON
           /* fcc and filtering of outgoing messages should be done after all
            * messages sent in the main thread */
           if (!inThread) {
@@ -1659,20 +1623,11 @@ short SendTheQueue(TransStream stream, XferFlags flags) {
               } else
                 stayed++;
             }
-#ifdef THREADING_ON
           } else
             stayed++;
-#endif
-#else
-            stayed++;
-#endif
-#ifdef THREADING_ON
           /* don't delete message if we're in a thread. we'll do that from the
            * main thread. */
           if (!inThread && (tocH->sums[sumNum].flags & FLAG_KEEP_COPY) == 0)
-#else
-            if ((tocH->sums[sumNum].flags & FLAG_KEEP_COPY) == 0)
-#endif
           {
             if (messH && MessOptIsSet(messH, OPT_ATT_DEL))
               CompAttDel(messH);
@@ -1697,7 +1652,6 @@ short SendTheQueue(TransStream stream, XferFlags flags) {
             OpenAddrErrs = true;
           }
         }
-#ifdef THREADING_ON
         // update outgoing message status if we're in a thread
         if (inThread) {
           if (realTocH = GetRealOutTOC()) {
@@ -1717,7 +1671,6 @@ short SendTheQueue(TransStream stream, XferFlags flags) {
             }
           }
         }
-#endif
       }
 done:
   if (relayPers)
@@ -1826,7 +1779,6 @@ short CheckForMail(TransStream stream, short *gotSome, XferFlags *flags) {
   }
 #endif
 
-#ifdef THREADING_ON
   if (InAThread()) {
     SetCurrentTaskKind(CheckingTask);
     RemoveTaskErrors(CheckingTask, (*CurPers)->persId);
@@ -1839,7 +1791,6 @@ short CheckForMail(TransStream stream, short *gotSome, XferFlags *flags) {
     UL(CurPers);
   }
   ProgressMessage(kpTitle, s);
-#endif
 
   Headering = flags->stub;
 

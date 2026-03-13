@@ -1,525 +1,347 @@
-/* Copyright (c) 2017, Computer History Museum 
-All rights reserved. 
-Redistribution and use in source and binary forms, with or without modification, are permitted (subject to 
-the limitations in the disclaimer below) provided that the following conditions are met: 
- * Redistributions of source code must retain the above copyright notice, this list of conditions and the following disclaimer. 
- * Redistributions in binary form must reproduce the above copyright notice, this list of conditions and the following 
-   disclaimer in the documentation and/or other materials provided with the distribution. 
- * Neither the name of Computer History Museum nor the names of its contributors may be used to endorse or promote products 
-   derived from this software without specific prior written permission. 
-NO EXPRESS OR IMPLIED LICENSES TO ANY PARTY'S PATENT RIGHTS ARE GRANTED BY THIS LICENSE. THIS SOFTWARE IS PROVIDED BY THE 
-COPYRIGHT HOLDERS AND CONTRIBUTORS "AS IS" AND ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED TO, THE 
-IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR PURPOSE ARE DISCLAIMED. IN NO EVENT SHALL THE COPYRIGHT 
-HOLDER OR CONTRIBUTORS BE LIABLE FOR ANY DIRECT, INDIRECT, INCIDENTAL, SPECIAL, EXEMPLARY, OR CONSEQUENTIAL DAMAGES 
-(INCLUDING, BUT NOT LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR SERVICES; LOSS OF USE, DATA, OR PROFITS; OR BUSINESS 
-INTERRUPTION) HOWEVER CAUSED AND ON ANY THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT (INCLUDING 
-NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH 
+/* Copyright (c) 2017, Computer History Museum
+All rights reserved.
+Redistribution and use in source and binary forms, with or without modification, are permitted (subject to
+the limitations in the disclaimer below) provided that the following conditions are met:
+ * Redistributions of source code must retain the above copyright notice, this list of conditions and the following disclaimer.
+ * Redistributions in binary form must reproduce the above copyright notice, this list of conditions and the following
+   disclaimer in the documentation and/or other materials provided with the distribution.
+ * Neither the name of Computer History Museum nor the names of its contributors may be used to endorse or promote products
+   derived from this software without specific prior written permission.
+NO EXPRESS OR IMPLIED LICENSES TO ANY PARTY'S PATENT RIGHTS ARE GRANTED BY THIS LICENSE. THIS SOFTWARE IS PROVIDED BY THE
+COPYRIGHT HOLDERS AND CONTRIBUTORS "AS IS" AND ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED TO, THE
+IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR PURPOSE ARE DISCLAIMED. IN NO EVENT SHALL THE COPYRIGHT
+HOLDER OR CONTRIBUTORS BE LIABLE FOR ANY DIRECT, INDIRECT, INCIDENTAL, SPECIAL, EXEMPLARY, OR CONSEQUENTIAL DAMAGES
+(INCLUDING, BUT NOT LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR SERVICES; LOSS OF USE, DATA, OR PROFITS; OR BUSINESS
+INTERRUPTION) HOWEVER CAUSED AND ON ANY THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT (INCLUDING
+NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH
 DAMAGE. */
 
 #include "filters.h"
+#include "filtrun.h"
+#include "scripting.h"
+#include <string.h>
+#include <stdlib.h>
+
 /************************************************************************
- * Filters window - Copyright (C) 1993 QUALCOMM Incorporated
+ * Filters — scripting CRUD operations
+ *
+ * Original Mac code used Apple Events to expose filter management to
+ * external scripts. This file now provides platform-neutral CRUD
+ * functions that any scripting backend (D-Bus, Apple Events, COM)
+ * can call.
+ *
+ * Filter runtime logic (matching, actions) lives in filtrun.c.
+ * Filter UI (editing dialog) will live in filtwin.c.
  ************************************************************************/
 #define FILE_NUM 55
 
-#ifdef OLDFILTER
+/*======================================================================
+ * Internal helpers
+ *====================================================================*/
 
-
-OSErr FilterTokenToContent(FilterTokenPtr ft, FRPtr fp);
-short FilterToken2Num(FilterTokenPtr ft);
-OSErr FilterObjSpecifier(long id, AEDescPtr filter);
-OSErr SetFilterPropertyLo(FRPtr fr, DescType property, AEDescPtr data);
-OSErr StoreFilter(FilterTokenPtr fp, FRPtr fr);
-OSErr SetFilterPropertyLo(FRPtr fr, DescType property, AEDescPtr data);
-OSErr SetTermPropertyLo(FRPtr fr, short term, DescType property, AEDescPtr data);
-
-/**********************************************************************
- * FilterToken2Num - given a filter token, return the filter index
- **********************************************************************/
-short FilterToken2Num(FilterTokenPtr ft)
+/* Resolve a filter ID or 1-based index to a 0-based array index.
+ * Returns -1 if not found. */
+static int ResolveFilter(long idOrIndex, bool byId)
 {
-	return(ft->form==formAbsolutePosition ? ft->selector-1 : FindFilterById(ft->selector));
-}
-
-/**********************************************************************
- * FilterTokenToContent - grab a filter for a token
- **********************************************************************/
-OSErr FilterTokenToContent(FilterTokenPtr ft, FRPtr fp)
-{
-	short filter;
-	
-	if (!FilterExists(ft->form,ft->selector)) return(errAENoSuchObject);
-	
-	filter = FilterToken2Num(ft);
-	FilterLastMatch(filter);
-	*fp = FR[filter];
-	return(noErr);
-}
-
-/**********************************************************************
- * AECreateFilter - create a filter with AE's
- **********************************************************************/
-OSErr AECreateFilter(DescType theClass,AEDescPtr insertLoc,AppleEvent *event, AppleEvent *reply)
-{
-	AEDesc filter;
-	OSErr err = RegenerateFilters();
-	long id;
-	DescType where, junk;
-	short n;
-	
-	
-	if (!err && !(err=GotAERequired(event)))
-	{
-		/*
-		 * what's the next filter id?
-		 */
-		id = FilterNewId();
-	
-		/*
-		 * what position?
-		 */
-		if (AEGetKeyPtr(insertLoc,keyAEPosition,typeEnumeration,(void*)&junk,&where,sizeof(where),(void*)&junk))
-			n = NFilters;
-		else switch(where)
-		{
-			case kAEEnd:
-				n = NFilters;
-				break;
-			case kAEBeginning:
-				n = 0;
-				break;
-			default:
-				n = NFilters;
-				break;
-		}
-		
-		/*
-		 * create it
-		 */
-		AddFilter(n);
-		
-		/*
-		 * find it
-		 */
-		if (FilterExists(formUniqueID,id))
-		{
-			NullADList(&filter,nil);
-			if (!(err=FilterObjSpecifier(id,&filter)))
-				err = AEPutParamDesc(reply,keyAEResult,&filter);
-			DisposeADList(&filter,nil);
-		}
-		
-		/*
-		 * is the window open?
-		 */
-		if (FLG && *FLG && Win)
-			/* work is done */;
-		else
-		{
-			/*
-			 * sigh.  have to save
-			 */
-			SaveFilters();
-		}
+	int i;
+	if (byId) {
+		for (i = 0; i < gNFilters; i++)
+			if (gFilterArray[i].fu.id == idOrIndex)
+				return i;
+		return -1;
 	}
-	FiltersDecRef();
-	return(err);
+	/* 1-based index */
+	if (idOrIndex < 1 || idOrIndex > gNFilters)
+		return -1;
+	return (int)(idOrIndex - 1);
 }
 
-/**********************************************************************
- * FilterObjSpecifier - make an object specifier for a filter
- **********************************************************************/
-OSErr FilterObjSpecifier(long id, AEDescPtr filter)
+/* Allocate a new unique filter ID by finding the max existing ID + 1 */
+static long FilterNewId(void)
 {
-	AEDesc root, idDesc;
-	OSErr err;
-	
-	NullADList(&root,&idDesc,nil);
-	if (!(err = AECreateDesc(typeLongInteger,&id,sizeof(id),&idDesc)))
-		err = CreateObjSpecifier(cEuFilter,&root,formUniqueID,&idDesc,False,filter);
-	DisposeADList(&root,&idDesc,nil);
+	long maxId = 0;
+	int i;
+	for (i = 0; i < gNFilters; i++)
+		if (gFilterArray[i].fu.id > maxId)
+			maxId = gFilterArray[i].fu.id;
+	return maxId + 1;
 }
 
-/**********************************************************************
- * SetFilterProperty - set property for a filter, with fetch & store
- **********************************************************************/
-OSErr SetFilterProperty(AEDescPtr token, AEDescPtr data)
+/*======================================================================
+ * ScriptCountFilters
+ *====================================================================*/
+int ScriptCountFilters(long *count)
 {
-	DescType property = (*(PropTokenHandle)token->dataHandle)->propertyId;
-	FilterToken fToken = *(FilterTokenPtr)((*token->dataHandle)+sizeof(PropToken));
-	OSErr err = RegenerateFilters();
-	FilterRecord fr;
-
-	if (!err)
-	if (!(err = FilterTokenToContent(&fToken,&fr)))
-		err = SetFilterPropertyLo(&fr,property,data);
-	
-	/*
-	 * store it back
-	 */
-	if (!err) err = StoreFilter(&fToken,&fr);
-	
-	FiltersDecRef();
-	return(err);
+	if (!count) return -50;  /* paramErr */
+	if (RegenerateFilters()) return -1;
+	*count = gNFilters;
+	return 0;
 }
 
-/**********************************************************************
- * SetTermProperty - set a property for a term of a filter, with fetch & store
- **********************************************************************/
-OSErr SetTermProperty(AEDescPtr token, AEDescPtr data)
+/*======================================================================
+ * ScriptFilterExists
+ *====================================================================*/
+bool ScriptFilterExists(long idOrIndex, bool byId)
 {
-	OSErr err = RegenerateFilters();
-	DescType property = (*(PropTokenHandle)token->dataHandle)->propertyId;
-	TermToken tToken = *(TermTokenPtr)((*token->dataHandle)+sizeof(PropToken));
-	FilterRecord fr;
-
-	if (!err)
-	if (!(err = FilterTokenToContent(&tToken.filter,&fr)))
-		err = SetTermPropertyLo(&fr,tToken.term,property,data);
-	
-	/*
-	 * store it back
-	 */
-	if (!err) err = StoreFilter(&tToken.filter,&fr);
-	
-	FiltersDecRef();
-	return(err);
+	if (RegenerateFilters()) return false;
+	return ResolveFilter(idOrIndex, byId) >= 0;
 }
 
-/**********************************************************************
- * SetFilterPropertyLo - set a property for a filter, without fetch & store
- **********************************************************************/
-OSErr SetFilterPropertyLo(FRPtr fr, DescType property, AEDescPtr data)
+/*======================================================================
+ * ScriptCreateFilter — insert a new empty filter at position
+ *====================================================================*/
+int ScriptCreateFilter(int position, long *outId)
 {
-	Str255 string;
-	long value;
-	bool onOrOff;
-	OSErr err = noErr;
-	
-	value = GetAELong(data);
-	GetAEPStr(string,data);
-	onOrOff = GetAEBool(data);
-	
-	/*
-	 * change our local copy
-	 */
-	switch (property)
-	{
-		case pName:
-		case formUniqueID:
-			err = errAEEventNotHandled;
-			break;
-		case pEuFilterUse:
-			fr->fu.lastMatch = value;
-			break;
-		case pEuManual:
-			fr->manual = onOrOff;
-			break;
-		case pEuOutgoing:
-			fr->outgoing = onOrOff;
-			break;
-		case IN:
-			fr->incoming = onOrOff;
-			break;
-		case pEuConjunction:
-			fr->conjunction = value&0xff;
-			break;
-		case  pEuSubject:
-			PSCopy(fr->subject,string);
-			break;
-		case pEuLabel:
-			fr->label = value;
-			break;
-		case pEuPriority:
-			fr->raise = value>0;
-			fr->lower = value<0;
-			break;
-		case cEuMailbox:
-			err = BoxSpecByName(&fr->transferSpec,string);
-			break;
-		case pEuCopy:
-			fr->copyInstead = onOrOff;
-			break;
-		default:
-			err = errAENoSuchObject;
-			break;
+	int err;
+	FilterRecord newFR;
+
+	if ((err = RegenerateFilters())) return err;
+
+	/* Initialize a blank filter */
+	memset(&newFR, 0, sizeof(newFR));
+	newFR.fu.id = FilterNewId();
+	newFR.incoming = true;  /* default: apply to incoming */
+
+	/* Clamp position */
+	if (position < 0 || position > gNFilters)
+		position = gNFilters;
+
+	/* Grow the array */
+	FilterRecord *grown = (FilterRecord *)realloc(
+		gFilterArray, (gNFilters + 1) * sizeof(FilterRecord));
+	if (!grown) return -108;  /* memFullErr */
+	gFilterArray = grown;
+
+	/* Shift filters after insertion point */
+	if (position < gNFilters)
+		memmove(&gFilterArray[position + 1], &gFilterArray[position],
+		        (gNFilters - position) * sizeof(FilterRecord));
+
+	gFilterArray[position] = newFR;
+	gNFilters++;
+
+	if (outId) *outId = newFR.fu.id;
+
+	err = SaveFilters();
+	return err;
+}
+
+/*======================================================================
+ * ScriptDeleteFilter
+ *====================================================================*/
+int ScriptDeleteFilter(long idOrIndex, bool byId)
+{
+	int err, idx;
+
+	if ((err = RegenerateFilters())) return err;
+
+	idx = ResolveFilter(idOrIndex, byId);
+	if (idx < 0) return -1723;  /* errAENoSuchObject */
+
+	/* Shift remaining filters down */
+	if (idx < gNFilters - 1)
+		memmove(&gFilterArray[idx], &gFilterArray[idx + 1],
+		        (gNFilters - idx - 1) * sizeof(FilterRecord));
+	gNFilters--;
+
+	/* Shrink (or free if empty) */
+	if (gNFilters > 0) {
+		FilterRecord *shrunk = (FilterRecord *)realloc(
+			gFilterArray, gNFilters * sizeof(FilterRecord));
+		if (shrunk) gFilterArray = shrunk;
+	} else {
+		free(gFilterArray);
+		gFilterArray = NULL;
 	}
 
-	return(err);
+	err = SaveFilters();
+	return err;
 }
 
-/**********************************************************************
- * SetTermPropertyLo - set a property for a filter term, without fetch & store
- **********************************************************************/
-OSErr SetTermPropertyLo(FRPtr fr, short term, DescType property, AEDescPtr data)
+/*======================================================================
+ * ScriptGetFilterProperty
+ *====================================================================*/
+int ScriptGetFilterProperty(long idOrIndex, bool byId,
+                            ScriptPropertyID prop, ScriptValue *out)
 {
-	Str255 string;
-	long value;
-	OSErr err = noErr;
-	
-	value = GetAELong(data);
-	GetAEPStr(string,data);
-	
-	/*
-	 * change our local copy
-	 */
-	switch (property)
-	{
-		case pEuFilterHeader:
-			PSCopy(fr->terms[term].header,string);
-			break;
-		case pEuFilterVerb:
-			fr->terms[term].verb = value&0xff;
-			break;
-		case pEuFilterValue:
-			PSCopy(fr->terms[term].value,string);
-			break;
-		default:
-			err = errAENoSuchObject;
-			break;
-	}
+	int err, idx;
+	FilterRecord *fr;
 
-	return(err);
+	if (!out) return -50;
+	if ((err = RegenerateFilters())) return err;
+
+	idx = ResolveFilter(idOrIndex, byId);
+	if (idx < 0) return -1723;
+	fr = &gFilterArray[idx];
+
+	switch (prop) {
+	case kScriptPropName:
+		*out = ScriptString(fr->name);
+		break;
+	case kScriptPropId:
+		*out = ScriptLong(fr->fu.id);
+		break;
+	case kScriptPropLastMatch:
+		*out = ScriptLong((long)fr->fu.lastMatch);
+		break;
+	case kScriptPropIncoming:
+		*out = ScriptBool(fr->incoming);
+		break;
+	case kScriptPropOutgoing:
+		*out = ScriptBool(fr->outgoing);
+		break;
+	case kScriptPropManual:
+		*out = ScriptBool(fr->manual);
+		break;
+	case kScriptPropConjunction:
+		*out = ScriptLong((long)fr->conjunction);
+		break;
+	case kScriptPropTransferMailbox:
+		*out = ScriptString(fr->transferSpec.name);
+		break;
+	case kScriptPropCopyInstead:
+		*out = ScriptBool(fr->kill);  /* copyInstead mapped to kill flag */
+		break;
+	default:
+		return -1723;
+	}
+	return 0;
 }
 
-/************************************************************************
- * GetFilterProperty - get a property of a filter
- ************************************************************************/
-OSErr GetFilterProperty(AEDescPtr token,AppleEvent *reply,long refCon)
+/*======================================================================
+ * ScriptSetFilterProperty
+ *====================================================================*/
+int ScriptSetFilterProperty(long idOrIndex, bool byId,
+                            ScriptPropertyID prop, const ScriptValue *in)
 {
-#pragma unused(refCon);
-	DescType property = (*(PropTokenHandle)token->dataHandle)->propertyId;
-	FilterToken fToken = *(FilterTokenPtr)((*token->dataHandle)+sizeof(PropToken));
-	OSErr err = RegenerateFilters();
-	FilterRecord fr;
-	
-	if (!err)
-	if (!(err = FilterTokenToContent(&fToken,&fr)))
-	{
-		switch (property)
-		{
-			case pName:
-				err = AEPutPStr(reply,keyAEResult,fr.name);
-				break;
-			case formUniqueID:
-				err = AEPutLong(reply,keyAEResult,fr.fu.id);
-				break;
-			case pEuFilterUse:
-				err = AEPutLong(reply,keyAEResult,fr.fu.lastMatch);
-				break;
-			case pEuManual:
-				err = AEPutBool(reply,keyAEResult,fr.manual);
-				break;
-			case pEuOutgoing:
-				err = AEPutBool(reply,keyAEResult,fr.outgoing);
-				break;
-			case IN:
-				err = AEPutBool(reply,keyAEResult,fr.incoming);
-				break;
-			case pEuConjunction:
-				err = AEPutEnum(reply,keyAEResult,fr.conjunction|'cj-\000');
-				break;
-			case  pEuSubject:
-				err = AEPutPStr(reply,keyAEResult,fr.subject);
-				break;
-			case pEuLabel:
-				err = AEPutLong(reply,keyAEResult,fr.label);
-				break;
-			case pEuPriority:
-				err = AEPutLong(reply,keyAEResult,fr.raise?1:(fr.lower?-1:0));
-				break;
-			case cEuMailbox:
-				err = AEPutPStr(reply,keyAEResult,fr.transferSpec.name);
-				break;
-			case pEuCopy:
-				err = AEPutBool(reply,keyAEResult,fr.copyInstead);
-				break;
-			default:
-				err = errAENoSuchObject;
-				break;
-		}
+	int err, idx;
+	FilterRecord *fr;
+
+	if (!in) return -50;
+	if ((err = RegenerateFilters())) return err;
+
+	idx = ResolveFilter(idOrIndex, byId);
+	if (idx < 0) return -1723;
+	fr = &gFilterArray[idx];
+
+	switch (prop) {
+	case kScriptPropName:
+		if (in->type != kScriptValString) return -50;
+		strncpy(fr->name, in->u.str, sizeof(fr->name) - 1);
+		fr->name[sizeof(fr->name) - 1] = '\0';
+		break;
+	case kScriptPropId:
+		return -1723;  /* read-only */
+	case kScriptPropLastMatch:
+		if (in->type != kScriptValLong) return -50;
+		fr->fu.lastMatch = (uint32_t)in->u.num;
+		FilterNoteMatch(idx, in->u.num);
+		break;
+	case kScriptPropIncoming:
+		if (in->type != kScriptValBool) return -50;
+		fr->incoming = in->u.flag;
+		break;
+	case kScriptPropOutgoing:
+		if (in->type != kScriptValBool) return -50;
+		fr->outgoing = in->u.flag;
+		break;
+	case kScriptPropManual:
+		if (in->type != kScriptValBool) return -50;
+		fr->manual = in->u.flag;
+		break;
+	case kScriptPropConjunction:
+		if (in->type != kScriptValLong) return -50;
+		fr->conjunction = (ConjunctionEnum)(in->u.num & 0xff);
+		break;
+	case kScriptPropTransferMailbox:
+		if (in->type != kScriptValString) return -50;
+		strncpy(fr->transferSpec.name, in->u.str,
+		        sizeof(fr->transferSpec.name) - 1);
+		fr->transferSpec.name[sizeof(fr->transferSpec.name) - 1] = '\0';
+		break;
+	case kScriptPropCopyInstead:
+		if (in->type != kScriptValBool) return -50;
+		fr->kill = in->u.flag;
+		break;
+	default:
+		return -1723;
 	}
-	FiltersDecRef();
-	return(err);
+
+	err = SaveFilters();
+	return err;
 }
 
-/************************************************************************
- * GetTermProperty - get a property of a term
- ************************************************************************/
-OSErr GetTermProperty(AEDescPtr token,AppleEvent *reply,long refCon)
+/*======================================================================
+ * ScriptGetTermProperty
+ *====================================================================*/
+int ScriptGetTermProperty(long idOrIndex, bool byId, int termIndex,
+                          ScriptPropertyID prop, ScriptValue *out)
 {
-#pragma unused(refCon);
-	DescType property = (*(PropTokenHandle)token->dataHandle)->propertyId;
-	TermToken tToken = *(TermTokenPtr)((*token->dataHandle)+sizeof(PropToken));
-	OSErr err = RegenerateFilters();
-	FilterRecord fr;
-	
-	if (!err)
-	if (!(err = FilterTokenToContent(&tToken.filter,&fr)))
-	{
-		switch (property)
-		{
-			case pEuFilterHeader:
-				err = AEPutPStr(reply,keyAEResult,fr.terms[tToken.term].header);
-				break;
-			case pEuFilterValue:
-				err = AEPutPStr(reply,keyAEResult,fr.terms[tToken.term].value);
-				break;
-			case pEuFilterVerb:
-				err = AEPutEnum(reply,keyAEResult,fr.terms[tToken.term].verb|'vb-\000');
-				break;
-			default:
-				err = errAENoSuchObject;
-				break;
-		}
+	int err, idx;
+	FilterRecord *fr;
+	MatchTerm *mt;
+
+	if (!out || termIndex < 0 || termIndex > 1) return -50;
+	if ((err = RegenerateFilters())) return err;
+
+	idx = ResolveFilter(idOrIndex, byId);
+	if (idx < 0) return -1723;
+	fr = &gFilterArray[idx];
+	mt = &fr->terms[termIndex];
+
+	switch (prop) {
+	case kScriptPropTermHeader:
+		*out = ScriptString(mt->header);
+		break;
+	case kScriptPropTermVerb:
+		*out = ScriptLong((long)mt->verb);
+		break;
+	case kScriptPropTermValue:
+		*out = ScriptString(mt->value);
+		break;
+	default:
+		return -1723;
 	}
-	FiltersDecRef();
-	return(err);
+	return 0;
 }
 
-/**********************************************************************
- * StoreTokenFilter - store a filter to a spot indicated by the token
- **********************************************************************/
-OSErr StoreFilter(FilterTokenPtr fp, FRPtr fr)
+/*======================================================================
+ * ScriptSetTermProperty
+ *====================================================================*/
+int ScriptSetTermProperty(long idOrIndex, bool byId, int termIndex,
+                          ScriptPropertyID prop, const ScriptValue *in)
 {
-	short filter;
-	Point c;
-	OSErr err = noErr;
-	
-	/*
-	 * store it
-	 */
-	filter = FilterToken2Num(fp);
-	FR[filter] = *fr;
-	FilterNoteMatch(filter,fr->fu.lastMatch);
-	
-	/*
-	 * is the filter window open?
-	 */
-	if (FLG && Win)
-	{
-		PushGWorld();
-		SetPort(GetMyWindowCGrafPtr(Win));
+	int err, idx;
+	FilterRecord *fr;
+	MatchTerm *mt;
 
-		/*
-		 * are we the selected filter?
-		 */
-		if (Selected-1==filter) DisplaySelectedFilter();
-		
-		/*
-		 * Change our name
-		 */
-		c.h = 0; c.v = filter;
-		LSetCell(fr->name+1,*fr->name,c,LHand);
-		
-		/*
-		 * mark the window as dirty, let the user save
-		 */
-		Win->isDirty = True;
-		PopGWorld();
+	if (!in || termIndex < 0 || termIndex > 1) return -50;
+	if ((err = RegenerateFilters())) return err;
+
+	idx = ResolveFilter(idOrIndex, byId);
+	if (idx < 0) return -1723;
+	fr = &gFilterArray[idx];
+	mt = &fr->terms[termIndex];
+
+	switch (prop) {
+	case kScriptPropTermHeader:
+		if (in->type != kScriptValString) return -50;
+		strncpy(mt->header, in->u.str, sizeof(mt->header) - 1);
+		mt->header[sizeof(mt->header) - 1] = '\0';
+		break;
+	case kScriptPropTermVerb:
+		if (in->type != kScriptValLong) return -50;
+		mt->verb = (MatchEnum)(in->u.num & 0xff);
+		break;
+	case kScriptPropTermValue:
+		if (in->type != kScriptValString) return -50;
+		strncpy(mt->value, in->u.str, sizeof(mt->value) - 1);
+		mt->value[sizeof(mt->value) - 1] = '\0';
+		break;
+	default:
+		return -1723;
 	}
-	else
-	{
-		/*
-		 * window not open.  Must save filters
-		 */
-		err = SaveFilters();
-	}
-	return(err);
+
+	err = SaveFilters();
+	return err;
 }
-
-/**********************************************************************
- * CountFilters - how many filters are there?
- **********************************************************************/
-OSErr CountFilters(long *howMany)
-{
-	OSErr err = RegenerateFilters();
-	
-	if (!err) *howMany = NFilters;
-	
-	FiltersDecRef();
-	return(err);
-}
-
-/**********************************************************************
- * FilterExists - does a filter exist?
- **********************************************************************/
-bool FilterExists(DescType form, long selector)
-{
-	bool exists = False;
-	if (RegenerateFilters()) return(False);
-	
-	switch (form)
-	{
-		case formAbsolutePosition:
-			exists = 0<selector && selector<=NFilters;
-			break;
-		case formUniqueID:
-			exists = FindFilterById(selector)>=0;
-			break;
-	}
-	FiltersDecRef();
-	return(exists);
-}
-
-
-
-/************************************************************************
- * FiltersUpdate - draw the window
- ************************************************************************/
-void FiltersUpdate(MyWindowPtr win)
-{
-#pragma unused(win)
-	Rect r;
-	Str63 s;
-	Handle pattern = GetResource_('PAT ',OFFSET_GREY);	
-	
-	PenPat(pattern ? (ConstPatternParam)*pattern : &qd.gray);
-	HUnlock(pattern);
-	r = Rects[flrMatch1]; FrameRect(&r);
-	r = Rects[flrMatch2]; FrameRect(&r);
-	
-	PenNormal();
-	
-	
-	if (!Selected || Multiple)
-	{
-		r = Win->contR;
-		r.left = Rects[flrHBar].left-1;
-		GreyOutRoundRect(&r,0,0);
-	}
-	else if (!HasTwo)
-	{
-		r = Rects[flrMatch2];
-		InsetRect(&r,1,1);
-		GreyOutRoundRect(&r,0,0);
-	}
-	
-	DrawFilterDate();
-}
-
-
-
-/**********************************************************************
- * AEDeleteFilter - delete a filter from AE's
- **********************************************************************/
-OSErr AEDeleteFilter(FilterTokenPtr fp)
-{
-	OSErr err = RegenerateFilters();
-	
-	if (!err)
-	{
-		RemoveFilter(FilterToken2Num(fp));
-		if (FLG && *FLG && Win)
-			/* work done */ ;
-		else
-			err = SaveFilters();
-	}
-	FiltersDecRef();
-	return(err);
-}
-
-
-#pragma segment Filters
-
-#endif	

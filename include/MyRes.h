@@ -343,14 +343,12 @@ typedef enum {
 	QMQ_LIMIT
 } QuitModQueueItems;
 
-#ifdef THREADING_ON
 typedef enum {
   QTR_WAIT=1,
 	QTR_CANCEL,
 	QTR_DONT,
 	QTR_LIMIT
 } QuitThreadRunning;
-#endif
 
 typedef enum {
 	MEMORY_QUIT=1,
@@ -939,7 +937,6 @@ typedef enum {
 	svmLimit
 } ServerMenuEnum;
 
-#ifdef	IMAP
 typedef enum {
 	isvmFetchMessage=1,
 	isvmFetchAttachments,
@@ -947,7 +944,6 @@ typedef enum {
 	isvmRemoveCache,
 	isvmLimit
 } IMAPServerMenuEnum;
-#endif
 
 typedef enum {
 	tmPlain=1,

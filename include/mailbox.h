@@ -696,6 +696,11 @@ void SetTopMargin(MyWindowPtr win, short h);
 void SetBotMargin(MyWindowPtr win, short h);
 void MyWindowDidResize(MyWindowPtr win, void *oldContR);
 void SetWTitle(void *winWP, unsigned char *title);
+void *GetWindowList(void);
+void *GetNextWindow(void *win);
+void ReZoomMyWindow(void *winWP);
+void SendBehind(void *winWP, void *behindWP);
+bool CloseMyWindow(void *winWP);
 
 /* Mailbox open/close */
 int OpenMailbox(FSSpecPtr spec, bool showIt, TOCType * toc);

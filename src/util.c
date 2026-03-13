@@ -2276,3 +2276,23 @@ short GetOSVersion(void) {
 bool HaveOSX(void) { return GetOSVersion() >= 0x1000; }
 
 /* Removed Mac OS 9 Speed Doubler NoSLGet blocks */
+
+/**********************************************************************
+ * TimeString - format seconds-since-epoch as a time string
+ *
+ * Mac original: used DateTimeUtils toolbox to format time according
+ * to the current locale/script settings.
+ *
+ * GTK port: uses strftime with the locale's preferred time format.
+ * The 'wantSeconds' parameter selects HH:MM:SS vs HH:MM.
+ **********************************************************************/
+void TimeString(long secs, bool wantSeconds, unsigned char *str, void *intlHandle) {
+  (void)intlHandle; /* Mac intl resource handle — not used on POSIX */
+  if (!str) return;
+  str[0] = '\0';
+
+  time_t t = (time_t)secs;
+  struct tm *tm = localtime(&t);
+  if (tm)
+    strftime((char *)str, 64, wantSeconds ? "%H:%M:%S" : "%H:%M", tm);
+}

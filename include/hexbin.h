@@ -39,9 +39,7 @@ typedef enum {
 	NotHex, CollectName, CollectInfo, DataWrite, DataCrc1, DataCrc2,
 	RzWrite, RzCrc1, RzCrc2, Excess, HexDone, HexSLimit
 } HexBinStates;
-#ifdef	IMAP
 bool AutoWantTheFileLo(FSSpecPtr specPtr,bool ohYesYouDo,bool relatedPart, bool imapStub);
-#endif
 bool AutoWantTheFile(FSSpecPtr specPtr,bool ohYesYouDo,bool relatedPart);
 void SafeInfo(FInfo *info, FXInfo *fxInfo);
 void ForceAttachFolder(PStr volName, long *dirId);

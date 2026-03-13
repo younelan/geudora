@@ -57,18 +57,12 @@ struct Personality {
   unsigned int noUIDL : 1;
   unsigned int uupcIn : 1;
   unsigned int uupcOut : 1;
-#ifdef IMAP
   unsigned int imapRefresh : 1;
   unsigned int otherFlags : 23;
-#else
-  unsigned int otherFlags : 24;
-#endif
   long sendQueue;
   uint32_t checkTicks;
   uint32_t ivalTicks;
-#ifdef IMAP
   MailboxNodeHandle mailboxTree;
-#endif
   void *proxy;
 };
 

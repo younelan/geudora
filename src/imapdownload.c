@@ -25,7 +25,6 @@ ADVISED OF THE POSSIBILITY OF SUCH DAMAGE. */
 
 /* Copyright (c) 1998 by QUALCOMM Incorporated */
 #define FILE_NUM 114
-#ifdef IMAP
 
 /**********************************************************************
  *	imapDownload.c
@@ -203,9 +202,7 @@ extern FSSpec AttFolderSpec;
 #define OPT_FETCH_ATTACHMENTS 0x1000
 #define blServer 0
 /* InvalTocBox moved to imapdownload.h */
-/* ReZoomMyWindow is implemented later,
- * prototype needed */
-void ReZoomMyWindow(WindowPtr win);
+/* ReZoomMyWindow: declared in mailbox.h, implemented in mywindow.c */
 static inline Rect CurState(WindowPtr w) {
   Rect r = {0};
   return r;
@@ -11989,4 +11986,3 @@ void IMAPSearchIncremental(MailboxNodeHandle mbox) {
  * AddTaskErrorsS is implemented in taskProgress.c
  ************************************************************************/
 
-#endif // IMAP

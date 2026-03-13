@@ -301,10 +301,8 @@ void InitPersonalities(void)
 	LL_Queue(PersList,pers,(PersHandle));
 	GetRString(dom,DOMINANT);
 	PSCopy((*pers)->name,dom);
-#ifdef	IMAP
 	(*pers)->mailboxTree = 0;
 	(*pers)->imapRefresh = 0;
-#endif
 	
 	CurPers = pers;
 	
@@ -332,10 +330,8 @@ void InitPersonalities(void)
 				(*pers)->dirty = False;
 				(*pers)->checkTicks = 0;
 				(*pers)->proxy = nil;
-#ifdef	IMAP
 				(*pers)->mailboxTree = 0;
 				(*pers)->imapRefresh = 0;
-#endif
 				// The popd resources shouldn't be here if this is
 				// an imap personality.  Kill them.
 				if (IsIMAPPers(pers))
@@ -619,11 +615,7 @@ OSErr SetPers(TOCType * tocH,short sumNum,PersHandle pers,bool stationery)
 	
 	SetBGColorsByPers(messH);
 	
-#ifdef THREADING_ON
 	if (tocH->which==OUT && (tocH->sums[sumNum].state!=SENT && tocH->sums[sumNum].state!=BUSY_SENDING))
-#else
-	if (tocH->which==OUT && tocH->sums[sumNum].state!=SENT)
-#endif
 	{
 		if (stationery && !redirected)  // if stationery not allowed, don't copy sig
 		{

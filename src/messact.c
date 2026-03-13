@@ -1994,17 +1994,6 @@ bool Menu2TableId(TOCType *tocH, void **pmh, short item, short *tableId) {
 /* ============================================================ */
 void PetePaneDraw(void *cntl, short part) { (void)cntl; (void)part; }
 
-#ifdef TWO
-bool GetServerRect(MyWindowPtr win, short which, Rect *r) {
-  GetBlahRect(win, 0, r);
-  short wi = r->right - r->left;
-  int winW = 600;
-  if (win->window) winW = gtk_widget_get_width(win->window);
-  r->right = winW - (2 - which) * (3 + wi) - 3;
-  r->left = r->right - wi;
-  return true;
-}
-#endif
 
 short GetMesgErrorsHeight(MyWindowPtr win) {
   (void)win;

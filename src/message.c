@@ -129,6 +129,23 @@ extern _Thread_local threadGlobalsPtr CurThreadGlobals;
 #define HeaderName(num)                                                        \
   (GetRString(scratch, HEADER_STRN + num), TrimWhite(scratch), (char *)scratch)
 
+/************************************************************************
+ * ComputeLocalDate - format a message's date as a C string
+ ************************************************************************/
+void ComputeLocalDate(void *sum, unsigned char *dateStr) {
+  if (!dateStr) return;
+  dateStr[0] = '\0';
+  if (sum) {
+    MSumType *ms = (MSumType *)sum;
+    if (ms->seconds) {
+      time_t t = (time_t)ms->seconds;
+      struct tm *tm = localtime(&t);
+      if (tm)
+        strftime((char *)dateStr, 64, "%Y-%m-%d %H:%M", tm);
+    }
+  }
+}
+
 /**********************************************************************
  * MakeMessTitle - make a reasonable message title from a summary
  **********************************************************************/
@@ -256,20 +273,11 @@ bool UseFlowOutExcerpt = false;
  */
 UHandle GetMessText(MessHandle messH);
 int MessErr;
-#ifndef IMAP
-void MovingAttachments(TOCType * tocH, short sumNum, bool attach, bool wipe,
-                       bool nuke, bool IMAPStubsOnly);
-#endif
 int FindAndCopyHeader(MessHandle origMH, MessHandle newMH, char *fromHead,
                       short toHead);
 void WeedHeaders(UHandle buffer, long *weeded, short toWeed, AccuPtr weeds);
-#ifdef IMAP
 MyWindowPtr OpenMessage(TOCType * tocH, short sumNum, GtkWidget *winWP,
                         MyWindowPtr win, bool showIt, bool preview);
-#else
-MyWindowPtr OpenMessage(TOCType * tocH, short sumNum, GtkWidget *winWP,
-                        MyWindowPtr win, bool showIt);
-#endif
 int RemoveSelf(MessHandle messH, short head, bool wantErrors);
 void FindFrom(unsigned char *who, GtkWidget *pte);
 void Attribute(short attrId, MessHandle origMessH, MessHandle newMessH,
@@ -424,11 +432,7 @@ MyWindowPtr GetAMessageLo(TOCType * origTocH, int origSumNum, GtkWidget *winWP,
     win = OpenLink(tocH, sumNum, winWP, win, showIt);
 #endif
   else
-#ifdef IMAP
     win = OpenMessage(tocH, sumNum, winWP, win, showIt, false);
-#else
-    win = OpenMessage(tocH, sumNum, winWP, win, showIt);
-#endif
   if (win) {
     (*Win2MessH(win))->openedFromTocH = origTocH;
     (*Win2MessH(win))->openedFromSerialNum =
@@ -440,13 +444,8 @@ MyWindowPtr GetAMessageLo(TOCType * origTocH, int origSumNum, GtkWidget *winWP,
 /**********************************************************************
  * OpenMessage - open a message in its own window
  **********************************************************************/
-#ifdef IMAP
 MyWindowPtr OpenMessage(TOCType * tocH, short sumNum, GtkWidget *winWP,
                         MyWindowPtr win, bool showIt, bool preview)
-#else
-MyWindowPtr OpenMessage(TOCType * tocH, short sumNum, GtkWidget *winWP,
-                        MyWindowPtr win, bool showIt)
-#endif
 {
   MessHandle messH;
   // bool turvy = showIt; // Remove Mac-specific modifier check for now
@@ -501,7 +500,6 @@ MyWindowPtr OpenMessage(TOCType * tocH, short sumNum, GtkWidget *winWP,
   if (MessOptIsSet(messH, OPT_WRITE))
     ClearMessOpt(messH, OPT_WRITE);
 
-#ifdef IMAP
   // Actually go fetch this message if we must
   if (tocH->imapTOC && !IMAPMessageDownloaded(tocH, sumNum)) {
     // threading is off.  Download message now
@@ -531,7 +529,6 @@ MyWindowPtr OpenMessage(TOCType * tocH, short sumNum, GtkWidget *winWP,
       disableButtons = true;
     }
   } else
-#endif
     text = (char *)GetMessText(messH);
   useLizzie = false;
 
@@ -835,11 +832,9 @@ OSErr CacheMessage(TOCType * tocH, short sumNum) {
   if (0 > sumNum || sumNum >= tocH->count)
     return (fnfErr);
 
-#ifdef IMAP
   // don't do anything with IMAP messages that have not been downloaded yet.
   if (tocH->sums[sumNum].offset < 0)
     return (fnfErr);
-#endif
 
   /*
    * is it there?
@@ -1045,11 +1040,9 @@ int MoveMessageLo(TOCType * tocH, int sumNum, FSSpecPtr toSpec, bool copy,
   short realSumNum;
   bool isIMAPtoPopTransfer = false;
 
-#ifdef THREADING_ON
   // can't transfer a message we're sending
   if (!copy && (tocH->sums[sumNum].state == BUSY_SENDING))
     return (-1);
-#endif
   if (LogLevel & LOG_MOVE)
     ComposeLogS(
         LOG_MOVE, NULL, (unsigned char *)"%s \"%s,%s\"  \"%s\"->\"%s\"\r",
@@ -1065,7 +1058,6 @@ int MoveMessageLo(TOCType * tocH, int sumNum, FSSpecPtr toSpec, bool copy,
   tocH = GetRealTOC(tocH, sumNum, &realSumNum);
   sumNum = realSumNum;
 
-#ifdef IMAP
   // handle special transfer cases for IMAP mailbox transfers
   if (toTocH->imapTOC) {
     OSErr err = noErr;
@@ -1082,7 +1074,6 @@ int MoveMessageLo(TOCType * tocH, int sumNum, FSSpecPtr toSpec, bool copy,
 
     return (err);
   }
-#endif
 
   if (tocH->which == OUT && !copy)
     FixSourceStatus(
@@ -1091,7 +1082,6 @@ int MoveMessageLo(TOCType * tocH, int sumNum, FSSpecPtr toSpec, bool copy,
   if (messH && (*messH)->subPTE && PeteIsDirty((*messH)->subPTE))
     MessSaveSub(messH);
 
-#ifdef IMAP
   // if this is an IMAP to POP transfer, close the message window
   if (tocH->imapTOC) {
     // IMAP to POP.  Download the message.
@@ -1116,16 +1106,13 @@ int MoveMessageLo(TOCType * tocH, int sumNum, FSSpecPtr toSpec, bool copy,
     if (!copy && messH)
       CloseMyWindow(GetMyWindowWindowPtr((*messH)->win));
   }
-#endif
 
   CycleBalls();
 
-#ifdef IMAP
   // if this is an IMAP to POP transfer, the POP copy will point to the
   // attachment
   isIMAPtoPopTransfer =
       tocH && tocH->imapTOC && toTocH && !toTocH->imapTOC;
-#endif // IMAP
 
   MessErr =
       AppendMessage(tocH, sumNum, toTocH, copy, toTemp, isIMAPtoPopTransfer);
@@ -1139,15 +1126,12 @@ int MoveMessageLo(TOCType * tocH, int sumNum, FSSpecPtr toSpec, bool copy,
 
   CycleBalls();
 
-#ifdef IMAP
   // if we moved an IMAP message to a POP mailbox, forget about its attachments
   // so they don't get tidied up.
   if (tocH->imapTOC && !toTocH->imapTOC)
     tocH->sums[sumNum].opts |= OPT_ORPHAN_ATT;
-#endif
 
   if (!copy)
-#ifdef IMAP
   {
     serialNum = tocH->sums[sumNum].serialNum;
     // if this was an IMAP message, we'll need to delete it from the server.
@@ -1161,15 +1145,6 @@ int MoveMessageLo(TOCType * tocH, int sumNum, FSSpecPtr toSpec, bool copy,
     //	Check for updates to search results
     SearchUpdateSum(toTocH, toTocH->count - 1, tocH, serialNum, true, false);
   }
-#else
-  {
-    oldSerialNum = tocH->sums[sumNum].serialNum;
-    DeleteSum(tocH, sumNum);
-    //	Check for updates to search results
-    SearchUpdateSum(toTocH, toTocH->count - 1, fromTocH, serialNum, true,
-                    false);
-  }
-#endif
 
   CheckBox(GetWindowMyWindowPtr(FrontWindow_()), false);
   return (MessErr);
@@ -1256,16 +1231,6 @@ int AppendMessage(TOCType * fromTocH, int fromN, TOCType * toTocH, bool copy,
     if ((MessErr = CopyToOut(fromTocH, fromN, toTocH)))
       return (MessErr);
   } else {
-#ifdef TWO
-    if (!copy && (fromTocH->which == TRASH || toTocH->which == TRASH)) {
-      if (PrefIsSet(PREF_TIDY_FOLDER) &&
-          (fromTocH->sums[fromN].flags & FLAG_HAS_ATT) &&
-          !(fromTocH->sums[fromN].flags & FLAG_OUT))
-        MovingAttachments(fromTocH, fromN, true, false, false, false);
-      if (fromTocH->sums[fromN].flags & FLAG_HAS_ATT)
-        MovingAttachments(fromTocH, fromN, false, false, false, false);
-    }
-#endif
     if (fromTocH->sums[fromN].cache && *fromTocH->sums[fromN].cache) {
       count = fromTocH->sums[fromN].length;
       MessErr = SetFPos(toTocH->refN, fsFromStart, eof);
@@ -1406,10 +1371,8 @@ int MoveSelectedMessagesLo(TOCType * tocH, FSSpecPtr toSpec, bool copy,
   bool outWarning;
   long count;
   uLong pTicks = TickCount();
-#ifdef IMAP
   Handle uidsH = NULL;
   OSErr err = noErr;
-#endif
   TOCType * realTocH;
   short realSum;
   unsigned char name[256];
@@ -1560,20 +1523,11 @@ int ReallyDoAnAlert(int templ, int which);
    */
   UHandle GetMessText(MessHandle messH);
   int MessErr;
-#ifndef IMAP
-  void MovingAttachments(TOCType * tocH, short sumNum, bool attach, bool wipe,
-                         bool nuke, bool IMAPStubsOnly);
-#endif
   int FindAndCopyHeader(MessHandle origMH, MessHandle newMH, char *fromHead,
                         short toHead);
   void WeedHeaders(UHandle buffer, long *weeded, short toWeed, AccuPtr weeds);
-#ifdef IMAP
   MyWindowPtr OpenMessage(TOCType * tocH, short sumNum, GtkWidget *winWP,
                           MyWindowPtr win, bool showIt, bool preview);
-#else
-  MyWindowPtr OpenMessage(TOCType * tocH, short sumNum, GtkWidget *winWP,
-                          MyWindowPtr win, bool showIt);
-#endif
   int RemoveSelf(MessHandle messH, short head, bool wantErrors);
   void FindFrom(unsigned char *who, GtkWidget *pte);
   void Attribute(short attrId, MessHandle origMessH, MessHandle newMessH,
@@ -1739,10 +1693,6 @@ int ReallyDoAnAlert(int templ, int which);
     return (0);
   }
 
-#ifdef TWO
-  if (!copy && undo)
-    AddXfUndo(tocH, toTocH, -1);
-#endif
 
   if (count > 10)
     OpenProgress();
@@ -1826,7 +1776,6 @@ int ReallyDoAnAlert(int templ, int which);
         pTicks = TickCount();
       }
 
-#ifdef IMAP
       // if this is a virtual TOC, and the message has already been processed,
       // skip it.
       if (tocH->virtualTOC && IsIMAPMessageProcessed(tocH, sumNum)) {
@@ -1838,17 +1787,14 @@ int ReallyDoAnAlert(int templ, int which);
         if (!EnsureMsgDownloaded(tocH, sumNum, true))
           continue; //	Couldn't download message
       }
-#endif
       oldCount = tocH->count;
       if (!(realTocH = GetRealTOC(tocH, sumNum, &realSum)))
         continue;
-#ifdef IMAP
       // if this is a virtual mailbox, and the real mailbox is an IMAP mailbox,
       // don't do anything with this message
       if (tocH->virtualTOC && realTocH->imapTOC)
         MessErr = noErr;
       else
-#endif
         MessErr = AppendMessage(realTocH, realSum, toTocH, copy, false, false);
       if (MessErr) {
         if (MessErr != userCanceledErr)
@@ -1856,12 +1802,10 @@ int ReallyDoAnAlert(int templ, int which);
         break;
       }
 
-#ifdef IMAP
       // if we moved this IMAP message to a POP mailbox, forget about its
       // attachments so they don't get tidied up.
       if (tocH->imapTOC && !toTocH->imapTOC)
         tocH->sums[sumNum].opts |= OPT_ORPHAN_ATT;
-#endif
 
       // Log the transfer
       if (LogLevel & LOG_MOVE)
@@ -1878,7 +1822,6 @@ int ReallyDoAnAlert(int templ, int which);
         long serialNum = realTocH->sums[realSum].serialNum;
 
         if (!tocH->virtualTOC) {
-#ifdef IMAP
           if (tocH->imapTOC && uidsH) {
             //	If not copying, we'll need to delete original IMAP message when
             // done.
@@ -1892,7 +1835,6 @@ int ReallyDoAnAlert(int templ, int which);
               }
             }
           }
-#endif
           else {
             DeleteSum(tocH, sumNum);
             if (1) {
@@ -1913,7 +1855,6 @@ int ReallyDoAnAlert(int templ, int which);
       }
     }
 
-#ifdef IMAP
     // now delete the IMAP messages that were transferred, if the transfer
     // completed successfully.
     if (!copy && tocH->imapTOC && (MessErr == noErr) && !CommandPeriod &&
@@ -1922,7 +1863,6 @@ int ReallyDoAnAlert(int templ, int which);
       // transferred.
       IMAPDeleteMessages(tocH, uidsH, false, false, false, false);
     }
-#endif
 
     (void)BoxFClose(tocH, false);
     (void)BoxFClose(toTocH, true);
@@ -1931,10 +1871,6 @@ int ReallyDoAnAlert(int templ, int which);
     if (tocH->win && !copy && !CommandPeriod)
       BoxSelectAfter(tocH->win, lastSelected);
     CheckBox(GetWindowMyWindowPtr(FrontWindow_()), false);
-#ifdef TWO
-    if (MessErr)
-      NukeXfUndo();
-#endif
     ShowBoxSizes(tocH->win);
     return (MessErr);
   }
@@ -2108,134 +2044,6 @@ OSErr TOCFindMessByMsgID(uLong mid, TOCType * tocH, long *sumNum) {
   return (fnfErr);
 }
 
-#ifdef TWO
-/************************************************************************
- * MovingAttachments - we're moving attachments into or out of the trash
- ************************************************************************/
-void MovingAttachments(TOCType * tocH, short sumNum, bool attach, bool wipe,
-                       bool nuke, bool IMAPStubsOnly) {
-  FSSpec attFolder, trashFolder;
-  FSSpecPtr fromSpec, toSpec;
-
-  if (attach) {
-    if (GetAttFolderSpec(&attFolder))
-      return; /* no folder set */
-  } else
-    SubFolderSpec(PARTS_FOLDER, &attFolder);
-  if (GetTrashSpec(attFolder.vRefNum, &trashFolder))
-    return; /* oh well; unimportant error */
-  if (!nuke && tocH->which == TRASH) {
-    fromSpec = &trashFolder;
-    toSpec = &attFolder;
-  } else {
-    fromSpec = &attFolder;
-    toSpec = &trashFolder;
-  }
-  MovingAttachmentsLo(tocH, sumNum, attach, wipe, nuke, IMAPStubsOnly, fromSpec,
-                      toSpec);
-}
-
-/************************************************************************
- * MovingAttachmentsLo - we're moving attachments to specific folders
- ************************************************************************/
-void MovingAttachmentsLo(TOCType * tocH, short sumNum, bool attach, bool wipe,
-                         bool nuke, bool IMAPStubsOnly, FSSpecPtr fromSpec,
-                         FSSpecPtr toSpec) {
-  Handle text;
-  long offset;
-  FSSpec attSpec, dupSpec, newSpec;
-  bool iOpened = tocH->sums[sumNum].messH == NULL;
-  TOCType * attTOCH;
-  FInfo info;
-
-  CacheMessage(tocH, sumNum);
-  if (!(text = tocH->sums[sumNum].cache))
-    return;
-  offset = tocH->sums[sumNum].bodyOffset - 1;
-
-  while (0 <= (offset = FindAnAttachment(text, offset + 1, &attSpec, attach,
-                                         NULL, NULL, NULL))) {
-#ifdef IMAP
-    if (IsIMAPAttachmentStub(&attSpec)) {
-      //	Just delete IMAP attachment stubs
-      if (wipe || nuke)
-        FSpDelete(&attSpec);
-      continue;
-    }
-    if (IMAPStubsOnly)
-      continue;
-#endif
-    if (SameVRef(attSpec.vRefNum, toSpec->vRefNum) &&
-        (!fromSpec || AttStillInFolder(&attSpec, fromSpec))) {
-      /*
-       * is it a mailbox?
-       */
-      FSpGetFInfo(&attSpec, &info);
-      if (!(info.fdFlags & kIsAlias) && IsMailbox(&attSpec)) {
-        dupSpec = attSpec;
-
-        /*
-         * if it's open, we must close it
-         */
-        if (attTOCH = FindTOC(&attSpec)) {
-          bool oldSuper = PrefIsSet(PREF_SUPERCLOSE);
-          if (!oldSuper)
-            TogglePref(PREF_SUPERCLOSE);
-          CloseMyWindow(GetMyWindowWindowPtr(attTOCH->win));
-          if (!oldSuper)
-            TogglePref(PREF_SUPERCLOSE);
-        }
-        Box2TOCSpec(&attSpec, &dupSpec);
-
-        if (wipe)
-          WipeSpec(&dupSpec);
-        else
-          SpecMove(&dupSpec, toSpec); /* if toc move fails, at least we tried */
-
-        /*
-         * now, if in the menus, kill the menu item
-         */
-        if (!FSMakeFSSpec(MailRoot.vRef, MailRoot.dirId, attSpec.name,
-                          &dupSpec)) {
-          if (IsAlias(&dupSpec, &dupSpec) && SameSpec(&attSpec, &dupSpec)) {
-            FSMakeFSSpec(MailRoot.vRef, MailRoot.dirId, attSpec.name, &dupSpec);
-            RemoveBoxHigh(&dupSpec);
-            FSpDelete(&dupSpec); /* get rid of alias */
-            Box2TOCSpec(&dupSpec, &dupSpec);
-            FSpDelete(&dupSpec); /* and toc alias */
-          }
-        }
-      }
-
-      /*
-       * move the file into the trash
-       */
-      if (wipe)
-        WipeSpec(&attSpec);
-      else if (dupFNErr == SpecMove(&attSpec, toSpec)) {
-        /* dup filename.  rename. */
-        dupSpec = *toSpec;
-        PCopy(dupSpec.name, attSpec.name);
-        newSpec = dupSpec;
-        UniqueSpec(&newSpec, 31);
-        if (!FSpRename(&dupSpec, newSpec.name))
-          SpecMove(&attSpec, toSpec);
-      }
-    }
-  }
-}
-
-/************************************************************************
- * AttStillInFolder - is an attachment still in the attachments folder?
- ************************************************************************/
-bool AttStillInFolder(FSSpecPtr att, FSSpecPtr folder) {
-  if (PrefIsSet(PREF_ATT_SUBFOLDER_TRASH))
-    return (SpecInSubfolderOf(att, folder));
-  else
-    return (SameVRef(att->vRefNum, folder->vRefNum) &&
-            att->parID == folder->parID);
-}
-#endif
 
 /************************************************************************
  * FindAnAttachment - find an attachment from a line of text
@@ -2320,7 +2128,6 @@ bool GetNextAttachment(FindAttPtr pData, FSSpecPtr spec) {
  * DeleteMessage - delete a summary from a toc, and fix the screen, too
  **********************************************************************/
 void DeleteMessage(TOCType * tocH, int sumNum, bool nuke) {
-#ifdef IMAP
   if (tocH->imapTOC) {
     // close the IMAP message to be deleted, even if it's just going to be
     // marked.
@@ -2332,7 +2139,6 @@ void DeleteMessage(TOCType * tocH, int sumNum, bool nuke) {
 
     return;
   }
-#endif
 
   if (SingleWarnings(tocH, sumNum, true, nuke || tocH->which == TRASH))
     return;
@@ -2355,40 +2161,8 @@ void DeleteMessageLo(TOCType * tocH, int sumNum, bool nuke) {
     GetRString(trashSpec.name, TRASH);
     MoveMessageLo(tocH, sumNum, &trashSpec, false, false, true);
   } else {
-#ifdef TWO
-    if (!tocH->imapTOC)
-      NukeXfUndo();
-#endif
     if (wipe)
       WipeMessage(tocH, sumNum);
-#ifdef TWO
-    if ((!tocH->imapTOC) && PrefIsSet(PREF_SERVER_DEL)) {
-      AddTSToPOPD(DELETE_ID, tocH, sumNum, false);
-    }
-    if (tocH->sums[sumNum].opts & OPT_HAS_SPOOL)
-      RemSpoolFolder(tocH->sums[sumNum].uidHash);
-    if (nuke && (tocH->sums[sumNum].flags & FLAG_HAS_ATT)) {
-#ifdef IMAP
-      // move the attachment to the trash if the pref is set, as long as they
-      // haven't been orphaned.
-      if (PrefIsSet(PREF_TIDY_FOLDER) &&
-          !(tocH->sums[sumNum].opts & OPT_ORPHAN_ATT))
-        MovingAttachments(tocH, sumNum, true, wipe, true, false);
-      else
-        MovingAttachments(tocH, sumNum, true, wipe, true, true);
-#else
-      if (PrefIsSet(PREF_TIDY_FOLDER))
-        MovingAttachments(tocH, sumNum, true, wipe, true, false);
-#endif
-
-#ifdef IMAP
-      // move the inline parts to the trash, unless this is an IMAP message
-      // that has been copied to a local mailbox
-      if (!(tocH->sums[sumNum].opts & OPT_ORPHAN_ATT))
-#endif
-        MovingAttachments(tocH, sumNum, false, wipe, true, false);
-    }
-#endif
     if (messH)
       CloseMyWindow(GetMyWindowWindowPtr((*messH)->win));
     if (tocH->count == oldN)
@@ -2707,16 +2481,13 @@ void DoIterativeThingyLo(TOCType * tocH, int item, long modifiers,
       (tocH->which == TRASH ||
        (optionKey | shiftKey) == (modifiers & (optionKey | shiftKey))) &&
       (!tocH->imapTOC || PrefIsSet(PREF_ALLOW_IMAP_NUKE));
-#ifdef THREADING_ON
   Boolean busy = false;
-#endif
   uLong oldEzOpenSerialNum = tocH->previewID ? tocH->ezOpenSerialNum : 0;
 
 #ifdef PERF
   PerfControl(ThePGlobals, true);
 #endif /* PERF */
 
-#ifdef IMAP
   if (item == MESSAGE_DELETE_ITEM && tocH->imapTOC && !nuke) {
     Handle uids = NULL;
     long c = CountSelectedMessages(tocH);
@@ -2753,7 +2524,6 @@ void DoIterativeThingyLo(TOCType * tocH, int item, long modifiers,
 
     return;
   }
-#endif
 
   if (item == MESSAGE_DELETE_ITEM && !nuke) {
     trashSpec.vRefNum = MailRoot.vRef;
@@ -2791,10 +2561,6 @@ void DoIterativeThingyLo(TOCType * tocH, int item, long modifiers,
     }
   }
 
-#ifdef TWO
-  if (item == STATE_HIER_MENU)
-    toWhom = Item2Status(toWhom);
-#endif
 
   /*
    * progress stuff
@@ -2820,7 +2586,6 @@ void DoIterativeThingyLo(TOCType * tocH, int item, long modifiers,
     break;
   }
 
-#ifdef IMAP
   if (tocH->imapTOC // some IMAP operations will open their own progress
                        // window
       && (item == MESSAGE_DELETE_ITEM // no progress for deletes from the
@@ -2828,14 +2593,11 @@ void DoIterativeThingyLo(TOCType * tocH, int item, long modifiers,
           || (item == SERVER_HIER_MENU)))
     ;
   else {
-#endif
     if (count > gran)
       OpenProgress();
     ProgressMessageR(kpSubTitle, LEFT_TO_PROCESS);
     Progress(NoBar, count, NULL, NULL, NULL);
-#ifdef IMAP
   }
-#endif
 
   if (!nuke && item == MESSAGE_DELETE_ITEM)
     AddXfUndo(tocH, GetTrashTOC(), -1);
@@ -2870,14 +2632,12 @@ void DoIterativeThingyLo(TOCType * tocH, int item, long modifiers,
         // do real mailbox also if working in virtual mailbox
         DoMessageMenu(item, realTOC, realSum, toWhom, addr, modifiers, nuke,
                       &busy);
-#ifdef IMAP
       // hack: The  Delete from Server, Fetch Message Text, and Fetch
       // Attachments menu choices handle all selected messages for IMAP boxes
       if (tocH->imapTOC && (item == SERVER_HIER_MENU) &&
           ((toWhom == isvmDelete) || (toWhom == isvmFetchMessage) ||
            (toWhom == isvmFetchAttachments)))
         break;
-#endif
     }
     MonitorGrow(true);
   }
@@ -2885,17 +2645,9 @@ void DoIterativeThingyLo(TOCType * tocH, int item, long modifiers,
 
   CloseProgress();
   ShowBoxSizes(tocH->win);
-#ifdef THREADING_ON
   if (busy)
     WarnUser(SENDING_WARNING, 0);
-#endif
   if (!CommandPeriod) {
-#ifdef TWO
-    if (item == MESSAGE_REDISTRIBUTE_ITEM &&
-        PrefIsSetOrNot(PREF_TURBO_REDIRECT, modifiers, optionKey) &&
-        !(modifiers & shiftKey) && toWhom)
-      DoIterativeThingy(tocH, MESSAGE_DELETE_ITEM, 0, 0);
-#endif
     BoxSelectAfter(tocH->win, lastSelected);
   }
   if (oldEzOpenSerialNum && !tocH->previewID &&
@@ -2922,11 +2674,9 @@ bool DoMessageMenu(short item, TOCType * tocH, short sumNum, short toWhom,
     DeleteMessageLo(tocH, sumNum, nuke);
     break;
   case STATE_HIER_MENU:
-#ifdef THREADING_ON
     if (tocH->sums[sumNum].state == BUSY_SENDING)
       *busy = true;
     else
-#endif
     {
       SetState(tocH, sumNum, toWhom);
       doVirtualMB = false; //	Already took care of this
@@ -2943,11 +2693,7 @@ bool DoMessageMenu(short item, TOCType * tocH, short sumNum, short toWhom,
     doVirtualMB = false; //	Already took care of this
     break;
   case SERVER_HIER_MENU:
-#ifdef IMAP
     ServerMenuChoice(tocH, sumNum, toWhom, (modifiers & shiftKey) != 0);
-#else
-    ServerMenuChoice(tocH, sumNum, toWhom);
-#endif
     break;
   case TABLE_HIER_MENU:
     SetMessTable(tocH, sumNum, toWhom);
@@ -2960,12 +2706,10 @@ bool DoMessageMenu(short item, TOCType * tocH, short sumNum, short toWhom,
     doVirtualMB = false; //	Already took care of this
     break;
   default:
-#ifdef IMAP
     // must have the message before we can do anything here.
     // right now, fetch the entire message, including attachments, unless
     // we're just replying.
     if (EnsureMsgDownloaded(tocH, sumNum, item != MESSAGE_REPLY_ITEM)) {
-#endif
       if ((win = GetAMessage(tocH, sumNum, NULL, NULL, false))) {
         WindowPtr winWP = GetMyWindowWindowPtr(win);
         switch (item) {
@@ -2998,10 +2742,8 @@ bool DoMessageMenu(short item, TOCType * tocH, short sumNum, short toWhom,
           NotUsingWindow(winWP);
       } else
         CommandPeriod = true;
-#ifdef IMAP
     } else
       CommandPeriod = true;
-#endif
     doVirtualMB = false;
     break;
   }
@@ -3144,11 +2886,9 @@ MyWindowPtr DoSalvageMessageLo(MyWindowPtr win, bool forXfer, bool forIMAP) {
   long offset = 0;
 
   if (GetWindowKind(winWP) != COMP_WIN && !SaveMessHi(win, false))
-#ifdef IMAP
     //	Make sure message has been downloaded if IMAP
     if (!EnsureMsgDownloaded((*origMessH)->tocH, (*origMessH)->sumNum, true))
       return NULL;
-#endif
 
   PushPers(PERS_FORCE(MESS_TO_PERS(origMessH)));
   if ((newWin = DoComposeNew(0))) {
@@ -3707,30 +3447,9 @@ static inline TOCType * Win2TOC(void *win) { return NULL; }
  *  Pointer returned is to
  ************************************************************************/
 UPtr FindHeaderString(UPtr text, UPtr headerName, long *size, bool bodyToo) {
-  UPtr spot, end, colon;
+  UPtr spot, end;
   char header[MAX_HEADER];
-  short mLen = MIN(MAX_HEADER - 2, *headerName);
-#ifdef TWO
-  bool any = EqualStrRes(headerName, FILTER_ANY);
-  bool addressee = EqualStrRes(headerName, FILTER_ADDRESSEE);
-  static UHandle addrRes;
-#endif
-
-#ifdef TWO
-  if (addressee)
-    mLen = MAX_HEADER - 2;
-#endif
-
-#ifdef TWO
-  if (!addrRes || !*addrRes) {
-    if (addrRes)
-      LoadResource(addrRes);
-    else
-      addrRes = GetResource_('STR#', AddrHeadsStrn);
-    if (!addrRes || !*addrRes)
-      return (NULL);
-  }
-#endif
+  short mLen = MIN(MAX_HEADER - 2, (short)strlen((const char *)headerName));
 
   for (end = text + *size; text < end; text = spot + 1) {
     for (spot = text; spot < end; spot++)
@@ -3743,21 +3462,8 @@ UPtr FindHeaderString(UPtr text, UPtr headerName, long *size, bool bodyToo) {
       BMD(text, header, hLen);
       header[hLen] = 0;
     }
-#ifdef TWO
-    if (addressee) {
-      if (colon = PIndex(header, ':'))
-        *colon = '\0';
-    }
-#endif
-    if (
-#ifdef TWO
-        any || addressee && FindSTRNIndexRes(addrRes, header) ||
-#endif
-        EqualString(header, headerName, false, true)) {
-#ifdef TWO
-      if (!any && !addressee)
-#endif
-        text += strlen((const char *)header);
+    if (strncasecmp(header, (const char *)headerName, strlen((const char *)headerName)) == 0) {
+        text += strlen((const char *)headerName);
       while (IsWhite(*text))
         text++;
       for (spot--; IsWhite(*spot); spot--)
@@ -3806,12 +3512,10 @@ MyWindowPtr DoReplyMessage(MyWindowPtr win, bool all, bool self, bool quote,
   // if (GetWindowKind(winWP)!=COMP_WIN && !SaveMessHi(win,false))
   // return(NULL);
 
-#ifdef IMAP
   //	Make sure message has been downloaded if IMAP.  Don't care about
   // attachments.
   if (!EnsureMsgDownloaded((*origMessH)->tocH, (*origMessH)->sumNum, false))
     return NULL;
-#endif
 
   PushPers(PERS_FORCE(MESS_TO_PERS(origMessH)));
   if ((newWin = DoComposeNew(0))) {
@@ -3903,14 +3607,9 @@ MyWindowPtr DoReplyMessage(MyWindowPtr win, bool all, bool self, bool quote,
      * auto-fcc
      */
     // Folder Carbon Copy - don't allow the auto FCC in Light
-#ifdef IMAP
     if (HasFeature(featureFcc) && doFcc && PrefIsSet(PREF_AUTO_FCC) &&
         !(*origMessH)->tocH->which &&
         !IMAPDontAutoFccMailbox((*origMessH)->tocH))
-#else
-    if (HasFeature(featureFcc) && doFcc && PrefIsSet(PREF_AUTO_FCC) &&
-        !(*origMessH)->tocH->which)
-#endif
     {
       FSSpec spec = GetMailboxSpec((*origMessH)->tocH, -1);
       Fcc(newMessH, &spec);
@@ -4331,11 +4030,9 @@ MyWindowPtr DoRedistributeMessage(MyWindowPtr win, void *toWhom, bool turbo,
   if (GetWindowKind(winWP) != COMP_WIN && !SaveMessHi(win, false))
     return (NULL);
 
-#ifdef IMAP
   //	Make sure message has been downloaded if IMAP
   if (!EnsureMsgDownloaded((*origMessH)->tocH, (*origMessH)->sumNum, true))
     return NULL;
-#endif
 
   PushPers(PERS_FORCE(MESS_TO_PERS(origMessH)));
 
@@ -4413,17 +4110,6 @@ MyWindowPtr DoRedistributeMessage(MyWindowPtr win, void *toWhom, bool turbo,
     if (MessFlagIsSet(origMessH, FLAG_HAS_ATT))
       CopyAttachments(newMessH);
     SpoolAttachments(newMessH);
-#ifdef TWO
-    if (turbo && toWhom) {
-      QueueMessage((*newMessH)->tocH, (*newMessH)->sumNum,
-                   PrefIsSet(PREF_AUTO_SEND) ? kEuSendNow : kEuSendNext, 0,
-                   true, false);
-      if (andDelete)
-        DeleteMessage((*origMessH)->tocH, (*origMessH)->sumNum, false);
-    }
-
-    if (showIt && (!turbo || !toWhom))
-#endif
     {
       ShowMyWindow(newWinWP);
       newWin->isDirty = false;
@@ -4546,11 +4232,9 @@ MyWindowPtr DoForwardMessage(MyWindowPtr win, void *toWhom, bool turbo) {
   if (GetWindowKind(winWP) != COMP_WIN && !SaveMessHi(win, false))
     return (NULL);
 
-#ifdef IMAP
   //	Make sure message has been downloaded if IMAP
   if (!EnsureMsgDownloaded((*origMessH)->tocH, (*origMessH)->sumNum, true))
     return NULL;
-#endif
 
   PushPers(PERS_FORCE(MESS_TO_PERS(origMessH)));
   if ((newWin = DoComposeNew(0))) {
@@ -4675,9 +4359,6 @@ MyWindowPtr DoForwardMessage(MyWindowPtr win, void *toWhom, bool turbo) {
 
     /* SumOf(newMessH)->outType = OUT_FORWARD; //	for statistics */
 
-#ifdef TWO
-    ApplyDefaultStationery(newWin, true, true);
-#endif
     UpdateSum(newMessH, SumOf(newMessH)->offset, SumOf(newMessH)->length);
     if (showIt) {
       ShowMyWindow(newWinPtr);
@@ -5246,9 +4927,7 @@ void Preview(TOCType * tocH, short sumNum) {
   short ezOpenSum;
   OSErr err;
   unsigned char profileName[64];
-#ifdef IMAP
   short oldPreview;
-#endif
 
   if (!(pte = tocH->previewPTE))
     return;
@@ -5287,10 +4966,8 @@ void Preview(TOCType * tocH, short sumNum) {
                 GetRLong(PREVIEW_READ_SECS) * 60) // and it's been long enough
         {
           tocH->lastSameTicks = 1;
-#ifdef IMAP
           // do not automatically mark IMAP minimal headers as read, ever.
           if (!tocH->imapTOC || IMAPMessageDownloaded(tocH, sumNum))
-#endif
             BeenThereDoneThat(tocH, sumNum);
         }
       } else
@@ -5301,13 +4978,11 @@ void Preview(TOCType * tocH, short sumNum) {
   } else
     tocH->lastSameTicks = TickCount();
 
-#ifdef IMAP
   if (tocH->previewID && tocH->imapTOC) {
     // Cancel the IMAP download if this is an imap message ...
     FindRealSummary(tocH, tocH->previewID, &oldPreview);
     IMAPAbortMessageFetch(tocH, oldPreview);
   }
-#endif
 
   tocH->previewID = id;
   tocH->ezOpenSerialNum = 0;
@@ -5336,15 +5011,10 @@ void Preview(TOCType * tocH, short sumNum) {
             realTocH->which == OUT
                 ? OpenComp(realTocH, realSumNum, NULL, NULL, false, false)
                 :
-#ifdef IMAP
                 OpenMessage(realTocH, realSumNum, NULL, NULL, false, true);
-#else
-                OpenMessage(realTocH, realSumNum, NULL, NULL, false);
-#endif
         if (messWin)
           messH = Win2MessH(messWin);
       }
-#ifdef IMAP
       //
       // fire off a thread to fetch the next message as well, if it's not
       // already there.
@@ -5364,7 +5034,6 @@ void Preview(TOCType * tocH, short sumNum) {
                                false);
         }
       }
-#endif
     }
 
     if (messH) {
@@ -5545,7 +5214,6 @@ void HTMLifyText(MyWindowPtr win, Handle text) {
   // (*PeteExtra(win->pte))->partStack = stack;
 }
 
-#ifdef IMAP
 /************************************************************************
  * EnsureMsgDownloaded - if IMAP message, make sure it is downloaded
  ************************************************************************/
@@ -5590,7 +5258,6 @@ bool EnsureMsgDownloaded(TOCType * tocH, int sumNum, bool attachmentsToo) {
   }
   return true;
 }
-#endif
 
 /************************************************************************
  * EnableMsgButtons - enable or disable message buttons

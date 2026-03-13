@@ -18,7 +18,6 @@
  * Do NOT redefine them here — the old Mac defines had wrong values
  * that conflict with the enum (e.g. SENT was 2 here but 9 in enum). */
 
-#ifdef THREADING_ON
 #define GetTempInTOC() GetSpecialTOC(IN_TEMP)
 #define GetTempOutTOC() GetSpecialTOC(OUT_TEMP)
 #define GetRealInTOC() GetSpecialTOC(IN)
@@ -26,10 +25,6 @@
 #define GetInTOC() (InAThread() ? GetTempInTOC() : GetRealInTOC())
 #define GetOutTOC() (InAThread() ? GetTempOutTOC() : GetRealOutTOC())
 bool AmTempToc(TOCType * tocH);
-#else
-#define GetInTOC() GetSpecialTOC(IN)
-#define GetOutTOC() GetSpecialTOC(OUT)
-#endif
 /* Constants for Hash Checking */
 #define kNeverHashed 0
 #define kNoMessageId 0

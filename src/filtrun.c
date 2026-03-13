@@ -39,11 +39,12 @@ DAMAGE. */
 #include "imapmailboxes.h"
 #include "fileutil.h"
 #include "junk.h"
-#include "legacy_shim.h"
+#include "util.h"
 #include <string.h>
 #include <strings.h>
 #include <stdlib.h>
 #include <ctype.h>
+#include <time.h>
 
 #ifdef CommandPeriod
 #undef CommandPeriod
@@ -78,9 +79,6 @@ extern void FiltersDecRef(void);
 /* IsDelivery — check if spec is a delivery mailbox */
 extern bool IsDelivery(FSSpecPtr spec);
 
-/* SendBehind — Mac Window Manager; no-op in GTK */
-static inline void SendBehind(void *winWP, void *behindWP) { (void)winWP; (void)behindWP; }
-
 /* External declarations for functions not provided by the included headers */
 extern void SetState(TOCType *tocH, short sumNum, short state);
 extern short PrintClosedMessage(TOCType *tocH, short sumNum, bool now);
@@ -101,8 +99,8 @@ extern int ExpandAliases(void **h, void *raw, int n, bool deep);
 extern bool ValidHash(unsigned long h);
 extern bool HashAppearsInAliasFile(unsigned long hash, unsigned char *file);
 extern bool AppearsInAliasFile(unsigned char *addr, unsigned char *file);
-extern void *GetWindowList(void);
-/* GetWindowMyWindowPtr declared in mailbox.h or mywindow.h */
+/* GetWindowList, GetNextWindow, CloseMyWindow, ReZoomMyWindow, SendBehind
+ * declared in mailbox.h (real implementations in mywindow.c) */
 extern bool IsKnownWindowMyWindow(void *winWP);
 extern short GetWindowKind(void *winWP);
 
@@ -136,63 +134,9 @@ int FGlobalErr;
 static FilterRecord *gCurFilters = NULL;
 static int gCurNFilters = 0;
 
-/************************************************************************
- * C-string / Pascal-string boundary helpers
- * These convert between the C strings in our filter structs and the
- * Pascal strings expected by legacy string APIs (EqualStrRes, GetRString,
- * FindHeaderString, PPtrFindSub, etc.)
- ************************************************************************/
-
-/* Convert C string to Pascal string */
-static void c2p(unsigned char *pstr, const char *cstr) {
-	int len = (int)strlen(cstr);
-	if (len > 255) len = 255;
-	pstr[0] = (unsigned char)len;
-	memcpy(pstr + 1, cstr, len);
-}
-
-/* Convert Pascal string to C string */
-static void p2c(char *dst, int dstsize, const unsigned char *pstr) {
-	int len = pstr[0];
-	if (len >= dstsize) len = dstsize - 1;
-	memcpy(dst, pstr + 1, len);
-	dst[len] = '\0';
-}
-
-/* C-string version of EqualStrRes */
-static bool CEqualStrRes(const char *cstr, short resId) {
-	unsigned char pstr[256];
-	c2p(pstr, cstr);
-	return EqualStrRes(pstr, resId);
-}
-
-/* Get resource string as C string */
-static void GetRCString(char *dst, int dstsize, short resId) {
-	unsigned char pstr[256];
-	GetRString(pstr, resId);
-	p2c(dst, dstsize, pstr);
-}
-
-/* C-string FindHeaderString wrapper */
-static UPtr CFindHeaderString(UPtr text, const char *header, long *size, bool bodyToo) {
-	unsigned char pheader[256];
-	c2p(pheader, header);
-	return FindHeaderString(text, pheader, size, bodyToo);
-}
-
-/* C-string PPtrFindSub wrapper */
-static UPtr CPtrFindSub(const char *sub, UPtr string, long len) {
-	unsigned char psub[256];
-	c2p(psub, sub);
-	return PPtrFindSub(psub, string, len);
-}
-
-/* C-string PPtrMatchLWSP wrapper */
-static bool CPtrMatchLWSP(const char *look, UPtr text, long textLen, bool atStart, bool atEnd) {
-	unsigned char plook[256];
-	c2p(plook, look);
-	return PPtrMatchLWSP(plook, text, textLen, atStart, atEnd);
-}
+/* All string functions (GetRString, ComposeRString, EqualStrRes,
+ * FindHeaderString, PPtrFindSub, PPtrMatchLWSP) now operate on
+ * C strings — no Pascal conversion needed. */
 
 /* Helper: get Handle-based filter array + count for Pre/PostFilters */
 static FilterRecord *HandleToFilterArray(Handle h) {
@@ -230,9 +174,9 @@ static void Filter1Postprocess(FilterKeywordEnum fType, FilterPBPtr fpb)
 		{
 			if (spec.parID==MailRoot.dirId && spec.vRefNum==MailRoot.vRef)
 			{
-				if (CEqualStrRes(spec.name,IN)) which = IN;
-				else if (CEqualStrRes(spec.name,OUT)) which = OUT;
-				else if (CEqualStrRes(spec.name,TRASH)) which = TRASH;
+				if (EqualStrRes((unsigned char *)spec.name,IN)) which = IN;
+				else if (EqualStrRes((unsigned char *)spec.name,OUT)) which = OUT;
+				else if (EqualStrRes((unsigned char *)spec.name,TRASH)) which = TRASH;
 			}
 		}
 	}
@@ -251,7 +195,7 @@ static void Filter1Postprocess(FilterKeywordEnum fType, FilterPBPtr fpb)
 		{
 			spec.vRefNum = MailRoot.vRef;
 			spec.parID = MailRoot.dirId;
-			GetRCString(spec.name, sizeof(spec.name), IN);
+			GetRString((unsigned char *)spec.name, IN);
 		}
 	}
 
@@ -410,10 +354,16 @@ int InitFPB(FilterPBPtr fpb, bool zapAddrs, bool listsToo)
 
 	memset(fpb, 0, sizeof(*fpb));
 
-	/* get the header names as C strings */
-	GetRCString(fpb->to, sizeof(fpb->to), HEADER_STRN+TO_HEAD);
-	GetRCString(fpb->cc, sizeof(fpb->cc), HEADER_STRN+CC_HEAD);
-	GetRCString(fpb->bcc, sizeof(fpb->bcc), HEADER_STRN+BCC_HEAD);
+	/* get the header names */
+	{
+		unsigned char tmp[256];
+		GetRString(tmp, HEADER_STRN+TO_HEAD);
+		g_strlcpy(fpb->to, (const char *)tmp, sizeof(fpb->to));
+		GetRString(tmp, HEADER_STRN+CC_HEAD);
+		g_strlcpy(fpb->cc, (const char *)tmp, sizeof(fpb->cc));
+		GetRString(tmp, HEADER_STRN+BCC_HEAD);
+		g_strlcpy(fpb->bcc, (const char *)tmp, sizeof(fpb->bcc));
+	}
 
 	if (listsToo)
 	{
@@ -505,8 +455,6 @@ int FilterSelectedMessages(FilterKeywordEnum fType, TOCType *tocH, FilterPBPtr f
 								WarnUser(MEM_ERR, MemError());
 								err = 1;
 							}
-							else
-								HNoPurge(realTocH->sums[realSumNum].cache);
 						}
 
 						/* do the filtering */
@@ -540,7 +488,7 @@ int FilterSelectedMessages(FilterKeywordEnum fType, TOCType *tocH, FilterPBPtr f
 						else
 						{
 							if (realTocH->sums[realSumNum].cache)
-								HPurge(realTocH->sums[realSumNum].cache);
+								/* no-op: heap memory doesn't need purge */;
 						}
 					}
 					if (err==euFilterStop || err==euFilterXfered) err = 0;
@@ -610,14 +558,13 @@ int FilterFlaggedMessages(FilterKeywordEnum fType, TOCType *tocH, FilterPBPtr fp
 						err = 1;
 					}
 					else
-						HNoPurge(tocH->sums[sumNum].cache);
+						/* no-op: heap memory */;
 				}
 
 				/* do the filtering */
 				if (!err) err = FilterMessageLo(fType, tocH, sumNum, fpb, false);
 
 				/* clean up after */
-				if (tocH->sums[sumNum].cache) HPurge(tocH->sums[sumNum].cache);
 				if (err==euFilterStop || err==euFilterXfered) err = 0;
 				if (err || CommandPeriod) break;
 			}
@@ -866,7 +813,7 @@ int FilterMessagesFrom(FilterKeywordEnum fType, TOCType *tocH, short startWith, 
 					err = 1;
 				}
 				else
-					HNoPurge(tocH->sums[sumNum].cache);
+					/* no-op: heap memory */;
 			}
 
 			/* do the filtering */
@@ -885,8 +832,6 @@ int FilterMessagesFrom(FilterKeywordEnum fType, TOCType *tocH, short startWith, 
 				}
 				else
 				{
-					if (tocH->sums[sumNum].cache)
-						HPurge(tocH->sums[sumNum].cache);
 					if ((deliveryBatch || isTempIn) && realInTocH)
 					{
 						if (!(err = MoveMessageLo(tocH, sumNum, &inSpec, false, false, true)))
@@ -1011,7 +956,6 @@ int FilterMessageLo(FilterKeywordEnum fType, TOCType *tocH, short sumNum, Filter
 			WarnUser(GENERAL, MemError());
 			return(1);
 		}
-		HNoPurge(tocH->sums[sumNum].cache);
 	}
 
 	openIncomingErr = (fType==flkIncoming && PrefIsSet(PREF_OPEN_IN_ERR_MESS)
@@ -1067,9 +1011,6 @@ int FilterMessageLo(FilterKeywordEnum fType, TOCType *tocH, short sumNum, Filter
 	}
 	FiltersDecRef();
 
-	if (oldCount==tocH->count && tocH->sums[sumNum].cache)
-		HPurge(tocH->sums[sumNum].cache);
-
 	/* Kill the message cache if we filled it with minimal headers for IMAP filtering */
 	if (oldCount==tocH->count && tocH->sums[sumNum].cache && tocH->sums[sumNum].offset < 0)
 	{
@@ -1094,7 +1035,7 @@ void AddSpecToList(FSSpecPtr spec, CSpecHandle specList)
 
 	if (!specList || !*specList) return;
 
-	if (spec->parID == MailRoot.dirId && CEqualStrRes(spec->name, TRASH)) return;
+	if (spec->parID == MailRoot.dirId && EqualStrRes((unsigned char *)spec->name, TRASH)) return;
 
 	n = HandleCount(specList);
 	while (n--)
@@ -1143,7 +1084,6 @@ static bool TermMatch(MTPtr mt, TOCType *tocH, short sumNum, FilterPBPtr fpb)
 				Handle hCache;
 				if ((hCache = IMAPFetchMessageHeadersForFiltering(tocH, sumNum)) != NULL)
 				{
-					HPurge(hCache);
 					tocH->sums[sumNum].cache = hCache;
 				}
 			}
@@ -1155,7 +1095,7 @@ static bool TermMatch(MTPtr mt, TOCType *tocH, short sumNum, FilterPBPtr fpb)
 
 			if (tocH->sums[sumNum].cache)
 			{
-				text = LDRef(tocH->sums[sumNum].cache);
+				text = *(tocH->sums[sumNum].cache);
 				bodyOffset = GetHandleSize(tocH->sums[sumNum].cache);
 			}
 			else
@@ -1171,7 +1111,7 @@ static bool TermMatch(MTPtr mt, TOCType *tocH, short sumNum, FilterPBPtr fpb)
 			return false;
 		}
 
-		text = LDRef(tocH->sums[sumNum].cache);
+		text = *(tocH->sums[sumNum].cache);
 		bodyOffset = tocH->sums[sumNum].bodyOffset;
 	}
 
@@ -1185,12 +1125,12 @@ static bool TermMatch(MTPtr mt, TOCType *tocH, short sumNum, FilterPBPtr fpb)
 	{
 		if (!strcasecmp(mt->header, "date"))
 			match = TermDateMatch(mt, tocH, sumNum);
-		else if (HasFeature(featureJunk) && CEqualStrRes(mt->header, FiltMetaEnglishStrn+fmeJunk))
+		else if (HasFeature(featureJunk) && EqualStrRes((unsigned char *)mt->header, FiltMetaEnglishStrn+fmeJunk))
 		{
 			UseFeature(featureJunk);
 			match = TermJunkMatch(mt, tocH, sumNum);
 		}
-		else if (CEqualStrRes(mt->header, FiltMetaEnglishStrn+fmePersonality))
+		else if (EqualStrRes((unsigned char *)mt->header, FiltMetaEnglishStrn+fmePersonality))
 		{
 			match = TermPersMatch(mt, tocH, sumNum);
 		}
@@ -1208,9 +1148,9 @@ static bool TermMatch(MTPtr mt, TOCType *tocH, short sumNum, FilterPBPtr fpb)
 			hasColon = NULL != strchr(mt->header, ':');
 			end = text + bodyOffset;
 			size = end - text;
-			for (spot = CFindHeaderString(text, mt->header, &size, false);
+			for (spot = FindHeaderString(text, (UPtr)mt->header, &size, false);
 					 spot;
-					 spot = CFindHeaderString(spot, mt->header, &size, false))
+					 spot = FindHeaderString(spot, mt->header, &size, false))
 			{
 				/* we found one */
 				foundHeader = true;
@@ -1321,7 +1261,6 @@ static bool TermMatch(MTPtr mt, TOCType *tocH, short sumNum, FilterPBPtr fpb)
 	}
 
 done:
-	UL(tocH->sums[sumNum].cache);
 	return(match);
 }
 
@@ -1340,10 +1279,7 @@ static bool TermExpMatch(MTPtr mt, UPtr spot, UPtr end, UHandle *cache)
 		{
 			if (!**cache) ZapHandle(*cache);
 			else
-			{
 				expanded = *cache;
-				HNoPurge(expanded);
-			}
 		}
 	}
 
@@ -1354,9 +1290,7 @@ static bool TermExpMatch(MTPtr mt, UPtr spot, UPtr end, UHandle *cache)
 
 	if (expanded)
 	{
-		LDRef(expanded);
 		result = TermPtrMatch(mt, *expanded, *expanded + GetHandleSize(expanded));
-		UL(expanded);
 		if (cache)
 		{
 			*cache = expanded;
@@ -1382,11 +1316,11 @@ static bool DoesIntersectNick(UHandle nickAddresses, UHandle nickExpanded, UPtr 
 	if (err > 0 || err == paramErr) return false;
 	if (!(FGlobalErr = err))
 	{
-		for (addr = LDRef(addresses); *addr; addr += *addr + 2)
+		for (addr = *addresses; *addr; addr += *addr + 2)
 		{
-			for (nick = LDRef(nickAddresses); *nick; nick += *nick + 2)
+			for (nick = *nickAddresses; *nick; nick += *nick + 2)
 				if ((match = StringSame((const char *)nick, (const char *)addr))) goto done;
-			for (nick = LDRef(nickExpanded); *nick; nick += *nick + 2)
+			for (nick = *nickExpanded; *nick; nick += *nick + 2)
 				if ((match = StringSame((const char *)nick, (const char *)addr))) goto done;
 		}
 	}
@@ -1414,13 +1348,9 @@ static bool FromIntersectNickFileMatch(MTPtr mt, TOCType *tocH, short sumNum)
 {
 	unsigned char *file = NULL;
 	bool match;
-	unsigned char pval[256];
 
-	if (mt->value[0] && !CEqualStrRes(mt->value, ANY_ALIAS_FILE))
-	{
-		c2p(pval, mt->value);
-		file = pval;
-	}
+	if (mt->value[0] && !EqualStrRes((unsigned char *)mt->value, ANY_ALIAS_FILE))
+		file = (unsigned char *)mt->value;
 
 	match = HashAppearsInAliasFile(tocH->sums[sumNum].fromHash, file);
 
@@ -1437,23 +1367,18 @@ static bool DoesIntersectNickFile(const char *file, UPtr spot, long len)
 	UHandle addresses = NULL;
 	bool match = false;
 	UPtr addr;
-	unsigned char pfile[256];
-	unsigned char *pfilePtr = NULL;
+	unsigned char *fileArg = NULL;
 	int err;
 
-	if (file && file[0])
-	{
-		c2p(pfile, file);
-		if (!CEqualStrRes(file, ANY_ALIAS_FILE))
-			pfilePtr = pfile;
-	}
+	if (file && file[0] && !EqualStrRes((unsigned char *)file, ANY_ALIAS_FILE))
+		fileArg = (unsigned char *)file;
 
 	err = SuckPtrAddresses(&addresses, spot, len, false, false, false, NULL);
 	if (err > 0 || err == paramErr) return false;
 	if (!(FGlobalErr = err))
 	{
-		for (addr = LDRef(addresses); *addr; addr += *addr + 2)
-			if ((match = AppearsInAliasFile(addr, pfilePtr))) break;
+		for (addr = *addresses; *addr; addr += *addr + 2)
+			if ((match = AppearsInAliasFile(addr, fileArg))) break;
 	}
 	ZapHandle(addresses);
 	return(match);
@@ -1499,28 +1424,28 @@ static bool TermPtrMatch(MTPtr mt, UPtr spot, UPtr end)
 		case mbmNotContains:
 		case mbmContains:
 			match = !PrefIsSet(PREF_NO_FILT_LWSP)
-				? CPtrMatchLWSP(mt->value, spot, end-spot, false, false)
-				: NULL != CPtrFindSub(mt->value, spot, end-spot);
+				? PPtrMatchLWSP((UPtr)mt->value, spot, end-spot, false, false)
+				: NULL != PPtrFindSub((UPtr)mt->value, spot, end-spot);
 			break;
 
 		case mbmIsnt:
 		case mbmIs:
 			if (!PrefIsSet(PREF_NO_FILT_LWSP))
-				match = CPtrMatchLWSP(mt->value, spot, end-spot, true, true);
+				match = PPtrMatchLWSP((UPtr)mt->value, spot, end-spot, true, true);
 			else if (end-spot != valLen) match = false;
 			else match = 0==strncasecmp(mt->value, (const char *)spot, valLen);
 			break;
 
 		case mbmStarts:
 			if (!PrefIsSet(PREF_NO_FILT_LWSP))
-				match = CPtrMatchLWSP(mt->value, spot, end-spot, true, false);
+				match = PPtrMatchLWSP((UPtr)mt->value, spot, end-spot, true, false);
 			else if (end-spot < valLen) match = false;
 			else match = 0==strncasecmp(mt->value, (const char *)spot, valLen);
 			break;
 
 		case mbmEnds:
 			if (!PrefIsSet(PREF_NO_FILT_LWSP))
-				match = CPtrMatchLWSP(mt->value, spot, end-spot, false, true);
+				match = PPtrMatchLWSP((UPtr)mt->value, spot, end-spot, false, true);
 			else if (end-spot < valLen) match = false;
 			else match = 0==strncasecmp(mt->value, (const char *)(end-valLen), valLen);
 			break;
@@ -1543,19 +1468,10 @@ static bool TermPtrMatch(MTPtr mt, UPtr spot, UPtr end)
 					FGlobalErr = ExpandAliases(&mt->nickExpanded, mt->nickAddresses, 0, false);
 			}
 
-			if (mt->nickExpanded && mt->nickAddresses)
-			{
-				HNoPurge(mt->nickExpanded);
-				HNoPurge(mt->nickAddresses);
-			}
-			else return false;
+			if (!mt->nickExpanded || !mt->nickAddresses)
+				return false;
 
 			match = DoesIntersectNick(mt->nickAddresses, mt->nickExpanded, spot, end-spot);
-
-			HPurge(mt->nickExpanded);
-			HPurge(mt->nickAddresses);
-			UL(mt->nickExpanded);
-			UL(mt->nickAddresses);
 		}
 			break;
 
@@ -1581,7 +1497,7 @@ static bool TermDateMatch(MTPtr mt, TOCType *tocH, short sumNum)
 	bool match;
 
 	ComputeLocalDate(&tocH->sums[sumNum], s);
-	match = TermPtrMatch(mt, s+1, s+*s+1);
+	match = TermPtrMatch(mt, s, s + strlen((const char *)s));
 	if (mt->verb==mbmIsnt || mt->verb==mbmNotContains) match = !match;
 	return(match);
 }
@@ -1594,10 +1510,10 @@ static bool TermPersMatch(MTPtr mt, TOCType *tocH, short sumNum)
 	unsigned char s[256];
 	bool match;
 
-	/* Personality matching — get personality name as PStr.
+	/* Personality matching — get personality name as C string.
 	 * PERS_FORCE/TS_TO_PERS use opaque types; for now use dominant personality. */
 	GetRString(s, DOMINANT);
-	match = TermPtrMatch(mt, s+1, s+*s+1);
+	match = TermPtrMatch(mt, s, s + strlen((const char *)s));
 	if (mt->verb==mbmIsnt || mt->verb==mbmNotContains) match = !match;
 	return(match);
 }
@@ -1632,7 +1548,7 @@ static bool TermPriorMatch(MTPtr mt, TOCType *tocH, short sumNum)
 	priority = Prior2Display(priority);
 	if (priority==3) return(mt->verb==mbmIsnt || mt->verb==mbmNotContains);
 	PriorityHeader(s, priority);
-	match = TermPtrMatch(mt, s+1, s+*s+1);
+	match = TermPtrMatch(mt, s, s + strlen((const char *)s));
 	if (mt->verb==mbmIsnt || mt->verb==mbmNotContains) match = !match;
 	return(match);
 }
@@ -1715,7 +1631,6 @@ bool FilterMatchHi(short f, TOCType *tocH, short sumNum)
 	cache = tocH->sums[sumNum].cache;
 	if (cache)
 	{
-		HNoPurge(cache);
 		memset(&fpb, 0, sizeof(fpb));
 
 		/* Set current filter set to main filters for this lookup */
@@ -1727,7 +1642,6 @@ bool FilterMatchHi(short f, TOCType *tocH, short sumNum)
 		ZapHandle(fpb.ccAddresses);
 		ZapHandle(fpb.bccAddresses);
 		ZapHandle(fpb.toAddresses);
-		HPurge(cache);
 
 		if (tocH->sums[sumNum].cache && tocH->sums[sumNum].offset < 0)
 		{
@@ -1803,12 +1717,10 @@ static bool FilterMatch(short filter, TOCType *tocH, short sumNum, FilterPBPtr f
  **********************************************************************/
 static void FiltLogMatch(short filter, TOCType *tocH, short sumNum)
 {
-	unsigned char pname[256];
 	unsigned char title[256];
 
-	c2p(pname, gCurFilters[filter].name);
 	MakeMessTitle(title, tocH, sumNum, true);
-	ComposeLogR(LOG_FILT, NULL, FILT_LOG_FMT, pname, title);
+	ComposeLogR(LOG_FILT, NULL, FILT_LOG_FMT, (unsigned char *)gCurFilters[filter].name, title);
 }
 
 /************************************************************************
@@ -1858,27 +1770,42 @@ void NonSequitur(unsigned char *subject, TOCType *tocH, short sumNum)
 
 
 /**********************************************************************
- * FilterLastMatch - return the time a filter was last used
+ * Filter usage persistence — file-based replacement for Mac resources
+ *
+ * Mac original used GetResource_/AddMyResource_/ChangedResource with
+ * resource type 'FU  ' to persist filter usage timestamps.
+ *
+ * GTK port: store as a simple binary file (filter_usage.dat) in the
+ * user's data directory. Each record is a FilterUse struct.
  **********************************************************************/
+static char *FilterUsagePath(void)
+{
+	const char *data_home = g_get_user_data_dir();
+	return g_build_filename(data_home, "geudora", "filter_usage.dat", NULL);
+}
+
 static uLong FilterLastMatch(short filter)
 {
-	FUHandle fuh = GetResource_(FU_TYPE, FU_ID);
 	uLong when = 0;
-	FUPtr fup;
 	long id = gCurFilters[filter].fu.id;
+	if (!id) return 0;
 
-	if (!fuh || !id) return 0;
-	for (fup = (FUPtr)LDRef(fuh) + GetHandleSize_((Handle)fuh)/sizeof(FilterUse)-1;
-		 fup >= (FUPtr)*fuh; fup--)
+	char *path = FilterUsagePath();
+	FILE *f = fopen(path, "rb");
+	g_free(path);
+	if (!f) return 0;
+
+	FilterUse fu;
+	while (fread(&fu, sizeof(fu), 1, f) == 1)
 	{
-		if (fup->id == id)
+		if (fu.id == id)
 		{
-			when = fup->lastMatch;
+			when = fu.lastMatch;
 			break;
 		}
 	}
-	UL(fuh);
-	return(when);
+	fclose(f);
+	return when;
 }
 
 /**********************************************************************
@@ -1901,55 +1828,78 @@ uLong FilterLastMatchHi(short filter)
 
 /**********************************************************************
  * FilterNoteMatch - note that a filter has matched
+ *
+ * Reads the filter usage file, updates or appends the record for
+ * this filter, and rewrites the file.
  **********************************************************************/
 int FilterNoteMatch(short filter, long secs)
 {
-	FUHandle fuh = GetResource_(FU_TYPE, FU_ID);
-	FUPtr fup;
-	int err = fnfErr;
-	FilterUse fu;
 	long id = gCurFilters[filter].fu.id;
-
 	gCurFilters[filter].fu.lastMatch = secs;
 
-	if (id)
+	if (!id) return 0;
+
+	char *path = FilterUsagePath();
+
+	/* Read existing records */
+	FilterUse *records = NULL;
+	size_t count = 0;
+	FILE *f = fopen(path, "rb");
+	if (f)
 	{
-		/* if resource doesn't exist, add it */
-		if (!fuh)
+		fseek(f, 0, SEEK_END);
+		long fileSize = ftell(f);
+		fseek(f, 0, SEEK_SET);
+		if (fileSize > 0)
 		{
-			fuh = NuHandle(0);
-			if (!fuh) return(MemError());
-			AddMyResource_((void *)fuh, FU_TYPE, FU_ID, "");
-			if ((err = ResError())) return(err);
+			count = (size_t)fileSize / sizeof(FilterUse);
+			records = (FilterUse *)malloc(count * sizeof(FilterUse));
+			if (records)
+				count = fread(records, sizeof(FilterUse), count, f);
+			else
+				count = 0;
 		}
-
-		/* find existing record */
-		HNoPurge_((Handle)fuh);
-		err = fnfErr;
-		for (fup = (FUPtr)LDRef(fuh) + GetHandleSize_((Handle)fuh)/sizeof(FilterUse)-1;
-			 fup >= (FUPtr)*fuh; fup--)
-		{
-			if (fup->id == id)
-			{
-				fup->lastMatch = secs;
-				err = 0;
-			}
-		}
-		UL(fuh);
-
-		/* if didn't find, add */
-		if (err == fnfErr)
-		{
-			fu.id = id;
-			fu.lastMatch = secs;
-			PtrPlusHand_(&fu, fuh, sizeof(fu));
-			err = MemError();
-		}
-
-		/* make sure it gets written out sometime */
-		ChangedResource((Handle)fuh);
+		fclose(f);
 	}
-	return(err);
+
+	/* Update existing or append new */
+	bool found = false;
+	for (size_t i = 0; i < count; i++)
+	{
+		if (records[i].id == id)
+		{
+			records[i].lastMatch = secs;
+			found = true;
+			break;
+		}
+	}
+
+	if (!found)
+	{
+		FilterUse *grown = (FilterUse *)realloc(records, (count + 1) * sizeof(FilterUse));
+		if (!grown)
+		{
+			free(records);
+			g_free(path);
+			return -108; /* memFullErr */
+		}
+		records = grown;
+		records[count].id = id;
+		records[count].lastMatch = secs;
+		count++;
+	}
+
+	/* Write back */
+	f = fopen(path, "wb");
+	if (f)
+	{
+		fwrite(records, sizeof(FilterUse), count, f);
+		fclose(f);
+	}
+
+	free(records);
+	g_free(path);
+	return 0;
 }
 
 

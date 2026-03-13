@@ -105,5 +105,6 @@ void DisposProgress(ProgressBHandle prbl);
 #define PROG_BOX_HI 16
 
 uint32_t TickCount(void);
+void CycleBalls(void);
 
 #endif

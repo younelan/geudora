@@ -49,7 +49,6 @@ ADVISED OF THE POSSIBILITY OF SUCH DAMAGE. */
 
 #define FILE_NUM 90
 
-#ifdef THREADING_ON
 
 #include <errno.h>
 #include <pthread.h>
@@ -141,14 +140,9 @@ static OSErr DisposeThreadGlobals(threadGlobalsPtr threadGlobals);
 
 int GetFCCs(MessHandle messH, CSpecHandle fccSpecs); // move to sendmail.c?
 
-#ifdef IMAP
 static OSErr NewXferMail(threadDataHandle *tData, bool check, bool send,
                          bool manual, bool ae, XferFlags flags,
                          IMAPTransferPtr imapInfo);
-#else
-static OSErr NewXferMail(threadDataHandle *tData, bool check, bool send,
-                         bool manual, bool ae, XferFlags flags);
-#endif
 void *XferMailThread(void *threadParameter);
 void ThreadSwitchProcIn(pthread_t threadBeingSwitched, void *switchProcParam);
 void ThreadSwitchProcOut(pthread_t threadBeingSwitched, void *switchProcParam);
@@ -272,14 +266,9 @@ static OSErr CopyOutToTemp(void) {
 /************************************************************************
  * NewXferMail - create thread and allocate data for it
  ************************************************************************/
-#ifdef IMAP
 static OSErr NewXferMail(threadDataHandle *tData, bool check, bool send,
                          bool manual, bool ae, XferFlags flags,
                          IMAPTransferPtr imapInfo)
-#else
-static OSErr NewXferMail(threadDataHandle *tData, bool check, bool send,
-                         bool manual, bool ae, XferFlags flags)
-#endif
 {
   threadDataHandle threadData = nil;
   threadContextDataPtr threadContext = nil;
@@ -334,12 +323,10 @@ static OSErr NewXferMail(threadDataHandle *tData, bool check, bool send,
     (*threadData)->xferMailParams.ae = ae;
     BlockMoveData(&flags, &(*threadData)->xferMailParams.flags,
                   sizeof((*threadData)->xferMailParams.flags));
-#ifdef IMAP
     (*threadData)->imapInfo.command = UndefinedTask;
     if (imapInfo)
       BlockMoveData(imapInfo, &((*threadData)->imapInfo),
                     sizeof(IMAPTransferRec));
-#endif
   }
   if (!theError)
     theError = CopySettingsForThread(
@@ -423,13 +410,8 @@ static OSErr NewXferMail(threadDataHandle *tData, bool check, bool send,
 /************************************************************************
  * SetupXferMailThread - create thread and allocate data for it
  ************************************************************************/
-#ifdef IMAP
 OSErr SetupXferMailThread(bool check, bool send, bool manual, bool ae,
                           XferFlags flags, IMAPTransferPtr imapInfo)
-#else
-OSErr SetupXferMailThread(bool check, bool send, bool manual, bool ae,
-                          XferFlags flags)
-#endif
 {
   threadDataHandle sendData = nil, checkData = nil;
   OSErr err = noErr;
@@ -439,21 +421,12 @@ OSErr SetupXferMailThread(bool check, bool send, bool manual, bool ae,
     SendImmediately = False;
   if (PrefIsSet(PREF_THREADING_SEND_OFF) || PrefIsSet(PREF_POP_SEND) ||
       !(check && send)) {
-#ifdef IMAP
     err = NewXferMail(&checkData, check, send, manual, ae, flags, imapInfo);
-#else
-    err = NewXferMail(&checkData, check, send, manual, ae, flags);
-#endif
     sendData = checkData;
   } else {
-#ifdef IMAP
     if (!(err = NewXferMail(&checkData, check, false, manual, ae, flags,
                             imapInfo))) {
       if (NewXferMail(&sendData, false, send, manual, ae, flags, imapInfo))
-#else
-    if (!(err = NewXferMail(&checkData, check, false, manual, ae, flags))) {
-      if (NewXferMail(&sendData, false, send, manual, ae, flags))
-#endif
       {
         if (!SendThreadRunning) {
           ASSERT(checkData);
@@ -617,9 +590,7 @@ void *XferMailThread(void *threadParameter) {
   threadDataHandle threadData = nil;
   OSErr theError = noErr;
   xferMailParamsRec xferMailParams;
-#ifdef IMAP
   IMAPTransferRec imapInfo;
-#endif
 
   ASSERT(threadParameter);
   if (!threadParameter)
@@ -636,9 +607,7 @@ void *XferMailThread(void *threadParameter) {
 #endif
   BlockMoveData(&(*threadData)->xferMailParams, &xferMailParams,
                 sizeof(xferMailParams));
-#ifdef IMAP
   BlockMoveData(&(*threadData)->imapInfo, &imapInfo, sizeof(IMAPTransferRec));
-#endif
 #ifdef DEBUG_THREAD
   MyDebuggerNewThread((*threadData)->threadContext.threadID);
 #endif
@@ -650,15 +619,9 @@ void *XferMailThread(void *threadParameter) {
         ActiveTicks = (ActiveTicks > idleCount) ? (ActiveTicks - idleCount) : 0;
     }
 #endif
-#ifdef IMAP
     theError = XferMailRun(xferMailParams.check, xferMailParams.send,
                            xferMailParams.manual, xferMailParams.ae,
                            xferMailParams.flags, &imapInfo);
-#else
-    theError = XferMailRun(xferMailParams.check, xferMailParams.send,
-                           xferMailParams.manual, xferMailParams.ae,
-                           xferMailParams.flags);
-#endif
     CloseProgress();
     SaveSettingsToMainThread(threadData);
     DeleteSettingsForThread(&SettingsRefN);
@@ -789,7 +752,6 @@ static OSErr SaveSettingsToMainThread(threadDataHandle threadData) {
         (*mainPers)->dirty = 1;
       (*mainPers)->noUIDL = (*pers)->noUIDL;
 
-#ifdef IMAP
       /* only copy passwords back if we're a check thread or a send thread using
        * xtnd xmit */
       /* or if this was an IMAP thread, and the passwords were invalidated */
@@ -799,12 +761,6 @@ static OSErr SaveSettingsToMainThread(threadDataHandle threadData) {
              (ShouldSMTPAuth() && !PrefIsSet(PREF_SMTP_AUTH_NOTOK))))) ||
           (((*threadData)->currentTask > SendingTask) &&
            ((*pers)->password[0] == 0) && ((*pers)->secondPass[0] == 0)))
-#else
-      /* only copy passwords back if we're a check thread or a send thread using
-       * xtnd xmit */
-      if ((*threadData)->xferMailParams.check ||
-          ((*threadData)->xferMailParams.send && PrefIsSet(PREF_POP_SEND)))
-#endif
       {
         strncpy((*mainPers)->password, (*pers)->password, sizeof((*mainPers)->password) - 1);
         (*mainPers)->password[sizeof((*mainPers)->password) - 1] = '\0';
@@ -1126,7 +1082,6 @@ void ThreadTermination(pthread_t threadTerminated, void *terminationProcParam) {
   }
 }
 
-#endif
 
 /* gWazooListHead is defined in wazoo.c and exported via wazoo.h */
 #include "wazoo.h"

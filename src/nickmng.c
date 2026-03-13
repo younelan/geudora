@@ -2602,11 +2602,9 @@ int GatherBoxAddresses(TOCType * tocH, short modifiers, short from, short to,
     if (CommandPeriod)
       break;
     if (!selected || tocH->sums[sumNum].selected) {
-#ifdef IMAP
       // if this is an IMAP message, make sure it's been fully fetched.
       if (tocH && tocH->imapTOC && !EnsureMsgDownloaded(tocH, sumNum, false))
         return (err = 1);
-#endif
       if (messWin = GetAMessage(tocH, sumNum, nil, nil, False)) {
         compWin = MessFlagIsSet(Win2MessH(messWin), FLAG_OUT)
                       ? messWin
