@@ -172,7 +172,7 @@ static void Filter1Postprocess(FilterKeywordEnum fType, FilterPBPtr fpb)
 		which = 0;
 		if (!fpb->xferredFromIMAP)
 		{
-			if (spec.parID==MailRoot.dirId && spec.vRefNum==MailRoot.vRef)
+			if (IsRoot(&spec))
 			{
 				if (EqualStrRes((unsigned char *)spec.name,IN)) which = IN;
 				else if (EqualStrRes((unsigned char *)spec.name,OUT)) which = OUT;
@@ -193,9 +193,9 @@ static void Filter1Postprocess(FilterKeywordEnum fType, FilterPBPtr fpb)
 		}
 		if (IsDelivery(&spec))
 		{
-			spec.vRefNum = MailRoot.vRef;
-			spec.parID = MailRoot.dirId;
-			GetRString((unsigned char *)spec.name, IN);
+			unsigned char inName[256];
+			GetRString(inName, IN);
+			SimpleMakeFSSpec(MailRoot.vRef, MailRoot.dirId, (char *)inName, &spec);
 		}
 	}
 
@@ -1035,7 +1035,7 @@ void AddSpecToList(FSSpecPtr spec, CSpecHandle specList)
 
 	if (!specList || !*specList) return;
 
-	if (spec->parID == MailRoot.dirId && EqualStrRes((unsigned char *)spec->name, TRASH)) return;
+	if (IsRoot(spec) && EqualStrRes((unsigned char *)spec->name, TRASH)) return;
 
 	n = HandleCount(specList);
 	while (n--)

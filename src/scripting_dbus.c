@@ -1,12 +1,12 @@
-/* scripting_dbus.c — D-Bus scripting backend for Eudora (Linux)
+/* scripting_dbus.c — D-Bus scripting backend for Eudora (Linux/macOS)
  *
  * Exposes Eudora's scripting API over D-Bus so external tools and scripts
- * can automate filter management (and later: mailboxes, messages, etc.).
+ * can automate filter, personality, and mail transfer management.
  *
  * D-Bus interface: org.geudora.Scripting
- * Object path:     /org/geudora/Filters
+ * Object path:     /org/geudora/App
  *
- * Methods mirror the ScriptXxx() functions in scripting.h:
+ * Filter methods:
  *   CountFilters()                          -> i
  *   CreateFilter(position: i)               -> x  (returns new ID)
  *   DeleteFilter(id: x, byId: b)           -> b
@@ -14,6 +14,16 @@
  *   SetFilterProperty(id: x, byId: b, prop: i, val: v) -> b
  *   GetTermProperty(id: x, byId: b, term: i, prop: i) -> v
  *   SetTermProperty(id: x, byId: b, term: i, prop: i, val: v) -> b
+ *
+ * Personality methods:
+ *   CountPersonalities()                    -> i
+ *   CreatePersonality()                     -> i  (returns new index)
+ *   DeletePersonality(index: i)             -> b
+ *   GetPersonalityProperty(index: i, prop: i) -> v
+ *   SetPersonalityProperty(index: i, prop: i, val: v) -> b
+ *
+ * Mail transfer methods:
+ *   CheckMail(check: b, send: b)            -> b
  *
  * Build: link with gio-2.0 (GDBus). GLib/GIO are already GTK dependencies.
  *
@@ -67,6 +77,81 @@ static const char *sIntrospectionXML =
   "      <arg direction='in'  type='i' name='termIndex'/>"
   "      <arg direction='in'  type='i' name='property'/>"
   "      <arg direction='in'  type='v' name='value'/>"
+  "      <arg direction='out' type='b' name='success'/>"
+  "    </method>"
+  "    <method name='CountPersonalities'>"
+  "      <arg direction='out' type='i' name='count'/>"
+  "    </method>"
+  "    <method name='CreatePersonality'>"
+  "      <arg direction='out' type='i' name='newIndex'/>"
+  "    </method>"
+  "    <method name='DeletePersonality'>"
+  "      <arg direction='in'  type='i' name='index'/>"
+  "      <arg direction='out' type='b' name='success'/>"
+  "    </method>"
+  "    <method name='GetPersonalityProperty'>"
+  "      <arg direction='in'  type='i' name='index'/>"
+  "      <arg direction='in'  type='i' name='property'/>"
+  "      <arg direction='out' type='v' name='value'/>"
+  "    </method>"
+  "    <method name='SetPersonalityProperty'>"
+  "      <arg direction='in'  type='i' name='index'/>"
+  "      <arg direction='in'  type='i' name='property'/>"
+  "      <arg direction='in'  type='v' name='value'/>"
+  "      <arg direction='out' type='b' name='success'/>"
+  "    </method>"
+  "    <method name='CheckMail'>"
+  "      <arg direction='in'  type='b' name='check'/>"
+  "      <arg direction='in'  type='b' name='send'/>"
+  "      <arg direction='out' type='b' name='success'/>"
+  "    </method>"
+  "    <method name='CountMessages'>"
+  "      <arg direction='in'  type='s' name='mailboxPath'/>"
+  "      <arg direction='out' type='i' name='count'/>"
+  "    </method>"
+  "    <method name='GetMessageProperty'>"
+  "      <arg direction='in'  type='s' name='mailboxPath'/>"
+  "      <arg direction='in'  type='i' name='index'/>"
+  "      <arg direction='in'  type='i' name='property'/>"
+  "      <arg direction='out' type='v' name='value'/>"
+  "    </method>"
+  "    <method name='SetMessageProperty'>"
+  "      <arg direction='in'  type='s' name='mailboxPath'/>"
+  "      <arg direction='in'  type='i' name='index'/>"
+  "      <arg direction='in'  type='i' name='property'/>"
+  "      <arg direction='in'  type='v' name='value'/>"
+  "      <arg direction='out' type='b' name='success'/>"
+  "    </method>"
+  "    <method name='CreateMessage'>"
+  "      <arg direction='out' type='i' name='newIndex'/>"
+  "    </method>"
+  "    <method name='ReplyMessage'>"
+  "      <arg direction='in'  type='s' name='mailboxPath'/>"
+  "      <arg direction='in'  type='i' name='index'/>"
+  "      <arg direction='in'  type='b' name='replyAll'/>"
+  "      <arg direction='in'  type='b' name='includeSelf'/>"
+  "      <arg direction='in'  type='b' name='quoteText'/>"
+  "      <arg direction='out' type='i' name='newIndex'/>"
+  "    </method>"
+  "    <method name='ForwardMessage'>"
+  "      <arg direction='in'  type='s' name='mailboxPath'/>"
+  "      <arg direction='in'  type='i' name='index'/>"
+  "      <arg direction='out' type='i' name='newIndex'/>"
+  "    </method>"
+  "    <method name='RedirectMessage'>"
+  "      <arg direction='in'  type='s' name='mailboxPath'/>"
+  "      <arg direction='in'  type='i' name='index'/>"
+  "      <arg direction='out' type='i' name='newIndex'/>"
+  "    </method>"
+  "    <method name='QueueMessage'>"
+  "      <arg direction='in'  type='i' name='index'/>"
+  "      <arg direction='out' type='b' name='success'/>"
+  "    </method>"
+  "    <method name='MoveMessage'>"
+  "      <arg direction='in'  type='s' name='fromMailbox'/>"
+  "      <arg direction='in'  type='i' name='index'/>"
+  "      <arg direction='in'  type='s' name='toMailbox'/>"
+  "      <arg direction='in'  type='b' name='copy'/>"
   "      <arg direction='out' type='b' name='success'/>"
   "    </method>"
   "  </interface>"
@@ -224,6 +309,174 @@ static void handle_method_call(GDBusConnection *conn,
                                     (ScriptPropertyID)prop, &in);
     g_dbus_method_invocation_return_value(invocation,
       g_variant_new("(b)", err == 0));
+
+  /* --- Personality methods --- */
+
+  } else if (g_strcmp0(methodName, "CountPersonalities") == 0) {
+    long count = 0;
+    ScriptCountPersonalities(&count);
+    g_dbus_method_invocation_return_value(invocation,
+      g_variant_new("(i)", (gint32)count));
+
+  } else if (g_strcmp0(methodName, "CreatePersonality") == 0) {
+    long newIndex = 0;
+    int err = ScriptCreatePersonality(&newIndex);
+    if (err)
+      g_dbus_method_invocation_return_error(invocation, G_DBUS_ERROR,
+        G_DBUS_ERROR_FAILED, "CreatePersonality failed: %d", err);
+    else
+      g_dbus_method_invocation_return_value(invocation,
+        g_variant_new("(i)", (gint32)newIndex));
+
+  } else if (g_strcmp0(methodName, "DeletePersonality") == 0) {
+    gint32 index;
+    g_variant_get(params, "(i)", &index);
+    int err = ScriptDeletePersonality((long)index);
+    g_dbus_method_invocation_return_value(invocation,
+      g_variant_new("(b)", err == 0));
+
+  } else if (g_strcmp0(methodName, "GetPersonalityProperty") == 0) {
+    gint32 index, prop;
+    g_variant_get(params, "(ii)", &index, &prop);
+    ScriptValue out;
+    memset(&out, 0, sizeof(out));
+    int err = ScriptGetPersonalityProperty((long)index,
+                                           (ScriptPropertyID)prop, &out);
+    if (err)
+      g_dbus_method_invocation_return_error(invocation, G_DBUS_ERROR,
+        G_DBUS_ERROR_FAILED, "GetPersonalityProperty failed: %d", err);
+    else
+      g_dbus_method_invocation_return_value(invocation,
+        g_variant_new("(v)", script_value_to_variant(&out)));
+
+  } else if (g_strcmp0(methodName, "SetPersonalityProperty") == 0) {
+    gint32 index, prop;
+    GVariant *valVariant;
+    g_variant_get(params, "(iiv)", &index, &prop, &valVariant);
+    ScriptValue in = variant_to_script_value(valVariant);
+    g_variant_unref(valVariant);
+    int err = ScriptSetPersonalityProperty((long)index,
+                                           (ScriptPropertyID)prop, &in);
+    g_dbus_method_invocation_return_value(invocation,
+      g_variant_new("(b)", err == 0));
+
+  /* --- Mail transfer methods --- */
+
+  } else if (g_strcmp0(methodName, "CheckMail") == 0) {
+    gboolean check, send;
+    g_variant_get(params, "(bb)", &check, &send);
+    int err = ScriptCheckMail(check, send);
+    g_dbus_method_invocation_return_value(invocation,
+      g_variant_new("(b)", err == 0));
+
+  /* --- Message methods --- */
+
+  } else if (g_strcmp0(methodName, "CountMessages") == 0) {
+    const gchar *mailboxPath;
+    g_variant_get(params, "(&s)", &mailboxPath);
+    long count = 0;
+    int err = ScriptCountMessages(mailboxPath, &count);
+    if (err)
+      g_dbus_method_invocation_return_error(invocation, G_DBUS_ERROR,
+        G_DBUS_ERROR_FAILED, "CountMessages failed: %d", err);
+    else
+      g_dbus_method_invocation_return_value(invocation,
+        g_variant_new("(i)", (gint32)count));
+
+  } else if (g_strcmp0(methodName, "GetMessageProperty") == 0) {
+    const gchar *mailboxPath;
+    gint32 index, prop;
+    g_variant_get(params, "(&sii)", &mailboxPath, &index, &prop);
+    ScriptValue out;
+    memset(&out, 0, sizeof(out));
+    int err = ScriptGetMessageProperty(mailboxPath, (long)index,
+                                        (ScriptPropertyID)prop, &out);
+    if (err)
+      g_dbus_method_invocation_return_error(invocation, G_DBUS_ERROR,
+        G_DBUS_ERROR_FAILED, "GetMessageProperty failed: %d", err);
+    else
+      g_dbus_method_invocation_return_value(invocation,
+        g_variant_new("(v)", script_value_to_variant(&out)));
+
+  } else if (g_strcmp0(methodName, "SetMessageProperty") == 0) {
+    const gchar *mailboxPath;
+    gint32 index, prop;
+    GVariant *valVariant;
+    g_variant_get(params, "(&siiv)", &mailboxPath, &index, &prop, &valVariant);
+    ScriptValue in = variant_to_script_value(valVariant);
+    g_variant_unref(valVariant);
+    int err = ScriptSetMessageProperty(mailboxPath, (long)index,
+                                        (ScriptPropertyID)prop, &in);
+    g_dbus_method_invocation_return_value(invocation,
+      g_variant_new("(b)", err == 0));
+
+  } else if (g_strcmp0(methodName, "CreateMessage") == 0) {
+    long newIndex = 0;
+    int err = ScriptCreateMessage(&newIndex);
+    if (err)
+      g_dbus_method_invocation_return_error(invocation, G_DBUS_ERROR,
+        G_DBUS_ERROR_FAILED, "CreateMessage failed: %d", err);
+    else
+      g_dbus_method_invocation_return_value(invocation,
+        g_variant_new("(i)", (gint32)newIndex));
+
+  } else if (g_strcmp0(methodName, "ReplyMessage") == 0) {
+    const gchar *mailboxPath;
+    gint32 index;
+    gboolean replyAll, includeSelf, quoteText;
+    g_variant_get(params, "(&sibbb)", &mailboxPath, &index,
+                  &replyAll, &includeSelf, &quoteText);
+    long newIndex = 0;
+    int err = ScriptReplyMessage(mailboxPath, (long)index,
+                                  replyAll, includeSelf, quoteText, &newIndex);
+    if (err)
+      g_dbus_method_invocation_return_error(invocation, G_DBUS_ERROR,
+        G_DBUS_ERROR_FAILED, "ReplyMessage failed: %d", err);
+    else
+      g_dbus_method_invocation_return_value(invocation,
+        g_variant_new("(i)", (gint32)newIndex));
+
+  } else if (g_strcmp0(methodName, "ForwardMessage") == 0) {
+    const gchar *mailboxPath;
+    gint32 index;
+    g_variant_get(params, "(&si)", &mailboxPath, &index);
+    long newIndex = 0;
+    int err = ScriptForwardMessage(mailboxPath, (long)index, &newIndex);
+    if (err)
+      g_dbus_method_invocation_return_error(invocation, G_DBUS_ERROR,
+        G_DBUS_ERROR_FAILED, "ForwardMessage failed: %d", err);
+    else
+      g_dbus_method_invocation_return_value(invocation,
+        g_variant_new("(i)", (gint32)newIndex));
+
+  } else if (g_strcmp0(methodName, "RedirectMessage") == 0) {
+    const gchar *mailboxPath;
+    gint32 index;
+    g_variant_get(params, "(&si)", &mailboxPath, &index);
+    long newIndex = 0;
+    int err = ScriptRedirectMessage(mailboxPath, (long)index, &newIndex);
+    if (err)
+      g_dbus_method_invocation_return_error(invocation, G_DBUS_ERROR,
+        G_DBUS_ERROR_FAILED, "RedirectMessage failed: %d", err);
+    else
+      g_dbus_method_invocation_return_value(invocation,
+        g_variant_new("(i)", (gint32)newIndex));
+
+  } else if (g_strcmp0(methodName, "QueueMessage") == 0) {
+    gint32 index;
+    g_variant_get(params, "(i)", &index);
+    int err = ScriptQueueMessage((long)index);
+    g_dbus_method_invocation_return_value(invocation,
+      g_variant_new("(b)", err == 0));
+
+  } else if (g_strcmp0(methodName, "MoveMessage") == 0) {
+    const gchar *fromMailbox, *toMailbox;
+    gint32 index;
+    gboolean copy;
+    g_variant_get(params, "(&si&sb)", &fromMailbox, &index, &toMailbox, &copy);
+    int err = ScriptMoveMessage(fromMailbox, (long)index, toMailbox, copy);
+    g_dbus_method_invocation_return_value(invocation,
+      g_variant_new("(b)", err == 0));
   }
 }
 
@@ -245,7 +498,7 @@ static void on_bus_acquired(GDBusConnection *conn, const gchar *name,
 
   sRegistrationId = g_dbus_connection_register_object(
     conn,
-    "/org/geudora/Filters",
+    "/org/geudora/App",
     sNodeInfo->interfaces[0],
     &sVTable,
     NULL,  /* user_data */

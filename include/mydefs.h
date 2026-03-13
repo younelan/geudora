@@ -873,7 +873,7 @@ typedef struct TransStreamStruct *TransStream;
 
 /* #include "sasl.h" */
 /* #include "mbdrawer.h" */
-/* #include "emoticon.h" */
+#include "emoticon.h"
 
 /* #include "osxabsync.h" */
 

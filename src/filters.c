@@ -345,3 +345,385 @@ int ScriptSetTermProperty(long idOrIndex, bool byId, int termIndex,
 	err = SaveFilters();
 	return err;
 }
+
+/*======================================================================
+ * Personality scripting — platform-neutral CRUD
+ *
+ * Original Mac code in schizo.c exposed personality management via
+ * Apple Events (SetPersProperty, GetPersProperty, AECreatePersonality).
+ * These functions provide the same operations in a platform-neutral way
+ * that any scripting backend (D-Bus, AE, COM) can call.
+ *====================================================================*/
+
+#include "schizo.h"
+#include "threading.h"
+
+/*======================================================================
+ * ScriptCountPersonalities
+ *====================================================================*/
+int ScriptCountPersonalities(long *count)
+{
+	if (!count) return -50;
+	*count = PersCount();
+	return 0;
+}
+
+/*======================================================================
+ * ScriptGetPersonalityProperty
+ *====================================================================*/
+int ScriptGetPersonalityProperty(long index, ScriptPropertyID prop,
+                                  ScriptValue *out)
+{
+	PersHandle pers;
+
+	if (!out) return -50;
+	pers = Index2Pers((short)index);
+	if (!pers) return -1723;
+
+	switch (prop) {
+	case kScriptPropName:
+		*out = ScriptString((*pers)->name);
+		break;
+	case kScriptPropId:
+		*out = ScriptLong((long)(*pers)->persId);
+		break;
+	default:
+		return -1723;
+	}
+	return 0;
+}
+
+/*======================================================================
+ * ScriptSetPersonalityProperty
+ *====================================================================*/
+int ScriptSetPersonalityProperty(long index, ScriptPropertyID prop,
+                                  const ScriptValue *in)
+{
+	PersHandle pers;
+
+	if (!in) return -50;
+	pers = Index2Pers((short)index);
+	if (!pers) return -1723;
+
+	switch (prop) {
+	case kScriptPropName:
+		if (in->type != kScriptValString) return -50;
+		/* Cannot rename the dominant personality */
+		if (pers == PersList) return -1723;
+		PersSetName(pers, (unsigned char *)in->u.str);
+		break;
+	case kScriptPropId:
+		return -1723;  /* read-only */
+	default:
+		return -1723;
+	}
+	return 0;
+}
+
+/*======================================================================
+ * ScriptCreatePersonality
+ *====================================================================*/
+int ScriptCreatePersonality(long *outIndex)
+{
+	PersHandle pers = PersNew();
+	if (!pers) return -108;
+
+	if (outIndex)
+		*outIndex = PersCount();  /* new personality is last */
+
+	return 0;
+}
+
+/*======================================================================
+ * ScriptDeletePersonality
+ *====================================================================*/
+int ScriptDeletePersonality(long index)
+{
+	PersHandle pers = Index2Pers((short)index);
+	if (!pers) return -1723;
+	if (pers == PersList) return -1723;  /* cannot delete dominant */
+
+	return (int)PersDelete(pers);
+}
+
+/*======================================================================
+ * Mail transfer scripting
+ *====================================================================*/
+
+#include "mailxfer.h"
+#include "comp.h"
+#include "compact.h"
+#include "toc.h"
+#include "message.h"
+#include "uudecode.h"
+#include "StringDefs.h"
+
+/* Forward declarations for message operations (defined in message.c) */
+extern MyWindowPtr DoReplyMessage(MyWindowPtr win, bool all, bool self,
+                                   bool quote, bool doFcc, short withWhich,
+                                   bool vis, bool station, bool caching);
+extern MyWindowPtr DoForwardMessage(MyWindowPtr win, void *toWhom, bool turbo);
+extern MyWindowPtr DoRedistributeMessage(MyWindowPtr win, void *toWhom,
+                                          bool turbo, bool andDelete,
+                                          bool showIt);
+
+/*======================================================================
+ * ScriptCheckMail — trigger a mail check and/or send from scripting
+ *====================================================================*/
+int ScriptCheckMail(bool check, bool send)
+{
+	return (int)XferMail(check, send, false, true, true, 0);
+}
+
+/* Use TOCByPath from toc.c for mailbox path → TOC lookup */
+
+/*======================================================================
+ * ScriptCountMessages — count messages in a mailbox
+ *====================================================================*/
+int ScriptCountMessages(const char *mailboxPath, long *count)
+{
+	if (!count) return -50;
+	TOCType *tocH = TOCByPath(mailboxPath);
+	if (!tocH) return -1;
+	*count = tocH->count;
+	return 0;
+}
+
+/*======================================================================
+ * ScriptGetMessageProperty — get a message property by mailbox + index
+ *====================================================================*/
+int ScriptGetMessageProperty(const char *mailboxPath, long index,
+                              ScriptPropertyID prop, ScriptValue *out)
+{
+	if (!out) return -50;
+	TOCType *tocH = TOCByPath(mailboxPath);
+	if (!tocH) return -1;
+	if (index < 0 || index >= tocH->count) return -1723;
+
+	MSumPtr sum = &tocH->sums[index];
+
+	switch (prop) {
+	case kScriptPropPriority:
+		*out = ScriptLong(sum->priority);
+		break;
+	case kScriptPropStatus:
+		*out = ScriptLong(sum->state);
+		break;
+	case kScriptPropSender:
+		*out = ScriptString(sum->from);
+		break;
+	case kScriptPropDate:
+		*out = ScriptLong((long)sum->seconds);
+		break;
+	case kScriptPropSubject:
+		*out = ScriptString(sum->subj);
+		break;
+	case kScriptPropSize:
+		*out = ScriptLong(sum->length);
+		break;
+	case kScriptPropIsOutgoing:
+		*out = ScriptBool(tocH->which == OUT);
+		break;
+	case kScriptPropLabel:
+		*out = ScriptLong(GetSumColor(tocH, (short)index));
+		break;
+	case kScriptPropWrap:
+		*out = ScriptBool(0 != (sum->flags & FLAG_WRAP_OUT));
+		break;
+	case kScriptPropKeepCopy:
+		*out = ScriptBool(0 != (sum->flags & FLAG_KEEP_COPY));
+		break;
+	case kScriptPropReturnReceipt:
+		*out = ScriptBool(0 != (sum->flags & FLAG_RR));
+		break;
+	case kScriptPropName:
+		*out = ScriptString(sum->subj); /* name = subject for messages */
+		break;
+	case kScriptPropId:
+		*out = ScriptLong((long)sum->uidHash);
+		break;
+	default:
+		return -1723;
+	}
+	return 0;
+}
+
+/*======================================================================
+ * ScriptSetMessageProperty — set a message property
+ *====================================================================*/
+int ScriptSetMessageProperty(const char *mailboxPath, long index,
+                              ScriptPropertyID prop, const ScriptValue *in)
+{
+	if (!in) return -50;
+	TOCType *tocH = TOCByPath(mailboxPath);
+	if (!tocH) return -1;
+	if (index < 0 || index >= tocH->count) return -1723;
+
+	MSumPtr sum = &tocH->sums[index];
+
+	switch (prop) {
+	case kScriptPropPriority:
+		if (in->type != kScriptValLong) return -50;
+		sum->priority = (Byte)in->u.num;
+		TOCSetDirty(tocH, true);
+		break;
+	case kScriptPropStatus:
+		if (in->type != kScriptValLong) return -50;
+		sum->state = (StateEnum)in->u.num;
+		TOCSetDirty(tocH, true);
+		break;
+	case kScriptPropSubject:
+		if (in->type != kScriptValString) return -50;
+		strncpy(sum->subj, in->u.str, sizeof(sum->subj) - 1);
+		sum->subj[sizeof(sum->subj) - 1] = '\0';
+		TOCSetDirty(tocH, true);
+		break;
+	case kScriptPropLabel:
+		if (in->type != kScriptValLong) return -50;
+		SetSumColor(tocH, (short)index, (short)in->u.num);
+		break;
+	case kScriptPropWrap:
+		if (in->type != kScriptValBool) return -50;
+		if (in->u.flag) sum->flags |= FLAG_WRAP_OUT;
+		else sum->flags &= ~FLAG_WRAP_OUT;
+		TOCSetDirty(tocH, true);
+		break;
+	case kScriptPropKeepCopy:
+		if (in->type != kScriptValBool) return -50;
+		if (in->u.flag) sum->flags |= FLAG_KEEP_COPY;
+		else sum->flags &= ~FLAG_KEEP_COPY;
+		TOCSetDirty(tocH, true);
+		break;
+	case kScriptPropReturnReceipt:
+		if (in->type != kScriptValBool) return -50;
+		if (in->u.flag) sum->flags |= FLAG_RR;
+		else sum->flags &= ~FLAG_RR;
+		TOCSetDirty(tocH, true);
+		break;
+	case kScriptPropId:
+		return -1723; /* read-only */
+	default:
+		return -1723;
+	}
+	return 0;
+}
+
+/*======================================================================
+ * ScriptCreateMessage — create a new outgoing message (compose)
+ *====================================================================*/
+int ScriptCreateMessage(long *outIndex)
+{
+	MyWindowPtr win = DoComposeNew(0);
+	if (!win) return -108;
+
+	MessHandle messH = Win2MessH(win);
+	if (!messH) return -108;
+
+	if (outIndex)
+		*outIndex = (*messH)->sumNum;
+
+	return 0;
+}
+
+/*======================================================================
+ * ScriptReplyMessage — reply to a message
+ *====================================================================*/
+int ScriptReplyMessage(const char *mailboxPath, long index,
+                        bool replyAll, bool includeSelf, bool quoteText,
+                        long *outIndex)
+{
+	TOCType *tocH = TOCByPath(mailboxPath);
+	if (!tocH) return -1;
+	if (index < 0 || index >= tocH->count) return -1723;
+
+	MyWindowPtr win = GetAMessage(tocH, (short)index, NULL, NULL, false);
+	if (!win) return -1;
+
+	MessHandle messH = Win2MessH(win);
+	if (!messH) return -1;
+
+	MyWindowPtr replyWin = DoReplyMessage(win, replyAll, includeSelf,
+	                                       quoteText, true, 0, true, true, true);
+	if (!replyWin) return -1;
+
+	MessHandle replyMessH = Win2MessH(replyWin);
+	if (outIndex && replyMessH)
+		*outIndex = (*replyMessH)->sumNum;
+
+	return 0;
+}
+
+/*======================================================================
+ * ScriptForwardMessage — forward a message
+ *====================================================================*/
+int ScriptForwardMessage(const char *mailboxPath, long index,
+                          long *outIndex)
+{
+	TOCType *tocH = TOCByPath(mailboxPath);
+	if (!tocH) return -1;
+	if (index < 0 || index >= tocH->count) return -1723;
+
+	MyWindowPtr win = GetAMessage(tocH, (short)index, NULL, NULL, false);
+	if (!win) return -1;
+
+	MyWindowPtr fwdWin = DoForwardMessage(win, NULL, true);
+	if (!fwdWin) return -1;
+
+	MessHandle fwdMessH = Win2MessH(fwdWin);
+	if (outIndex && fwdMessH)
+		*outIndex = (*fwdMessH)->sumNum;
+
+	return 0;
+}
+
+/*======================================================================
+ * ScriptRedirectMessage — redirect a message
+ *====================================================================*/
+int ScriptRedirectMessage(const char *mailboxPath, long index,
+                           long *outIndex)
+{
+	TOCType *tocH = TOCByPath(mailboxPath);
+	if (!tocH) return -1;
+	if (index < 0 || index >= tocH->count) return -1723;
+
+	MyWindowPtr win = GetAMessage(tocH, (short)index, NULL, NULL, false);
+	if (!win) return -1;
+
+	MyWindowPtr redirWin = DoRedistributeMessage(win, NULL, false, false, true);
+	if (!redirWin) return -1;
+
+	MessHandle redirMessH = Win2MessH(redirWin);
+	if (outIndex && redirMessH)
+		*outIndex = (*redirMessH)->sumNum;
+
+	return 0;
+}
+
+/*======================================================================
+ * ScriptQueueMessage — queue a message for sending
+ *====================================================================*/
+int ScriptQueueMessage(long index)
+{
+	/* Messages must be in the Out mailbox to be queued */
+	TOCType *tocH = GetRealOutTOC();
+	if (!tocH) return -1;
+	if (index < 0 || index >= tocH->count) return -1723;
+
+	return QueueMessage(tocH, (short)index, kEuSendNow, 0, true, false);
+}
+
+/*======================================================================
+ * ScriptMoveMessage — move or copy a message between mailboxes
+ *====================================================================*/
+int ScriptMoveMessage(const char *fromMailbox, long index,
+                       const char *toMailbox, bool copy)
+{
+	TOCType *fromTocH = TOCByPath(fromMailbox);
+	if (!fromTocH) return -1;
+	if (index < 0 || index >= fromTocH->count) return -1723;
+
+	TOCType *toTocH = TOCByPath(toMailbox);
+	if (!toTocH) return -1;
+
+	return AppendMessage(fromTocH, (int)index, toTocH, copy, false, false);
+}

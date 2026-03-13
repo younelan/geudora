@@ -83,14 +83,7 @@ PersHandle PersNew(void);
 PersHandle FindPersById(uint32_t persId);
 PersHandle FindPersByName(unsigned char *name);
 uint32_t PersType(uint32_t theType, PersHandle pers);
-#ifdef APPLE_EVENTS
-OSErr SetPersProperty(AEDescPtr token, AEDescPtr descP);
-OSErr GetPersProperty(AEDescPtr token, AppleEvent *reply, long refCon);
-OSErr AECreatePersonality(DescType theClass, AEDescPtr inContainer,
-                          AppleEvent *event, AppleEvent *reply);
-OSErr AEPersObj(PersHandle pers, AEDescPtr obj);
-OSErr AESetPers(TOCType * tocH, short sumNum, AEDescPtr descP);
-#endif
+/* Personality scripting now centralized in scripting.h / scripting_ae.c / scripting_dbus.c */
 int32_t PersDelete(PersHandle pers);
 long PersCount(void);
 int32_t PersSetName(PersHandle pers, unsigned char *name);

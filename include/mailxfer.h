@@ -77,11 +77,11 @@ typedef struct IMAPTransferRec_ {
 #endif
 
 
-short XferMail(bool check, bool send, bool manual, bool ae, bool thread,
+short XferMail(bool check, bool send, bool manual, bool scripted, bool thread,
                short modifiers);
-short XferMailSetup(bool *check, bool *send, bool manual, bool ae,
+short XferMailSetup(bool *check, bool *send, bool manual, bool scripted,
                     XferFlags *flags, short modifiers);
-short XferMailRun(bool check, bool send, bool manual, bool ae, XferFlags flags,
+short XferMailRun(bool check, bool send, bool manual, bool scripted, XferFlags flags,
                   IMAPTransferPtr imapInfo);
 void GrabSignature(uint32_t fid);
 OSErr SigSpec(FSSpecPtr spec, long id);

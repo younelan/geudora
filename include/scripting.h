@@ -44,6 +44,21 @@ typedef enum {
   kScriptPropTermHeader     = 20,
   kScriptPropTermVerb       = 21,
   kScriptPropTermValue      = 22,
+
+  /* Message properties */
+  kScriptPropPriority       = 30,
+  kScriptPropStatus         = 31,
+  kScriptPropSender         = 32,
+  kScriptPropDate           = 33,
+  kScriptPropSubject        = 34,
+  kScriptPropSize           = 35,
+  kScriptPropIsOutgoing     = 36,
+  kScriptPropBody           = 37,
+  kScriptPropLabel          = 38,
+  kScriptPropWrap           = 39,
+  kScriptPropKeepCopy       = 40,
+  kScriptPropReturnReceipt  = 41,
+  kScriptPropSignature      = 42,
 } ScriptPropertyID;
 
 /*======================================================================
@@ -130,6 +145,82 @@ int ScriptGetTermProperty(long idOrIndex, bool byId, int termIndex,
 /* Set a match term property (termIndex is 0 or 1) */
 int ScriptSetTermProperty(long idOrIndex, bool byId, int termIndex,
                           ScriptPropertyID prop, const ScriptValue *in);
+
+/*======================================================================
+ * Personality scripting API — platform-neutral CRUD operations
+ *
+ * These operate on the personality list (PersList).
+ * Return 0 on success, negative on error.
+ *====================================================================*/
+
+/* Count personalities */
+int ScriptCountPersonalities(long *count);
+
+/* Get a personality property by 1-based index or name */
+int ScriptGetPersonalityProperty(long index, ScriptPropertyID prop,
+                                  ScriptValue *out);
+
+/* Set a personality property by 1-based index */
+int ScriptSetPersonalityProperty(long index, ScriptPropertyID prop,
+                                  const ScriptValue *in);
+
+/* Create a new personality. Returns new 1-based index in *outIndex. */
+int ScriptCreatePersonality(long *outIndex);
+
+/* Delete a personality by 1-based index (cannot delete dominant) */
+int ScriptDeletePersonality(long index);
+
+/*======================================================================
+ * Mail transfer scripting API
+ *
+ * Trigger check/send from external scripting.
+ *====================================================================*/
+
+/* Trigger a mail check and/or send */
+int ScriptCheckMail(bool check, bool send);
+
+/*======================================================================
+ * Message scripting API — platform-neutral operations
+ *
+ * Messages are identified by mailbox path + 0-based index.
+ * Return 0 on success, negative on error.
+ *====================================================================*/
+
+/* Count messages in a mailbox */
+int ScriptCountMessages(const char *mailboxPath, long *count);
+
+/* Get a message property */
+int ScriptGetMessageProperty(const char *mailboxPath, long index,
+                              ScriptPropertyID prop, ScriptValue *out);
+
+/* Set a message property */
+int ScriptSetMessageProperty(const char *mailboxPath, long index,
+                              ScriptPropertyID prop, const ScriptValue *in);
+
+/* Create a new outgoing message (compose). Returns index in *outIndex. */
+int ScriptCreateMessage(long *outIndex);
+
+/* Reply to a message. replyAll/includeSelf/quoteText are options.
+ * Returns the new message's index in *outIndex. */
+int ScriptReplyMessage(const char *mailboxPath, long index,
+                        bool replyAll, bool includeSelf, bool quoteText,
+                        long *outIndex);
+
+/* Forward a message. Returns the new message's index in *outIndex. */
+int ScriptForwardMessage(const char *mailboxPath, long index,
+                          long *outIndex);
+
+/* Redirect a message. Returns the new message's index in *outIndex. */
+int ScriptRedirectMessage(const char *mailboxPath, long index,
+                           long *outIndex);
+
+/* Queue a message for sending (message must be in Out mailbox) */
+int ScriptQueueMessage(long index);
+
+/* Move/copy a message between mailboxes.
+ * If copy is true, copies instead of moving. */
+int ScriptMoveMessage(const char *fromMailbox, long index,
+                       const char *toMailbox, bool copy);
 
 /*======================================================================
  * Backend lifecycle — called from main() or the application init

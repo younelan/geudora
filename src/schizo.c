@@ -42,13 +42,8 @@ static int PersCompare(PersHandle *p1, PersHandle *p2);
 static void UpdatePersList(void);
 
 #pragma segment Main
-#ifdef APPLE_EVENTS
-typedef struct
-{
-	PropToken property;
-	PersHandle pers;
-} PersSpecifier;
-#endif
+/* Personality Apple Events code removed — now centralized in scripting_ae.c
+ * using the platform-neutral ScriptXxx() API from scripting.h */
 
 /**********************************************************************
  * PersAnyPasswords - do we have any passwords?
@@ -418,149 +413,14 @@ OSErr PersSetName(PersHandle pers,PStr name)
 	return(noErr);
 }
 
-#ifdef APPLE_EVENTS
-/**********************************************************************
- * SetPersProperty - set a personality's properties via ae's
- **********************************************************************/
-OSErr SetPersProperty(AEDescPtr token,AEDescPtr descP)
-{
-	short err=noErr;
-	Str255 str;
-	PersSpecifier persSpec;
-	
-	AEGetDescData(token,&persSpec,sizeof(persSpec));
-	switch (persSpec.property.propertyId)
-	{
-		case pName:
-			if (HasFeature (featureMultiplePersonalities) && persSpec.pers!=PersList)
-			{
-				UseFeature (featureMultiplePersonalities);
-				GetAEPStr(str,descP);
-				PersSetName(persSpec.pers,str);
-				NotifyPersonalitiesWin();
-			}
-			else
-				return(errAENotModifiable);
-			break;
-		
-		case formUniqueID:
-			return(errAENotModifiable);
-			break;
-		
-		default:
-			err = errAENoSuchObject;
-			break;
-	}
-	return(err);
-}
-
-/**********************************************************************
- * 
- **********************************************************************/
-OSErr GetPersProperty(AEDescPtr token,AppleEvent *reply,long refCon)
-{
-#pragma unused(refCon)
-	OSErr err;
-	Str255 s;
-	PersSpecifier persSpec;
-	
-	AEGetDescData(token,&persSpec,sizeof(persSpec));	
-	switch (persSpec.property.propertyId)
-	{
-		case pName:
-			err = AEPutPStr(reply,keyAEResult,PCopy(s,(*persSpec.pers)->name));
-			break;
-		case formUniqueID:
-			err = AEPutLong(reply,keyAEResult,(*persSpec.pers)->persId);
-			break;
-		default:
-			err = errAENoSuchObject;
-			break;
-	}
-	return(err);
-}
-
-/**********************************************************************
- * AECreatePersonality - create a personality
- **********************************************************************/
-OSErr AECreatePersonality(DescType theClass,AEDescPtr inContainer,AppleEvent *event, AppleEvent *reply)
-{
-	OSErr err;
-	PersHandle pers;
-	long n;
-	AEDesc obj;
-	
-	if (!HasFeature (featureMultiplePersonalities))
-		return (paramErr);
-		
-	UseFeature (featureMultiplePersonalities);
-	
-	NullADList(&obj,nil);
-	
-	n = PersCount()+1;
-	
-	if (pers = PersNew())
-	{
-		err = AEPersObj(pers,&obj);
-		if (!err) err = AEPutParamDesc(reply,keyAEResult,&obj);
-		if (!err) NotifyPersonalitiesWin();
-	}
-	else err = MemError() ? MemError() : errAEEventNotHandled;
-	
-	DisposeADList(&obj,nil);
-	return(err);
-}
-
-/************************************************************************
- * AEPersObj - build an object for a personality
- ************************************************************************/
-OSErr AEPersObj(PersHandle pers,AEDescPtr obj)
-{
-	OSErr err;
-	long n;
-	AEDesc desc, root;
-	
-	if (!HasFeature (featureMultiplePersonalities))
-		return (paramErr);
-	
-	if (pers != PersList)
-		UseFeature (featureMultiplePersonalities);
-
-	NullADList(&desc,obj,&root,nil);
-	
-	n = Pers2Index(pers);
-		
-	if (!(err = AECreateDesc(typeChar,(*pers)->name,strlen((const char*)(*pers)->name),&desc)))
-	{
-		err = CreateObjSpecifier(cEuPersonality,&root,formName,&desc,False,obj);
-	}
-	
-	DisposeADList(&desc,&root,nil);
-	if (err) DisposeADList(obj,nil);
-	return(err);
-}
-
-/************************************************************************
- * AESetPers - set a personality to an object
- ************************************************************************/
-OSErr AESetPers(TOCType * tocH,short sumNum,AEDescPtr descP)
-{
-	AEDesc token;
-	OSErr err;
-	PersHandle	pers;
-
-	if (!HasFeature (featureMultiplePersonalities))
-		return (paramErr);
-	
-	err = AEResolve(descP,kAEIDoMinimum,&token);
-	if (err) return(err);
-	if (token.descriptorType!=cEuPersonality) return(errAEWrongDataType);
-	AEGetDescData(&token,&pers,sizeof(pers));
-	if (pers != PersList)
-		UseFeature (featureMultiplePersonalities);
-	return SetPers(tocH,sumNum,pers,True);
-}
-#endif /* APPLE_EVENTS */
+/* Apple Events personality functions (SetPersProperty, GetPersProperty,
+ * AECreatePersonality, AEPersObj, AESetPers) removed.
+ * Personality scripting is now centralized in:
+ *   scripting.h   — platform-neutral API
+ *   filters.c     — CRUD implementations (ScriptXxxPersonality)
+ *   scripting_ae.c — Apple Events transport
+ *   scripting_dbus.c — D-Bus transport
+ */
 
 
 /**********************************************************************

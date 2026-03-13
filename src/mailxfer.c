@@ -457,7 +457,7 @@ short XferMailLo(bool check, bool send, bool manual, XferFlags flags,
                  long *totalGot, OSErr *dialErrPtr);
 bool NeedPassword(bool check, bool send);
 void ResetPersCheckTime(bool force);
-bool OKToThread(bool check, bool send, bool manual, bool ae);
+bool OKToThread(bool check, bool send, bool manual, bool scripted);
 long FindTotalQueuedSize(TOCType * tocH, long gmtSecs);
 bool AddSigIntro(GtkWidget *pte, void **text);
 bool RemoveSigIntro(GtkWidget *pte, void **text);
@@ -481,7 +481,7 @@ long GlobalInUnreadCount();
  *		check mail manually or automatically.
  *
  ************************************************************************/
-bool OKToThread(bool check, bool send, bool manual, bool ae) {
+bool OKToThread(bool check, bool send, bool manual, bool scripted) {
   bool threadOK = true;
 //	Str255 pass;
 
@@ -496,7 +496,7 @@ bool OKToThread(bool check, bool send, bool manual, bool ae) {
 				(*CurPers)->checkMeNow = (*CurPers)->sendMeNow = (*CurPers)->checked = 0;
 				if (check && *GetPref(pass,PREF_POP))
 				{
-					if ((manual||ae) && !PrefIsSet(PREF_JUST_SAY_NO))
+					if ((manual||scripted) && !PrefIsSet(PREF_JUST_SAY_NO))
 						(*CurPers)->checkMeNow = True;
 				}
 				if (send && (*CurPers)->sendQueue && !PrefIsSet(PREF_PERS_NO_SEND))
@@ -528,7 +528,7 @@ bool OKToThread(bool check, bool send, bool manual, bool ae) {
  *
  ************************************************************************/
 
-short XferMail(bool check, bool send, bool manual, bool ae, bool thread,
+short XferMail(bool check, bool send, bool manual, bool scripted, bool thread,
                short modifiers) {
   XferFlags flags;
   OSErr err = noErr;
@@ -566,7 +566,7 @@ short XferMail(bool check, bool send, bool manual, bool ae, bool thread,
   // clear the subfolder cache; as good a place as any
   SubFolderSpec(0, NULL);
 
-  if ((err = XferMailSetup(&check, &send, manual, ae, &flags, modifiers)))
+  if ((err = XferMailSetup(&check, &send, manual, scripted, &flags, modifiers)))
     return err;
 
   // no need in spawning send thread if none of the queued messages belong to
@@ -607,11 +607,11 @@ short XferMail(bool check, bool send, bool manual, bool ae, bool thread,
     }
   }
 
-  if (PrefIsSet(PREF_THREADING_OFF) || !OKToThread(check, send, manual, ae) ||
+  if (PrefIsSet(PREF_THREADING_OFF) || !OKToThread(check, send, manual, scripted) ||
       !ThreadsAvailable() || !thread)
-    err = XferMailRun(check, send, manual, ae, flags, NULL);
+    err = XferMailRun(check, send, manual, scripted, flags, NULL);
   else
-    err = SetupXferMailThread(check, send, manual, ae, flags, NULL);
+    err = SetupXferMailThread(check, send, manual, scripted, flags, NULL);
   if (send)
     SetSendQueue();        // redo sendqueue if need be
   SendImmediately = false; // clear this for next time around
@@ -634,7 +634,7 @@ short XferMail(bool check, bool send, bool manual, bool ae, bool thread,
  *	The check and send parameters may be modified by the SpecialXfer
  *	dialog, in which case the caller should know not to check/send.
  ************************************************************************/
-short XferMailSetup(bool *check, bool *send, bool manual, bool ae,
+short XferMailSetup(bool *check, bool *send, bool manual, bool scripted,
                     XferFlags *xFlags, short modifiers) {
   PersHandle oldCur = CurPers;
   XferFlags flags;
@@ -660,7 +660,7 @@ short XferMailSetup(bool *check, bool *send, bool manual, bool ae,
   flags.check = flags.servFetch = flags.servDel = *check;
   flags.send = *send;
   // flags.nuke = check && !PrefIsSet(PREF_LMOS);
-  flags.isAuto = *check && !(manual || ae);
+  flags.isAuto = *check && !(manual || scripted);
 
   CheckNow = False; // clear flag
 
@@ -678,7 +678,7 @@ short XferMailSetup(bool *check, bool *send, bool manual, bool ae,
         if (ivalTicks && (!(*CurPers)->checkTicks ||
                           (*CurPers)->checkTicks + ivalTicks < ticks))
           (*CurPers)->doMeNow = (*CurPers)->checkMeNow = True;
-        else if ((manual || ae) && !PrefIsSet(PREF_JUST_SAY_NO))
+        else if ((manual || scripted) && !PrefIsSet(PREF_JUST_SAY_NO))
           (*CurPers)->doMeNow = (*CurPers)->checkMeNow = True;
       }
 
@@ -688,7 +688,7 @@ short XferMailSetup(bool *check, bool *send, bool manual, bool ae,
     }
   }
 
-  if (manual && !ae && special && SpecialXfer(&flags)) {
+  if (manual && !scripted && special && SpecialXfer(&flags)) {
     CurPers = oldCur;
     return (userCancelled);
   }
@@ -762,7 +762,7 @@ short XferMailSetup(bool *check, bool *send, bool manual, bool ae,
 /************************************************************************
  * XferMailReal - transfer mail; check or send, for each personality
  ************************************************************************/
-short XferMailRun(bool check, bool send, bool manual, bool ae, XferFlags flags,
+short XferMailRun(bool check, bool send, bool manual, bool scripted, XferFlags flags,
                   IMAPTransferPtr imapInfo) {
   PersHandle oldCur = CurPers;
   PersHandle pers;
@@ -899,7 +899,7 @@ short XferMailRun(bool check, bool send, bool manual, bool ae, XferFlags flags,
         popChecked = true;
 
       err = XferMailLo(check && (*CurPers)->checkMeNow,
-                       send && (*CurPers)->sendMeNow, manual || ae, flags,
+                       send && (*CurPers)->sendMeNow, manual || scripted, flags,
                        &gotSome, (OSErr *)&dialErr);
       if (!anyErr)
         anyErr = err;

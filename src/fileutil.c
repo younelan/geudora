@@ -3077,8 +3077,12 @@ OSErr DTSetComment(FSSpecPtr spec, char *comment) {
 
 /************************************************************************
  * SameSpec - do two specs refer to same file?
+ * Portable: prefer path comparison when available, fall back to
+ * parID/vRefNum/name for legacy callers that haven't set path yet.
  ************************************************************************/
 bool SameSpec(FSSpecPtr sp1, FSSpecPtr sp2) {
+  if (sp1->path[0] && sp2->path[0])
+    return strcmp(sp1->path, sp2->path) == 0;
   return (sp1->parID == sp2->parID && SameVRef(sp1->vRefNum, sp2->vRefNum) &&
           StringSame(sp1->name, sp2->name));
 }

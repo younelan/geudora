@@ -972,6 +972,21 @@ static void action_preferences(GSimpleAction *action, GVariant *parameter,
   gtk_window_present(GTK_WINDOW(dialog));
 }
 
+/* ─── Emoticon action handler ─────────────────────────────────────────── */
+
+extern int EmoInsert(MyWindowPtr win, int item);
+
+static void action_insert_emoticon(GSimpleAction *action, GVariant *parameter,
+                                    gpointer user_data) {
+  (void)action; (void)user_data;
+  if (!parameter) return;
+  int item = g_variant_get_int32(parameter);
+  /* TODO: get the currently focused compose window's MyWindowPtr.
+   * For now, this is a placeholder — needs compose window tracking. */
+  (void)item;
+  g_message("Insert emoticon %d — compose window tracking not yet wired", item);
+}
+
 /* ─── Wazoo window action handlers ────────────────────────────────────── */
 
 /* Address Book panel */
@@ -2476,6 +2491,12 @@ static void activate(GtkApplication *app, gpointer user_data) {
   g_action_map_add_action(G_ACTION_MAP(app), G_ACTION(action));
   g_object_unref(action);
 
+  /* Insert emoticon action (takes int parameter for emoticon index) */
+  action = g_simple_action_new("insert-emoticon", G_VARIANT_TYPE_INT32);
+  g_signal_connect(action, "activate", G_CALLBACK(action_insert_emoticon), NULL);
+  g_action_map_add_action(G_ACTION_MAP(app), G_ACTION(action));
+  g_object_unref(action);
+
   /* Add stub actions for remaining menu items */
   const char *stub_actions[] = {"open-selection",
                                 "open-browser",
@@ -2488,7 +2509,6 @@ static void activate(GtkApplication *app, gpointer user_data) {
                                 "wrap-selection",
                                 "finish-nickname",
                                 "insert-recipient",
-                                "insert-emoticon",
                                 "speak",
                                 "spelling",
                                 "redirect",

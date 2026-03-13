@@ -214,6 +214,9 @@ typedef struct TOCType {
 #define FLAG_FIXED_WIDTH (1 << 16)
 #define FLAG_RICH (1 << 17)
 #define FLAG_SHOW_ALL (1 << 30)
+#define FLAG_KEEP_COPY (1 << 4)
+#define FLAG_RR (1 << 12)
+/* FLAG_WRAP_OUT defined in uudecode.h */
 /* FLAG_HAS_ATT defined in mailbox.h */
 
 /* Global preferences/settings stubs */
@@ -259,6 +262,7 @@ int MoveMessageLo(TOCType * tocH, int sumNum, FSSpecPtr dest, bool copy,
 PersHandle TOCToPers(TOCType * tocH);
 MailboxNodeHandle TOCToMbox(TOCType * tocH);
 TOCType * TOCBySpec(FSSpecPtr spec);
+TOCType * TOCByPath(const char *path);
 bool IMAPFilteringUnderway(void);
 MailboxNodeHandle LocateInboxForPers(PersHandle pers);
 MailboxNodeHandle GetIMAPJunkMailbox(PersHandle pers, bool create,

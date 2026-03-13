@@ -141,7 +141,7 @@ static OSErr DisposeThreadGlobals(threadGlobalsPtr threadGlobals);
 int GetFCCs(MessHandle messH, CSpecHandle fccSpecs); // move to sendmail.c?
 
 static OSErr NewXferMail(threadDataHandle *tData, bool check, bool send,
-                         bool manual, bool ae, XferFlags flags,
+                         bool manual, bool scripted, XferFlags flags,
                          IMAPTransferPtr imapInfo);
 void *XferMailThread(void *threadParameter);
 void ThreadSwitchProcIn(pthread_t threadBeingSwitched, void *switchProcParam);
@@ -267,7 +267,7 @@ static OSErr CopyOutToTemp(void) {
  * NewXferMail - create thread and allocate data for it
  ************************************************************************/
 static OSErr NewXferMail(threadDataHandle *tData, bool check, bool send,
-                         bool manual, bool ae, XferFlags flags,
+                         bool manual, bool scripted, XferFlags flags,
                          IMAPTransferPtr imapInfo)
 {
   threadDataHandle threadData = nil;
@@ -320,7 +320,7 @@ static OSErr NewXferMail(threadDataHandle *tData, bool check, bool send,
     (*threadData)->xferMailParams.send = send;
     (*threadData)->xferMailParams.check = check;
     (*threadData)->xferMailParams.manual = manual;
-    (*threadData)->xferMailParams.ae = ae;
+    (*threadData)->xferMailParams.scripted = scripted;
     BlockMoveData(&flags, &(*threadData)->xferMailParams.flags,
                   sizeof((*threadData)->xferMailParams.flags));
     (*threadData)->imapInfo.command = UndefinedTask;
@@ -410,7 +410,7 @@ static OSErr NewXferMail(threadDataHandle *tData, bool check, bool send,
 /************************************************************************
  * SetupXferMailThread - create thread and allocate data for it
  ************************************************************************/
-OSErr SetupXferMailThread(bool check, bool send, bool manual, bool ae,
+OSErr SetupXferMailThread(bool check, bool send, bool manual, bool scripted,
                           XferFlags flags, IMAPTransferPtr imapInfo)
 {
   threadDataHandle sendData = nil, checkData = nil;
@@ -421,12 +421,12 @@ OSErr SetupXferMailThread(bool check, bool send, bool manual, bool ae,
     SendImmediately = False;
   if (PrefIsSet(PREF_THREADING_SEND_OFF) || PrefIsSet(PREF_POP_SEND) ||
       !(check && send)) {
-    err = NewXferMail(&checkData, check, send, manual, ae, flags, imapInfo);
+    err = NewXferMail(&checkData, check, send, manual, scripted, flags, imapInfo);
     sendData = checkData;
   } else {
-    if (!(err = NewXferMail(&checkData, check, false, manual, ae, flags,
+    if (!(err = NewXferMail(&checkData, check, false, manual, scripted, flags,
                             imapInfo))) {
-      if (NewXferMail(&sendData, false, send, manual, ae, flags, imapInfo))
+      if (NewXferMail(&sendData, false, send, manual, scripted, flags, imapInfo))
       {
         if (!SendThreadRunning) {
           ASSERT(checkData);
@@ -620,7 +620,7 @@ void *XferMailThread(void *threadParameter) {
     }
 #endif
     theError = XferMailRun(xferMailParams.check, xferMailParams.send,
-                           xferMailParams.manual, xferMailParams.ae,
+                           xferMailParams.manual, xferMailParams.scripted,
                            xferMailParams.flags, &imapInfo);
     CloseProgress();
     SaveSettingsToMainThread(threadData);

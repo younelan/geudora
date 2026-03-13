@@ -184,7 +184,7 @@ typedef struct xferMailParams_ {
   unsigned check : 1;
   unsigned send : 1;
   unsigned manual : 1;
-  unsigned ae : 1;
+  unsigned scripted : 1;
   XferFlags flags;
 } xferMailParamsRec;
 
@@ -283,7 +283,7 @@ void MyYieldToAnyThread(void);
 OSErr PushThreadPrefChange(short pref);
 void SetCurrentTaskKind(TaskKindEnum taskKind);
 void SetThreadGlobalCommandPeriod(ThreadID threadID, bool value);
-OSErr SetupXferMailThread(bool check, bool send, bool manual, bool ae,
+OSErr SetupXferMailThread(bool check, bool send, bool manual, bool scripted,
                           XferFlags flags, IMAPTransferPtr imapInfo);
 bool ThreadsAvailable(void);
 void RemoveTaskErrors(TaskKindEnum taskKind, long persId);

@@ -995,6 +995,8 @@ TOCType * BuildTOC(const char *path) {
 
   /* Fill in TOC metadata */
   toc->refN = 0;
+  strncpy(toc->path, path, sizeof(toc->path) - 1);
+  toc->path[sizeof(toc->path) - 1] = '\0';
   strncpy(toc->mailbox.spec.path, path, sizeof(toc->mailbox.spec.path) - 1);
   toc->mailbox.spec.path[sizeof(toc->mailbox.spec.path) - 1] = '\0';
   strncpy((char *)toc->mailbox.spec.name, filename,
