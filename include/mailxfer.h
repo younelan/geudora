@@ -84,7 +84,6 @@ short XferMailSetup(bool *check, bool *send, bool manual, bool scripted,
 short XferMailRun(bool check, bool send, bool manual, bool scripted, XferFlags flags,
                   IMAPTransferPtr imapInfo);
 void GrabSignature(uint32_t fid);
-OSErr SigSpec(FSSpecPtr spec, long id);
 OSErr TransmitMessageHi(TransStream stream, MessHandle messH, bool chatter,
                         bool sendDataCmd);
 void ShowBoxAt(TOCType * tocH, short selectMe, WindowPtr behindWin);
@@ -105,7 +104,7 @@ WindowPtr OpenBehindMePlease(void);
 void ProcessReceivedRegFiles(void);
 OSErr OutgoingMIDListSave(void);
 OSErr OutgoingMIDListLoad(void);
-void BadgeTheSupidDock(short count, PStr text, bool attentionColor);
+void BadgeTheSupidDock(short count, char *text, bool attentionColor);
 long GlobalUnreadCount(void);
 #define PrefBadgeDo() ((GetPrefLong(PREF_NO_STEENKEEN_BATCHES) & 0x1) == 0)
 #define PrefBadgeRecent() ((GetPrefLong(PREF_NO_STEENKEEN_BATCHES) & 0x2) == 0)

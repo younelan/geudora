@@ -224,6 +224,7 @@ bool SumFlagIsSet(TOCType * tocH, short sumNum, long flag);
 uLong HashWithSeedLo(unsigned char *s, uLong n, uLong seed);
 #define HashWithSeed(s, seed)                                                  \
   HashWithSeedLo((unsigned char *)(s), strlen((char *)(s)), seed)
+#define Hash(s) HashWithSeed(s, 1)
 
 OSErr TOCFindMessByMID(uLong mid, TOCType * tocH, long *sumNum);
 

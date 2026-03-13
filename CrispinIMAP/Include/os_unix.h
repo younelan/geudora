@@ -72,17 +72,18 @@ typedef Accumulator IMAPAccumulator;
 
 /* MailboxNodeHandle is defined in imapnetlib.h - do not redefine */
 
-/* CommandPeriod is a global bool in main_eudora.c — no macro needed */
-extern bool CommandPeriod;
+/* CommandPeriod is a thread-local macro defined in threading.h.
+   CrispinIMAP can't include threading.h, so use the accessor function. */
+extern short *_CommandPeriodPtr(void);
+#ifndef CommandPeriod
+#define CommandPeriod (*_CommandPeriodPtr())
+#endif
 void IMAPSpamWatchSupported(bool supported, bool bNotify);
 void IMAPAccuZap(IMAPAccumulator *pAccu);
 void IMAPAccuInit(IMAPAccumulator *pAccu);
 int IMAPAccuAddPtr(IMAPAccumulator *pAccu, const void *ptr, long size);
-#undef AccuZap
-#define AccuZap IMAPAccuZap
-#define AccuInit IMAPAccuInit
-#undef AccuAddPtr
-#define AccuAddPtr IMAPAccuAddPtr
+/* AccuZap/AccuInit/AccuAddPtr: CrispinIMAP code uses IMAPAccuXxx directly.
+   No macro redirects needed — avoids conflicts with Eudora's Accu functions. */
 
 /* Symbols for ASSERT macro in mydefs.h */
 extern short RunType;
@@ -102,7 +103,7 @@ struct UIDNode;
 int SaveMinimalHeader(struct mail_stream *stream);
 
 /* Forward declarations matching actual Eudora function signatures */
-void UID_LL_Zap(struct UIDNode ***list);
+void UID_LL_Zap(struct UIDNode **list);
 /* GetRString is declared in gtk_dialogs.h with unsigned char * signature */
 short FSWriteP(short refN, unsigned char *pString);
 int pstrincmp(unsigned char *ps, const char *cs, short n);

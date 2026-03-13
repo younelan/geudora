@@ -4253,9 +4253,9 @@ void VerifyUIDValidity(MAILSTREAM *stream, char *pUids, int len) {
     stream->UIDPLUSuv = newUV;
   else if (stream->UIDPLUSuv != newUV) {
     // Zap Resposes so far, store new uidvalidity
-    AccuZap(&stream->UIDPLUSResponse);
+    IMAPAccuZap(&stream->UIDPLUSResponse);
     Accumulator *pAccu = &stream->UIDPLUSResponse;
-    AccuInit(&pAccu);
+    IMAPAccuInit(&pAccu);
     stream->UIDPLUSuv = newUV;
   }
   // else
@@ -4288,7 +4288,7 @@ OSErr UIDStringToUIDs(char *pUids, int len, Accumulator *pAccu) {
     start = stop;
 
   for (; (err == noErr) && (start <= stop); start++)
-    err = AccuAddPtr(pAccu, &start, sizeof(long));
+    err = IMAPAccuAddPtr(pAccu, &start, sizeof(long));
 
   return (err);
 }

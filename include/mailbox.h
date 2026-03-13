@@ -126,6 +126,7 @@ typedef short ScriptCode;
 #define OPT_BULK      (1 << 10) /* Bulk/list mail */
 #define FLAG_HAS_ATT  (1 << 8)  /* Message has attachments */
 #define FLAG_SKIPWARN  (1 << 9)  /* Skip delete warning */
+#define SIG_NONE ((uint32_t)-1)
 typedef void **FSSpecHandle;
 typedef void *ControlHandle;
 typedef struct MyWindow *MyWindowPtr;

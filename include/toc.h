@@ -205,6 +205,7 @@ typedef struct TOCType {
 #define OPT_ORPHAN_ATT (1 << 9)
 #define OPT_FLOW 0x0004
 #define OPT_CHARSET 0x0008
+#define OPT_ATT_DEL (1 << 6)
 
 /* Message flags */
 #define FLAG_READ 0x0001
@@ -284,5 +285,7 @@ OSErr TOCDates(FSSpecPtr spec, uLong *box, uLong *res, uLong *file);
 
 /* CopySum — real implementation in searchwin.c */
 void CopySum(MSumPtr from, MSumPtr to, short idx);
+
+short TOCUnreadCount(TOCType *tocH, bool recentOnly);
 
 #endif /* TOC_H */

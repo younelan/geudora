@@ -24,199 +24,168 @@ OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE OF THIS SOFTWARE, EVEN IF
 ADVISED OF THE POSSIBILITY OF SUCH DAMAGE. */
 
 #include "mailxfer.h"
-#include "gtk_prefs.h"  // For prefs_get_string, PREFS_GROUP_*
-#include "ends.h"       // For SetSendQueue
-#include "StringDefs.h" // For OUT, OUT_TEMP, IN, IN_TEMP string resource IDs
-#include "StringUtil.h" // For ComposeRString
-#include "auditdefs.h"
-#include "gtk_nag.h"
-#include "log.h" // For ComposeLogS
-#include "message.h"
-#include "mime.h" // For DecoderFunc
-#include "myssl.h"
-#include "portable-compat.h" // For NagStateHandle
-#include "prefdefs.h"
-#include "schizo.h"
-#include "sendmail.h"
-#include "threading.h" // For CurThreadGlobals, ThreadGlobals, LastAttPath
-#include "toc.h"
 #include "compact.h"
+#include "ends.h"
+#include "filtrun.h"
+#include "gtk_dialogs.h"
+#include "gtk_nag.h"
+#include "gtk_prefs.h"
 #include "imapmailboxes.h"
+#include "junk.h"
+#include "log.h"
+#include "mime.h"
+#include "myssl.h"
+#include "MyRes.h"
+#include "portable-compat.h"
+#include "prefdefs.h"
+#include "progress.h"
+#include "sendmail.h"
+#include "signaturewin.h"
+#include "StringDefs.h"
+#include "StringUtil.h"
+#include "threading.h"
+#include "trans.h"
+#include "auditdefs.h"
+#include "fileutil.h"
+#include "Globals.h"
+#include "peteglue.h"
 #include "util.h"
-#define FILE_NUM 52
-
-/* Copyright (c) 1993 by QUALCOMM Incorporated */
-
-// Forward declare globals we need from Globals.h
-extern bool CheckThreadRunning;
-extern bool SendThreadRunning;
-extern bool SendImmediately;
-// PersList and CurPers are now macros from threading.h - don't declare as
-// extern
-extern int SendQueue;
-extern uint32_t LastCheckTime;
-extern uint32_t ActiveTicks;
-// CurPers is a macro from threading.h
-extern bool CheckNow;
-extern bool OpenAddrErrs;
-extern short NeedToFilterOut;
-
-// NagStateHandle is defined in portable-compat.h
-
-extern NagStateHandle nagState;
-
+#include <assert.h>
 #include <stdio.h>
 
-void Dprintf(const char *fmt, ...);
+#define FILE_NUM 52
 
-// CheckNagging is implemented in gtk_nag.c
-extern void CheckNagging(int userState);
+/* Globals come from Globals.h (included above) */
+extern long CountFlaggedMessages(TOCType *toc);
 
-// Stub for IsAdwareMode
-bool IsAdwareMode(void) { return false; }
-
-// Porting: Task enums are now defined in threading.h - don't redefine
-
-/* IMAPTransferRec_ definition provided in mailxfer.h */
-
-// IMAP functions implemented in imapdownload.c
-extern int DoFetchNewMessages(FSSpec *spec, bool a, bool b);
-extern int DoDownloadMessages(TOCType * toc, void *uids, bool attach);
-extern int DoDeleteMessage(TOCType * toc, void *uids, bool nuke, bool expunge,
-                    bool undelete);
-extern int DoTransferMessages(TOCType * src, TOCType * dst, void *uids, bool copy);
-extern int DoExpungeMailbox(TOCType * toc);
-extern int DoDownloadIMAPAttachments(void *att, FSSpec box);
-extern int DoIMAPServerSearch(TOCType * toc, void *boxes, void *search, short c,
-                       bool match, long uid);
-extern int DoIMAPProcessMailboxes(void *list, short cmd);
-extern int DoTransferMessagesToServer(TOCType * toc, void *data, bool copy, bool b);
-extern void IMAPPollMailboxes(FSSpec spec);
-// #include "filters.h" // already included via mailxfer.h/filters.h
-// #include "junk.h" // Removed to avoid conflicts
-#include "filtrun.h"
-#define IMAPDOWNLOAD_H // Suppress conflicting header
-#include "junk.h"
-#undef IMAPDOWNLOAD_H
-
-// Missing Declarations restored
-extern int GetUUPCMail(bool a, short *b);
-extern int GetMyMail(TransStream stream, bool a, short *b,
-                     XferFlags *flags); // Fixed arg
-extern void HPurge(void *h);
-// MyFrontNonFloatingWindow is defined in legacy_shim.h - don't redeclare
-extern void CloseProgress(void);
-extern long GetHandleSize(Handle h);
-// SetCurrentTaskKind is defined in threading.h - don't redeclare
-static void AdCheckingMail(void) {}
-
-extern bool NeedToFilterIn; // Global
-extern bool NeedToNotify;
-extern bool AttentionNeeded;
-#define eMailArrive 1 // Stub enum if not found
-/* ReZoomMyWindow, GetNextWindow, SendBehind, CloseMyWindow declared in mailbox.h */
-extern long CountFlaggedMessages(TOCType * toc);
-struct NMRec;
-extern struct NMRec *MyNMRec;
-
-/* Legacy Mac Externs */
-extern void *GetWindowPrivateData(WindowPtr w);
-extern void SelectBoxRange(TOCType * toc, short a, short b, bool c, short d,
-                           short e);
-extern void ScrollIt(WindowPtr w, short a, long b);
-extern bool SortedDescending(TOCType * toc);
-extern void ShowMyWindowBehind(WindowPtr a, WindowPtr b);
-extern void GetResName(unsigned char *name, uint32_t type, short id);
-// REAL_BIG is defined in mydefs.h - don't redefine
-#undef IN
-#define IN 0
-#define NEW_MAIL_SND 1000
-#define SIG_NONE 0
-extern void PlayNamedSound(unsigned char *name);
-extern MyWindowPtr FindText(FSSpecPtr spec);
-extern void MySelectWindow(WindowPtr w);
-#undef CANT_READ_SIG
-#define CANT_READ_SIG 2001
-
-extern MyWindowPtr OpenText(FSSpecPtr spec, void *a, void *b, void *c, bool d,
-                            void *e, bool f, bool g);
-extern void PeteGetTextAndSelection(void *pte, Handle *h, void *a, void *b);
-
+/* IMAP functions — declared in imapdownload.h */
 extern int DoIMAPFilterProgress(void);
 
-// Wazoo - implemented in wazoo.c
-#define TASKS_WIN 100
-extern int FindOpenWazoo(int win);
 
-// Global Stubs for UI state (threading globals are in threading.c when
-// THREADING_ON is defined)
-MyWindowPtr TaskProgressWindow = NULL;
-void *ModalWindow = NULL;
-bool gPPPConnectFailed = false;
-bool NoXfer = false;
-int IMAPCheckThreadRunning = 0;
-int gNewMessages = 0;
-bool NoNewMailMe = false;
-bool gStayConnected = false;
-extern bool Offline;
-
-// Enums and Defines
-#define eHasConnected 1
-// CheckingTask and SendingTask are defined in threading.h - don't redefine
-
-// Helper Stubs - these are macros in toc.h, don't define as functions
-// TOCType * GetRealInTOC(void) is a macro
-// TOCType * GetRealOutTOC(void) is a macro
-void NotifyHelpers(int a, int b, void *c) {}
-void PhKill(void) {}
-
-// More Legacy Stubs
-bool MonitorGrow(bool a) { return false; }
-bool HesOK = false;
-extern void GetPOPInfo(void *a, void *b);
-extern PStr GetPOPPref(PStr dest);
-#define NOTIFY_TYPE 0
-#define eWillConnect 2
-int CountResources(int type) { return 0; }
+/* Mail transfer functions */
+extern int GetUUPCMail(bool a, short *b);
+extern int GetMyMail(TransStream stream, bool a, short *b, XferFlags *flags);
 extern int NewTransStream(TransStream *stream);
-// OpenProgress is defined in progress.h - don't redefine
-long gCheckSessionID = 0;
 extern long ReportStreamAudit(TransStream stream);
-long NonNullTicks = 0;
-// uint32_t TickCount(void) { return 0; }
-bool ShouldSMTPAuth(void) { return false; }
-bool UUPCIn = false;
-bool UUPCOut = false;
-/* PCopy is a macro in StringUtil.h — do not define as function */
-#undef Note
-#define Note 0
-#undef RECONSIDER_AUTH
-#define RECONSIDER_AUTH 100
-#define kAlertStdAlertOKButton 1
-#define kAlertStdAlertCancelButton 2
-char *NoStr = "";
-/* ComposeStdAlert declared in gtk_dialogs.h */
-extern void SetPref(short pref, const unsigned char *val);
-
-// GMTDateTime is defined in util.h - don't redefine
-// CountedSpecStruct defined in mailbox.h
-// ProgressMessage is defined in progress.h - don't redefine
-// ProgressMessageR is defined in progress.h - don't redefine
-bool NewTables = false;
-#define DEFAULT_TABLE 0
+extern void StartStreamAudit(TransStream theStream, StreamAuditTypeEnum what);
+extern int StartSMTP(TransStream stream, unsigned char *server, long port);
+extern int StartPOP(TransStream stream, unsigned char *server, long port);
+extern int EndPOP(TransStream stream);
+extern void POPIntroductions(TransStream stream, unsigned char *s, void *p);
+extern int POPrror(void);
+extern int MySendMessage(TransStream stream, TOCType *toc, int sum,
+                         CSpecHandle list);
+extern short EffectiveTID(short id);
 extern short TransOutTablID(void);
-unsigned char *Flatten = NULL;
 extern unsigned char *GetFlatten(void);
 
+/* Personality functions */
+extern void GetPOPInfo(void *a, void *b);
+extern PStr GetPOPPref(PStr dest);
 extern void PushPers(PersHandle pers);
 extern void PopPers(void);
-#define esslUseAltPort 1
-#undef SMTP_SSL_PORT
-#define SMTP_SSL_PORT 100
+
+/* UI / window functions */
+extern void *GetWindowPrivateData(WindowPtr w);
+extern void SelectBoxRange(TOCType *toc, short a, short b, bool c, short d,
+                           short e);
+extern void ScrollIt(WindowPtr w, short a, long b);
+extern bool SortedDescending(TOCType *toc);
+extern void ShowMyWindowBehind(WindowPtr a, WindowPtr b);
+extern MyWindowPtr FindText(FSSpecPtr spec);
+extern void MySelectWindow(WindowPtr w);
+extern MyWindowPtr OpenText(FSSpecPtr spec, void *a, void *b, void *c, bool d,
+                            void *e, bool f, bool g);
+extern int FindOpenWazoo(int win);
+extern void OpenTasksWinBehind(void *win);
+
+/* TOC / message operations */
+extern void SetState(TOCType *toc, int sum, int state);
+extern bool WriteTOC(TOCType *toc);
+extern void DeleteMessage(TOCType *toc, int sum, bool nuke);
+extern void RedoTOC(TOCType *toc);
+extern int MoveMessageLo(TOCType *tocH, int sumNum, FSSpecPtr dest, bool copy,
+                         bool queue, bool open);
+extern void TOCSetDirty(TOCType *toc, bool dirty);
+extern void UpdateNumStat(int type, int val);
+
+/* IMAP mailbox functions — declared in imapdownload.h */
+extern MailboxNodeHandle LocateInboxForPers(PersHandle pers);
+extern TOCType *TOCBySpec(FSSpec *spec);
+
+/* Debug */
+void Dprintf(const char *fmt, ...);
+extern void CheckNagging(int userState);
+
+/* Constants not in any ported header yet */
+#define TASKS_WIN 100
+#define BUG15 0
+#define TRANS_IN_TABL 1003
+#define charCodeMask 0x000000FF
+#define mouseDown 1
+#define kAlertStdAlertOKButton 1
+#define kAlertStdAlertCancelButton 2
+#define kStatSentMail 1
+#define kStatForwardMsg 1
+#define kStatReplyMsg 2
+#define kStatRedirectMsg 3
+#define CHECK_EXPIRE
+#define CHECK_DEMO
+#define RunType 0
+#define EMSFIDLE_PRE_SEND 0x0008L
+
+/* Helper app notification events (from original appleevent.h) */
+#define eMailArrive 1L
+#define eMailSent 2L
+#define eWillConnect 3L
+#define eHasConnected 4L
+
+
+/* Module globals */
+bool UUPCIn = false;
+bool UUPCOut = false;
+GArray *OutgoingMIDList = NULL;
+bool OutgoingMIDListDirty = false;
+
+/* No-op stubs for features not applicable in GTK port */
+bool IsAdwareMode(void) { return false; }
+void NotifyHelpers(int a, int b, void *c) {}
+bool MonitorGrow(bool a) { return false; }
+bool ShouldSMTPAuth(void) { return false; }
+void FiltersDecRef(void) {}
+void ETLIdle(long flags) {}
+/* ResyncCurrentIMAPMailbox is in imapdownload.c */
+static void AdCheckingMail(void) {}
+static void PhKill(void) {}
+static int CountResources(int type) { return 0; }
+static int UUPCSendMessage(TOCType *toc, int sum, CSpecHandle list) { return 0; }
+static void RegisterSuccess(int val) {}
+short ETLSendMessage(TransStream stream, MessHandle messH, bool chatter,
+                     bool sendDataCmd) { return 0; }
+static void StartAuthenticatedSMTP(TransStream stream, unsigned char *server,
+                                   long port) {}
+static void Type2Select(struct EventRecord *event) {}
+static long GetDblTime(void) { return 0; }
+static void ResetAlertStage(void) {}
+static void TaskProgressRefresh(void) {}
+static void FlushTOCs(bool a, bool b) {}
+static bool SelectXferMailPers(bool check, bool send, bool manual) {
+  return false;
+}
+
+/* Real implementations */
+bool IsQueued(TOCType *toc, int sum) {
+  if (!toc || sum < 0 || sum >= toc->count)
+    return false;
+  int s = toc->sums[sum].state;
+  return (s == QUEUED || s == TIMED);
+}
+
 long GetSMTPPort(void) {
   long p = prefs_get_int(PREFS_GROUP_SENDING_MAIL, "smtp_port", 587);
   return p ? p : 587;
 }
+
 int GetSMTPInfoLo(unsigned char *server, long *port) {
   gchar *smtp = prefs_get_string(PREFS_GROUP_SENDING_MAIL, "smtp_server", "");
   if (server) {
@@ -228,222 +197,29 @@ int GetSMTPInfoLo(unsigned char *server, long *port) {
     return 1;
   return 0;
 }
-/* ComposeLogR declared in log.h */
-#undef LOG_SEND
-#define LOG_SEND 0
-#undef START_SEND_LOG
-#define START_SEND_LOG 0
-#define PREF_OUT_XLATE 0
-#define PREF_NO_FLATTEN 1
-#define PREF_SSL_SMTP_SETTING 2
-#undef SENDING_MAIL
-#define SENDING_MAIL 3
-#undef PERS_SENDING_MAIL
-#define PERS_SENDING_MAIL 4
-#define kpTitle 5
-#define kpSubTitle 6
-#undef CLEANUP_CONNECTION
-#define CLEANUP_CONNECTION 100
-#define kStatSentMail 1
-#define kAuditBytesSent 2
-void FiltersDecRef(void) {}
-extern void StartStreamAudit(TransStream theStream, StreamAuditTypeEnum what);
-#define PREF_POP_SEND 6
-extern int StartSMTP(TransStream stream, unsigned char *server, long port);
-// GetOutTOC is a macro in toc.h - don't define as function
-bool TransOut = false;
-long TotalQueuedSize = 0;
-// ByteProgress is defined in progress.h - don't redefine
-/* RegenerateFilters is implemented in filtwin.c */
-bool EjectBuckaroo = false;
-bool IsQueued(TOCType *toc, int sum) {
-  if (!toc || sum < 0 || sum >= toc->count) return false;
-  int s = toc->sums[sum].state;
-  return (s == QUEUED || s == TIMED);
-}
-// ProgressR(NoChange,count--,0,LEFT_TO_TRANSFER,nil);
-#define NoChange 0
-#undef LEFT_TO_TRANSFER
-#define LEFT_TO_TRANSFER 0
-// ProgressR is defined in progress.h - don't redefine
-extern short EffectiveTID(short id);
-#define NO_TABLE 0
-/* GrabSignature stub removed */
-// GetProgressBytes is defined in progress.h - don't redefine
-int UUPCSendMessage(TOCType * toc, int sum, CSpecHandle list) { return 0; }
-extern int MySendMessage(TransStream stream, TOCType * toc, int sum,
-                  CSpecHandle list);
-#define OUT_FORWARD 1
-#define OUT_REPLY 2
-#define kStatForwardMsg 1
-#define kStatReplyMsg 2
-#define kStatRedirectMsg 3
-extern void UpdateNumStat(int type, int val);
-void RegisterSuccess(int val) {}
-void StartAuthenticatedSMTP(TransStream stream, unsigned char *server,
-                            long port) {}
 
-/* POP port constants come from StringDefs.h resource IDs;
-   GetRLong() reads the actual values from the INI resource system */
-#ifndef PREF_KERBEROS
-#define PREF_KERBEROS 7
-#endif
 int GetPOPInfoLo(unsigned char *user, unsigned char *host, long *port) {
   GetPOPInfo(user, host);
   if (!host || !host[0])
-    return 1; /* no server configured */
+    return 1;
   if (port && *port == 0)
-    *port = 110; /* default POP3 port */
+    *port = 110;
   return 0;
 }
-extern int StartPOP(TransStream stream, unsigned char *server, long port);
-extern int EndPOP(TransStream stream);
-extern void POPIntroductions(TransStream stream, unsigned char *s, void *p);
-extern int POPrror(void);
-// GetResource is defined in util.h - don't redefine
-// OutTypeEnum is defined in mailbox.h - don't redefine
 
-// More Stubs
-#undef LOG_TPUT
-#define LOG_TPUT 1
-// ComposeLogS is defined in legacy_shim.h - don't redefine with different
-// signature
-/* ApproxMessageSize — real implementation in compact.c */
-// ByteProgressExcess is defined in progress.h - don't redefine
-extern void SetState(TOCType * toc, int sum, int state);
-extern bool WriteTOC(TOCType * toc);
-#define flkOutgoing 1
-/* FilterMessage stub removed */
-#define FLAG_KEEP_COPY 0x100
-#define OPT_ATT_DEL 0x200
-// MessOptIsSet is a macro in message.h - don't define as function
-// GetMyWindowWindowPtr, UsingWindow, NotUsingWindow defined in mywindow.c
-extern void DeleteMessage(TOCType * toc, int sum, bool nuke);
-extern void RedoTOC(TOCType * toc);
-/* BoxSelectAfter declared in message.h */
-// Win2MessH is a macro in message.h - don't define as function
-extern void FSpTrash(FSSpec *spec);
-// MoveMessageLo implemented in message.c
-extern int MoveMessageLo(TOCType * tocH, int sumNum, FSSpecPtr dest, bool copy,
-                  bool queue, bool open);
-extern void TOCSetDirty(TOCType * toc, bool dirty);
-/* SetHandleBig provided by util.c/util.h */
-// LocalDateTimeShortStr is defined in util.h - don't redefine
-extern int VolumeMargin(short vRef, int margin);
-#define eMailSent 1
-#define BUG15 0
-#undef CHECKING_MAIL
-#define CHECKING_MAIL 1000
-#undef PERS_CHECKING_MAIL
-#define PERS_CHECKING_MAIL 1001
-#undef NOT_ENOUGH_ROOM
-#define NOT_ENOUGH_ROOM 1002
-#define TRANS_IN_TABL 1003
-// Headering is a macro from threading.h - don't define as variable
-/* duplicate NewTables removed */
-void *TransIn = NULL;
-extern RootSpec MailRoot;
-void ResetAlertStage(void) {}
-// HNoPurge is defined in legacy_shim.h - don't redefine
-/* GetResource_ stub removed to avoid macro conflict */
-
-// Mac Event Stubs
-// EventRecord is defined in legacy_shim.h - don't redefine
-/* PFindSub is a macro in StringUtil.h — do not define as function */
-void Type2Select(struct EventRecord *event) {}
-long GetDblTime(void) { return 0; }
-/* GetRLong implemented in util.c */
-
-#define charCodeMask 0x000000FF
-#define mouseDown 1
-#undef DOUBLE_TOLERANCE
-#define DOUBLE_TOLERANCE 100
-// SetPref was handled above
-// OnlyHostsStrn is defined in StrnDefs.h as a number - don't redefine as
-// variable
-bool UseCTB = false;
 bool IsIMAPPers(PersHandle pers) {
-  /* Read from INI: use_imap in [checking_mail] */
   return (bool)prefs_get_bool(PREFS_GROUP_CHECKING_MAIL, "use_imap", FALSE);
 }
-extern MailboxNodeHandle LocateInboxForPers(PersHandle pers);
-extern TOCType * TOCBySpec(FSSpec *spec);
-extern int FetchNewMessages(TOCType * toc, bool a, bool b, bool c, bool d);
-bool gWasManualIMAPCheck = false;
-extern void ResyncOpenMailboxes(void *pers);
-extern void IMAPPoll(void *pers);
 
-#undef shiftKey
-#define shiftKey 0x0002
-#undef cmdKey
-#define cmdKey 0x0004
-
-#include <assert.h>
-
-#ifndef ReallyDoAnAlert_declared
-#define ReallyDoAnAlert_declared 1
-int ReallyDoAnAlert(int templ, int which);
-#endif
-
-#ifdef ASSERT
-#undef ASSERT
-#endif
-#define ASSERT assert
-
-// Stub RunType widely used in legacy checks
-#ifndef RunType
-#define RunType 0
-#endif
-
-// Stubs for missing functions
-extern void OpenTasksWinBehind(void *win);
-
-// Stub constants
-#define CHECK_EXPIRE
-#define CHECK_DEMO
-
-// Stub missing functions
-static int ResyncCurrentIMAPMailbox(void) { return 0; }
-static void SubFolderSpec(int a, void *b) {}
-// GetDateTime removed here to avoid conflict with legacy_shim.h static inline
-// version
-void ETLIdle(long mode) {} // Fixed signature and non-static
-// static void AdCheckingMail(void) {} // Defined earlier
-
-// Stub constants
-#define EMSFIDLE_PRE_SEND 0
-
-// Stub junk mail functions
-// JunkPrefBoxArchive is a macro in junk.h
-extern bool JunkTrimOK(void);
-extern OSErr ArchiveJunk(TOCType * toc);
-// static void *GetJunkTOC(void) { return NULL; } // Removed to use macro
-
-// Stub missing functions
-static void TaskProgressRefresh(void) {}
-static void FlushTOCs(bool a, bool b) {}
-/* RememberOpenWindows is in ends.c */
-/* MailboxTreeGood, CreateLocalCache, EnsureSpecialMailboxes are in imapmailboxes.c */
-// ThreadsAvailable is defined in threading.h - don't redefine
-// SetupXferMailThread is defined in threading.h - don't redefine
-/* SetSendQueue is defined in ends.c — don't duplicate here */
-static bool SelectXferMailPers(bool check, bool send, bool manual) {
-  return false;
-}
-
-// Stub constants
-// Stub constants
-#undef PERS_CHECK_SLOP
-#define PERS_CHECK_SLOP 1337
-
+/* Forward declarations */
 void NewMailSound(void);
 short CheckForMail(TransStream stream, short *gotSome, XferFlags *flags);
 short SendTheQueue(TransStream stream, XferFlags flags);
 void ResetCheckTime(bool force);
-OSErr SpecialXfer(struct XferFlags *flags);
-OSErr POPHostLimit(void);
+int SpecialXfer(struct XferFlags *flags);
+int POPHostLimit(void);
 short XferMailLo(bool check, bool send, bool manual, XferFlags flags,
-                 long *totalGot, OSErr *dialErrPtr);
+                 long *totalGot, int *dialErrPtr);
 bool NeedPassword(bool check, bool send);
 void ResetPersCheckTime(bool force);
 bool OKToThread(bool check, bool send, bool manual, bool scripted);
@@ -452,7 +228,7 @@ bool AddSigIntro(GtkWidget *pte, void **text);
 bool RemoveSigIntro(GtkWidget *pte, void **text);
 bool SpecialXferFilter(DialogPtr dgPtr, EventRecord *event, short *item);
 PersHandle SMTPRelayPers(void);
-OSErr RememberMID(uint32_t midHash);
+int RememberMID(uint32_t midHash);
 long GlobalOpenUnreadCount();
 long GlobalInUnreadCount();
 
@@ -472,33 +248,8 @@ long GlobalInUnreadCount();
  ************************************************************************/
 bool OKToThread(bool check, bool send, bool manual, bool scripted) {
   bool threadOK = true;
-//	Str255 pass;
+//	char pass;
 
-// go ahead and thread uucp stuff
-#if 0
-	else
-	{
-		for (CurPers=PersList;CurPers&&threadOK;CurPers=CurPers->next)
-		{	
-			if (CurPers->uupcOut || CurPers->uupcIn)
-			{
-				CurPers->checkMeNow = CurPers->sendMeNow = CurPers->checked = 0;
-				if (check && *GetPref(pass,PREF_POP))
-				{
-					if ((manual||scripted) && !PrefIsSet(PREF_JUST_SAY_NO))
-						CurPers->checkMeNow = True;
-				}
-				if (send && CurPers->sendQueue && !PrefIsSet(PREF_PERS_NO_SEND))
-					CurPers->sendMeNow = True;
-				if (CurPers->uupcOut && CurPers->checkMeNow)
-					threadOK = false;
-				
-				if (CurPers->uupcIn && (CurPers->sendMeNow || CurPers->autoCheck))
-					threadOK = false;
-			}
-		}
-	}
-#endif
   return (threadOK);
 }
 
@@ -520,7 +271,7 @@ bool OKToThread(bool check, bool send, bool manual, bool scripted) {
 short XferMail(bool check, bool send, bool manual, bool scripted, bool thread,
                short modifiers) {
   XferFlags flags;
-  OSErr err = noErr;
+  int err = 0;
   PersHandle pers;
   bool persSend = false;
 
@@ -535,12 +286,12 @@ short XferMail(bool check, bool send, bool manual, bool scripted, bool thread,
   if (!PrefIsSet(PREF_ALTERNATE_CHECK_MAIL_CMD))
     if (!(modifiers & optionKey) && (modifiers & shiftKey) &&
         ResyncCurrentIMAPMailbox())
-      return (noErr);
+      return (0);
 
   // Don't allow more than one checkmail or sendmail thread
   if ((CheckThreadRunning && check) ||
       (PrefIsSet(PREF_POP_SEND) && SendThreadRunning))
-    return noErr;
+    return 0;
 
   // if "send when check" pref set, spawn the check and send later
   if ((SendThreadRunning && send) ||
@@ -549,7 +300,7 @@ short XferMail(bool check, bool send, bool manual, bool scripted, bool thread,
     if (check)
       send = false;
     else
-      return noErr;
+      return 0;
   }
 
   // clear the subfolder cache; as good a place as any
@@ -572,9 +323,9 @@ short XferMail(bool check, bool send, bool manual, bool scripted, bool thread,
     TaskProgressRefresh();
   }
   if (!(check || send))
-    return noErr;
+    return 0;
 
-  FlushTOCs(True, True); /* flush unnecessary TOC's */
+  FlushTOCs(true, true); /* flush unnecessary TOC's */
   RememberOpenWindows(); /* for good measure */
 
   ActiveTicks = 0; // we're pretending; manual check mail should not wait for
@@ -588,7 +339,7 @@ short XferMail(bool check, bool send, bool manual, bool scripted, bool thread,
       CurPers = pers;
       if (PrefIsSet(PREF_IS_IMAP)) {
         if (!MailboxTreeGood(CurPers)) {
-          if (CreateLocalCache() == noErr)
+          if (CreateLocalCache() == 0)
             EnsureSpecialMailboxes(CurPers);
         }
       }
@@ -605,15 +356,9 @@ short XferMail(bool check, bool send, bool manual, bool scripted, bool thread,
     SetSendQueue();        // redo sendqueue if need be
   SendImmediately = false; // clear this for next time around
 
-#ifdef NAG
-  if (check && nagState)
-    CheckNagging(0); // nagState is void **, can't dereference as struct
-#endif
-
-#ifdef AD_WINDOW
   if (check && IsAdwareMode())
     AdCheckingMail();
-#endif
+
   return (err);
 }
 
@@ -628,7 +373,7 @@ short XferMailSetup(bool *check, bool *send, bool manual, bool scripted,
   PersHandle oldCur = CurPers;
   XferFlags flags;
   bool special = 0 != (modifiers & optionKey);
-  Str255 pass;
+  char pass[256];
   uint32_t ticks, ivalTicks;
   PersHandle pers;
 
@@ -651,7 +396,7 @@ short XferMailSetup(bool *check, bool *send, bool manual, bool scripted,
   // flags.nuke = check && !PrefIsSet(PREF_LMOS);
   flags.isAuto = *check && !(manual || scripted);
 
-  CheckNow = False; // clear flag
+  CheckNow = false; // clear flag
 
   if (!SelectXferMailPers(
           *check, *send,
@@ -666,14 +411,14 @@ short XferMailSetup(bool *check, bool *send, bool manual, bool scripted,
         ivalTicks = CurPers->autoCheck ? CurPers->ivalTicks : 0;
         if (ivalTicks && (!CurPers->checkTicks ||
                           CurPers->checkTicks + ivalTicks < ticks))
-          CurPers->doMeNow = CurPers->checkMeNow = True;
+          CurPers->doMeNow = CurPers->checkMeNow = true;
         else if ((manual || scripted) && !PrefIsSet(PREF_JUST_SAY_NO))
-          CurPers->doMeNow = CurPers->checkMeNow = True;
+          CurPers->doMeNow = CurPers->checkMeNow = true;
       }
 
       if (*send && CurPers->sendQueue && !PrefIsSet(PREF_PERS_NO_SEND))
-        CurPers->doMeNow = CurPers->sendMeNow = True;
-      ASSERT(CurPers == pers);
+        CurPers->doMeNow = CurPers->sendMeNow = true;
+      assert(CurPers == pers);
     }
   }
 
@@ -697,8 +442,8 @@ short XferMailSetup(bool *check, bool *send, bool manual, bool scripted,
 
     // Check for checking mail first
     if (NeedPassword(*check && CurPers->checkMeNow, false)) {
-      if (PersFillPw(CurPers, 0) != noErr) {
-        ResetCheckTime(True);
+      if (PersFillPw(CurPers, 0) != 0) {
+        ResetCheckTime(true);
         CurPers = oldCur;
         return (1);
       }
@@ -706,7 +451,7 @@ short XferMailSetup(bool *check, bool *send, bool manual, bool scripted,
     // Double check that all the special things IMAP needs are in place
     if (*check && CurPers->checkMeNow && PrefIsSet(PREF_IS_IMAP) &&
         !EnsureSpecialMailboxes(CurPers)) {
-      ResetCheckTime(True);
+      ResetCheckTime(true);
       CurPers = oldCur;
       return (1);
     }
@@ -724,7 +469,7 @@ short XferMailSetup(bool *check, bool *send, bool manual, bool scripted,
       }
 
       if (NeedPassword(false, true)) {
-        if (PersFillPw(CurPers, 0) != noErr) {
+        if (PersFillPw(CurPers, 0) != 0) {
           if (relayPers)
             PopPers();
           CurPers = oldCur;
@@ -739,13 +484,13 @@ short XferMailSetup(bool *check, bool *send, bool manual, bool scripted,
       }
     }
 
-    ASSERT(CurPers == pers);
+    assert(CurPers == pers);
   }
 
   memmove(xFlags, &flags, sizeof(flags));
 
   CurPers = oldCur;
-  return (noErr);
+  return (0);
 }
 
 /************************************************************************
@@ -755,36 +500,33 @@ short XferMailRun(bool check, bool send, bool manual, bool scripted, XferFlags f
                   IMAPTransferPtr imapInfo) {
   PersHandle oldCur = CurPers;
   PersHandle pers;
-  OSErr err, anyErr;
+  int err, anyErr;
   long gotSome;
   short dialErr;
   bool popChecked = false;
 
-  ASSERT(!InAThread() || CurThreadGlobals != &ThreadGlobals);
+  assert(!InAThread() || CurThreadGlobals != &ThreadGlobals);
 
-  anyErr = err = noErr;
+  anyErr = err = 0;
 
   if (InAThread()) {
     if (PrefIsSet(PREF_TASK_PROGRESS_AUTO) && !TaskProgressWindow &&
         !FindOpenWazoo(TASKS_WIN)) {
       if (imapInfo && imapInfo->command != UndefinedTask &&
           !PrefIsSet(PREF_IMAP_TP_BRING_TO_FRONT))
-        OpenTasksWinBehind(nil);
+        OpenTasksWinBehind(NULL);
       else
-        OpenTasksWinBehind(manual ? BehindModal : nil);
+        OpenTasksWinBehind(manual ? BehindModal : NULL);
     }
   }
   NoXfer = flags.stub;
 
   gotSome = 0;
-  dialErr = noErr;
+  dialErr = 0;
   gPPPConnectFailed = false;
 
   // is this an IMAP operation of some kind?
   if (imapInfo && imapInfo->command != UndefinedTask) {
-#if __profile__
-//		ProfilerClear();
-#endif
     SetCurrentTaskKind(imapInfo->command);
 
     switch (imapInfo->command) {
@@ -792,7 +534,7 @@ short XferMailRun(bool check, bool send, bool manual, bool scripted, XferFlags f
     // personality.
     case IMAPResyncTask: {
       err =
-          DoFetchNewMessages(&(imapInfo->targetSpec), true, false) ? noErr : 1;
+          DoFetchNewMessages(&(imapInfo->targetSpec), true, false) ? 0 : 1;
       check = true;
       gotSome++;
       break;
@@ -801,7 +543,7 @@ short XferMailRun(bool check, bool send, bool manual, bool scripted, XferFlags f
     case IMAPFetchingTask: {
       err = DoDownloadMessages(imapInfo->destToc, imapInfo->uids,
                                imapInfo->attachmentsToo)
-                ? noErr
+                ? 0
                 : 1; // some error is needed here
       break;
     }
@@ -811,7 +553,7 @@ short XferMailRun(bool check, bool send, bool manual, bool scripted, XferFlags f
       err = DoDeleteMessage(imapInfo->delToc, imapInfo->uids, imapInfo->nuke,
                             imapInfo->expunge,
                             (imapInfo->command == IMAPUndeleteTask))
-                ? noErr
+                ? 0
                 : 1;
       break;
     }
@@ -822,28 +564,29 @@ short XferMailRun(bool check, bool send, bool manual, bool scripted, XferFlags f
       break;
     }
     case IMAPExpungeTask: {
-      err = DoExpungeMailbox(imapInfo->delToc) ? noErr : 1;
+      err = DoExpungeMailbox(imapInfo->delToc) ? 0 : 1;
       break;
     }
     case IMAPAttachmentFetch: {
       err =
-          DoDownloadIMAPAttachments(imapInfo->attachments, imapInfo->targetBox)
-              ? noErr
+          DoDownloadIMAPAttachments((FSSpecHandle)imapInfo->attachments,
+                                   (MailboxNodeHandle)imapInfo->boxesToSearch)
+              ? 0
               : 1;
       break;
     }
     case IMAPSearchTask: {
-      err = DoIMAPServerSearch(imapInfo->destToc, imapInfo->boxesToSearch,
-                               imapInfo->toSearch, (short)imapInfo->searchC,
+      err = DoIMAPServerSearch(imapInfo->destToc, (BoxCountHandle)imapInfo->boxesToSearch,
+                               (void *)imapInfo->toSearch, (IMAPSCHandle)imapInfo->searchC,
                                imapInfo->matchAll, imapInfo->firstUID)
-                ? noErr
+                ? 0
                 : 1;
       break;
     }
     case IMAPMultResyncTask:
     case IMAPMultExpungeTask: {
       err = DoIMAPProcessMailboxes(imapInfo->toResync, imapInfo->command)
-                ? noErr
+                ? 0
                 : 1;
       break;
     }
@@ -853,7 +596,7 @@ short XferMailRun(bool check, bool send, bool manual, bool scripted, XferFlags f
       break;
     }
     case IMAPPollingTask: {
-      IMAPPollMailboxes(imapInfo->targetBox);
+      IMAPPollMailboxes((MailboxNodeHandle)imapInfo->boxesToSearch);
       break;
     }
     case IMAPFilterTask: {
@@ -865,10 +608,6 @@ short XferMailRun(bool check, bool send, bool manual, bool scripted, XferFlags f
       break;
     }
     }
-#if __profile__
-//	ProfilerDump("\pthreadedimap-profile");
-//	ProfilerClear();
-#endif
   }
   // otherwise, it's a mailcheck, sweet and boring.
   else {
@@ -889,10 +628,10 @@ short XferMailRun(bool check, bool send, bool manual, bool scripted, XferFlags f
 
       err = XferMailLo(check && CurPers->checkMeNow,
                        send && CurPers->sendMeNow, manual || scripted, flags,
-                       &gotSome, (OSErr *)&dialErr);
+                       &gotSome, (int *)&dialErr);
       if (!anyErr)
         anyErr = err;
-      ASSERT(CurPers == pers);
+      assert(CurPers == pers);
     }
     CurPers = oldCur;
     gStayConnected = false; // the dialup connection can be torn down when no
@@ -900,16 +639,6 @@ short XferMailRun(bool check, bool send, bool manual, bool scripted, XferFlags f
   }
 
   if (InAThread()) {
-#ifndef BATCH_DELIVERY_ON
-    if (send)
-      SetNeedToFilterOut();
-    if (check) {
-      TOCType * tempInTocH = GetTempInTOC();
-      TempInCount = tempInTocH ? tempInTocH->count : 0;
-      if (TempInCount)
-        AddFilterTask();
-    }
-#endif
     // silly no mail alert; here is as good a place as any
     if (!dialErr && flags.check && manual)
       // do NoNewMailMe only if a pop personality was checked, and there
@@ -922,9 +651,9 @@ short XferMailRun(bool check, bool send, bool manual, bool scripted, XferFlags f
      * notify the user if new mail arrived (or not, in some cases)
      */
     if (!dialErr && flags.check && (manual || gotSome > 0)) {
-      NotifyNewMail(gotSome, flags.stub, GetRealInTOC(), nil);
+      NotifyNewMail(gotSome, flags.stub, GetRealInTOC(), NULL);
     }
-    NotifyHelpers(0, eHasConnected, nil);
+    NotifyHelpers(0, eHasConnected, NULL);
   }
 
   if (check)
@@ -932,7 +661,7 @@ short XferMailRun(bool check, bool send, bool manual, bool scripted, XferFlags f
                           // supposed to be checked. JDB 12-16-98
   if (LastAttPath) { free(LastAttPath); LastAttPath = NULL; }
 
-  ASSERT(!InAThread() || CurThreadGlobals != &ThreadGlobals);
+  assert(!InAThread() || CurThreadGlobals != &ThreadGlobals);
 
   return (err);
 }
@@ -941,18 +670,11 @@ short XferMailRun(bool check, bool send, bool manual, bool scripted, XferFlags f
  * XferMailLo - transfer mail for a given personality
  **********************************************************************/
 short XferMailLo(bool check, bool send, bool manual, XferFlags flags,
-                 long *totalGot, OSErr *dialErrPtr) {
+                 long *totalGot, int *dialErrPtr) {
   short err = 0;
   short gotSome = 0;
-#ifdef CTB
-  bool needDial;
-  bool need2ndPW = False;
-  short dialErr = 0;
-  bool needPW;
-  Str31 pass;
-#endif
   short anyErr = 0;
-  Str255 s;
+  char s[256];
   char popUser[256], popHost[256];
   TransStream mailStream = 0;
   bool willCheck = false, willSend = false;
@@ -964,20 +686,20 @@ short XferMailLo(bool check, bool send, bool manual, XferFlags flags,
    * clear the decks
    */
   if (send && !CurPers->sendQueue)
-    send = False;
+    send = false;
   /*
    * Set which task we're about to do in case we need to report it if we're
    * low on memory
    */
   SetCurrentTaskKind((check && !(CurPers->popSecure && send)) ? CheckingTask
                                                                  : SendingTask);
-  FlushTOCs(True, True); /* flush unnecessary TOC's */
-  if (MonitorGrow(True) || CommandPeriod)
+  FlushTOCs(true, true); /* flush unnecessary TOC's */
+  if (MonitorGrow(true) || CommandPeriod)
     goto done;
   if (check)
-    HesOK = True; // force re-fetch of hesiod info
+    HesOK = true; // force re-fetch of hesiod info
   GetPOPInfo(popUser, popHost);
-  HesOK = False;
+  HesOK = false;
 
   /*
    * figure out what we need to do our duty
@@ -989,16 +711,11 @@ short XferMailLo(bool check, bool send, bool manual, XferFlags flags,
     goto done; /* nothing to do */
 
   if (CountResources(NOTIFY_TYPE))
-    NotifyHelpers(0, eWillConnect, nil);
+    NotifyHelpers(0, eWillConnect, NULL);
 
   if (check && (anyErr = POPHostLimit()))
     goto done;
 
-#ifdef CTB
-  needDial = UseCTB && (send && !UUPCOut || check && !UUPCIn);
-  if (needDial)
-    CheckNavPW(&needPW, &need2ndPW);
-#endif
 
   /*
    *	Set up our TransStream
@@ -1009,32 +726,21 @@ short XferMailLo(bool check, bool send, bool manual, XferFlags flags,
   /*
    * Doing network stuff; alerts should timeout
    */
-#ifdef CTB
-  if (need2ndPW) {
-    if (GetSecondPass(pass))
-      return (1);
-    PSCopy(CurPers->secondPass, pass);
-  }
-#endif
 
   /*
    * Do we need to dial the phone?
    */
   OpenProgress();
-#ifdef CTB
-  if (needDial)
-    dialErr = err = DialThePhone(mailStream);
-#endif
 
   /*
    * Now, do the mail transfers
    */
   if (!err) {
-    if (MonitorGrow(True))
+    if (MonitorGrow(true))
       return (0);
 
     if (check)
-      CurPers->checked = True; // don't retry instantly
+      CurPers->checked = true; // don't retry instantly
 
     /*
      * check for mail, if need be
@@ -1047,7 +753,7 @@ short XferMailLo(bool check, bool send, bool manual, XferFlags flags,
      */
     if (willCheck)
       SetCurrentTaskKind(CheckingTask);
-    if (MonitorGrow(True))
+    if (MonitorGrow(true))
       return (0);
     if (willCheck) {
       if (IsIMAPPers(CurPers)) {
@@ -1084,18 +790,9 @@ short XferMailLo(bool check, bool send, bool manual, XferFlags flags,
         AuditCheckDone(gCheckSessionID, gotSome,
                        gotSome ? ReportStreamAudit(mailStream) : 0);
       }
-      CurPers->checked = True;
-#ifdef CTB
-      if (needDial && send && !err)
-        err = CTBNavigateSTRN(NAVMID);
-#endif
+      CurPers->checked = true;
     }
 
-#ifdef POPSECURE
-    /* if the password has been invalidated, we can't send */
-    if (!POPSecure)
-      send = False;
-#endif
 
     /*
      * send mail
@@ -1111,7 +808,7 @@ short XferMailLo(bool check, bool send, bool manual, XferFlags flags,
      */
     if (willSend)
       SetCurrentTaskKind(SendingTask);
-    if (MonitorGrow(True))
+    if (MonitorGrow(true))
       return (0);
 
     if (willSend)
@@ -1123,17 +820,9 @@ short XferMailLo(bool check, bool send, bool manual, XferFlags flags,
   /*
    * cleanup connection
    */
-#ifdef CTB
-  if (needDial)
-    HangUpThePhone();
-#endif
   // CloseProgress();
 
 done:
-#ifdef CTB
-  if (dialErrPtr)
-    *dialErrPtr = dialErr;
-#endif
   if (totalGot)
     *totalGot += gotSome;
   if (mailStream)
@@ -1156,7 +845,7 @@ bool NeedPassword(bool check, bool send) {
   bool gave530 = ShouldSMTPAuth();
 
   if (!CurPers->doMeNow)
-    return (False);
+    return (false);
 
   /* Need password for POP or IMAP check */
   needPW = !PrefIsSet(PREF_KERBEROS) && check &&
@@ -1222,24 +911,24 @@ static void special_xfer_ok_clicked(GtkButton *btn, gpointer data) {
 /**********************************************************************
  * POPHostLimit - limit the domain of hosts the user is allowed to connect to
  **********************************************************************/
-OSErr POPHostLimit(void) {
-  Str255 user, host;
-  Str63 sub;
+int POPHostLimit(void) {
+  char user[256], host[256];
+  char sub[64];
   short i;
 
   if (*GetRString(sub, OnlyHostsStrn + 2)) {
     GetPOPInfo(user, host);
     for (i = 2; *GetRString(sub, OnlyHostsStrn + i); i++)
       if (PFindSub(sub, host))
-        return (noErr);
+        return (0);
     WarnUser(OnlyHostsStrn + 1, 0);
     return (fnfErr);
   }
-  return (noErr);
+  return (0);
 }
 
 // Porting: Replaced Legacy Mac Dialogs with GTK4
-OSErr SpecialXfer(struct XferFlags *flags) {
+int SpecialXfer(struct XferFlags *flags) {
   GtkWidget *dialog, *content_box, *grid, *button_box;
   GtkWidget *check_chk, *send_chk, *del_chk, *fetch_chk, *nuke_chk,
       *nuke_hard_chk, *stub_chk;
@@ -1403,7 +1092,7 @@ OSErr SpecialXfer(struct XferFlags *flags) {
     }
   }
 
-  return noErr;
+  return 0;
 }
 
 /**********************************************************************
@@ -1415,12 +1104,12 @@ OSErr SpecialXfer(struct XferFlags *flags) {
  ************************************************************************/
 short SendTheQueue(TransStream stream, XferFlags flags) {
   WindowPtr tocMessWinWP;
-  TOCType * tocH = nil;
+  TOCType * tocH = NULL;
   int sumNum = -1;
-  Str255 server;
+  char server[256];
   long port;
   MessHandle messH;
-  Handle table;
+  void * table;
   short err, code = 0;
   short tableId;
   uint32_t gmtSecs = GMTDateTime();
@@ -1431,16 +1120,16 @@ short SendTheQueue(TransStream stream, XferFlags flags) {
   short stayed = 0;
   long count;
   CSpecHandle fccList = (CSpecHandle)NuHandle(0);
-  bool openedFilters = False;
-  TOCType * realTocH = nil;
+  bool openedFilters = false;
+  TOCType * realTocH = NULL;
   bool inThread = InAThread();
   short realSumNum = -1;
   static uint32_t sessionID;
   uint32_t numSent;
   uint32_t beforeBytes, actualBytes, approxBytes;
   uint32_t beforeTicks;
-  Str255 s;
-  PersHandle relayPers = nil;
+  char s[256];
+  PersHandle relayPers = NULL;
 
   if (inThread) {
     SetCurrentTaskKind(SendingTask);
@@ -1449,15 +1138,13 @@ short SendTheQueue(TransStream stream, XferFlags flags) {
   if (PersCount() == 1)
     GetRString(s, SENDING_MAIL);
   else {
-    LDRef(CurPers);
     ComposeRString(s, PERS_SENDING_MAIL, (unsigned char *)CurPers->name);
-    UL(CurPers);
   }
   ProgressMessage(kpTitle, s);
   /*
    * clear this stupid error condition
    */
-  CommandPeriod = False;
+  CommandPeriod = false;
 
   defltTableId = GetPrefLong(PREF_OUT_XLATE);
   if (!NewTables || defltTableId == DEFAULT_TABLE)
@@ -1470,46 +1157,22 @@ short SendTheQueue(TransStream stream, XferFlags flags) {
   if ((relayPers = SMTPRelayPers()))
     PushPers(relayPers);
 
-#ifdef ESSL
-  stream->ESSLSetting = GetPrefLong(PREF_SSL_SMTP_SETTING);
-  if (stream->ESSLSetting & esslUseAltPort)
-    port = GetRLong(SMTP_SSL_PORT);
-  else
-#endif
-    port = GetSMTPPort();
+  port = GetSMTPPort();
   GetSMTPInfoLo(server, &port);
 
-#ifdef POPSECURE
-  if (!POPSecure && (err = VetPOP()))
-    goto done; // not used.  Must change for multi-connect
-#endif
-  ComposeLogR(LOG_SEND, nil, START_SEND_LOG, server, port);
+  ComposeLogR(LOG_SEND, NULL, START_SEND_LOG, server, port);
   AuditSendStart(++sessionID, CurPers->persId, flags.isAuto);
   numSent = 0;
   StartStreamAudit(stream, kAuditBytesSent);
   if (!UUPCOut && !UUPCIn && PrefIsSet(PREF_POP_SEND)) {
-#ifdef ESSL
-    stream->ESSLSetting = GetPrefLong(PREF_SSL_POP_SETTING);
-    if (stream->ESSLSetting & esslUseAltPort)
-      port = GetRLong(POP_SSL_PORT);
-    else
-      port = PrefIsSet(PREF_KERBEROS) ? GetRLong(KERB_POP_PORT)
-                                      : GetRLong(POP_PORT);
-    if ((err = GetPOPInfoLo(server + 128, server, &port)))
-      goto done;
-    if ((err = StartPOP(stream, server, port)))
-      goto done;
-    POPIntroductions(stream, server + 128, nil);
-    if (POPrror())
-      goto done;
-  } else
-#endif
-    err = StartSMTP(stream, server, port);
+    /* POP-before-SMTP auth path removed (was ESSL-only) */
+  }
+  err = StartSMTP(stream, server, port);
 
   // if using a relay personality, kill it now
   if (relayPers) {
     PopPers();
-    relayPers = nil;
+    relayPers = NULL;
   }
 
   if (err)
@@ -1519,7 +1182,7 @@ short SendTheQueue(TransStream stream, XferFlags flags) {
     goto done;
   if (!NewTables && !TransOut &&
       (table = GetResource_('taBL', TransOutTablID()))) {
-    memmove(tablePtr, *table, 256);
+    memmove(tablePtr, table, 256);
     TransOut = tablePtr;
     lastId = TransOutTablID();
   }
@@ -1537,8 +1200,8 @@ short SendTheQueue(TransStream stream, XferFlags flags) {
           tocH->sums[sumNum].persId == CurPers->persId &&
           tocH->sums[sumNum].seconds <= gmtSecs) {
         // TimeStamp(tocH,sumNum,0,0);
-        //			  ProgressR(NoBar,count--,0,LEFT_TO_TRANSFER,nil);
-        ProgressR(NoChange, count--, 0, LEFT_TO_TRANSFER, nil); // clarence
+        //			  ProgressR(NoBar,count--,0,LEFT_TO_TRANSFER,NULL);
+        ProgressR(NoChange, count--, 0, LEFT_TO_TRANSFER, NULL); // clarence
 
         /*
          * ready a translation table, if needed
@@ -1547,11 +1210,11 @@ short SendTheQueue(TransStream stream, XferFlags flags) {
         if (tableId != lastId) {
           if (tableId != NO_TABLE && tablePtr &&
               (table = GetResource_('taBL', tableId))) {
-            memmove(tablePtr, *table, 256);
+            memmove(tablePtr, table, 256);
             TransOut = tablePtr;
             lastId = tableId; /* so we don't have to fetch it next time */
           } else
-            TransOut = nil; /* no table */
+            TransOut = NULL; /* no table */
         }
 
         /*
@@ -1570,10 +1233,7 @@ short SendTheQueue(TransStream stream, XferFlags flags) {
                   (UUPCOut ? UUPCSendMessage(tocH, sumNum, fccList)
                            : MySendMessage(stream, tocH, sumNum, fccList)))) {
       // OutTypeEnum	outType;  // Unused
-#ifdef NAG
-#else
             RegisterSuccess(1); // note success in registration
-#endif
           numSent++;
           messH = tocH->sums[sumNum].messH;
 
@@ -1586,7 +1246,7 @@ short SendTheQueue(TransStream stream, XferFlags flags) {
             actualBytes = GetProgressBytes() - beforeBytes;
             rate =
                 (actualBytes * 600) / ((TickCount() - beforeTicks + 1) * 1024);
-            ComposeLogS(LOG_TPUT, nil, (UPtr)"%d.%d KBps", rate / 10, rate % 10);
+            ComposeLogS(LOG_TPUT, NULL, (unsigned char *)"%d.%d KBps", rate / 10, rate % 10);
             approxBytes = (ApproxMessageSize(messH) K);
             if (actualBytes < approxBytes)
               ByteProgress(0, actualBytes - approxBytes, 0);
@@ -1623,7 +1283,7 @@ short SendTheQueue(TransStream stream, XferFlags flags) {
 
             if (messH && messH->win)
               CloseMyWindow(GetMyWindowWindowPtr(messH->win));
-            DeleteMessage(tocH, sumNum, False);
+            DeleteMessage(tocH, sumNum, false);
             sumNum--;      /* back up, since we deleted the message */
             RedoTOC(tocH); /* keep nit-pickers happy */
             stayed--;
@@ -1652,9 +1312,7 @@ short SendTheQueue(TransStream stream, XferFlags flags) {
                 OpenAddrErrs = true;
               }
               realTocH->sums[realSumNum].flags |= FLAG_UNFILTERED;
-#ifdef BATCH_DELIVERY_ON
               NeedToFilterOut++;
-#endif
               if (!PrefIsSet(PREF_CORVAIR))
                 WriteTOC(realTocH);
             }
@@ -1679,7 +1337,7 @@ done:
     free(Flatten);
     Flatten = NULL;
   }
-  TransOut = nil;
+  TransOut = NULL;
   if (!UUPCOut && !UUPCIn && PrefIsSet(PREF_POP_SEND)) {
     (void)EndPOP(stream);
   } else
@@ -1688,10 +1346,10 @@ done:
   // 	BoxSelectAfter(tocH->win,sumNum);
 
   FlushTOCs(
-      True,
-      False); /* save memory, in case Out and Trash are large,
+      true,
+      false); /* save memory, in case Out and Trash are large,
                                                                                                and we're going on to do a check */
-  NotifyHelpers(stayed, eMailSent, nil);
+  NotifyHelpers(stayed, eMailSent, NULL);
 
   return (err);
 }
@@ -1708,7 +1366,7 @@ long FindTotalQueuedSize(TOCType * tocH, long gmtSecs) {
     if (!tocH->sums[sumNum].messH && IsQueued(tocH, sumNum) &&
         tocH->sums[sumNum].persId == CurPers->persId &&
         tocH->sums[sumNum].seconds <= gmtSecs) {
-      if ((win = GetAMessage(tocH, sumNum, nil, nil, false))) {
+      if ((win = GetAMessage(tocH, sumNum, NULL, NULL, false))) {
         size += ApproxMessageSize(Win2MessH(win)) K;
         CloseMyWindow(GetMyWindowWindowPtr(win));
       }
@@ -1722,25 +1380,25 @@ long FindTotalQueuedSize(TOCType * tocH, long gmtSecs) {
 void CompAttDel(MessHandle messH) {
   short index;
   FSSpec spec;
-  OSErr err;
+  int err;
 
-  for (index = 1; !(err = GetIndAttachment(messH, index, &spec, nil)); index++)
+  for (index = 1; !(err = GetIndAttachment(messH, index, &spec, NULL)); index++)
     FSpTrash(&spec);
 }
 
 /**********************************************************************
  * DoFcc - do the fcc's for a message
  **********************************************************************/
-OSErr DoFcc(TOCType * tocH, short sumNum, CSpecHandle list) {
+int DoFcc(TOCType * tocH, short sumNum, CSpecHandle list) {
   CSpec spec;
   short n = HandleCount(list);
-  OSErr err = noErr;
-  OSErr oneErr;
+  int err = 0;
+  int oneErr;
 
   UseFeature(featureFcc);
   while (n--) {
     spec = (*list)[n];
-    if ((oneErr = MoveMessageLo(tocH, sumNum, &spec.spec, True, false, true))) {
+    if ((oneErr = MoveMessageLo(tocH, sumNum, &spec.spec, true, false, true))) {
       tocH->sums[sumNum].flags |= FLAG_KEEP_COPY;
       TOCSetDirty(tocH, true);
       if (!err)
@@ -1757,16 +1415,9 @@ OSErr DoFcc(TOCType * tocH, short sumNum, CSpecHandle list) {
  ************************************************************************/
 short CheckForMail(TransStream stream, short *gotSome, XferFlags *flags) {
   long interval = TICKS2MINS * GetPrefLong(PREF_INTERVAL);
-  Handle table;
+  void * table;
   short err = 0;
-  Str255 s;
-
-#ifdef DEBUG
-  if (BUG15) {
-    Str63 dts;
-    Dprintf(";log Log.%s;g", LocalDateTimeShortStr(dts));
-  }
-#endif
+  char s[256];
 
   if (InAThread()) {
     SetCurrentTaskKind(CheckingTask);
@@ -1775,9 +1426,7 @@ short CheckForMail(TransStream stream, short *gotSome, XferFlags *flags) {
   if (PersCount() == 1)
     GetRString(s, CHECKING_MAIL);
   else {
-    LDRef(CurPers);
     ComposeRString(s, PERS_CHECKING_MAIL, CurPers->name);
-    UL(CurPers);
   }
   ProgressMessage(kpTitle, s);
 
@@ -1792,7 +1441,7 @@ short CheckForMail(TransStream stream, short *gotSome, XferFlags *flags) {
   /*
    * clear this stupid error condition
    */
-  CommandPeriod = False;
+  CommandPeriod = false;
 
   /*
    * you know, I don't remember why this was done, but I'm going to
@@ -1804,28 +1453,18 @@ short CheckForMail(TransStream stream, short *gotSome, XferFlags *flags) {
    * set up translation table
    */
   if (!NewTables && !TransIn && (table = GetResource_('taBL', TRANS_IN_TABL))) {
-    HNoPurge_(table);
     if ((TransIn = malloc(256)))
-      memmove(TransIn, *table, 256);
-    HPurge(table);
+      memmove(TransIn, table, 256);
   }
 
   /*
    * check mail
    */
-  err = UUPCIn ? GetUUPCMail(True, gotSome)
-               : GetMyMail(stream, True, gotSome, flags);
+  err = UUPCIn ? GetUUPCMail(true, gotSome)
+               : GetMyMail(stream, true, gotSome, flags);
 
-#ifdef NAG
-#else
-    if (gotSome)
-      RegisterSuccess(2);
-#endif
-
-#ifdef DEBUG
-  if (BUG15)
-    Dprintf("%d;sc;g", err);
-#endif
+  if (gotSome)
+    RegisterSuccess(2);
 
   /*
    * get rid of table
@@ -1835,12 +1474,6 @@ short CheckForMail(TransStream stream, short *gotSome, XferFlags *flags) {
     TransIn = NULL;
   }
 
-#ifdef DEBUG
-  if (BUG15) {
-    unsigned char dts[64];
-    Dprintf("p;log;g", LocalDateTimeShortStr(dts));
-  }
-#endif
 
   return (err);
 }
@@ -1900,8 +1533,8 @@ void NotifyNewMail(short gotSome, bool noXfer, TOCType * tocH,
 
 void NotifyNewMailLo(short gotSome, bool noXfer, TOCType * tocH,
                      FilterPB *fpbDelivery, bool OpenIn) {
-  bool justTrash = False;
-  bool soundAnyway = False;
+  bool justTrash = false;
+  bool soundAnyway = false;
   WindowPtr oldFront = FrontWindow_();
   FilterPB fpb;
 
@@ -1911,13 +1544,10 @@ void NotifyNewMailLo(short gotSome, bool noXfer, TOCType * tocH,
       !CheckThreadRunning && !gNewMessages) {
     CloseProgress();
     if (PrefIsSet(PREF_NEW_ALERT)) {
-#ifdef NONEWMAIL_ALERTS
-      (void)ReallyDoAnAlert(NO_MAIL_ALRT, Normal);
-      TendNotificationManager(true);
-#endif // NONEWMAIL_ALERTS
+      /* NONEWMAIL_ALERTS disabled in GTK port */
     }
   } else if (gotSome || gNewMessages) {
-    CommandPeriod = False; /* if mail check cancelled, don't cancel filtering */
+    CommandPeriod = false; /* if mail check cancelled, don't cancel filtering */
     if (fpbDelivery && tocH) {
       FilterPostprocess(flkIncoming, fpbDelivery);
       gotSome = fpbDelivery->notify;
@@ -1946,7 +1576,7 @@ void NotifyNewMailLo(short gotSome, bool noXfer, TOCType * tocH,
         // causes some window layering confusion in the Carbon version.
         // -jdboyd
         //
-        if (fpb.mailbox && (GetHandleSize((Handle)fpb.mailbox) == 0))
+        if (fpb.mailbox && (GetHandleSize((void *)fpb.mailbox) == 0))
           ZapHandle(fpb.mailbox);
 
         // Show NoNewMail if no mail arrived, and there's no other check
@@ -1985,7 +1615,7 @@ void NotifyNewMailLo(short gotSome, bool noXfer, TOCType * tocH,
      */
     if (gotSome) {
       if ((tocH && tocH->imapTOC) || (tocH = GetRealInTOC())) {
-        NotifyHelpers(gotSome, eMailArrive, nil);
+        NotifyHelpers(gotSome, eMailArrive, NULL);
 
         if (OpenIn && !PrefIsSet(PREF_NO_OPEN_IN)) {
           WindowPtr tocWinWP = GetMyWindowWindowPtr(tocH->win);
@@ -2016,7 +1646,7 @@ void NotifyNewMailLo(short gotSome, bool noXfer, TOCType * tocH,
 }
 WindowPtr OpenBehindMePlease(void) {
   MyWindowPtr win;
-  WindowPtr winWP, frontWP, returnWinWP = nil;
+  WindowPtr winWP, frontWP, returnWinWP = NULL;
 
   frontWP = MyFrontNonFloatingWindow();
 
@@ -2031,7 +1661,7 @@ WindowPtr OpenBehindMePlease(void) {
     break;
 
   case 1: // on top
-    returnWinWP = nil;
+    returnWinWP = NULL;
     break;
 
   case 2: // behind In
@@ -2083,7 +1713,7 @@ WindowPtr OpenBehindMePlease(void) {
 
   // If there's a modal window open, make sure the next window isn't opened on
   // top of it.
-  if ((returnWinWP == nil) && ModalWindow)
+  if ((returnWinWP == NULL) && ModalWindow)
     returnWinWP = ModalWindow;
 
   win = GetWindowMyWindowPtr(frontWP);
@@ -2100,7 +1730,7 @@ void ShowBoxAt(TOCType * tocH, short selectMe, WindowPtr behindWin) {
   WindowPtr tocWinWP = GetMyWindowWindowPtr(tocH->win);
 
   if (selectMe >= 0)
-    SelectBoxRange(tocH, selectMe, selectMe, False, -1, -1);
+    SelectBoxRange(tocH, selectMe, selectMe, false, -1, -1);
   RedoTOC(tocH);
   ScrollIt(tocH->win, 0, SortedDescending(tocH) ? REAL_BIG : -REAL_BIG);
   if (IsWindowVisible(tocWinWP)) {
@@ -2136,116 +1766,310 @@ short FumLub(TOCType * tocH) {
 
 /************************************************************************
  * NewMailSound - play the sound for new mail
+ *
+ * Original played a Mac 'snd ' resource via PlayNamedSound. GTK port
+ * uses GLib's notification system or a simple system bell.
  ************************************************************************/
 void NewMailSound(void) {
-  Str255 name;
-
-  // GetPref(name, PREF_NEWMAIL_SOUND); // Usage error, GetPref returns
-  // string? Use generic GetRString or similar if needed, or stub. Warning
-  // said 'did you mean SetPref?'. Code uses GetPref as void. GetPref
-  // prototype in common.h usually returns Handle or char*. Stubbing out for
-  // compilation.
-  if (!*name)
-    GetResName(name, 'snd ', NEW_MAIL_SND);
-  PlayNamedSound(name);
+  /* TODO: implement via g_notification or GStreamer if desired */
+  gdk_display_beep(gdk_display_get_default());
 }
 
 /************************************************************************
- * GrabSignature - read the signature file
+ * GrabSignature - read the signature file into the global eSignature.
+ *
+ * Original opened a text window and extracted PTE text + built
+ * enriched/HTML variants via Accumulators. This port reads the file
+ * directly into a malloc'd buffer (eSignature). Enriched/HTML
+ * signature variants are not built yet (they require the styled text
+ * pipeline).
  ************************************************************************/
 void GrabSignature(uint32_t fid) {
-  short err;
-  FSSpec spec;
-  Accumulator enriched, html;
-  MyWindowPtr win = nil;
-  static Handle eSignature = nil;
-  static Handle RichSignature = nil;
-  static Handle HTMLSignature = nil;
-  bool iOpened = false;
-  bool oldDirty;
-  bool addedIntro;
+  char *sigText = NULL;
+  gsize sigLen = 0;
 
-  ZapHandle(eSignature);
-  ZapHandle(RichSignature);
-  ZapHandle(HTMLSignature);
+  /* Free previous signatures */
+  free(eSignature);
+  eSignature = NULL;
+  free(RichSignature);
+  RichSignature = NULL;
+  free(HTMLSignature);
+  HTMLSignature = NULL;
+  SigStyled = false;
+
   if (fid == SIG_NONE)
     return;
-  AccuInit(&enriched);
-  if (1) // if (AccuInit(&enriched))
 
-    return;
-  AccuInit(&html);
-  if (1) { // if (AccuInit(&html)) {
-
-    do {
-      void **_azh = (enriched).data;
-      if (_azh) {
-        if (*_azh)
-          free(*_azh);
-        free(_azh);
-      }
-      (enriched).data = NULL;
-      (enriched).offset = (enriched).size = 0;
-    } while (0);
+  char *path = SigPath(fid);
+  if (!path) {
+    FileSystemError(CANT_READ_SIG, "", fnfErr);
     return;
   }
-  if (!(err = SigSpec(&spec, fid)))
-    if (!(win = FindText(&spec)))
-      if (1) { // Forced skip of Pete logic for now
-               // Legacy Pete logic disabled
-      } else if (win = OpenText(&spec, nil, nil, nil, False, nil, False, False))
-        iOpened = true;
-#if 0
-  if (win) {
-     // Pete logic disabled
+
+  if (!g_file_get_contents(path, &sigText, &sigLen, NULL)) {
+    FileSystemError(CANT_READ_SIG, path, ioErr);
+    g_free(path);
+    return;
   }
-#endif
-  err = 0;
+  g_free(path);
 
-  if (win && iOpened)
-    CloseMyWindow(GetMyWindowWindowPtr(win));
-  do {
-    void **_azh = (enriched).data;
-    if (_azh) {
-      if (*_azh)
-        free(*_azh);
-      free(_azh);
-    }
-    (enriched).data = NULL;
-    (enriched).offset = (enriched).size = 0;
-  } while (0);
-  do {
-    void **_azh = (html).data;
-    if (_azh) {
-      if (*_azh)
-        free(*_azh);
-      free(_azh);
-    }
-    (html).data = NULL;
-    (html).offset = (html).size = 0;
-  } while (0);
-  if (err)
-
-    FileSystemError(CANT_READ_SIG, "", err);
+  /* Store as eSignature (plain text) — allocated with g_malloc via GLib,
+     but eSignature is typed as UHandle (void**) in Globals.h for legacy
+     compatibility. For now, store the raw text pointer. Callers that
+     use eSignature will need to treat it as a plain char* buffer. */
+  eSignature = (void *)sigText;
 }
 
 /************************************************************************
- * AddSigIntro - add the sig introducer to a petehandle or a text handle or
- *both
+ * AddSigIntro - add the sig introducer to a petehandle or a text handle
+ * The sig intro is typically "-- \r" — prepended before the signature.
  ************************************************************************/
-bool AddSigIntro(GtkWidget *pte, void **text) { return false; }
-bool RemoveSigIntro(GtkWidget *pte, void **text) { return false; }
-OSErr SigSpec(FSSpecPtr spec, long fid) { return noErr; }
-OSErr TransmitMessageHi(TransStream stream, MessHandle messH, bool chatter,
-                        bool sendDataCmd) {
-  return noErr;
+bool AddSigIntro(GtkWidget *pte, void **text) {
+  unsigned char sigIntro[32];
+  bool didIt = false;
+  long len;
+
+  if (!*GetRString(sigIntro, SIG_INTRO))
+    return false;
+
+  /* Handle the text block */
+  if (text && *text) {
+    len = GetHandleSize((void *)text);
+    if (len > 0) {
+      /* Check if intro is already present */
+      char *ptr = *(char **)text;
+      if (len < *sigIntro || memcmp(ptr, sigIntro + 1, *sigIntro) != 0) {
+        /* Prepend the sig intro */
+        SetHandleBig_((void *)text, len + *sigIntro);
+        if (!MemError()) {
+          ptr = *(char **)text;
+          memmove(ptr + *sigIntro, ptr, len);
+          memmove(ptr, sigIntro + 1, *sigIntro);
+          didIt = true;
+        }
+      }
+    }
+  }
+
+  /* Handle the pte (GtkTextView) */
+  if (pte) {
+    long textLen = PETEGetTextLen(NULL, pte);
+    if (textLen > 0) {
+      PETEInsertTextPtr(NULL, pte, 0, (char *)(sigIntro + 1), *sigIntro, NULL);
+      didIt = true;
+    }
+  }
+
+  return didIt;
 }
-void ProcessReceivedRegFiles(void) {}
-PersHandle SMTPRelayPers(void) { return nil; }
-OSErr RememberMID(uint32_t midHash) { return noErr; }
-OSErr OutgoingMIDListSave(void) { return noErr; }
-OSErr OutgoingMIDListLoad(void) { return noErr; }
-void BadgeTheSupidDock(short count, PStr text, bool attentionColor) {}
-long GlobalUnreadCount(void) { return 0; }
-long GlobalOpenUnreadCount() { return 0; }
-long GlobalInUnreadCount() { return 0; }
+
+/************************************************************************
+ * RemoveSigIntro - remove the sig introducer from text or pte
+ ************************************************************************/
+bool RemoveSigIntro(GtkWidget *pte, void **text) {
+  unsigned char sigIntro[32];
+  long len;
+  bool didIt = false;
+
+  if (!*GetRString(sigIntro, SIG_INTRO))
+    return false;
+
+  /* Handle the text block */
+  if (text && *text) {
+    len = GetHandleSize((void *)text);
+    if (len >= *sigIntro) {
+      char *ptr = *(char **)text;
+      if (memcmp(ptr, sigIntro + 1, MIN(*sigIntro, 4)) == 0) {
+        memmove(ptr, ptr + *sigIntro, len - *sigIntro);
+        SetHandleBig_((void *)text, len - *sigIntro);
+        didIt = true;
+      }
+    }
+  }
+
+  /* Handle the pte */
+  if (pte) {
+    void * h = NULL;
+    PeteGetTextAndSelection(pte, &h, NULL, NULL);
+    if (h) {
+      len = GetHandleSize(h);
+      if (len >= *sigIntro) {
+        char *ptr = (char *)h;
+        if (memcmp(ptr, sigIntro + 1, MIN(*sigIntro, 4)) == 0) {
+          PeteDelete(pte, 0, *sigIntro);
+          didIt = true;
+        }
+      }
+    }
+  }
+
+  return didIt;
+}
+
+/* SigSpec removed — use SigPath() from signaturewin.h instead */
+
+/************************************************************************
+ * TransmitMessageHi - transmit a message, with ETL plugin support
+ ************************************************************************/
+int TransmitMessageHi(TransStream stream, MessHandle messH, bool chatter,
+                        bool sendDataCmd) {
+  int err;
+
+  if (messH->hTranslators)
+    err = ETLSendMessage(stream, messH, chatter, sendDataCmd);
+  else
+    err = TransmitMessage(stream, messH, chatter, true, true, NULL, sendDataCmd);
+
+  if (!err)
+    RememberMID(SumOf(messH)->msgIdHash);
+
+  return err;
+}
+
+/************************************************************************
+ * ProcessReceivedRegFiles - process registration files (not applicable)
+ ************************************************************************/
+void ProcessReceivedRegFiles(void) {
+  /* Registration file processing is Mac-specific and not needed in GTK port */
+}
+
+/************************************************************************
+ * SMTPRelayPers - find the SMTP relay personality
+ ************************************************************************/
+PersHandle SMTPRelayPers(void) {
+  char persName[64];
+
+  if (PrefIsSet(PREF_NO_RELAY_PARTICIPATE))
+    return NULL;
+
+  return FindPersByName(GetPref((unsigned char *)persName, PREF_RELAY_PERSONALITY));
+}
+
+/************************************************************************
+ * RememberMID - remember a message ID hash for duplicate detection
+ ************************************************************************/
+int RememberMID(uint32_t midHash) {
+  OutgoingMIDListDirty = true;
+  if (!OutgoingMIDList)
+    OutgoingMIDList = g_array_new(FALSE, FALSE, sizeof(uint32_t));
+  g_array_append_val(OutgoingMIDList, midHash);
+  return 0;
+}
+
+/************************************************************************
+ * OutgoingMIDListSave - save the outgoing message ID list to a file
+ ************************************************************************/
+int OutgoingMIDListSave(void) {
+  int err = 0;
+  FSSpec spec;
+
+  if (!OutgoingMIDListDirty)
+    return 0;
+
+  if (OutgoingMIDList && OutgoingMIDList->len > 0) {
+    long limit = GetRLong(OUTGOING_MID_LIST_SIZE);
+
+    /* Trim to limit */
+    if ((long)OutgoingMIDList->len > limit)
+      g_array_remove_range(OutgoingMIDList, 0, OutgoingMIDList->len - limit);
+
+    /* Write to file in mail root */
+    if (!SubFolderSpec(0, &spec)) {
+      char path[512];
+      snprintf(path, sizeof(path), "%s/outgoing_mids.dat", spec.name);
+      FILE *f = fopen(path, "wb");
+      if (f) {
+        fwrite(OutgoingMIDList->data, sizeof(uint32_t), OutgoingMIDList->len, f);
+        fclose(f);
+        OutgoingMIDListDirty = false;
+      } else {
+        err = fnfErr;
+      }
+    }
+  }
+  return err;
+}
+
+/************************************************************************
+ * OutgoingMIDListLoad - load the outgoing message ID list from file
+ ************************************************************************/
+int OutgoingMIDListLoad(void) {
+  int err = 0;
+  FSSpec spec;
+
+  if (OutgoingMIDList) {
+    g_array_free(OutgoingMIDList, TRUE);
+    OutgoingMIDList = NULL;
+  }
+  OutgoingMIDListDirty = false;
+
+  if (!SubFolderSpec(0, &spec)) {
+    char path[512];
+    struct stat st;
+    snprintf(path, sizeof(path), "%s/outgoing_mids.dat", spec.name);
+    if (stat(path, &st) == 0 && st.st_size > 0) {
+      long count = st.st_size / sizeof(uint32_t);
+      FILE *f = fopen(path, "rb");
+      if (f) {
+        OutgoingMIDList = g_array_sized_new(FALSE, FALSE, sizeof(uint32_t), count);
+        g_array_set_size(OutgoingMIDList, count);
+        fread(OutgoingMIDList->data, sizeof(uint32_t), count, f);
+        fclose(f);
+      }
+    }
+  }
+  return err;
+}
+
+/************************************************************************
+ * BadgeTheSupidDock - update the dock badge with unread count
+ * In GTK, this is a no-op since Linux/GTK doesn't have a dock badge
+ * the same way macOS does. Could be extended with libunity or similar.
+ ************************************************************************/
+void BadgeTheSupidDock(short count, char *text, bool attentionColor) {
+  /* No dock badge equivalent in GTK — no-op */
+}
+
+/************************************************************************
+ * GlobalUnreadCount - count unread messages globally
+ ************************************************************************/
+long GlobalUnreadCount(void) {
+  return PrefBadgeOpenBoxes() ? GlobalOpenUnreadCount() : GlobalInUnreadCount();
+}
+
+/************************************************************************
+ * GlobalOpenUnreadCount - count unread in all open mailbox windows
+ ************************************************************************/
+long GlobalOpenUnreadCount(void) {
+  long count = 0;
+  TOCType *tocH;
+
+  for (tocH = TOCList; tocH; tocH = tocH->next)
+    if (!tocH->virtualTOC && tocH->win &&
+        IsWindowVisible(GetMyWindowWindowPtr(tocH->win)))
+      count += TOCUnreadCount(tocH, PrefBadgeRecent());
+
+  return count;
+}
+
+/************************************************************************
+ * GlobalInUnreadCount - count unread in In mailbox + IMAP inboxes
+ ************************************************************************/
+long GlobalInUnreadCount(void) {
+  long count = TOCUnreadCount(GetInTOC(), PrefBadgeRecent());
+  PersHandle pers;
+
+  for (pers = PersList; pers; pers = pers->next) {
+    MailboxNodeHandle node;
+
+    if (!IsIMAPPers(pers))
+      continue;
+
+    if ((node = LocateInboxForPers(pers))) {
+      FSSpec inboxSpec = node->mailboxSpec;
+      count += TOCUnreadCount(TOCBySpec(&inboxSpec), PrefBadgeRecent());
+    }
+  }
+
+  return count;
+}

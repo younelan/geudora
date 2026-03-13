@@ -381,7 +381,6 @@ void OffsetWindow() {}
 void OnBatteriesX() {}
 bool OpenAddrErrs = false; /* global variable, not a function */
 void OpenOtherURLPtr() {}
-void OutgoingMIDList() {}
 void P1() {}
 void P2() {}
 void P3() {}

@@ -152,14 +152,7 @@ int DoIterativeThingyLo(TOCType * tocH, int item, int mods, int p4, bool p5);
 
 #define kNoMessageId 0
 
-// Using extern for OutgoingMIDList to avoid multiple definitions if it's
-// defined elsewhere or just use a pointer if we don't have the struct
-// definition. For now, keep it as a local stub if it's unique to junk scoring
-// logic.
-#ifndef OUTGOING_MID_LIST_DEFINED
-#define OUTGOING_MID_LIST_DEFINED
-extern Accumulator OutgoingMIDList;
-#endif
+/* OutgoingMIDList declared in Globals.h as MIDListType */
 
 // IMAP support
 int JunkIMAP(TOCType * tocH, short sumNum, bool isJunk, bool dontMove);
@@ -1661,7 +1654,7 @@ bool WhiteListByMID(TOCType * tocH, short sumNum) {
     return true;
   if (CacheMessage(tocH, sumNum))
     return false;
-  if (!OutgoingMIDList.offset)
+  if (!OutgoingMIDList || !OutgoingMIDList->len)
     return false;
 
   if ((text = tocH->sums[sumNum].cache)) {
@@ -1672,9 +1665,16 @@ bool WhiteListByMID(TOCType * tocH, short sumNum) {
       Tr(references, (unsigned char *)" \t\r\n", (unsigned char *)",,,,");
       if (!SuckAddresses(&addresses, references, false, false, false, NULL)) {
         UPtr address;
+        uint32_t *mids = (uint32_t *)OutgoingMIDList->data;
+        guint midCount = OutgoingMIDList->len;
 
         for (address = *addresses; *address; address += *address + 2) {
-          if (AccuFindLong(&OutgoingMIDList, Hash(address)) >= 0) {
+          uint32_t h = Hash(address);
+          bool found = false;
+          for (guint mi = 0; mi < midCount; mi++) {
+            if (mids[mi] == h) { found = true; break; }
+          }
+          if (found) {
             SetSumFlag(tocH, sumNum, FLAG_KNOWS_ME);
             break;
           }

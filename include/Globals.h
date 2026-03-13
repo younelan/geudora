@@ -368,7 +368,7 @@ extern short gEnterWheelHandlerCount;
 extern bool UsingAnyWindows;
 extern short ActiveSearchCount;
 extern long AnyTOCDirty;
-extern Accumulator OutgoingMIDList;
+extern GArray *OutgoingMIDList;  /* GArray of uint32_t hashes */
 extern bool OutgoingMIDListDirty;
 extern AccuPtr ExportErrors;
 
