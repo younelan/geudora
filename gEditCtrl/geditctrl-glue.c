@@ -788,3 +788,87 @@ gchar *geditctrl_get_link_at(GtkWidget *ctrl, gint offset) {
   if (!doc) return NULL;
   return gedit_document_get_link_at(doc, offset);
 }
+
+/* Insert emoji text at the current caret position.
+ * Uses gedit_document_insert_text for proper undo/state tracking,
+ * then applies an "emoticon" GtkTextTag so we can identify/revert.
+ *
+ * Builds a single insert string (with optional boundary spaces) to
+ * keep undo/style-run state consistent — one snapshot, one adjustment. */
+void geditctrl_insert_emoji(GtkWidget *ctrl, const gchar *emoji) {
+  if (!GTK_IS_SCROLLED_WINDOW(ctrl) || !emoji || !emoji[0]) return;
+  GtkWidget *area = gtk_scrolled_window_get_child(GTK_SCROLLED_WINDOW(ctrl));
+  GEditCtrlState *s = area ? gedit_state_for_area(area) : NULL;
+  geditDocument *doc = s ? s->doc : NULL;
+  if (!s || !doc) return;
+
+  GtkTextBuffer *buf = gedit_document_get_buffer(doc);
+  if (!buf) return;
+
+  /* Delete selection if any */
+  gint insert_at = s->caret;
+  if (s->sel_start != s->sel_end) {
+    gint a = MIN(s->sel_start, s->sel_end);
+    gint b = MAX(s->sel_start, s->sel_end);
+    gedit_document_delete_range(doc, a, b - a);
+    insert_at = a;
+  }
+
+  /* Clamp insert_at to valid range */
+  gint doc_len = gedit_document_get_length(doc);
+  if (insert_at < 0) insert_at = 0;
+  if (insert_at > doc_len) insert_at = doc_len;
+
+  /* Determine whether we need boundary spaces */
+  gboolean space_before = FALSE, space_after = FALSE;
+  gchar *full_text = gedit_document_get_text(doc);
+  if (full_text) {
+    gint full_char_len = (gint)g_utf8_strlen(full_text, -1);
+    if (insert_at > 0 && insert_at <= full_char_len) {
+      const gchar *p = g_utf8_offset_to_pointer(full_text, insert_at - 1);
+      gunichar pc = g_utf8_get_char(p);
+      if (g_unichar_isalnum(pc) || pc == '_')
+        space_before = TRUE;
+    }
+    if (insert_at < full_char_len) {
+      const gchar *p = g_utf8_offset_to_pointer(full_text, insert_at);
+      gunichar nc = g_utf8_get_char(p);
+      if (g_unichar_isalnum(nc) || nc == '_')
+        space_after = TRUE;
+    }
+    g_free(full_text);
+  }
+
+  /* Build combined string: [space] + emoji + [space] */
+  GString *combined = g_string_new(NULL);
+  if (space_before) g_string_append_c(combined, ' ');
+  gint emoji_start_chars = space_before ? 1 : 0;
+  g_string_append(combined, emoji);
+  gint emoji_char_len = (gint)g_utf8_strlen(emoji, -1);
+  if (space_after) g_string_append_c(combined, ' ');
+
+  /* Single insert — one undo snapshot, one style-run adjustment */
+  gedit_document_insert_text(doc, insert_at, combined->str);
+  gint total_chars = (gint)g_utf8_strlen(combined->str, -1);
+  g_string_free(combined, TRUE);
+
+  /* Apply "emoticon" tag only on the emoji portion (not spaces) */
+  GtkTextTagTable *table = gtk_text_buffer_get_tag_table(buf);
+  GtkTextTag *emo_tag = gtk_text_tag_table_lookup(table, "emoticon");
+  if (!emo_tag)
+    emo_tag = gtk_text_buffer_create_tag(buf, "emoticon", NULL);
+  GtkTextIter tag_start, tag_end;
+  gtk_text_buffer_get_iter_at_offset(buf, &tag_start,
+                                      insert_at + emoji_start_chars);
+  gtk_text_buffer_get_iter_at_offset(buf, &tag_end,
+                                      insert_at + emoji_start_chars + emoji_char_len);
+  gtk_text_buffer_apply_tag(buf, emo_tag, &tag_start, &tag_end);
+
+  /* Update caret and selection — place cursor after everything */
+  s->caret = insert_at + total_chars;
+  s->sel_start = s->sel_end = s->caret;
+  s->sel_anchor = -1;
+
+  gedit_scroll_to_caret(area);
+  gtk_widget_queue_draw(area);
+}

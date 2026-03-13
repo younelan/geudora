@@ -83,6 +83,9 @@ void geditctrl_set_link(GtkWidget *ctrl, const gchar *url);
 void geditctrl_insert_link(GtkWidget *ctrl, const gchar *url, const gchar *text);
 gchar *geditctrl_get_link_at(GtkWidget *ctrl, gint offset);
 
+/* Emoji insertion — inserts emoji text at caret with "emoticon" tag */
+void geditctrl_insert_emoji(GtkWidget *ctrl, const gchar *emoji);
+
 /* Print the document */
 void geditctrl_print(GtkWidget *ctrl);
 
