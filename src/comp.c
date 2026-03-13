@@ -32,6 +32,7 @@ ADVISED OF THE POSSIBILITY OF SUCH DAMAGE. */
 #include "message.h"
 #include "prefdefs.h"
 #include "toc.h"
+#include "emoticon.h"
 #include "util.h"
 #include <gdk/gdk.h>
 #include <gtk/gtk.h>
@@ -338,6 +339,86 @@ static void on_comp_link_ok(GtkWidget *btn, gpointer ud) {
   geditctrl_insert_link(ctrl, url, text);
   gtk_window_destroy(GTK_WINDOW(dlg));
 }
+/* ── Emoji picker popover ── */
+static void on_emoji_clicked(GtkButton *btn, gpointer ud) {
+  GtkWidget *body_ctrl = (GtkWidget *)ud;
+  int idx = GPOINTER_TO_INT(g_object_get_data(G_OBJECT(btn), "emo-idx"));
+  const char *emoji = EmoGetEmoji(idx);
+
+  geditDocument *doc = geditctrl_get_document(body_ctrl);
+  if (!doc) return;
+  GtkTextBuffer *buffer = gedit_document_get_buffer(doc);
+  if (!buffer) return;
+
+  /* Insert emoji at cursor */
+  GtkTextMark *mark = gtk_text_buffer_get_insert(buffer);
+  GtkTextIter cursor;
+  gtk_text_buffer_get_iter_at_mark(buffer, &cursor, mark);
+
+  /* Add space before if previous char is word char */
+  int off = gtk_text_iter_get_offset(&cursor);
+  if (off > 0) {
+    GtkTextIter prev = cursor;
+    gtk_text_iter_backward_char(&prev);
+    gunichar pc = gtk_text_iter_get_char(&prev);
+    if (g_unichar_isalnum(pc) || pc == '_')
+      gtk_text_buffer_insert(buffer, &cursor, " ", 1);
+  }
+
+  /* Insert with emoticon tag */
+  GtkTextTagTable *table = gtk_text_buffer_get_tag_table(buffer);
+  GtkTextTag *emo_tag = gtk_text_tag_table_lookup(table, "emoticon");
+  if (!emo_tag)
+    emo_tag = gtk_text_buffer_create_tag(buffer, "emoticon", NULL);
+  gtk_text_buffer_insert_with_tags(buffer, &cursor, emoji, -1, emo_tag, NULL);
+
+  /* Add space after if next char is word char */
+  gunichar nc = gtk_text_iter_get_char(&cursor);
+  if (nc != 0 && (g_unichar_isalnum(nc) || nc == '_'))
+    gtk_text_buffer_insert(buffer, &cursor, " ", 1);
+
+  gtk_text_buffer_place_cursor(buffer, &cursor);
+
+  /* Close the popover */
+  GtkWidget *popover = gtk_widget_get_ancestor(GTK_WIDGET(btn), GTK_TYPE_POPOVER);
+  if (popover) gtk_popover_popdown(GTK_POPOVER(popover));
+}
+
+static GtkWidget *create_emoji_popover(GtkWidget *body_ctrl) {
+  EmoInit();
+  int count = EmoCount();
+
+  GtkWidget *popover = gtk_popover_new();
+  GtkWidget *scroll = gtk_scrolled_window_new();
+  gtk_scrolled_window_set_policy(GTK_SCROLLED_WINDOW(scroll),
+                                  GTK_POLICY_NEVER, GTK_POLICY_AUTOMATIC);
+  gtk_widget_set_size_request(scroll, 280, 240);
+
+  GtkWidget *grid = gtk_flow_box_new();
+  gtk_flow_box_set_max_children_per_line(GTK_FLOW_BOX(grid), 8);
+  gtk_flow_box_set_selection_mode(GTK_FLOW_BOX(grid), GTK_SELECTION_NONE);
+  gtk_flow_box_set_homogeneous(GTK_FLOW_BOX(grid), TRUE);
+
+  /* De-duplicate: only show each unique emoji once */
+  int shown = 0;
+  for (int i = 0; i < count && shown < 40; i++) {
+    if (i > 0 && strcmp(EmoGetEmoji(i), EmoGetEmoji(i - 1)) == 0)
+      continue;
+    GtkWidget *btn = gtk_button_new_with_label(EmoGetEmoji(i));
+    gtk_widget_set_tooltip_text(btn, EmoGetMeaning(i));
+    gtk_widget_set_can_focus(btn, FALSE);
+    g_object_set_data(G_OBJECT(btn), "emo-idx", GINT_TO_POINTER(i));
+    g_signal_connect(btn, "clicked", G_CALLBACK(on_emoji_clicked), body_ctrl);
+    gtk_flow_box_append(GTK_FLOW_BOX(grid), btn);
+    shown++;
+  }
+
+  gtk_scrolled_window_set_child(GTK_SCROLLED_WINDOW(scroll), grid);
+  gtk_popover_set_child(GTK_POPOVER(popover), scroll);
+
+  return popover;
+}
+
 static void on_comp_insert_link(GtkButton *btn, gpointer ud) {
   (void)btn;
   GtkWidget *ctrl = (GtkWidget *)ud;
@@ -718,6 +799,13 @@ MyWindowPtr OpenComp(TOCType * tocH, int sumNum, GtkWidget *winWP,
   GtkWidget *link_b = gtk_button_new_from_icon_name("insert-link-symbolic");
   gtk_widget_set_tooltip_text(link_b, "Insert Link");
   gtk_box_append(GTK_BOX(toolbar), link_b);
+
+  /* Insert emoji — popover attached below after body_ctrl is created */
+  GtkWidget *emoji_btn = gtk_menu_button_new();
+  gtk_menu_button_set_icon_name(GTK_MENU_BUTTON(emoji_btn), "face-smile-symbolic");
+  gtk_widget_set_tooltip_text(emoji_btn, "Insert Emoticon");
+  gtk_widget_set_can_focus(emoji_btn, FALSE);
+  gtk_box_append(GTK_BOX(toolbar), emoji_btn);
 
   gtk_box_append(GTK_BOX(toolbar), gtk_separator_new(GTK_ORIENTATION_VERTICAL));
 
@@ -1128,9 +1216,13 @@ MyWindowPtr OpenComp(TOCType * tocH, int sumNum, GtkWidget *winWP,
   g_signal_connect(attach_btn, "clicked",
                    G_CALLBACK(on_comp_attach_clicked), attach_flow);
 
-  /* Wire image and link buttons now that body_ctrl exists */
+  /* Wire image, link, and emoji buttons now that body_ctrl exists */
   g_signal_connect(img_b, "clicked", G_CALLBACK(on_comp_insert_image), body_ctrl);
   g_signal_connect(link_b, "clicked", G_CALLBACK(on_comp_insert_link), body_ctrl);
+
+  /* Attach emoji popover to the menu button */
+  GtkWidget *emo_popover = create_emoji_popover(body_ctrl);
+  gtk_menu_button_set_popover(GTK_MENU_BUTTON(emoji_btn), emo_popover);
 
   g_object_set_data(G_OBJECT(winWP), "comp-to", header_entries[0]);
   g_object_set_data(G_OBJECT(winWP), "comp-from", header_entries[1]);

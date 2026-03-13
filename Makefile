@@ -17,7 +17,14 @@ RESOURCE_C = resources/eudora_resources.c
 RESOURCE_H = resources/eudora_resources.h
 
 # Source files in src/ directory
-SRC = $(wildcard src/*.c) $(RESOURCE_C)
+# Exclude platform-specific scripting backends; pick the right one below
+SRC_ALL = $(wildcard src/*.c)
+SRC_EXCLUDE = src/scripting_ae.c
+ifeq ($(shell uname),Darwin)
+  # On macOS with GTK4 we use D-Bus (or could switch to AE if building with Carbon)
+  SRC_EXCLUDE = src/scripting_ae.c
+endif
+SRC = $(filter-out $(SRC_EXCLUDE),$(SRC_ALL)) $(RESOURCE_C)
 OBJ = $(patsubst src/%.c,$(BUILD_DIR)/%.o,$(filter src/%.c,$(SRC))) \
       $(patsubst resources/%.c,$(BUILD_DIR)/%.o,$(filter resources/%.c,$(SRC)))
 

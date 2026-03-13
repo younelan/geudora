@@ -185,7 +185,38 @@ GtkWidget *create_menu_bar(GtkWidget *window) {
   g_menu_append(edit_menu, "_Wrap Selection", "app.wrap-selection");
   g_menu_append(edit_menu, "_Finish Nickname", "app.finish-nickname");
   g_menu_append(edit_menu, "_Insert Recipient", "app.insert-recipient");
-  g_menu_append(edit_menu, "Insert _Emoticon", "app.insert-emoticon");
+  /* Build emoticon submenu dynamically from the emoticon table */
+  {
+    extern int EmoCount(void);
+    extern const char *EmoGetAscii(int index);
+    extern const char *EmoGetEmoji(int index);
+    extern const char *EmoGetMeaning(int index);
+    extern void EmoInit(void);
+    EmoInit();
+    int emo_count = EmoCount();
+    if (emo_count > 0) {
+      GMenu *emo_submenu = g_menu_new();
+      /* Show a reasonable subset — group by category later if desired */
+      int shown = 0;
+      for (int i = 0; i < emo_count && shown < 40; i++) {
+        /* Skip duplicates (shorter patterns for same emoji) */
+        if (i > 0 && strcmp(EmoGetEmoji(i), EmoGetEmoji(i - 1)) == 0)
+          continue;
+        char label[128];
+        const char *meaning = EmoGetMeaning(i);
+        snprintf(label, sizeof(label), "%s  %s  (%s)",
+                 EmoGetEmoji(i), EmoGetAscii(i), meaning);
+        char action_name[64];
+        snprintf(action_name, sizeof(action_name), "app.insert-emoticon(%d)", i);
+        g_menu_append(emo_submenu, label, action_name);
+        shown++;
+      }
+      g_menu_append_submenu(edit_menu, "Insert _Emoticon",
+                            G_MENU_MODEL(emo_submenu));
+    } else {
+      g_menu_append(edit_menu, "Insert _Emoticon", "app.insert-emoticon");
+    }
+  }
   g_menu_append_section(edit_menu, NULL, G_MENU_MODEL(g_menu_new()));
   g_menu_append(edit_menu, "_Speak", "app.speak");
   g_menu_append(edit_menu, "_Spelling", "app.spelling");
