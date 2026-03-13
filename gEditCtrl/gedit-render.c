@@ -82,7 +82,11 @@ G_GNUC_INTERNAL void gedit_draw_cb(GtkDrawingArea *area, cairo_t *cr, int width,
   GEditCtrlState *s = gedit_state_for_area(GTK_WIDGET(area));
 
   cairo_save(cr);
-  cairo_set_source_rgb(cr, 1, 1, 1);
+  if (s && s->has_theme)
+    cairo_set_source_rgba(cr, s->bg_color.red, s->bg_color.green,
+                          s->bg_color.blue, s->bg_color.alpha);
+  else
+    cairo_set_source_rgb(cr, 1, 1, 1);
   cairo_paint(cr);
 
   gchar *full = gedit_document_get_text(doc);
@@ -194,11 +198,25 @@ G_GNUC_INTERNAL void gedit_draw_cb(GtkDrawingArea *area, cairo_t *cr, int width,
         const gchar *le = g_utf8_offset_to_pointer(full, ib);
         gint rel_start = (gint)(ls - start_ptr);
         gint rel_end = (gint)(le - start_ptr);
-        PangoAttribute *bg = pango_attr_background_new(45000, 52000, 65000);
+        PangoAttribute *bg;
+        if (s && s->has_theme)
+          bg = pango_attr_background_new(
+            (guint16)(s->sel_bg_color.red * 65535),
+            (guint16)(s->sel_bg_color.green * 65535),
+            (guint16)(s->sel_bg_color.blue * 65535));
+        else
+          bg = pango_attr_background_new(45000, 52000, 65000);
         bg->start_index = rel_start;
         bg->end_index = rel_end;
         pango_attr_list_insert(draw_attrs, bg);
-        PangoAttribute *fg = pango_attr_foreground_new(0, 0, 0);
+        PangoAttribute *fg;
+        if (s && s->has_theme)
+          fg = pango_attr_foreground_new(
+            (guint16)(s->text_color.red * 65535),
+            (guint16)(s->text_color.green * 65535),
+            (guint16)(s->text_color.blue * 65535));
+        else
+          fg = pango_attr_foreground_new(0, 0, 0);
         fg->start_index = rel_start;
         fg->end_index = rel_end;
         pango_attr_list_insert(draw_attrs, fg);
@@ -234,7 +252,11 @@ G_GNUC_INTERNAL void gedit_draw_cb(GtkDrawingArea *area, cairo_t *cr, int width,
     if (pattr.bullet != gedit_BULLET_NONE) {
       double bx = x_para + align_offset + 4.0; /* 4px radius room roughly */
       double by = y + (line_height / 2.0);
-      cairo_set_source_rgb(cr, 0, 0, 0);
+      if (s && s->has_theme)
+        cairo_set_source_rgba(cr, s->text_color.red, s->text_color.green,
+                              s->text_color.blue, s->text_color.alpha);
+      else
+        cairo_set_source_rgb(cr, 0, 0, 0);
       
       switch (pattr.bullet) {
         case gedit_BULLET_CIRCLE:
@@ -256,7 +278,11 @@ G_GNUC_INTERNAL void gedit_draw_cb(GtkDrawingArea *area, cairo_t *cr, int width,
     }
 
     cairo_save(cr);
-    cairo_set_source_rgb(cr, 0, 0, 0);
+    if (s && s->has_theme)
+      cairo_set_source_rgba(cr, s->text_color.red, s->text_color.green,
+                            s->text_color.blue, s->text_color.alpha);
+    else
+      cairo_set_source_rgb(cr, 0, 0, 0);
     cairo_translate(cr, x_draw, y);
     pango_cairo_show_layout(cr, pl);
     cairo_restore(cr);
@@ -359,7 +385,11 @@ G_GNUC_INTERNAL void gedit_draw_cb(GtkDrawingArea *area, cairo_t *cr, int width,
         pango_layout_get_cursor_pos(pl, rel, &crect, &wrect);
         double cx = x_draw + crect.x / (double)PANGO_SCALE;
         double cy = y + crect.y / (double)PANGO_SCALE;
-        cairo_set_source_rgb(cr, 0, 0, 0);
+        if (s->has_theme)
+          cairo_set_source_rgba(cr, s->caret_color.red, s->caret_color.green,
+                                s->caret_color.blue, s->caret_color.alpha);
+        else
+          cairo_set_source_rgb(cr, 0, 0, 0);
         cairo_set_line_width(cr, 1.0);
         cairo_move_to(cr, cx, cy);
         cairo_line_to(cr, cx, cy + crect.height / (double)PANGO_SCALE);
@@ -381,7 +411,11 @@ G_GNUC_INTERNAL void gedit_draw_cb(GtkDrawingArea *area, cairo_t *cr, int width,
   /* Draw caret if it wasn't drawn inside the loop (empty doc, or caret
    * after trailing newline where the last paragraph is empty) */
   if (s && s->caret_visible && !caret_drawn) {
-    cairo_set_source_rgb(cr, 0, 0, 0);
+    if (s->has_theme)
+      cairo_set_source_rgba(cr, s->caret_color.red, s->caret_color.green,
+                            s->caret_color.blue, s->caret_color.alpha);
+    else
+      cairo_set_source_rgb(cr, 0, 0, 0);
     cairo_set_line_width(cr, 1.0);
     cairo_move_to(cr, x_base, y);
     cairo_line_to(cr, x_base, y + 14);

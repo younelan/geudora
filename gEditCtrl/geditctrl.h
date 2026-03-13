@@ -95,6 +95,11 @@ G_END_DECLS
 void geditctrl_set_rich_text(GtkWidget *ctrl, gint offset, gboolean is_rich);
 void geditctrl_set_editable(GtkWidget *ctrl, gboolean editable);
 
+/* Theme colors — set background, default text, caret, and selection colors */
+void geditctrl_set_theme_colors(GtkWidget *ctrl,
+                                const GdkRGBA *bg, const GdkRGBA *text,
+                                const GdkRGBA *caret, const GdkRGBA *sel_bg);
+
 /* Label a range of text (applies a named tag for identification/styling) */
 void geditctrl_set_label(GtkWidget *ctrl, gint start, gint end, gint label);
 

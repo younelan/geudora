@@ -21,6 +21,13 @@ typedef struct {
     gint resize_orig_w;        /* original width at drag start */
     gint resize_orig_h;        /* original height at drag start */
     gint selected_graphic;     /* char offset of selected graphic, -1 if none */
+
+    /* Theming colors — all default to 0 (unset), meaning white bg / black text */
+    gboolean has_theme;
+    GdkRGBA bg_color;          /* background */
+    GdkRGBA text_color;        /* default text */
+    GdkRGBA caret_color;       /* caret / cursor */
+    GdkRGBA sel_bg_color;      /* selection background */
 } GEditCtrlState;
 
 /* UTF-8 helpers */

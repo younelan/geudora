@@ -1293,3 +1293,21 @@ void geditctrl_insert_emoji(GtkWidget *ctrl, const gchar *emoji) {
   gedit_scroll_to_caret(area);
   gtk_widget_queue_draw(area);
 }
+
+void geditctrl_set_theme_colors(GtkWidget *ctrl,
+                                const GdkRGBA *bg, const GdkRGBA *text,
+                                const GdkRGBA *caret, const GdkRGBA *sel_bg) {
+  if (!ctrl) return;
+  /* State is stored on both the scrolled window and the drawing area */
+  GEditCtrlState *s = g_object_get_data(G_OBJECT(ctrl), "gedit-state");
+  if (!s) return;
+  s->has_theme = TRUE;
+  if (bg) s->bg_color = *bg;
+  if (text) s->text_color = *text;
+  if (caret) s->caret_color = *caret;
+  if (sel_bg) s->sel_bg_color = *sel_bg;
+  /* Redraw if already realized */
+  GtkWidget *area = gtk_scrolled_window_get_child(GTK_SCROLLED_WINDOW(ctrl));
+  if (area && GTK_IS_DRAWING_AREA(area))
+    gtk_widget_queue_draw(area);
+}
