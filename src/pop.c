@@ -107,10 +107,6 @@ static inline char *URLEscape(char *s) { return s; }
 #include "taskProgress.h"
 #include "util.h"      /* For Accumulator functions */
 
-#ifdef CommandPeriod
-#undef CommandPeriod
-#endif
-extern bool CommandPeriod;
 #ifndef ReallyDoAnAlert_declared
 #define ReallyDoAnAlert_declared 1
 int ReallyDoAnAlert(int templ, int which);
@@ -449,7 +445,7 @@ short GetMyMail(TransStream stream, bool quietly, short *gotSome,
         Dprintf("%d;sc;g", Prr);
 #endif
       if (capabilities[0] && !capabilities[pcapaUIDL]) {
-        (*CurPers)->noUIDL = true;
+        CurPers->noUIDL = true;
         Log(LOG_LMOS, (UPtr)"CAPA says no UIDL");
       }
       if (!Prr) {
@@ -463,7 +459,7 @@ short GetMyMail(TransStream stream, bool quietly, short *gotSome,
                               capabilities)) {
           CanPipeline = (capabilities[0] ? capabilities[pcapaPipelining]
                                          : PrefIsSet(PREF_CAN_PIPELINE)) &&
-                        !(*CurPers)->noUIDL;
+                        !CurPers->noUIDL;
 
           ComposeLogR(LOG_RETR, nil, START_POP_LOG, hostName, port,
                       messageCount);
@@ -747,7 +743,7 @@ int POPIntroductions(TransStream stream, PStr user, bool *capabilities) {
 
   if (kerb4)
     if (Prr = SendPOPTicket(stream)) {
-      (*CurPers)->popSecure = False;
+      CurPers->popSecure = False;
       goto done;
     }
 
@@ -824,7 +820,7 @@ int POPIntroductions(TransStream stream, PStr user, bool *capabilities) {
     Prr = POPSasl(stream, capabilities, mech, buffer, &size);
   } else {
     if (useAPOP) {
-      PCopy(args, (*CurPers)->password);
+      PCopy(args, CurPers->password);
       useAPOP = GenDigest(buffer, args, digest);
     }
 
@@ -854,7 +850,7 @@ int POPIntroductions(TransStream stream, PStr user, bool *capabilities) {
       if (kerb4)
         GetRString(args, KERBEROS_FAKE_PASS);
       else
-        PCopy(args, (*CurPers)->password);
+        PCopy(args, CurPers->password);
 
       size = sizeof(buffer) - 1;
       Prr = POPCmdGetReply(stream, kpcPass, args, buffer, &size);
@@ -862,7 +858,7 @@ int POPIntroductions(TransStream stream, PStr user, bool *capabilities) {
   }
   if (Prr || *buffer != '+') {
     if (!Prr) {
-      (*CurPers)->popSecure = False;
+      CurPers->popSecure = False;
       POPCmdError(kpcPass, nil, buffer);
       if (!NoClearPass(capabilities, buffer, size))
         InvalidatePasswords(False, True, False);
@@ -870,7 +866,7 @@ int POPIntroductions(TransStream stream, PStr user, bool *capabilities) {
     Prr = '-';
     goto done;
   }
-  (*CurPers)->popSecure = True;
+  CurPers->popSecure = True;
   SetPrefLong(PREF_POP_LAST_AUTH, GMTDateTime());
 
   ProgressMessageR(kpSubTitle, LOOK_MAIL);
@@ -989,7 +985,7 @@ int POPSasl(TransStream stream, bool *capabilities, SASLEnum mech,
   } while (Prr == ' ');
 
   if (Prr || **(unsigned char **)respAcc.data != '+') {
-    (*CurPers)->popSecure = False;
+    CurPers->popSecure = False;
     AccuToStr(&respAcc, scratch);
     POPCmdError(kpcAuth, nil, scratch);
     if (!NoClearPass(capabilities, scratch, *size))
@@ -1440,7 +1436,7 @@ int POPCmdError(short cmd, unsigned char *args, unsigned char *message) {
     memcpy(c_err, theError + 1, len);
     c_err[len] = '\0';
 
-    AddTaskErrorsS(c_cmd, c_err, CheckingTask, (*CurPers)->persId);
+    AddTaskErrorsS(c_cmd, c_err, CheckingTask, CurPers->persId);
     return 1;
   }
 
@@ -1875,7 +1871,7 @@ short ReadEitherBody(TransStream stream, short refN, HeaderDHandle hdh,
       return (Prr = MemError());
     if (mimeSList == kMIMEBoring)
       mimeSList = nil;
-    else if ((*mimeSList)->readBody == READ_MESSAGE) {
+    else if (mimeSList->readBody == READ_MESSAGE) {
       ZapMIMES(mimeSList);
       return (Prr = '82');
     }
@@ -1884,7 +1880,7 @@ short ReadEitherBody(TransStream stream, short refN, HeaderDHandle hdh,
   /*
    * call the proper body reading function
    */
-  endType = mimeSList ? (*(*mimeSList)->readBody)(stream, refN, mimeSList, buf,
+  endType = mimeSList ? (*mimeSList->readBody)(stream, refN, mimeSList, buf,
                                                   bSize, ReadPOPLine)
                       : ReadPlainBody(stream, refN, buf, bSize, estSize);
 
@@ -3006,7 +3002,7 @@ OSErr BuildPOPD(TransStream stream, POPDHandle *popDH, short count,
   if (popMode != popRUIDL)
     lastRead = FirstUnread(stream, count) - 1;
 
-  if (!(*CurPers)->noUIDL && (Prr = FillWithUidl(stream, *popDH)))
+  if (!CurPers->noUIDL && (Prr = FillWithUidl(stream, *popDH)))
     return (Prr);
 
   /* Resource-based old POPD lookup removed (was Mac-specific no-op).
@@ -3021,7 +3017,7 @@ OSErr BuildPOPD(TransStream stream, POPDHandle *popDH, short count,
   if (LogLevel & LOG_LMOS)
     Log1POPD((UPtr)"BuildPOPD", (UPtr)"Old", oldDH);
 
-  if ((*CurPers)->noUIDL && (Prr = FillWithTop(stream, *popDH, oldDH)))
+  if (CurPers->noUIDL && (Prr = FillWithTop(stream, *popDH, oldDH)))
     return (Prr);
 
   for (i = 0; i < count; i++)
@@ -3639,7 +3635,7 @@ OSErr FillWithUidl(TransStream stream, POPDHandle popDH) {
   if (*buffer == '-') {
     buffer[size] = 0;
     ComposeLogS(LOG_LMOS, nil, (UPtr)"UIDL err: %s", buffer);
-    (*CurPers)->noUIDL = True;
+    CurPers->noUIDL = True;
     return (noErr);
   }
 

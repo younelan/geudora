@@ -52,8 +52,8 @@ bool PersAnyPasswords(void)
 {
 	PersHandle pers;
 	
-	for (pers=PersList;pers;pers=(*pers)->next)
-		if (*(*pers)->password || *(*pers)->secondPass) return(True);
+	for (pers=PersList;pers;pers=pers->next)
+		if (*pers->password || *pers->secondPass) return(True);
 	return(False);
 }
 #pragma segment Schizo
@@ -69,32 +69,32 @@ OSErr PersFillPw(PersHandle pers,uint32_t whichOnes)
 
 	pw[0] = '\0';
 
-	if (!(*pers)->password[0])
+	if (!pers->password[0])
 	{
 		/* Try loading saved password from INI first */
 		if (prefs_get_bool(PREFS_GROUP_CHECKING_MAIL, "save_password", FALSE)) {
 			gchar *saved = prefs_get_string(PREFS_GROUP_CHECKING_MAIL, "saved_password", "");
 			if (saved && saved[0]) {
-				strncpy((char *)(*pers)->password, saved, sizeof((*pers)->password) - 1);
-				(*pers)->password[sizeof((*pers)->password) - 1] = '\0';
+				strncpy((char *)pers->password, saved, sizeof(pers->password) - 1);
+				pers->password[sizeof(pers->password) - 1] = '\0';
 			}
 			g_free(saved);
 		}
 
 		/* If still no password, prompt the user */
-		if (!(*pers)->password[0]) {
+		if (!pers->password[0]) {
 			GetPassStuff((unsigned char *)persName, (unsigned char *)uName, (unsigned char *)hName);
 			GetPassword((unsigned char *)persName, (unsigned char *)uName, (unsigned char *)hName,
 			            (unsigned char *)pw, sizeof(pw), ENTER);
-			(*pers)->dirty = true;
+			pers->dirty = true;
 			if (pw[0]) {
-				strncpy((char *)(*pers)->password, pw, sizeof((*pers)->password) - 1);
-				(*pers)->password[sizeof((*pers)->password) - 1] = '\0';
+				strncpy((char *)pers->password, pw, sizeof(pers->password) - 1);
+				pers->password[sizeof(pers->password) - 1] = '\0';
 			}
 		}
 	}
 
-	return((*pers)->password[0] ? noErr : userCanceledErr);
+	return(pers->password[0] ? noErr : userCanceledErr);
 }
 
 /**********************************************************************
@@ -106,9 +106,9 @@ OSErr PersSavePw(PersHandle pers)
 
 	if (prefs_get_bool(PREFS_GROUP_CHECKING_MAIL, "save_password", FALSE)) {
 		/* Save password to INI */
-		if ((*pers)->password[0]) {
+		if (pers->password[0]) {
 			prefs_set_string(PREFS_GROUP_CHECKING_MAIL, "saved_password",
-			                 (const char *)(*pers)->password);
+			                 (const char *)pers->password);
 		}
 	} else {
 		/* User doesn't want password saved — clear it from INI */
@@ -127,7 +127,7 @@ OSErr PersSaveAll(void)
 	PersHandle pers;
 	bool multiplePersonalities = false;
 	
-	for (pers=PersList;pers;pers=(*pers)->next)
+	for (pers=PersList;pers;pers=pers->next)
 		if (err=PersSave(pers)) break;
 	return(err);
 }
@@ -140,11 +140,11 @@ OSErr PersSave(PersHandle pers)
 {
 	OSErr err = noErr;
 
-	if ((*pers)->dirty)
+	if (pers->dirty)
 	{
 		/* Save password if user wants it saved */
 		PersSavePw(pers);
-		(*pers)->dirty = False;
+		pers->dirty = False;
 	}
 	return(err);
 }
@@ -175,8 +175,8 @@ PersHandle PersNew(void)
 	{
 		n++;
 		Bytes2Hex(((unsigned char *)&n)+1,1,(unsigned char *)&resEnd);
-		for (pers=(*PersList)->next;pers;pers=(*pers)->next)
-			if ((*pers)->resEnd==resEnd) break;
+		for (pers=PersList->next;pers;pers=pers->next)
+			if (pers->resEnd==resEnd) break;
 	}
 	while (pers);
 	
@@ -184,12 +184,12 @@ PersHandle PersNew(void)
 	if (n>100) {WarnUser(YOU_ARE_PSYCHO,0);return(nil);}
 	
 	// create the personality
-	if (newPers=NewZH(Personality))
+	if (newPers=g_malloc0(sizeof(Personality)))
 	{
 		PersSetName(newPers,untitled);
 		n = MyUniqueID(PERS_RTYPE);
-		(*newPers)->resId = n;
-		(*newPers)->resEnd = resEnd;
+		newPers->resId = n;
+		newPers->resEnd = resEnd;
 		PersSave(newPers);
 		LL_Queue(PersList,newPers,(PersHandle));
 		PersZapResources('STR ',resEnd);
@@ -224,10 +224,10 @@ OSErr PersDelete(PersHandle pers)
 		
 		LL_Remove(PersList,pers,(PersHandle));
 		
-		ZapSettingsResource(PERS_RTYPE,(*pers)->resId);
-		PersZapResources('STR ',(*pers)->resEnd);
+		ZapSettingsResource(PERS_RTYPE,pers->resId);
+		PersZapResources('STR ',pers->resEnd);
 		UpdatePersList();
-		AuditPersDelete((*pers)->persId);
+		AuditPersDelete(pers->persId);
 	}
 	return(noErr);
 }
@@ -250,8 +250,8 @@ void PersZapResources(OSType type,short resEnd)
  **********************************************************************/
 OSType PersType(OSType theType,PersHandle pers)
 {
-	if (pers && (*pers)->persId)
-		theType = (theType&0xffff0000) | (*pers)->resEnd;
+	if (pers && pers->persId)
+		theType = (theType&0xffff0000) | pers->resEnd;
 	return(theType);
 }
 
@@ -261,8 +261,8 @@ OSType PersType(OSType theType,PersHandle pers)
 PersHandle FindPersById(uint32_t persId)
 {
 	PersHandle pers;
-	for (pers=PersList;pers;pers=(*pers)->next)
-		if ((*pers)->persId==persId) break;
+	for (pers=PersList;pers;pers=pers->next)
+		if (pers->persId==persId) break;
 	
 	return(pers);
 }
@@ -282,7 +282,7 @@ PersHandle FindPersByName(PStr name)
  **********************************************************************/
 void InitPersonalities(void)
 {
-	PersHandle pers = NewZH(Personality);
+	PersHandle pers = g_malloc0(sizeof(Personality));
 	Str63 dom;
 	uint32_t ticks = TickCount();
 	long hash;
@@ -295,9 +295,9 @@ void InitPersonalities(void)
 	if (!pers) DieWithError(MEM_ERR,MemError());
 	LL_Queue(PersList,pers,(PersHandle));
 	GetRString(dom,DOMINANT);
-	PSCopy((*pers)->name,dom);
-	(*pers)->mailboxTree = 0;
-	(*pers)->imapRefresh = 0;
+	PSCopy(pers->name,dom);
+	pers->mailboxTree = 0;
+	pers->imapRefresh = 0;
 	
 	CurPers = pers;
 	
@@ -307,26 +307,26 @@ void InitPersonalities(void)
 	if (HasFeature (featureMultiplePersonalities)) {
 		for (n=1;pers=(PersHandle)Get1IndResource(PERS_RTYPE,n);n++)
 		{
-			if (!*pers || !GetHandleSize(pers))
+			if (!pers || !GetHandleSize(pers))
 			{
 				RemoveResource(pers);
 				if (!ResError()) n--;	// removed one, retry
 				ZapHandle(pers);
 			}
-			else if ((*pers)->version > PERS_VERS)
+			else if (pers->version > PERS_VERS)
 				ReleaseResource((Handle)pers);
 			else
 			{
 				DetachResource((Handle)pers);
 				SetHandleBig((Handle)pers,sizeof(Personality));
 				if (MemError()) DieWithError(MEM_ERR,MemError());
-				(*pers)->next = nil;
+				pers->next = nil;
 				LL_Queue(PersList,pers,(PersHandle));
-				(*pers)->dirty = False;
-				(*pers)->checkTicks = 0;
-				(*pers)->proxy = nil;
-				(*pers)->mailboxTree = 0;
-				(*pers)->imapRefresh = 0;
+				pers->dirty = False;
+				pers->checkTicks = 0;
+				pers->proxy = nil;
+				pers->mailboxTree = 0;
+				pers->imapRefresh = 0;
 				// The popd resources shouldn't be here if this is
 				// an imap personality.  Kill them.
 				if (IsIMAPPers(pers))
@@ -338,10 +338,10 @@ void InitPersonalities(void)
 				
 				if (pers!=PersList)
 				{
-					PSCopy(dom,(*pers)->name);
+					PSCopy(dom,pers->name);
 					hash = Hash(dom);
-					ASSERT(hash==(*pers)->persId);
-					(*pers)->persId = hash;
+					ASSERT(hash==pers->persId);
+					pers->persId = hash;
 					
 					// make sure we commit this particular setting
 				 PushPers(pers);
@@ -393,13 +393,13 @@ OSErr PersSetName(PersHandle pers,PStr name)
 		if (pers==oldPers) return(noErr);
 		else return(WarnUser(USED_PERSONALITY,dupFNErr));
 	}
-	PSCopy((*pers)->name,name);
-	if ((*pers)->persId)
-		AuditPersRename((*pers)->persId,hash);
+	PSCopy(pers->name,name);
+	if (pers->persId)
+		AuditPersRename(pers->persId,hash);
 	else
 		AuditPersCreate(hash);
-	(*pers)->persId = hash;
-	(*pers)->dirty = True;
+	pers->persId = hash;
+	pers->dirty = True;
 	if (HasFeature (featureMultiplePersonalities)) {
 		if (pers != PersList)
 			UseFeature (featureMultiplePersonalities);
@@ -408,7 +408,7 @@ OSErr PersSetName(PersHandle pers,PStr name)
 	
 	// update IMAP mailboxes with new pers id
 	if (IsIMAPPers(pers))
-		IMAPPersIDChanged(pers, (*pers)->mailboxTree);	
+		IMAPPersIDChanged(pers, pers->mailboxTree);	
 	
 	return(noErr);
 }
@@ -431,7 +431,7 @@ long PersCount(void)
 	long n=0;
 	PersHandle pers;
 	
-	for (pers=PersList;pers;pers=(*pers)->next) n++;
+	for (pers=PersList;pers;pers=pers->next) n++;
 	return(n);
 }
 
@@ -465,12 +465,12 @@ OSErr SetPers(TOCType * tocH,short sumNum,PersHandle pers,bool stationery)
 	ControlHandle cntl;
 	bool redirected = (tocH->sums[sumNum].opts & OPT_REDIRECTED)!=0;
 	
-	if (tocH->sums[sumNum].persId==(*pers)->persId) return(noErr);	// nothing to do
+	if (tocH->sums[sumNum].persId==pers->persId) return(noErr);	// nothing to do
 
 	if (pers!=PersList)
 		UseFeature (featureMultiplePersonalities);
 	
-	tocH->sums[sumNum].persId = (*pers)->persId;
+	tocH->sums[sumNum].persId = pers->persId;
 	TOCSetDirty(tocH,true);
 	
 	SetBGColorsByPers(messH);
@@ -491,7 +491,7 @@ OSErr SetPers(TOCType * tocH,short sumNum,PersHandle pers,bool stationery)
 			messH = tocH->sums[sumNum].messH;
 		}
 		if (!messH) return(errAENoSuchObject);
-		messWinWP = GetMyWindowWindowPtr((*messH)->win);
+		messWinWP = GetMyWindowWindowPtr(messH->win);
 		PushPers(pers);
 		GetReturnAddr(addr,True);
 		PeteCalcOff(TheBody);
@@ -500,19 +500,19 @@ OSErr SetPers(TOCType * tocH,short sumNum,PersHandle pers,bool stationery)
 		else
 			err = SetMessText(messH,FROM_HEAD,addr+1,*addr);
 
-		if (stationery) ApplyDefaultStationery((*messH)->win,False,False);
+		if (stationery) ApplyDefaultStationery(messH->win,False,False);
 		PeteKillUndo(TheBody);
 		PopPers();
 		if (opened)
 		{
-			err = !SaveComp((*messH)->win) ? err : True;
+			err = !SaveComp(messH->win) ? err : True;
 			CloseMyWindow(messWinWP);
 		}
 		else
 		{
 			if (HasFeature (featureMultiplePersonalities)) {
 				CheckNone(GetMHandle(PERS_HIER_MENU));
-				if (cntl=FindControlByRefCon((*messH)->win,'pers'))
+				if (cntl=FindControlByRefCon(messH->win,'pers'))
 				{
 					short item = pers==PersList ? 1 : Pers2Index(pers)+2;
 					if (item!=GetControlValue(cntl))
@@ -539,24 +539,24 @@ void SetBGColorsByPers(MessHandle messH)
 		PushPers(PERS_FORCE(MESS_TO_PERS(messH)));
 		GetRColor(&color,BACK_COLOR);
 		PopPers();
-		if (!SAME_COLOR(color,(*messH)->win->backColor))
+		if (!SAME_COLOR(color,messH->win->backColor))
 		{
 			char css[128];
 			GtkCssProvider *provider;
-			(*messH)->win->backColor = color;
+			messH->win->backColor = color;
 			snprintf(css, sizeof(css),
 				"textview { background-color: rgb(%u,%u,%u); }",
 				color.red >> 8, color.green >> 8, color.blue >> 8);
 			provider = gtk_css_provider_new();
 			gtk_css_provider_load_from_string(provider, css);
-			if ((*messH)->bodyPTE)
+			if (messH->bodyPTE)
 				gtk_style_context_add_provider(
-					gtk_widget_get_style_context((*messH)->bodyPTE),
+					gtk_widget_get_style_context(messH->bodyPTE),
 					GTK_STYLE_PROVIDER(provider),
 					GTK_STYLE_PROVIDER_PRIORITY_APPLICATION);
-			if ((*messH)->subPTE)
+			if (messH->subPTE)
 				gtk_style_context_add_provider(
-					gtk_widget_get_style_context((*messH)->subPTE),
+					gtk_widget_get_style_context(messH->subPTE),
 					GTK_STYLE_PROVIDER(provider),
 					GTK_STYLE_PROVIDER_PRIORITY_APPLICATION);
 			g_object_unref(provider);
@@ -572,11 +572,11 @@ uint32_t PersCheckTicks(void)
 	PersHandle pers;
 	uint32_t ticks=0;
 	
-	for (pers=PersList;pers;pers=(*pers)->next)
-		if ((*pers)->autoCheck)
+	for (pers=PersList;pers;pers=pers->next)
+		if (pers->autoCheck)
 		{
-			if (!ticks) ticks = (*pers)->checkTicks+(*pers)->ivalTicks;
-			else ticks = MIN(ticks,(*pers)->checkTicks+(*pers)->ivalTicks);
+			if (!ticks) ticks = pers->checkTicks+pers->ivalTicks;
+			else ticks = MIN(ticks,pers->checkTicks+pers->ivalTicks);
 		}
 	return(ticks);
 }
@@ -590,12 +590,12 @@ void PersSkipNextCheck(void)
 	uint32_t ticks=0;
 	
 	// Reset all mail checks that were about to happen
-	for (pers=PersList;pers;pers=(*pers)->next)
-		if ((*pers)->autoCheck)
+	for (pers=PersList;pers;pers=pers->next)
+		if (pers->autoCheck)
 		{
 			// if this check was about to happen, pretend it did.
-			if ((*pers)->checkTicks+(*pers)->ivalTicks <= TickCount()+45*60)
-				(*pers)->checkTicks = TickCount();
+			if (pers->checkTicks+pers->ivalTicks <= TickCount()+45*60)
+				pers->checkTicks = TickCount();
 		}
 }
 
@@ -609,22 +609,22 @@ void PersSetAutoCheck(void)
 	bool is;
 	
 	PushPers(CurPers);
-	for (CurPers=PersList;CurPers;CurPers=(*CurPers)->next)
+	for (CurPers=PersList;CurPers;CurPers=CurPers->next)
 	{
 		if (PrefIsSet(PREF_AUTO_CHECK) && (ival=GetPrefLong(PREF_INTERVAL)) && *GetPOPPref(s))
 		{
-			(*CurPers)->autoCheck = True;
-			(*CurPers)->ivalTicks = TICKS2MINS * ival;
+			CurPers->autoCheck = True;
+			CurPers->ivalTicks = TICKS2MINS * ival;
 		}
 		else
 		{
-			(*CurPers)->autoCheck = False;
-			(*CurPers)->ivalTicks = 0;
+			CurPers->autoCheck = False;
+			CurPers->ivalTicks = 0;
 		}
 		is = *GetPOPPref(s) && s[1]=='!';
-		(*CurPers)->uupcIn = is?1:0;
+		CurPers->uupcIn = is?1:0;
 		is = *GetPref(s,PREF_SMTP) && s[1]=='!';
-		(*CurPers)->uupcOut = is?1:0;
+		CurPers->uupcOut = is?1:0;
 	}
 	PopPers();
 }
@@ -638,7 +638,7 @@ short Pers2Index(PersHandle goalPers)
 	PersHandle pers;
 	
 	if (!goalPers) return(-1);
-	for (pers=PersList;pers && pers!=goalPers;pers=(*pers)->next) index++;
+	for (pers=PersList;pers && pers!=goalPers;pers=pers->next) index++;
 	return(pers?index:-1);
 }
 
@@ -649,7 +649,7 @@ PersHandle Index2Pers(short n)
 {
 	PersHandle pers;
 	
-	for (pers=PersList;n-- && pers;pers=(*pers)->next);
+	for (pers=PersList;n-- && pers;pers=pers->next);
 	return(pers);
 }
 	
@@ -714,7 +714,7 @@ void CheckPers(MyWindowPtr win,bool all)
 		else
 		{
 			n = 3;
-			for (pers=(*PersList)->next;pers;pers=(*pers)->next)
+			for (pers=PersList->next;pers;pers=pers->next)
 				if (pers==messPers) break;
 				else n++;
 		}
@@ -744,7 +744,7 @@ static void UpdatePersList(void)
 		short				idx;
 		
 		pPersList=LDRef(hPersList);
-		for (pers=PersList;pers;pers=(*pers)->next)
+		for (pers=PersList;pers;pers=pers->next)
 			*pPersList++ = pers;
 		*pPersList = nil;	//	Used later for rebuilding linked list
 		/* Sort personalities 1..count-1 (index 0 = dominant, stays first) */
@@ -754,7 +754,7 @@ static void UpdatePersList(void)
 		//	Rebuild personalities list
 		pPersList=*hPersList;
 		for(idx=0;idx<count;idx++)
-			(*pPersList[idx])->next = pPersList[idx+1];
+			pPersList[idx]->next = pPersList[idx+1];
 	}
 	BuildPersMenu();
 }
@@ -766,7 +766,7 @@ static int PersCompare(PersHandle *p1, PersHandle *p2)
 {
 	if (*p1==0) return 1;
 	if (*p2==0) return -1;
-	return(StringComp((**p1)->name,(**p2)->name));
+	return(StringComp((*p1)->name,(*p2)->name));
 }
 
 
@@ -820,9 +820,9 @@ PersHandle PersChoose(unsigned char *prompt)
 
 	indexed = (PersHandle *)g_new0(gpointer, count);
 	i = 0;
-	for (pers = PersList; pers; pers = (*pers)->next)
+	for (pers = PersList; pers; pers = pers->next)
 	{
-		const char *name = (const char *)(*pers)->name;
+		const char *name = (const char *)pers->name;
 		GtkWidget *label = gtk_label_new(name);
 		gtk_widget_set_halign(label, GTK_ALIGN_START);
 		gtk_widget_set_margin_start(label, 6);

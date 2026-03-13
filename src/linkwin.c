@@ -72,10 +72,7 @@ static inline void LGetCell(void *p, short *len, Cell c, void *lst) {}
 static inline void SetPrefLong(int a, long b) {}
 static inline int PeteCursorList(void *list, void *mouse) { return 0; }
 #define ModalFilterUPP void *
-#undef SAVE_PORT
-#define SAVE_PORT
-#undef REST_PORT
-#define REST_PORT
+/* SAVE_PORT/REST_PORT are no-ops in mydefs.h (GTK port) */
 
 /* GTK port: forward declarations for Mac UI APIs not found in project headers
  */

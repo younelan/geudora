@@ -36,6 +36,7 @@ ADVISED OF THE POSSIBILITY OF SUCH DAMAGE. */
 #include "imapnetlib.h"
 #include "imapdownload.h"
 #include "util.h"
+#include "threading.h"
 #include <stdlib.h>
 #include <string.h>
 #define PSCopy(d,s) strcpy((char*)d,(char*)s+1)
@@ -53,9 +54,6 @@ ADVISED OF THE POSSIBILITY OF SUCH DAMAGE. */
 #define PtoCcpy(d,s)
 #define PrepareToExpunge(s)
 long LogLevel = 0;
-#undef CommandPeriod
-
-bool CommandPeriod = false;
 
 #define LOG_TRANS 0
 #define IMAP_TRANSFER_BUFFER_SIZE 4096
@@ -1709,17 +1707,17 @@ void OrderedInsert(MAILSTREAM *mailStream, unsigned long uid, bool seen,
                    bool recent, bool sent, unsigned long size) {
   UIDNodeHandle node = nil;
 
-  node = NewZH(UIDNode);
+  node = g_malloc0(sizeof(UIDNode));
   if (node) {
-    (*node)->uid = uid;
-    (*node)->l_seen = seen;
-    (*node)->l_deleted = deleted;
-    (*node)->l_flagged = flagged;
-    (*node)->l_answered = answered;
-    (*node)->l_draft = draft;
-    (*node)->l_recent = recent;
-    (*node)->l_sent = sent;
-    (*node)->size = size;
+    node->uid = uid;
+    node->l_seen = seen;
+    node->l_deleted = deleted;
+    node->l_flagged = flagged;
+    node->l_answered = answered;
+    node->l_draft = draft;
+    node->l_recent = recent;
+    node->l_sent = sent;
+    node->size = size;
 
     // ordered insert this node into the list
     UID_LL_OrderedInsert(&(mailStream->fUIDResults), &node, true);
@@ -2030,7 +2028,7 @@ unsigned long UIDFetchLastUid(IMAPStreamPtr imapStream) {
     if (uidList) {
       LL_Last(uidList, node);
       if (node) {
-        uid = (*node)->uid;
+        uid = node->uid;
       }
       UID_LL_Zap(&uidList);
     }
@@ -2225,10 +2223,6 @@ static char *file_gets(readfn_t readfn, void *read_data, unsigned long size,
 #include "Globals.h"
 #include "imapmailboxes.h"
 
-#ifdef CommandPeriod
-#undef CommandPeriod
-#endif
-extern bool CommandPeriod;
 #ifndef ReallyDoAnAlert_declared
 #define ReallyDoAnAlert_declared 1
 int ReallyDoAnAlert(int templ, int which);

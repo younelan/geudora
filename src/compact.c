@@ -377,8 +377,8 @@ int QueueMessage(TOCType *tocH, short sumNum, SendTypeEnum st, long secs, bool n
 	}
 
 	/* Stationery: just save, don't queue */
-	if (messH && (*messH)->hStationerySpec) {
-		if (SaveComp((*messH)->win))
+	if (messH && messH->hStationerySpec) {
+		if (SaveComp(messH->win))
 			err = 0;
 		return err;
 	}
@@ -408,7 +408,7 @@ int QueueMessage(TOCType *tocH, short sumNum, SendTypeEnum st, long secs, bool n
 				 * In GTK4, show an alert dialog with style choices. */
 				const char *buttons[] = { "Cancel", "Send as-is", "Styled only", "Plain only", NULL };
 				int choice = run_alert_sync(
-					(*messH)->win ? GTK_WINDOW((*messH)->win->window) : NULL,
+					messH->win ? GTK_WINDOW(messH->win->window) : NULL,
 					"This message contains styled text. How should it be sent?",
 					buttons);
 				switch (choice) {
@@ -432,7 +432,7 @@ int QueueMessage(TOCType *tocH, short sumNum, SendTypeEnum st, long secs, bool n
 
 		/* If flags changed, re-save */
 		if (oldFlags != SumOf(messH)->flags || oldOpts != SumOf(messH)->opts)
-			(*messH)->win->isDirty = true;
+			messH->win->isDirty = true;
 	}
 
 	if (st == kEuSendNever) {
@@ -441,8 +441,8 @@ int QueueMessage(TOCType *tocH, short sumNum, SendTypeEnum st, long secs, bool n
 		err = 0;
 	}
 	else if (!messH ||
-		(SumOf(messH)->length != 0 && !(*messH)->win->isDirty)
-		|| SaveComp((*messH)->win))
+		(SumOf(messH)->length != 0 && !messH->win->isDirty)
+		|| SaveComp(messH->win))
 	{
 		if (tocH->sums[sumNum].state == UNSENDABLE) {
 			WarnUser(CANT_QUEUE, 0);
@@ -465,13 +465,13 @@ int QueueMessage(TOCType *tocH, short sumNum, SendTypeEnum st, long secs, bool n
 				err = CANT_QUEUE;
 			}
 			/* Check translators */
-			else if (messH && (*messH)->hTranslators) {
+			else if (messH && messH->hTranslators) {
 				/* ETL translator check — original called ETLCanTransOut/ETLQueueMessage.
 				 * Translators that can't run now block queuing. */
 				/* TODO: Port ETLCanTransOut/ETLQueueMessage when translator system is ready */
 				err = CANT_QUEUE;
 			}
-			else if (!messH || CloseMyWindow(GetMyWindowWindowPtr((*messH)->win)))
+			else if (!messH || CloseMyWindow(GetMyWindowWindowPtr(messH->win)))
 			{
 				/* Moodwatch queue delay */
 				if (!noAnalDelay && AnalDelayOutgoing() && state != TIMED &&
@@ -515,7 +515,7 @@ static int QueueSizeWarning(MessHandle messH)
 			size, max);
 		const char *buttons[] = { "Send", "Cancel", NULL };
 		int response = run_alert_sync(
-			(*messH)->win ? GTK_WINDOW((*messH)->win->window) : NULL,
+			messH->win ? GTK_WINDOW(messH->win->window) : NULL,
 			msg, buttons);
 		if (response != 0) /* anything other than "Send" */
 			return CANT_QUEUE;
@@ -712,8 +712,8 @@ int AddMessTranslator(MessHandle messH, long which, void *properties)
 	if (which == -1)
 		return -1;
 
-	if ((*messH)->hTranslators)
-		n = GetHandleSize_((Handle)(*messH)->hTranslators) / sizeof(TransInfo);
+	if (messH->hTranslators)
+		n = GetHandleSize_((Handle)messH->hTranslators) / sizeof(TransInfo);
 	else
 		n = 0;
 
@@ -721,18 +721,18 @@ int AddMessTranslator(MessHandle messH, long which, void *properties)
 		TransInfoHandle localHandle = (TransInfoHandle)NewHandle(sizeof(TransInfo));
 		if (!localHandle)
 			return -1;
-		(*messH)->hTranslators = localHandle;
+		messH->hTranslators = localHandle;
 	} else {
-		SetHandleSize((Handle)(*messH)->hTranslators, (n + 1) * sizeof(TransInfo));
+		SetHandleSize((Handle)messH->hTranslators, (n + 1) * sizeof(TransInfo));
 	}
 
-	(*(*messH)->hTranslators)[n].id = id;
-	(*(*messH)->hTranslators)[n].properties = (Handle)properties;
+	(*messH->hTranslators)[n].id = id;
+	(*messH->hTranslators)[n].properties = (Handle)properties;
 
-	ControlHandle theCtl = FindControlByRefCon((*messH)->win, 0xff000000 | (which + ICON_BAR_NUM));
+	ControlHandle theCtl = FindControlByRefCon(messH->win, 0xff000000 | (which + ICON_BAR_NUM));
 	if (theCtl)
 		SetControlValue(theCtl, 1);
-	(*messH)->win->isDirty = true;
+	messH->win->isDirty = true;
 	return 0;
 }
 
@@ -747,33 +747,33 @@ int RemoveMessTranslator(MessHandle messH, long which)
 	short n, i;
 	long id = ETLIconToID(which);
 
-	if ((*messH)->hTranslators)
-		n = GetHandleSize_((Handle)(*messH)->hTranslators) / sizeof(TransInfo);
+	if (messH->hTranslators)
+		n = GetHandleSize_((Handle)messH->hTranslators) / sizeof(TransInfo);
 	else
 		n = 0;
 
 	for (i = 0; i < n; i++) {
-		if ((*(*messH)->hTranslators)[i].id == id) {
-			if ((*(*messH)->hTranslators)[i].properties)
-				DisposeHandle((*(*messH)->hTranslators)[i].properties);
+		if ((*messH->hTranslators)[i].id == id) {
+			if ((*messH->hTranslators)[i].properties)
+				DisposeHandle((*messH->hTranslators)[i].properties);
 			if (n == 1) {
-				DisposeHandle((Handle)(*messH)->hTranslators);
-				(*messH)->hTranslators = NULL;
+				DisposeHandle((Handle)messH->hTranslators);
+				messH->hTranslators = NULL;
 			} else {
 				if (i != n - 1)
-					memmove(&(*(*messH)->hTranslators)[i],
-						&(*(*messH)->hTranslators)[i + 1],
+					memmove(&(*messH->hTranslators)[i],
+						&(*messH->hTranslators)[i + 1],
 						(n - i - 1) * sizeof(TransInfo));
-				SetHandleSize((Handle)(*messH)->hTranslators, (n - 1) * sizeof(TransInfo));
+				SetHandleSize((Handle)messH->hTranslators, (n - 1) * sizeof(TransInfo));
 			}
 			break;
 		}
 	}
 
-	ControlHandle theCtl = FindControlByRefCon((*messH)->win, 0xff000000 | (which + ICON_BAR_NUM));
+	ControlHandle theCtl = FindControlByRefCon(messH->win, 0xff000000 | (which + ICON_BAR_NUM));
 	if (theCtl)
 		SetControlValue(theCtl, 0);
-	(*messH)->win->isDirty = true;
+	messH->win->isDirty = true;
 	return 0;
 }
 
@@ -957,7 +957,7 @@ void ApplyStationeryHandle(MyWindowPtr win, unsigned char *text, long textLen, b
 
 	/* Handle personality */
 	if (personality && (pers = FindPersById(oldSum.persId))) {
-		SetPers((*messH)->tocH, (*messH)->sumNum, pers, false);
+		SetPers(messH->tocH, messH->sumNum, pers, false);
 		PushPers(pers);
 	}
 
@@ -1071,7 +1071,7 @@ void ApplyStationeryHandle(MyWindowPtr win, unsigned char *text, long textLen, b
 	UpdateSum(messH, SumOf(messH)->offset, SumOf(messH)->length);
 
 	/* Update window's idea of what color it is */
-	(*messH)->win->label = GetSumColor((*messH)->tocH, (*messH)->sumNum);
+	messH->win->label = GetSumColor(messH->tocH, messH->sumNum);
 	InvalTopMargin(win);
 	CompIBarUpdate(messH);
 
@@ -1090,7 +1090,7 @@ void CompIBarUpdate(MessHandle messH)
 		return;
 
 	for (short i = 0; i < ICON_BAR_NUM; i++) {
-		ControlHandle cntl = FindControlByRefCon((*messH)->win, 0xff000000 | i);
+		ControlHandle cntl = FindControlByRefCon(messH->win, 0xff000000 | i);
 		if (cntl) {
 			if (fBits[i] < 0)
 				SetControlValue(cntl, MessOptIsSet(messH, (-fBits[i])));
@@ -1112,15 +1112,15 @@ int CompLeaving(MessHandle messH, short head)
 {
 	short fDirty = PeteIsDirty(TheBody);
 	int err = 0;
-	MyWindowPtr win = (*messH)->win;
+	MyWindowPtr win = messH->win;
 
-	if ((*messH)->alreadyLeaving)
+	if (messH->alreadyLeaving)
 		return 0;
 
-	(*messH)->alreadyLeaving = true;
+	messH->alreadyLeaving = true;
 
 	/* Only do nick expansion if the field actually changed */
-	if (fDirty != (*messH)->fieldDirty) {
+	if (fDirty != messH->fieldDirty) {
 		PushPers(PERS_FORCE(MESS_TO_PERS(messH)));
 
 		if (IsAddressHead(head))
@@ -1129,13 +1129,13 @@ int CompLeaving(MessHandle messH, short head)
 		UpdateSum(messH, SumOf(messH)->offset, SumOf(messH)->length);
 
 		fDirty = PeteIsDirty(TheBody);
-		(*messH)->fieldDirty = fDirty;
+		messH->fieldDirty = fDirty;
 
 		PopPers();
 	}
 
 	EnableTxtFmtBarIfOK(win);
-	(*messH)->alreadyLeaving = false;
+	messH->alreadyLeaving = false;
 	return err;
 }
 
@@ -1154,7 +1154,7 @@ int NickExpandAndCacheHead(MessHandle messH, short head, bool cacheOnly)
 	char *text = NULL;
 	Handle raw = NULL; /* BinAddrHandle in original */
 
-	GtkWidget *pte = TheBody ? TheBody : (*messH)->win->pte;
+	GtkWidget *pte = TheBody ? TheBody : messH->win->pte;
 	if (!pte)
 		return err;
 
@@ -1204,7 +1204,7 @@ int NickExpandAndCacheHead(MessHandle messH, short head, bool cacheOnly)
 											/* If previous selection was entire field, reselect entire field */
 											bool selectAll = (selStart == hs.value && selEnd == hs.stop);
 											if (CompHeadCurrent(pte) == head && CompHeadFind(messH, head, &hs))
-												PeteSelect((*messH)->win, pte, selectAll ? hs.value : hs.stop, hs.stop);
+												PeteSelect(messH->win, pte, selectAll ? hs.value : hs.stop, hs.stop);
 										}
 									}
 									PeteFinishUndo(pte, 1/*peUndoPaste*/, hs.value, hs.value + len);
@@ -1249,10 +1249,10 @@ void SetSig(TOCType *tocH, short sumNum, int sigId)
 	TOCSetDirty(tocH, true);
 
 	if (messH) {
-		bool winDirtyWas = (*messH)->win->isDirty;
+		bool winDirtyWas = messH->win->isDirty;
 
-		if ((*messH)->hStationerySpec)
-			(*messH)->win->isDirty = true;
+		if (messH->hStationerySpec)
+			messH->win->isDirty = true;
 
 		/* Handle inline signature replacement */
 		if (MessOptIsSet(messH, OPT_INLINE_SIG))
@@ -1260,7 +1260,7 @@ void SetSig(TOCType *tocH, short sumNum, int sigId)
 		if (UseInlineSig)
 			AddInlineSig(messH);
 		else
-			(*messH)->win->isDirty = winDirtyWas;
+			messH->win->isDirty = winDirtyWas;
 	}
 }
 
@@ -1277,12 +1277,12 @@ void SetAttachmentType(TOCType *tocH, short sumNum, short type)
 	TOCSetDirty(tocH, true);
 
 	if (messH) {
-		ControlHandle cntl = FindControlByRefCon((*messH)->win, ATTACH_MENU);
+		ControlHandle cntl = FindControlByRefCon(messH->win, ATTACH_MENU);
 		if (cntl) {
 			SetBevelIcon(cntl, type, 0, 0, NULL);
 			SetBevelMenuValue(cntl, type + 1);
-			if ((*messH)->hStationerySpec)
-				(*messH)->win->isDirty = true;
+			if (messH->hStationerySpec)
+				messH->win->isDirty = true;
 		}
 	}
 }
@@ -1298,7 +1298,7 @@ void CompActivateAppropriate(MessHandle messH)
 	if (!messH)
 		return;
 
-	MyWindowPtr win = (*messH)->win;
+	MyWindowPtr win = messH->win;
 	if (!win || !win->pte)
 		return;
 
@@ -1327,7 +1327,7 @@ void CompSetFormatBarIcon(MyWindowPtr win, bool visible)
  ************************************************************************/
 int AddPriorityPopup(MessHandle messH)
 {
-	if (!messH || !(*messH)->win)
+	if (!messH || !messH->win)
 		return -1;
 
 	/* Priority is handled by compose_window.c GTK4 UI layer */
@@ -1343,7 +1343,7 @@ int AddPriorityPopup(MessHandle messH)
 void CompDelAttachment(MessHandle messH, void *hsPtr)
 {
 	HSPtr hs = (HSPtr)hsPtr;
-	GtkWidget *pte = TheBody ? TheBody : (*messH)->win->pte;
+	GtkWidget *pte = TheBody ? TheBody : messH->win->pte;
 	long sel;
 	HeadSpec hSpec;
 
@@ -1408,7 +1408,7 @@ void AttachSelect(MessHandle messH)
 
 	long selStart = 0, selEnd = 0;
 	HeadSpec hs;
-	GtkWidget *pte = TheBody ? TheBody : (*messH)->win->pte;
+	GtkWidget *pte = TheBody ? TheBody : messH->win->pte;
 
 	if (PeteGetTextAndSelection(pte, NULL, &selStart, &selEnd))
 		return;
@@ -1462,11 +1462,11 @@ void ForceCompWindowRecalcAndRedraw(MyWindowPtr win)
 void CompSendBtnUpdate(MyWindowPtr win)
 {
 	MessHandle messH = Win2MessH(win);
-	if (!messH || !(*messH)->sendButton)
+	if (!messH || !messH->sendButton)
 		return;
 
 	const char *label;
-	if ((*messH)->hStationerySpec)
+	if (messH->hStationerySpec)
 		label = "Save";
 	else if (PrefIsSet(PREF_AUTO_SEND))
 		label = "Send";
@@ -1474,7 +1474,7 @@ void CompSendBtnUpdate(MyWindowPtr win)
 		label = "Queue";
 
 	/* Update button label if it's a GtkButton */
-	GtkWidget *btn = (GtkWidget *)(*messH)->sendButton;
+	GtkWidget *btn = (GtkWidget *)messH->sendButton;
 	if (GTK_IS_BUTTON(btn))
 		gtk_button_set_label(GTK_BUTTON(btn), label);
 }
@@ -1727,8 +1727,8 @@ int SaveStationeryStuff(short refN, MessHandle messH)
 		return -1;
 
 	/* Write translator info if present */
-	if ((*messH)->hTranslators)
-		WriteTranslators(refN, (*messH)->hTranslators);
+	if (messH->hTranslators)
+		WriteTranslators(refN, messH->hTranslators);
 
 	return 0;
 }
@@ -1752,7 +1752,7 @@ int GatherRecipientAddresses(MessHandle messH, char **dest, bool wantComments)
 	for (int i = 0; !err && i < 3; i++) {
 		HeadSpec hs;
 		if (CompHeadFind(messH, headers[i], &hs) && hs.stop > hs.value) {
-			GtkWidget *pte = TheBody ? TheBody : (*messH)->win->pte;
+			GtkWidget *pte = TheBody ? TheBody : messH->win->pte;
 			char *text = NULL;
 			if (CompHeadGetText(pte, &hs, &text) == 0 && text) {
 				size_t textLen = strlen(text);

@@ -159,8 +159,6 @@ int gNewMessages = 0;
 bool NoNewMailMe = false;
 bool gStayConnected = false;
 extern bool Offline;
-#undef CommandPeriod
-extern bool CommandPeriod;
 
 // Enums and Defines
 #define eHasConnected 1
@@ -285,16 +283,11 @@ void RegisterSuccess(int val) {}
 void StartAuthenticatedSMTP(TransStream stream, unsigned char *server,
                             long port) {}
 
-// Additional POP Stubs
-#undef POP_SSL_PORT
-#define POP_SSL_PORT 995
-#undef KERB_POP_PORT
-#define KERB_POP_PORT 1109
-#undef POP_PORT
-#define POP_PORT 110
+/* POP port constants come from StringDefs.h resource IDs;
+   GetRLong() reads the actual values from the INI resource system */
+#ifndef PREF_KERBEROS
 #define PREF_KERBEROS 7
-#undef PrefIsSet
-extern bool PrefIsSet(short pref);
+#endif
 int GetPOPInfoLo(unsigned char *user, unsigned char *host, long *port) {
   GetPOPInfo(user, host);
   if (!host || !host[0])
@@ -387,10 +380,6 @@ extern void IMAPPoll(void *pers);
 
 #include <assert.h>
 
-#ifdef CommandPeriod
-#undef CommandPeriod
-#endif
-extern bool CommandPeriod;
 #ifndef ReallyDoAnAlert_declared
 #define ReallyDoAnAlert_declared 1
 int ReallyDoAnAlert(int templ, int which);
@@ -489,22 +478,22 @@ bool OKToThread(bool check, bool send, bool manual, bool scripted) {
 #if 0
 	else
 	{
-		for (CurPers=PersList;CurPers&&threadOK;CurPers=(*CurPers)->next)
+		for (CurPers=PersList;CurPers&&threadOK;CurPers=CurPers->next)
 		{	
-			if ((*CurPers)->uupcOut || (*CurPers)->uupcIn)
+			if (CurPers->uupcOut || CurPers->uupcIn)
 			{
-				(*CurPers)->checkMeNow = (*CurPers)->sendMeNow = (*CurPers)->checked = 0;
+				CurPers->checkMeNow = CurPers->sendMeNow = CurPers->checked = 0;
 				if (check && *GetPref(pass,PREF_POP))
 				{
 					if ((manual||scripted) && !PrefIsSet(PREF_JUST_SAY_NO))
-						(*CurPers)->checkMeNow = True;
+						CurPers->checkMeNow = True;
 				}
-				if (send && (*CurPers)->sendQueue && !PrefIsSet(PREF_PERS_NO_SEND))
-					(*CurPers)->sendMeNow = True;
-				if ((*CurPers)->uupcOut && (*CurPers)->checkMeNow)
+				if (send && CurPers->sendQueue && !PrefIsSet(PREF_PERS_NO_SEND))
+					CurPers->sendMeNow = True;
+				if (CurPers->uupcOut && CurPers->checkMeNow)
 					threadOK = false;
 				
-				if ((*CurPers)->uupcIn && ((*CurPers)->sendMeNow || (*CurPers)->autoCheck))
+				if (CurPers->uupcIn && (CurPers->sendMeNow || CurPers->autoCheck))
 					threadOK = false;
 			}
 		}
@@ -571,8 +560,8 @@ short XferMail(bool check, bool send, bool manual, bool scripted, bool thread,
 
   // no need in spawning send thread if none of the queued messages belong to
   // a personality marked for sending whenever sends are done
-  for (pers = PersList; pers; pers = (*pers)->next)
-    if ((*pers)->sendQueue && (*pers)->sendMeNow)
+  for (pers = PersList; pers; pers = pers->next)
+    if (pers->sendQueue && pers->sendMeNow)
       persSend = true;
   if (!SendQueue || !persSend) {
     send = false;
@@ -592,10 +581,10 @@ short XferMail(bool check, bool send, bool manual, bool scripted, bool thread,
                    // idle time to filter
 
   // fetch any mailbox lists we need for this mailcheck
-  for (pers = PersList; pers; pers = (*pers)->next) {
+  for (pers = PersList; pers; pers = pers->next) {
     PersHandle oldPers = CurPers;
 
-    if ((*pers)->checkMeNow) {
+    if (pers->checkMeNow) {
       CurPers = pers;
       if (PrefIsSet(PREF_IS_IMAP)) {
         if (!MailboxTreeGood(CurPers)) {
@@ -669,21 +658,21 @@ short XferMailSetup(bool *check, bool *send, bool manual, bool scripted,
           manual)) //	Set if checking/sending from Personalities window
   {
     ticks = TickCount() + TICKS2MINS * GetRLong(PERS_CHECK_SLOP);
-    for (pers = PersList; pers; pers = (*pers)->next) {
+    for (pers = PersList; pers; pers = pers->next) {
       CurPers = pers;
-      (*CurPers)->doMeNow = (*CurPers)->checkMeNow = (*CurPers)->sendMeNow =
-          (*CurPers)->checked = 0;
+      CurPers->doMeNow = CurPers->checkMeNow = CurPers->sendMeNow =
+          CurPers->checked = 0;
       if (*check && *GetPOPPref(pass)) {
-        ivalTicks = (*CurPers)->autoCheck ? (*CurPers)->ivalTicks : 0;
-        if (ivalTicks && (!(*CurPers)->checkTicks ||
-                          (*CurPers)->checkTicks + ivalTicks < ticks))
-          (*CurPers)->doMeNow = (*CurPers)->checkMeNow = True;
+        ivalTicks = CurPers->autoCheck ? CurPers->ivalTicks : 0;
+        if (ivalTicks && (!CurPers->checkTicks ||
+                          CurPers->checkTicks + ivalTicks < ticks))
+          CurPers->doMeNow = CurPers->checkMeNow = True;
         else if ((manual || scripted) && !PrefIsSet(PREF_JUST_SAY_NO))
-          (*CurPers)->doMeNow = (*CurPers)->checkMeNow = True;
+          CurPers->doMeNow = CurPers->checkMeNow = True;
       }
 
-      if (*send && (*CurPers)->sendQueue && !PrefIsSet(PREF_PERS_NO_SEND))
-        (*CurPers)->doMeNow = (*CurPers)->sendMeNow = True;
+      if (*send && CurPers->sendQueue && !PrefIsSet(PREF_PERS_NO_SEND))
+        CurPers->doMeNow = CurPers->sendMeNow = True;
       ASSERT(CurPers == pers);
     }
   }
@@ -703,11 +692,11 @@ short XferMailSetup(bool *check, bool *send, bool manual, bool scripted,
   }
 
   // collect passwords
-  for (pers = PersList; pers; pers = (*pers)->next) {
+  for (pers = PersList; pers; pers = pers->next) {
     CurPers = pers;
 
     // Check for checking mail first
-    if (NeedPassword(*check && (*CurPers)->checkMeNow, false)) {
+    if (NeedPassword(*check && CurPers->checkMeNow, false)) {
       if (PersFillPw(CurPers, 0) != noErr) {
         ResetCheckTime(True);
         CurPers = oldCur;
@@ -715,22 +704,22 @@ short XferMailSetup(bool *check, bool *send, bool manual, bool scripted,
       }
     }
     // Double check that all the special things IMAP needs are in place
-    if (*check && (*CurPers)->checkMeNow && PrefIsSet(PREF_IS_IMAP) &&
+    if (*check && CurPers->checkMeNow && PrefIsSet(PREF_IS_IMAP) &&
         !EnsureSpecialMailboxes(CurPers)) {
       ResetCheckTime(True);
       CurPers = oldCur;
       return (1);
     }
     // Now check for checking mail
-    if (*send && (*CurPers)->sendMeNow) {
+    if (*send && CurPers->sendMeNow) {
       PersHandle relayPers = SMTPRelayPers();
       bool oldDoMeNow;
 
       // if we're using a relay personality, switch to it
       if (relayPers) {
         // gotta force doMeNow or we won't ask for a password
-        oldDoMeNow = (*relayPers)->doMeNow;
-        (*relayPers)->doMeNow = true;
+        oldDoMeNow = relayPers->doMeNow;
+        relayPers->doMeNow = true;
         PushPers(relayPers);
       }
 
@@ -746,7 +735,7 @@ short XferMailSetup(bool *check, bool *send, bool manual, bool scripted,
       // put back the personality, and reset the doMeNow flag
       if (relayPers) {
         PopPers();
-        (*relayPers)->doMeNow = oldDoMeNow;
+        relayPers->doMeNow = oldDoMeNow;
       }
     }
 
@@ -891,15 +880,15 @@ short XferMailRun(bool check, bool send, bool manual, bool scripted, XferFlags f
     gStayConnected = true; // Tell the dial code to keep the connection up
                            // until further notice.
     for (pers = PersList; pers && !gPPPConnectFailed && !CommandPeriod;
-         pers = (*pers)->next) {
+         pers = pers->next) {
       CurPers = pers;
 
       // only display the new mail alert if a pop personality is being checked
-      if ((*CurPers)->checkMeNow && !PrefIsSet(PREF_IS_IMAP))
+      if (CurPers->checkMeNow && !PrefIsSet(PREF_IS_IMAP))
         popChecked = true;
 
-      err = XferMailLo(check && (*CurPers)->checkMeNow,
-                       send && (*CurPers)->sendMeNow, manual || scripted, flags,
+      err = XferMailLo(check && CurPers->checkMeNow,
+                       send && CurPers->sendMeNow, manual || scripted, flags,
                        &gotSome, (OSErr *)&dialErr);
       if (!anyErr)
         anyErr = err;
@@ -974,13 +963,13 @@ short XferMailLo(bool check, bool send, bool manual, XferFlags flags,
   /*
    * clear the decks
    */
-  if (send && !(*CurPers)->sendQueue)
+  if (send && !CurPers->sendQueue)
     send = False;
   /*
    * Set which task we're about to do in case we need to report it if we're
    * low on memory
    */
-  SetCurrentTaskKind((check && !((*CurPers)->popSecure && send)) ? CheckingTask
+  SetCurrentTaskKind((check && !(CurPers->popSecure && send)) ? CheckingTask
                                                                  : SendingTask);
   FlushTOCs(True, True); /* flush unnecessary TOC's */
   if (MonitorGrow(True) || CommandPeriod)
@@ -1024,7 +1013,7 @@ short XferMailLo(bool check, bool send, bool manual, XferFlags flags,
   if (need2ndPW) {
     if (GetSecondPass(pass))
       return (1);
-    PSCopy((*CurPers)->secondPass, pass);
+    PSCopy(CurPers->secondPass, pass);
   }
 #endif
 
@@ -1045,7 +1034,7 @@ short XferMailLo(bool check, bool send, bool manual, XferFlags flags,
       return (0);
 
     if (check)
-      (*CurPers)->checked = True; // don't retry instantly
+      CurPers->checked = True; // don't retry instantly
 
     /*
      * check for mail, if need be
@@ -1068,7 +1057,7 @@ short XferMailLo(bool check, bool send, bool manual, XferFlags flags,
 
         // locate the inbox, and resync it.
         if ((imapNode = LocateInboxForPers(CurPers))) {
-          FSSpec inboxSpec = (*imapNode)->mailboxSpec;
+          FSSpec inboxSpec = imapNode->mailboxSpec;
           tocH = TOCBySpec(&inboxSpec);
           IMAPCheckThreadRunning++;
           if (FetchNewMessages(tocH, true, true, true, !manual)) {
@@ -1086,7 +1075,7 @@ short XferMailLo(bool check, bool send, bool manual, XferFlags flags,
           IMAPCheckThreadRunning--;
         }
       } else {
-        AuditCheckStart(++gCheckSessionID, (*CurPers)->persId, !manual);
+        AuditCheckStart(++gCheckSessionID, CurPers->persId, !manual);
         StartStreamAudit(mailStream, kAuditBytesReceived);
 
         err = CheckForMail(mailStream, &gotSome, &flags) || err;
@@ -1095,7 +1084,7 @@ short XferMailLo(bool check, bool send, bool manual, XferFlags flags,
         AuditCheckDone(gCheckSessionID, gotSome,
                        gotSome ? ReportStreamAudit(mailStream) : 0);
       }
-      (*CurPers)->checked = True;
+      CurPers->checked = True;
 #ifdef CTB
       if (needDial && send && !err)
         err = CTBNavigateSTRN(NAVMID);
@@ -1166,7 +1155,7 @@ bool NeedPassword(bool check, bool send) {
   bool doggieStyle = PrefIsSet(PREF_KERBEROS);
   bool gave530 = ShouldSMTPAuth();
 
-  if (!(*CurPers)->doMeNow)
+  if (!CurPers->doMeNow)
     return (False);
 
   /* Need password for POP or IMAP check */
@@ -1182,7 +1171,7 @@ bool NeedPassword(bool check, bool send) {
       // If the server says yes but the user says no,
       // better ask the user to change their mind
       if (gave530 && !authOK) {
-        PCopy(s, (*CurPers)->name);
+        PCopy(s, CurPers->name);
         switch (ComposeStdAlert(Note, RECONSIDER_AUTH, s)) {
         // user will give us the password.  Yippee.
         case kAlertStdAlertOKButton:
@@ -1191,8 +1180,8 @@ bool NeedPassword(bool check, bool send) {
           break;
         // user wants to abort the send.  Ok.
         case kAlertStdAlertCancelButton:
-          (*CurPers)->sendMeNow = false;
-          (*CurPers)->doMeNow = (*CurPers)->checkMeNow;
+          CurPers->sendMeNow = false;
+          CurPers->doMeNow = CurPers->checkMeNow;
           break;
         // user thinks he can spit at god.  Good luck.
         default:
@@ -1203,7 +1192,7 @@ bool NeedPassword(bool check, bool send) {
     }
   }
 
-  return (needPW && !*(*CurPers)->password);
+  return (needPW && !*CurPers->password);
 }
 
 typedef enum {
@@ -1323,14 +1312,14 @@ OSErr SpecialXfer(struct XferFlags *flags) {
                                   pers_list_box);
 
     // Fill with personality checkboxes
-    for (pers = PersList; pers; pers = (*pers)->next) {
+    for (pers = PersList; pers; pers = pers->next) {
       char name[64];
       // Copy personality name (C string)
-      strncpy(name, (const char *)(*pers)->name, 63);
+      strncpy(name, (const char *)pers->name, 63);
       name[63] = '\0';
 
       GtkWidget *pers_chk = gtk_check_button_new_with_label(name);
-      gtk_check_button_set_active(GTK_CHECK_BUTTON(pers_chk), (*pers)->doMeNow);
+      gtk_check_button_set_active(GTK_CHECK_BUTTON(pers_chk), pers->doMeNow);
       g_object_set_data(G_OBJECT(pers_chk), "pers_handle", pers);
       gtk_box_append(GTK_BOX(pers_list_box), pers_chk);
     }
@@ -1401,7 +1390,7 @@ OSErr SpecialXfer(struct XferFlags *flags) {
                   if (p) {
                     bool active =
                         gtk_check_button_get_active(GTK_CHECK_BUTTON(chk));
-                    (*p)->doMeNow = (*p)->checkMeNow = (*p)->sendMeNow = active;
+                    p->doMeNow = p->checkMeNow = p->sendMeNow = active;
                   }
                 }
                 chk = gtk_widget_get_next_sibling(chk);
@@ -1455,13 +1444,13 @@ short SendTheQueue(TransStream stream, XferFlags flags) {
 
   if (inThread) {
     SetCurrentTaskKind(SendingTask);
-    RemoveTaskErrors(SendingTask, (*CurPers)->persId);
+    RemoveTaskErrors(SendingTask, CurPers->persId);
   }
   if (PersCount() == 1)
     GetRString(s, SENDING_MAIL);
   else {
     LDRef(CurPers);
-    ComposeRString(s, PERS_SENDING_MAIL, (unsigned char *)(*CurPers)->name);
+    ComposeRString(s, PERS_SENDING_MAIL, (unsigned char *)CurPers->name);
     UL(CurPers);
   }
   ProgressMessage(kpTitle, s);
@@ -1495,7 +1484,7 @@ short SendTheQueue(TransStream stream, XferFlags flags) {
     goto done; // not used.  Must change for multi-connect
 #endif
   ComposeLogR(LOG_SEND, nil, START_SEND_LOG, server, port);
-  AuditSendStart(++sessionID, (*CurPers)->persId, flags.isAuto);
+  AuditSendStart(++sessionID, CurPers->persId, flags.isAuto);
   numSent = 0;
   StartStreamAudit(stream, kAuditBytesSent);
   if (!UUPCOut && !UUPCIn && PrefIsSet(PREF_POP_SEND)) {
@@ -1534,7 +1523,7 @@ short SendTheQueue(TransStream stream, XferFlags flags) {
     TransOut = tablePtr;
     lastId = TransOutTablID();
   }
-  count = (*CurPers)->sendQueue;
+  count = CurPers->sendQueue;
   if (!inThread)
     TotalQueuedSize = FindTotalQueuedSize(tocH, gmtSecs);
 
@@ -1545,7 +1534,7 @@ short SendTheQueue(TransStream stream, XferFlags flags) {
                      !EjectBuckaroo;
          sumNum++)
       if (!tocH->sums[sumNum].messH && IsQueued(tocH, sumNum) &&
-          tocH->sums[sumNum].persId == (*CurPers)->persId &&
+          tocH->sums[sumNum].persId == CurPers->persId &&
           tocH->sums[sumNum].seconds <= gmtSecs) {
         // TimeStamp(tocH,sumNum,0,0);
         //			  ProgressR(NoBar,count--,0,LEFT_TO_TRANSFER,nil);
@@ -1632,18 +1621,18 @@ short SendTheQueue(TransStream stream, XferFlags flags) {
             if (messH && MessOptIsSet(messH, OPT_ATT_DEL))
               CompAttDel(messH);
 
-            if (messH && (*messH)->win)
-              CloseMyWindow(GetMyWindowWindowPtr((*messH)->win));
+            if (messH && messH->win)
+              CloseMyWindow(GetMyWindowWindowPtr(messH->win));
             DeleteMessage(tocH, sumNum, False);
             sumNum--;      /* back up, since we deleted the message */
             RedoTOC(tocH); /* keep nit-pickers happy */
             stayed--;
-          } else if (messH && (*messH)->win)
-            CloseMyWindow(GetMyWindowWindowPtr((*messH)->win));
+          } else if (messH && messH->win)
+            CloseMyWindow(GetMyWindowWindowPtr(messH->win));
         } else {
           if (tocH->sums[sumNum].messH) {
             tocMessWinWP =
-                GetMyWindowWindowPtr((*tocH->sums[sumNum].messH)->win);
+                GetMyWindowWindowPtr(tocH->sums[sumNum].messH->win);
             if (tocMessWinWP && !IsWindowVisible(tocMessWinWP))
               CloseMyWindow(tocMessWinWP);
           }
@@ -1717,7 +1706,7 @@ long FindTotalQueuedSize(TOCType * tocH, long gmtSecs) {
 
   for (sumNum = 0; sumNum < tocH->count; sumNum++)
     if (!tocH->sums[sumNum].messH && IsQueued(tocH, sumNum) &&
-        tocH->sums[sumNum].persId == (*CurPers)->persId &&
+        tocH->sums[sumNum].persId == CurPers->persId &&
         tocH->sums[sumNum].seconds <= gmtSecs) {
       if ((win = GetAMessage(tocH, sumNum, nil, nil, false))) {
         size += ApproxMessageSize(Win2MessH(win)) K;
@@ -1781,13 +1770,13 @@ short CheckForMail(TransStream stream, short *gotSome, XferFlags *flags) {
 
   if (InAThread()) {
     SetCurrentTaskKind(CheckingTask);
-    RemoveTaskErrors(CheckingTask, (*CurPers)->persId);
+    RemoveTaskErrors(CheckingTask, CurPers->persId);
   }
   if (PersCount() == 1)
     GetRString(s, CHECKING_MAIL);
   else {
     LDRef(CurPers);
-    ComposeRString(s, PERS_CHECKING_MAIL, (*CurPers)->name);
+    ComposeRString(s, PERS_CHECKING_MAIL, CurPers->name);
     UL(CurPers);
   }
   ProgressMessage(kpTitle, s);
@@ -1861,7 +1850,7 @@ short CheckForMail(TransStream stream, short *gotSome, XferFlags *flags) {
  **********************************************************************/
 void ResetCheckTime(bool force) {
   PushPers(CurPers);
-  for (CurPers = PersList; CurPers; CurPers = (*CurPers)->next)
+  for (CurPers = PersList; CurPers; CurPers = CurPers->next)
     ResetPersCheckTime(force);
   PopPers();
 }
@@ -1877,22 +1866,22 @@ void ResetPersCheckTime(bool force) {
     /*
      * setup the initial check interval
      */
-    if (!(*CurPers)->checkTicks)
-      (*CurPers)->checkTicks = TickCount();
+    if (!CurPers->checkTicks)
+      CurPers->checkTicks = TickCount();
 
     /*
      * manage the mail check interval
      */
-    if (force && (*CurPers)->doMeNow || (*CurPers)->checked) {
-      if ((*CurPers)->checkTicks + interval < TickCount() + 45 * 60) {
-        (*CurPers)->checkTicks +=
-            interval * ((TickCount() - (*CurPers)->checkTicks + 1) / interval);
-        if ((*CurPers)->checkTicks + interval < TickCount() + 45 * 60)
-          (*CurPers)->checkTicks += interval;
+    if (force && CurPers->doMeNow || CurPers->checked) {
+      if (CurPers->checkTicks + interval < TickCount() + 45 * 60) {
+        CurPers->checkTicks +=
+            interval * ((TickCount() - CurPers->checkTicks + 1) / interval);
+        if (CurPers->checkTicks + interval < TickCount() + 45 * 60)
+          CurPers->checkTicks += interval;
       }
     }
   } else
-    (*CurPers)->checkTicks = 0;
+    CurPers->checkTicks = 0;
 }
 
 /************************************************************************
@@ -2068,7 +2057,7 @@ WindowPtr OpenBehindMePlease(void) {
     } else if (GetWindowKind(winWP) == MESS_WIN ||
                GetWindowKind(winWP) == COMP_WIN) {
       returnWinWP = winWP; // just in case the toc's not visible
-      win = (*Win2MessH(win))->tocH->win;
+      win = Win2MessH(win)->tocH->win;
       winWP = GetMyWindowWindowPtr(win);
       if (IsWindowVisible(winWP)) {
         returnWinWP = winWP;

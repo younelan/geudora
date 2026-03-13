@@ -154,8 +154,8 @@ typedef struct {
 typedef struct LHPIconCacheStruct {
   void **theIcon;
   AdId adId;
-  struct LHPIconCacheStruct **next;
-} LHPIconCacheStruct, *LHPIconCachePtr, **LHPIconCacheHandle;
+  struct LHPIconCacheStruct *next;
+} LHPIconCacheStruct, *LHPIconCachePtr, *LHPIconCacheHandle;
 
 //
 // Globals for link management
@@ -1553,7 +1553,7 @@ Handle GetLHPreviewIcon(VLNodeID id) {
 
       // Is the ad icon already loaded?
       if (iconCache = FindPVICache(adId)) {
-        theIcon = (*iconCache)->theIcon;
+        theIcon = iconCache->theIcon;
         if (theIcon && *theIcon) {
           HNoPurge(theIcon); // don't purge this again until we're done with it.
           return (theIcon);
@@ -2126,10 +2126,10 @@ OSErr DeleteAdGraphic(AdId adId) {
 void AddIconToPVICache(void **theIcon, AdId adId) {
   LHPIconCacheHandle newPVI;
 
-  newPVI = NewZH(LHPIconCacheStruct);
+  newPVI = g_malloc0(sizeof(LHPIconCacheStruct));
   if (newPVI) {
-    (*newPVI)->theIcon = theIcon;
-    (*newPVI)->adId = adId;
+    newPVI->theIcon = theIcon;
+    newPVI->adId = adId;
     LL_Queue(gPreviewIcons, newPVI, (LHPIconCacheHandle));
   }
 }
@@ -2140,9 +2140,9 @@ void AddIconToPVICache(void **theIcon, AdId adId) {
 LHPIconCacheHandle FindPVICache(AdId adId) {
   LHPIconCacheHandle scan;
 
-  for (scan = gPreviewIcons; scan && (((*scan)->adId.server != adId.server) ||
-                                      ((*scan)->adId.ad != adId.ad));
-       scan = (*scan)->next)
+  for (scan = gPreviewIcons; scan && ((scan->adId.server != adId.server) ||
+                                      (scan->adId.ad != adId.ad));
+       scan = scan->next)
     ;
 
   return (scan);
@@ -2155,9 +2155,9 @@ void RemoveIconFromPVICache(AdId adId) {
   LHPIconCacheHandle scan;
 
   // Locate the cache entry associated with this adId.
-  for (scan = gPreviewIcons; scan; scan = (*scan)->next) {
-    if (((*scan)->adId.server == adId.server) &&
-        ((*scan)->adId.ad == adId.ad)) {
+  for (scan = gPreviewIcons; scan; scan = scan->next) {
+    if ((scan->adId.server == adId.server) &&
+        (scan->adId.ad == adId.ad)) {
       RemovePVIFromPVICache(&scan);
       break;
     }
@@ -2174,7 +2174,7 @@ void RemovePVIFromPVICache(LHPIconCacheHandle *toRemove) {
 
     // nuke the icon cache
     /* GTK port: DisposeIconSuite is a Mac icon API - just ZapHandle the icon */
-    ZapHandle((**toRemove)->theIcon);
+    ZapHandle((*toRemove)->theIcon);
 
     // and now the cache entry
     ZapHandle(*toRemove);
@@ -2189,7 +2189,7 @@ void ZapPVICache(void) {
   LHPIconCacheHandle scan = gPreviewIcons, next = nil;
 
   while (scan) {
-    next = (*scan)->next;
+    next = scan->next;
     RemovePVIFromPVICache(&scan);
     scan = next;
   }

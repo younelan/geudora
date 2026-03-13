@@ -222,10 +222,10 @@ void SASLDone(PStr service, SASLEnum mech, short rounds, long *state, short err)
 			if (err==535) InvalidatePasswords(false,true,false);
 			break;
 	}
-	if (err/100 == 2 && !(*CurPers)->popSecure)
+	if (err/100 == 2 && !CurPers->popSecure)
 	{
-		(*CurPers)->popSecure = true;
-		(*CurPers)->dirty = true;
+		CurPers->popSecure = true;
+		CurPers->dirty = true;
 	}
 }
 
@@ -251,7 +251,7 @@ OSErr SASLCramMD5(short rounds,AccuPtr chalAcc,AccuPtr respAcc)
 	if (rounds==1)
 	{
 		AccuToStr(chalAcc,challenge);
-		PSCopy(pass,(*CurPers)->password);
+		PSCopy(pass,CurPers->password);
 		GetPOPInfo(user,nil);
 		if (*challenge && !DecodeB64String(challenge))
 		{
@@ -306,7 +306,7 @@ OSErr SASLPlain(short rounds,AccuPtr chalAcc,AccuPtr respAcc)
 	// however, if they ignore our initial argument
 	// we can just resend it when we get a challenge, minus
 	// the actual mechanism name.
-	PSCopy(pass,(*CurPers)->password);
+	PSCopy(pass,CurPers->password);
 	GetPOPInfo(user,nil);
 	ComposeRString(raw,AUTHPLAIN_FMT,PREF_SASL_AUTHORIZE,user,pass);
 	
@@ -357,7 +357,7 @@ OSErr SASLLogin(short rounds, AccuPtr chalAcc,AccuPtr respAcc)
 	// round 2: password
 	if (rounds==2)
 	{
-		PSCopy(pass,(*CurPers)->password);
+		PSCopy(pass,CurPers->password);
 		AccuAddStrB64(respAcc,pass);
 		return 0;
 	}

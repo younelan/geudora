@@ -46,10 +46,6 @@ DAMAGE. */
 #include <ctype.h>
 #include <time.h>
 
-#ifdef CommandPeriod
-#undef CommandPeriod
-#endif
-extern bool CommandPeriod;
 
 #ifndef ReallyDoAnAlert_declared
 #define ReallyDoAnAlert_declared 1

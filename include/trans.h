@@ -73,7 +73,7 @@ typedef emsMIMEparam **emsMIMEParamHandle;
 typedef void **FlatTLMIMEHandle;
 typedef unsigned char **tlStringHandle;
 typedef void **tlBufferHandle;
-typedef struct mstruct **MessHandle;
+typedef struct mstruct *MessHandle;
 #include "pete_portable.h"
 /* PETEHandle is defined in pete_portable.h */
 typedef struct HeadSpec *HSPtr;

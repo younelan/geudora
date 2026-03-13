@@ -382,10 +382,10 @@ int ScriptGetPersonalityProperty(long index, ScriptPropertyID prop,
 
 	switch (prop) {
 	case kScriptPropName:
-		*out = ScriptString((*pers)->name);
+		*out = ScriptString(pers->name);
 		break;
 	case kScriptPropId:
-		*out = ScriptLong((long)(*pers)->persId);
+		*out = ScriptLong((long)pers->persId);
 		break;
 	default:
 		return -1723;
@@ -620,7 +620,7 @@ int ScriptCreateMessage(long *outIndex)
 	if (!messH) return -108;
 
 	if (outIndex)
-		*outIndex = (*messH)->sumNum;
+		*outIndex = messH->sumNum;
 
 	return 0;
 }
@@ -648,7 +648,7 @@ int ScriptReplyMessage(const char *mailboxPath, long index,
 
 	MessHandle replyMessH = Win2MessH(replyWin);
 	if (outIndex && replyMessH)
-		*outIndex = (*replyMessH)->sumNum;
+		*outIndex = replyMessH->sumNum;
 
 	return 0;
 }
@@ -671,7 +671,7 @@ int ScriptForwardMessage(const char *mailboxPath, long index,
 
 	MessHandle fwdMessH = Win2MessH(fwdWin);
 	if (outIndex && fwdMessH)
-		*outIndex = (*fwdMessH)->sumNum;
+		*outIndex = fwdMessH->sumNum;
 
 	return 0;
 }
@@ -694,7 +694,7 @@ int ScriptRedirectMessage(const char *mailboxPath, long index,
 
 	MessHandle redirMessH = Win2MessH(redirWin);
 	if (outIndex && redirMessH)
-		*outIndex = (*redirMessH)->sumNum;
+		*outIndex = redirMessH->sumNum;
 
 	return 0;
 }

@@ -6,7 +6,8 @@
 #include "threading.h"
 #include <gtk/gtk.h>
 
-typedef struct taskErrData_ taskErrData, *taskErrPtr, **taskErrHandle;
+typedef struct taskErrData_ taskErrData, *taskErrPtr;
+typedef taskErrData *taskErrHandle;
 
 struct taskErrData_ {
   TaskKindEnum taskKind;

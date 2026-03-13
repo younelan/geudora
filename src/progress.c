@@ -145,7 +145,7 @@ void SetPrbl(MyWindowPtr win, ProgressBlock **prbl) {
 
     GetCurrentThreadData(&threadData);
     if (threadData)
-      (*threadData)->prbl = prbl;
+      threadData->prbl = prbl;
   }
 #endif
 }

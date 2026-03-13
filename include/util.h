@@ -34,42 +34,43 @@ ADVISED OF THE POSSIBILITY OF SUCH DAMAGE. */
 /**********************************************************************
  * some linked-list macros
  **********************************************************************/
+/* Linked-list macros — direct pointer style (item->next, not (*item)->next).
+ * cast is e.g. (MyType *) and is applied to void* traversal pointers. */
 #define LL_Remove(head, item, cast)                                            \
   do {                                                                         \
-    uLong M_T1;                                                                \
-    if (head == item)                                                          \
-      head = (*head)->next;                                                    \
-    else                                                                       \
-      for (M_T1 = (uLong)head; M_T1; M_T1 = (uLong)(*cast M_T1)->next) {       \
-        if ((*cast M_T1)->next == item) {                                      \
-          (*cast M_T1)->next = (*item)->next;                                  \
-          break;                                                               \
-        }                                                                      \
-      }                                                                        \
+    if ((head) == (item))                                                      \
+      (head) = (head)->next;                                                   \
+    else {                                                                     \
+      void *_ll = (head);                                                      \
+      while (_ll && ((cast _ll)->next != (item)))                              \
+        _ll = ((cast _ll)->next);                                              \
+      if (_ll) ((cast _ll)->next) = (item)->next;                              \
+    }                                                                          \
   } while (0)
 
-#define LL_Push(head, item) M_T1 = (uLong)((*(item))->next = head, head = item)
+#define LL_Push(head, item)                                                    \
+  do { (item)->next = (head); (head) = (item); } while (0)
 #define LL_Queue(head, item, cast)                                             \
   do {                                                                         \
-    void *t = head;                                                            \
     if (head) {                                                                \
-      while ((*cast t)->next)                                                  \
-        t = (*cast t)->next;                                                   \
-      (*cast t)->next = item;                                                  \
+      void *_ll = (head);                                                      \
+      while (((cast _ll)->next))                                               \
+        _ll = ((cast _ll)->next);                                              \
+      ((cast _ll)->next) = (item);                                             \
     } else                                                                     \
-      head = item;                                                             \
+      (head) = (item);                                                         \
   } while (0)
 #define LL_Last(head, item)                                                    \
   do {                                                                         \
-    item = head;                                                               \
-    while ((*(item))->next)                                                    \
-      item = (*(item))->next;                                                  \
+    (item) = (head);                                                           \
+    while ((item)->next)                                                       \
+      (item) = (item)->next;                                                   \
   } while (0)
 #define LL_Parent(head, item, parent)                                          \
   do {                                                                         \
-    parent = head;                                                             \
-    while (parent && ((*parent)->next) != (item))                              \
-      parent = (*(parent))->next;                                              \
+    (parent) = (head);                                                         \
+    while ((parent) && (parent)->next != (item))                               \
+      (parent) = (parent)->next;                                               \
   } while (0)
 
 /************************************************************************
@@ -143,10 +144,6 @@ bool MyOSEventAvail(short mask, void *event);
 // Accumulator typedefs moved to mailbox.h to avoid conflicts
 // typedef struct Accumulator *AccuPtr, **AccuHandle;
 #define ACCU_TYPEDEF_DONE
-// Undefine IMAP macros that clash with Eudora names
-#undef AccuInit
-#undef AccuAddPtr
-#undef AccuZap
 int AccuInit(AccuPtr a);
 void AccuInitWithHandle(AccuPtr a, void **h);
 void AccuTrim(AccuPtr a);

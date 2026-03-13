@@ -110,6 +110,8 @@ unsigned char *CompCurAddr(MyWindowPtr win, unsigned char *addr);
 
 /* Forward declarations for window management functions */
 bool CompClose(MyWindowPtr win);
+static gboolean on_comp_close_request(GtkWindow *window, gpointer user_data);
+static void on_comp_body_changed(geditDocument *doc, gpointer user_data);
 void CompDidResize(MyWindowPtr win);
 bool CompClick(MyWindowPtr win, GdkEvent *event);
 bool CompMenu(MyWindowPtr win, int menuItem);
@@ -343,45 +345,17 @@ static void on_comp_link_ok(GtkWidget *btn, gpointer ud) {
 static void on_emoji_clicked(GtkButton *btn, gpointer ud) {
   GtkWidget *body_ctrl = (GtkWidget *)ud;
   int idx = GPOINTER_TO_INT(g_object_get_data(G_OBJECT(btn), "emo-idx"));
-  const char *emoji = EmoGetEmoji(idx);
 
-  geditDocument *doc = geditctrl_get_document(body_ctrl);
-  if (!doc) return;
-  GtkTextBuffer *buffer = gedit_document_get_buffer(doc);
-  if (!buffer) return;
-
-  /* Insert emoji at cursor */
-  GtkTextMark *mark = gtk_text_buffer_get_insert(buffer);
-  GtkTextIter cursor;
-  gtk_text_buffer_get_iter_at_mark(buffer, &cursor, mark);
-
-  /* Add space before if previous char is word char */
-  int off = gtk_text_iter_get_offset(&cursor);
-  if (off > 0) {
-    GtkTextIter prev = cursor;
-    gtk_text_iter_backward_char(&prev);
-    gunichar pc = gtk_text_iter_get_char(&prev);
-    if (g_unichar_isalnum(pc) || pc == '_')
-      gtk_text_buffer_insert(buffer, &cursor, " ", 1);
-  }
-
-  /* Insert with emoticon tag */
-  GtkTextTagTable *table = gtk_text_buffer_get_tag_table(buffer);
-  GtkTextTag *emo_tag = gtk_text_tag_table_lookup(table, "emoticon");
-  if (!emo_tag)
-    emo_tag = gtk_text_buffer_create_tag(buffer, "emoticon", NULL);
-  gtk_text_buffer_insert_with_tags(buffer, &cursor, emoji, -1, emo_tag, NULL);
-
-  /* Add space after if next char is word char */
-  gunichar nc = gtk_text_iter_get_char(&cursor);
-  if (nc != 0 && (g_unichar_isalnum(nc) || nc == '_'))
-    gtk_text_buffer_insert(buffer, &cursor, " ", 1);
-
-  gtk_text_buffer_place_cursor(buffer, &cursor);
+  /* Use gEditCtrl's proper insert path (undo, state, redraw) */
+  geditctrl_insert_emoji(body_ctrl, EmoGetEmoji(idx));
 
   /* Close the popover */
   GtkWidget *popover = gtk_widget_get_ancestor(GTK_WIDGET(btn), GTK_TYPE_POPOVER);
   if (popover) gtk_popover_popdown(GTK_POPOVER(popover));
+
+  /* Return focus to the editor drawing area so typing works */
+  GtkWidget *area = gtk_scrolled_window_get_child(GTK_SCROLLED_WINDOW(body_ctrl));
+  if (area) gtk_widget_grab_focus(area);
 }
 
 static GtkWidget *create_emoji_popover(GtkWidget *body_ctrl) {
@@ -407,6 +381,8 @@ static GtkWidget *create_emoji_popover(GtkWidget *body_ctrl) {
     GtkWidget *btn = gtk_button_new_with_label(EmoGetEmoji(i));
     gtk_widget_set_tooltip_text(btn, EmoGetMeaning(i));
     gtk_widget_set_can_focus(btn, FALSE);
+    gtk_widget_set_margin_start(btn, 1);
+    gtk_widget_set_margin_end(btn, 1);
     g_object_set_data(G_OBJECT(btn), "emo-idx", GINT_TO_POINTER(i));
     g_signal_connect(btn, "clicked", G_CALLBACK(on_emoji_clicked), body_ctrl);
     gtk_flow_box_append(GTK_FLOW_BOX(grid), btn);
@@ -498,7 +474,7 @@ static void on_comp_insert_link(GtkButton *btn, gpointer ud) {
 /* ── Icon bar toggle callbacks ── */
 static void on_comp_qp_toggled(GtkToggleButton *btn, gpointer ud) {
   MessHandle messH = (MessHandle)ud;
-  if (!messH || !*messH) return;
+  if (!messH) return;
   if (gtk_toggle_button_get_active(btn))
     SetMessFlag(messH, FLAG_CAN_ENC);
   else
@@ -506,7 +482,7 @@ static void on_comp_qp_toggled(GtkToggleButton *btn, gpointer ud) {
 }
 static void on_comp_textonly_toggled(GtkToggleButton *btn, gpointer ud) {
   MessHandle messH = (MessHandle)ud;
-  if (!messH || !*messH) return;
+  if (!messH) return;
   if (gtk_toggle_button_get_active(btn))
     SetMessFlag(messH, FLAG_BX_TEXT);
   else
@@ -514,7 +490,7 @@ static void on_comp_textonly_toggled(GtkToggleButton *btn, gpointer ud) {
 }
 static void on_comp_wrap_toggled(GtkToggleButton *btn, gpointer ud) {
   MessHandle messH = (MessHandle)ud;
-  if (!messH || !*messH) return;
+  if (!messH) return;
   if (gtk_toggle_button_get_active(btn))
     SetMessFlag(messH, FLAG_WRAP_OUT);
   else
@@ -522,7 +498,7 @@ static void on_comp_wrap_toggled(GtkToggleButton *btn, gpointer ud) {
 }
 static void on_comp_keep_toggled(GtkToggleButton *btn, gpointer ud) {
   MessHandle messH = (MessHandle)ud;
-  if (!messH || !*messH) return;
+  if (!messH) return;
   if (gtk_toggle_button_get_active(btn))
     SetMessFlag(messH, FLAG_KEEP_COPY);
   else
@@ -530,7 +506,7 @@ static void on_comp_keep_toggled(GtkToggleButton *btn, gpointer ud) {
 }
 static void on_comp_rr_toggled(GtkToggleButton *btn, gpointer ud) {
   MessHandle messH = (MessHandle)ud;
-  if (!messH || !*messH) return;
+  if (!messH) return;
   if (gtk_toggle_button_get_active(btn))
     SetMessFlag(messH, FLAG_RR);
   else
@@ -541,7 +517,7 @@ static void on_comp_rr_toggled(GtkToggleButton *btn, gpointer ud) {
 static void on_comp_priority_changed(GObject *dd, GParamSpec *pspec, gpointer ud) {
   (void)pspec;
   MessHandle messH = (MessHandle)ud;
-  if (!messH || !*messH) return;
+  if (!messH) return;
   guint sel = gtk_drop_down_get_selected(GTK_DROP_DOWN(dd));
   /* 0=Highest(1) 1=High(2) 2=Normal(3) 3=Low(4) 4=Lowest(5) */
   SumOf(messH)->priority = (short)(sel + 1);
@@ -549,7 +525,7 @@ static void on_comp_priority_changed(GObject *dd, GParamSpec *pspec, gpointer ud
 static void on_comp_encoding_changed(GObject *dd, GParamSpec *pspec, gpointer ud) {
   (void)pspec;
   MessHandle messH = (MessHandle)ud;
-  if (!messH || !*messH) return;
+  if (!messH) return;
   guint sel = gtk_drop_down_get_selected(GTK_DROP_DOWN(dd));
   /* 0=MIME 1=BinHex 2=Uuencode */
   SumOf(messH)->tableId = (short)sel;
@@ -557,7 +533,7 @@ static void on_comp_encoding_changed(GObject *dd, GParamSpec *pspec, gpointer ud
 static void on_comp_signature_changed(GObject *dd, GParamSpec *pspec, gpointer ud) {
   (void)pspec;
   MessHandle messH = (MessHandle)ud;
-  if (!messH || !*messH) return;
+  if (!messH) return;
   guint sel = gtk_drop_down_get_selected(GTK_DROP_DOWN(dd));
   /* 0=None 1=Standard 2=Alternate */
   SumOf(messH)->sigId = (short)sel;
@@ -643,7 +619,7 @@ static void on_comp_attach_clicked(GtkButton *btn, gpointer ud) {
 static void on_comp_send_clicked(GtkButton *btn, gpointer ud) {
   (void)btn;
   MessHandle messH = (MessHandle)ud;
-  if (!messH || !*messH) return;
+  if (!messH) return;
   CompSend(messH);
 }
 
@@ -651,8 +627,8 @@ static void on_comp_send_clicked(GtkButton *btn, gpointer ud) {
 static void on_comp_save_clicked(GtkButton *btn, gpointer ud) {
   (void)btn;
   MessHandle messH = (MessHandle)ud;
-  if (!messH || !*messH) return;
-  MyWindowPtr win = (*messH)->win;
+  if (!messH) return;
+  MyWindowPtr win = messH->win;
   if (CompSave(messH)) {
     /* Show saved status in title bar */
     if (win && win->window) {
@@ -670,13 +646,13 @@ static void on_comp_save_clicked(GtkButton *btn, gpointer ud) {
 static void on_comp_queue_clicked(GtkButton *btn, gpointer ud) {
   (void)btn;
   MessHandle messH = (MessHandle)ud;
-  if (!messH || !*messH) return;
+  if (!messH) return;
   if (CompSave(messH)) {
-    TOCType *tocH = (*messH)->tocH;
-    int sumNum = (*messH)->sumNum;
+    TOCType *tocH = messH->tocH;
+    int sumNum = messH->sumNum;
     tocH->sums[sumNum].state = QUEUED;
     TOCSetDirty(tocH, true);
-    MyWindowPtr win = (*messH)->win;
+    MyWindowPtr win = messH->win;
     if (win && win->window)
       gtk_window_close(GTK_WINDOW(win->window));
   }
@@ -702,14 +678,14 @@ MyWindowPtr OpenComp(TOCType * tocH, int sumNum, GtkWidget *winWP,
   char title[256];
   MessHandle messH;
 
-  if ((messH = NewZH(MessType)) == NULL)
+  if ((messH = g_malloc0(sizeof(MessType))) == NULL)
     return (NULL);
 
   /* Create window and MyWindowPtr */
   if (!win) {
     win = (MyWindowPtr)g_malloc0(sizeof(MyWindow));
     if (!win) {
-      DisposeHandle((Handle)messH);
+      g_free(messH);
       return NULL;
     }
     win->window = gtk_window_new();
@@ -721,14 +697,14 @@ MyWindowPtr OpenComp(TOCType * tocH, int sumNum, GtkWidget *winWP,
   tocH->sums[sumNum].messH = messH;
   MakeCompTitle(title, tocH, messH, sumNum);
 
-  (*messH)->win = win;
-  (*messH)->sumNum = sumNum;
-  (*messH)->tocH = tocH;
+  messH->win = win;
+  messH->sumNum = sumNum;
+  messH->tocH = tocH;
 
   SetMyWindowPrivateData(win, (void *)messH);
   win->close = CompClose;
 
-  LL_Push(MessList, messH);
+  messH->next = MessList; MessList = messH;
 
   tocH->sums[sumNum].flags |= FLAG_ICON_BAR;
   if (PrefIsSet(PREF_COMP_TOOLBAR))
@@ -772,7 +748,7 @@ MyWindowPtr OpenComp(TOCType * tocH, int sumNum, GtkWidget *winWP,
   gtk_widget_set_sensitive(send_btn, !isSent);
   g_signal_connect(send_btn, "clicked", G_CALLBACK(on_comp_send_clicked), messH);
   gtk_box_append(GTK_BOX(toolbar), send_btn);
-  (*messH)->sendButton = send_btn;
+  messH->sendButton = send_btn;
 
   GtkWidget *queue_btn = gtk_button_new_from_icon_name("mail-send-receive-symbolic");
   gtk_widget_set_tooltip_text(queue_btn, "Queue for later");
@@ -1286,11 +1262,24 @@ MyWindowPtr OpenComp(TOCType * tocH, int sumNum, GtkWidget *winWP,
 
   win->dontControl = true;
   if (IsColorWin(winWP))
-    win->label = GetSumColor((*messH)->tocH, (*messH)->sumNum);
+    win->label = GetSumColor(messH->tocH, messH->sumNum);
 
   gtk_window_set_title(GTK_WINDOW(winWP), title);
   gtk_window_set_default_size(GTK_WINDOW(winWP), 640, 520);
   AttachSelect(messH);
+
+  /* Connect close-request for WannaSave dialog (like original CompClose) */
+  g_signal_connect(winWP, "close-request",
+                   G_CALLBACK(on_comp_close_request), win);
+
+  /* Track dirty state when body text changes */
+  if (win->pte) {
+    geditDocument *body_doc = geditctrl_get_document(win->pte);
+    if (body_doc)
+      g_signal_connect(body_doc, "document-changed",
+                       G_CALLBACK(on_comp_body_changed), win);
+  }
+  win->isDirty = false; /* start clean */
 
   if (showIt)
     ShowMyWindow(winWP);
@@ -1331,7 +1320,7 @@ MyWindowPtr DoComposeNew(int type) {
   sum.tableId = 0;
   sum.origZone = ZoneSecs() / 60;
   sum.seconds = GMTDateTime();
-  sum.persId = (*CurPers)->persId;
+  sum.persId = CurPers->persId;
   sum.sigId = 0;
 
   oldReallyDirty = tocH->reallyDirty;
@@ -1427,10 +1416,10 @@ char *NewMessageId(char *id) {
  * the "new" item means not to read the text, but to create it instead
  **********************************************************************/
 int GetCompTexts(MessHandle messH, bool new) {
-  MyWindowPtr messWin = (*messH)->win;
+  MyWindowPtr messWin = messH->win;
   GtkWidget *messWinWP = (GtkWidget *)GetMyWindowWindowPtr(messWin);
-  int sumNum = (*messH)->sumNum;
-  TOCType * tocH = (*messH)->tocH;
+  int sumNum = messH->sumNum;
+  TOCType * tocH = messH->tocH;
   char *buffer = NULL;
   Accumulator extras;
   int which;
@@ -1616,7 +1605,7 @@ void MakeCompTitle(char *string, TOCType * tocH, MessHandle messH, int sumNum) {
   char pattern[64];
 
   // Get subject from message
-  if (messH && (*messH)->win && (*messH)->win->pte) {
+  if (messH && messH->win && messH->win->pte) {
     // Extract subject from headers (simplified)
     g_strlcpy(subject, tocH->sums[sumNum].subj, sizeof(subject));
   }
@@ -1685,7 +1674,7 @@ int CompGetDragContents(GtkWidget *pte, char **theText, void **theStyles,
  * Ported to work with gEditCtrl instead of Pete
  **********************************************************************/
 int WriteComp(MessHandle messH, short refN, long offset) {
-  MyWindowPtr win = (*messH)->win;
+  MyWindowPtr win = messH->win;
   int err = 0;
 
   if (!win || !win->pte || !win->window)
@@ -1745,8 +1734,8 @@ int WriteComp(MessHandle messH, short refN, long offset) {
 
   /* Update the summary with the actual message length */
   if (!err) {
-    TOCType *tocH = (*messH)->tocH;
-    int sumNum = (*messH)->sumNum;
+    TOCType *tocH = messH->tocH;
+    int sumNum = messH->sumNum;
     tocH->sums[sumNum].offset = offset;
     tocH->sums[sumNum].length = count;
 
@@ -1783,7 +1772,7 @@ char *GetMyHostname(char *hostname) {
  * Ported to work with gEditCtrl
  **********************************************************************/
 int CompStripHeaderReturns(MessHandle messH) {
-  MyWindowPtr win = (*messH)->win;
+  MyWindowPtr win = messH->win;
   geditDocument *doc;
   char *text;
 
@@ -1913,7 +1902,7 @@ bool CompButton(MyWindowPtr win, GtkWidget *button, GdkEvent *event) {
   if (!messH)
     return false;
 
-  if (button == (*messH)->sendButton) {
+  if (button == messH->sendButton) {
     // Send button clicked
     return CompSend(messH);
   }
@@ -1964,7 +1953,88 @@ void CompIdle(MyWindowPtr win) {
 }
 
 /**********************************************************************
- * CompClose - close composition window
+ * on_wanna_save_response - callback for the Save/Cancel/Discard dialog
+ * Matches original Eudora WannaSave behavior from compact.c
+ **********************************************************************/
+static void on_wanna_save_response(GObject *source, GAsyncResult *res,
+                                   gpointer user_data) {
+  (void)source;
+  MyWindowPtr win = (MyWindowPtr)user_data;
+  GError *err = NULL;
+  int choice = gtk_alert_dialog_choose_finish(GTK_ALERT_DIALOG(source),
+                                               res, &err);
+  if (err) {
+    g_error_free(err);
+    return; /* dialog cancelled/error — keep window open */
+  }
+
+  switch (choice) {
+  case 0: { /* Save */
+    MessHandle messH = Win2MessH(win);
+    if (messH && CompSave(messH)) {
+      win->isDirty = false;
+      gtk_window_close(GTK_WINDOW(win->window));
+    }
+    break;
+  }
+  case 1: /* Cancel */
+    break; /* do nothing, window stays open */
+  case 2: /* Discard */
+    win->isDirty = false;
+    gtk_window_close(GTK_WINDOW(win->window));
+    break;
+  }
+}
+
+/**********************************************************************
+ * on_comp_close_request - GTK close-request handler for compose window
+ * Intercepts the close and shows WannaSave dialog if dirty.
+ **********************************************************************/
+static gboolean on_comp_close_request(GtkWindow *window, gpointer user_data) {
+  (void)window;
+  MyWindowPtr win = (MyWindowPtr)user_data;
+  if (!win)
+    return FALSE; /* allow close */
+
+  MessHandle messH = Win2MessH(win);
+  if (!messH)
+    return FALSE; /* allow close */
+
+  if (!win->isDirty)
+    return FALSE; /* not dirty — allow close */
+
+  /* Show Save/Cancel/Discard dialog (WannaSave) */
+  const char *title_str = gtk_window_get_title(GTK_WINDOW(win->window));
+  gchar *msg = g_strdup_printf("Save changes to \"%s\"?",
+                                title_str ? title_str : "New Message");
+
+  GtkAlertDialog *dlg = gtk_alert_dialog_new("%s", msg);
+  g_free(msg);
+
+  const char *buttons[] = {"Save", "Cancel", "Don't Save", NULL};
+  gtk_alert_dialog_set_buttons(dlg, buttons);
+  gtk_alert_dialog_set_cancel_button(dlg, 1);
+  gtk_alert_dialog_set_default_button(dlg, 0);
+
+  gtk_alert_dialog_choose(dlg, GTK_WINDOW(win->window), NULL,
+                          on_wanna_save_response, win);
+  g_object_unref(dlg);
+
+  return TRUE; /* prevent close until dialog answered */
+}
+
+/**********************************************************************
+ * on_comp_body_changed - track dirty state when body text changes
+ **********************************************************************/
+static void on_comp_body_changed(geditDocument *doc, gpointer user_data) {
+  (void)doc;
+  MyWindowPtr win = (MyWindowPtr)user_data;
+  if (win)
+    win->isDirty = true;
+}
+
+/**********************************************************************
+ * CompClose - close composition window (cleanup after dialog resolved)
  * Ported to work with GTK window closing
  **********************************************************************/
 bool CompClose(MyWindowPtr win) {
@@ -1972,29 +2042,6 @@ bool CompClose(MyWindowPtr win) {
 
   if (!messH)
     return true;
-
-  // Check if message needs saving
-  // Note: win->isDirty member may not exist, so we'll skip this check for now
-  // if (win->isDirty) {
-  //	// Show save dialog
-  //	int response = gtk_dialog_run(GTK_DIALOG(
-  //		gtk_message_dialog_new(GTK_WINDOW(win->window),
-  //			GTK_DIALOG_MODAL,
-  //			GTK_MESSAGE_QUESTION,
-  //			GTK_BUTTONS_YES_NO_CANCEL,
-  //			"Save changes to this message?")));
-  //
-  //	switch (response) {
-  //		case GTK_RESPONSE_YES:
-  //			if (!CompSave(messH)) return false;
-  //			break;
-  //		case GTK_RESPONSE_CANCEL:
-  //			return false;
-  //		case GTK_RESPONSE_NO:
-  //		default:
-  //			break;
-  //	}
-  // }
 
   // Clean up gEditCtrl
   if (win->pte) {
@@ -2006,7 +2053,7 @@ bool CompClose(MyWindowPtr win) {
   LL_Remove(MessList, messH, (MessHandle));
 
   // Free message handle
-  DisposeHandle((Handle)messH);
+  g_free(messH);
 
   return true;
 }
@@ -2015,7 +2062,7 @@ bool CompClose(MyWindowPtr win) {
  * CompSend - send the composition
  **********************************************************************/
 bool CompSend(MessHandle messH) {
-  MyWindowPtr win = (*messH)->win;
+  MyWindowPtr win = messH->win;
   if (!win || !win->pte)
     return false;
 
@@ -2023,8 +2070,8 @@ bool CompSend(MessHandle messH) {
   if (!CompSave(messH))
     return false;
 
-  TOCType *tocH = (*messH)->tocH;
-  int sumNum = (*messH)->sumNum;
+  TOCType *tocH = messH->tocH;
+  int sumNum = messH->sumNum;
 
   /* Mark as queued for sending */
   tocH->sums[sumNum].state = QUEUED;
@@ -2048,9 +2095,9 @@ bool CompSend(MessHandle messH) {
  * CompSave - save the composition
  **********************************************************************/
 bool CompSave(MessHandle messH) {
-  MyWindowPtr win = (*messH)->win;
-  TOCType * tocH = (*messH)->tocH;
-  int sumNum = (*messH)->sumNum;
+  MyWindowPtr win = messH->win;
+  TOCType * tocH = messH->tocH;
+  int sumNum = messH->sumNum;
 
   if (!win || !win->pte)
     return false;
@@ -2075,7 +2122,14 @@ bool CompSave(MessHandle messH) {
 
   if (!err) {
     TOCSetDirty(tocH, true);
+    tocH->reallyDirty = true;
     WriteTOC(tocH);
+    win->isDirty = false;
+
+    /* Update the mailbox list to reflect the saved message */
+    extern void InvalSum(TOCType *tocH, short sumNum);
+    InvalSum(tocH, sumNum);
+
     return true;
   }
 

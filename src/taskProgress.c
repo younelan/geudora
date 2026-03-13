@@ -59,7 +59,6 @@ ADVISED OF THE POSSIBILITY OF SUCH DAMAGE. */
 #include <gtk/gtk.h>
 #include <time.h>
 
-extern bool CommandPeriod;
 #ifndef ReallyDoAnAlert_declared
 #define ReallyDoAnAlert_declared 1
 int ReallyDoAnAlert(int templ, int which);
@@ -165,7 +164,7 @@ static void tp_update_status(void) {
     else {
       /* Count errors */
       int errs = 0;
-      for (taskErrHandle e = TaskErrorList; e; e = (*e)->next) errs++;
+      for (taskErrHandle e = TaskErrorList; e; e = e->next) errs++;
       if (errs > 0) {
         char buf[64];
         snprintf(buf, sizeof(buf), "%d error%s", errs, errs > 1 ? "s" : "");
@@ -493,39 +492,38 @@ OSErr AddTaskErrorsS(const char *error, const char *explanation,
   ComposeLogS(LOG_ALRT, NULL, (unsigned char *)"%p %p", error, explanation);
   NewError = true;
 
-  taskErrs = (taskErrHandle)g_malloc0(sizeof(taskErrData *));
-  *taskErrs = (taskErrPtr)g_malloc0(sizeof(taskErrData));
-  if (!taskErrs || !*taskErrs) {
+  taskErrs = (taskErrHandle)g_malloc0(sizeof(taskErrData));
+  if (!taskErrs) {
     CurThreadGlobals->tCommandPeriod = true;
     if (taskKind == CheckingTask) CheckThreadError = -108;
     else if (taskKind == SendingTask) SendThreadError = -108;
     return -108;
   }
 
-  (*taskErrs)->taskKind = taskKind;
-  (*taskErrs)->persId = persId;
-  (*taskErrs)->next = NULL;
+  taskErrs->taskKind = taskKind;
+  taskErrs->persId = persId;
+  taskErrs->next = NULL;
 
   /* Store error text (C strings in the Pascal string fields for now) */
   if (error) {
     int len = strlen(error);
     if (len > 254) len = 254;
-    (*taskErrs)->errMess[0] = len;
-    memcpy((*taskErrs)->errMess + 1, error, len);
+    taskErrs->errMess[0] = len;
+    memcpy(taskErrs->errMess + 1, error, len);
   }
   if (explanation) {
     int len = strlen(explanation);
     if (len > 254) len = 254;
-    (*taskErrs)->errExplanation[0] = len;
-    memcpy((*taskErrs)->errExplanation + 1, explanation, len);
+    taskErrs->errExplanation[0] = len;
+    memcpy(taskErrs->errExplanation + 1, explanation, len);
   }
 
   /* Build task description */
   const char *kindStr = task_kind_label(taskKind);
   int dlen = strlen(kindStr);
   if (dlen > 254) dlen = 254;
-  (*taskErrs)->taskDesc[0] = dlen;
-  memcpy((*taskErrs)->taskDesc + 1, kindStr, dlen);
+  taskErrs->taskDesc[0] = dlen;
+  memcpy(taskErrs->taskDesc + 1, kindStr, dlen);
 
   /* Add to error linked list */
   LL_Queue(TaskErrorList, taskErrs, (taskErrHandle));
@@ -584,14 +582,14 @@ void RemoveTaskErrors(TaskKindEnum taskKind, long persId) {
 
   for (last = current = TaskErrorList; current;) {
     temp = current;
-    current = (*current)->next;
-    if (((*temp)->taskKind == taskKind) &&
-        (((*temp)->persId == persId) || (persId == -1))) {
+    current = current->next;
+    if ((temp->taskKind == taskKind) &&
+        ((temp->persId == persId) || (persId == -1))) {
       /* Unlink from list */
       if (temp == TaskErrorList)
-        TaskErrorList = (*temp)->next;
+        TaskErrorList = temp->next;
       else
-        (*last)->next = (*temp)->next;
+        last->next = temp->next;
 
       /* Remove from UI */
       if (tp_error_list && GTK_IS_WIDGET(tp_error_list)) {
@@ -609,7 +607,6 @@ void RemoveTaskErrors(TaskKindEnum taskKind, long persId) {
         }
       }
 
-      g_free(*temp);
       g_free(temp);
     } else {
       last = temp;

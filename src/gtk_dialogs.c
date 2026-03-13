@@ -107,7 +107,7 @@ short ComposeStdAlert(AlertType alertType, int msgResId, ...) {
   va_end(args);
 
   if (InAThread()) {
-    AddTaskErrorsS(title, message, CheckingTask, (*CurPers)->persId);
+    AddTaskErrorsS(title, message, CheckingTask, CurPers->persId);
     g_free(message);
     return kAlertStdAlertOKButton;
   }

@@ -72,7 +72,7 @@ int ReallyDoAnAlert(int templ, int which)
 	if (InAThread()) {
 		char buf[64];
 		snprintf(buf, sizeof(buf), "Alert %d", templ);
-		AddTaskErrorsS(buf, "", CheckingTask, (*CurPers)->persId);
+		AddTaskErrorsS(buf, "", CheckingTask, CurPers->persId);
 	}
 	return 1;
 }
@@ -89,7 +89,7 @@ short ReallyStandardAlert(int alertType, const char *error, const char *explanat
 		g_warning("Alert: %s", explanation);
 
 	if (InAThread()) {
-		AddTaskErrorsS(error, explanation, CheckingTask, (*CurPers)->persId);
+		AddTaskErrorsS(error, explanation, CheckingTask, CurPers->persId);
 	}
 
 	ActiveTicks = (long)(g_get_monotonic_time() / 16667);

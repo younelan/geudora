@@ -127,7 +127,8 @@ typedef struct AttMapStruct {
 #define mmApplySuffix 0x0200
 
 typedef struct DecoderPB DecoderPB, *DecoderPBPtr, **DecoderPBHandle;
-typedef struct MIMEState MIMEState, *MIMESPtr, **MIMESHandle;
+typedef struct MIMEState MIMEState, *MIMESPtr;
+typedef MIMEState *MIMESHandle;
 typedef OSErr DecoderFunc(CallType callType, DecoderPBPtr decPB);
 typedef BoundaryType ReadBodyFunc(TransStream stream, short refN,
                                   MIMESHandle mimeSList, char *buf, long bSize,

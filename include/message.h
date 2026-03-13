@@ -30,39 +30,39 @@ typedef struct _GtkWidget GtkWidget;
 #define WinPtr2MessH(aWindowPtr) ((MessHandle)GetWindowPrivateData(aWindowPtr))
 #define Win2MessH(aMyWindowPtr)                                                \
   ((MessHandle)GetMyWindowPrivateData(aMyWindowPtr))
-#define SumOf(mH) (&(*mH)->tocH->sums[(*mH)->sumNum])
-#define BodyOf(mH) ((*mH)->txes[BODY])
+#define SumOf(mH) (&(mH)->tocH->sums[(mH)->sumNum])
+#define BodyOf(mH) ((mH)->txes[BODY])
 #define MessFlagIsSet(mH, f) (0 != (SumOf(mH)->flags & (f)))
 #define SetMessFlag(mH, f)                                                     \
   do {                                                                         \
     SumOf(mH)->flags |= (f);                                                   \
-    TOCSetDirty((*mH)->tocH, true);                                            \
+    TOCSetDirty((mH)->tocH, true);                                             \
   } while (0)
 #define MessOptIsSet(mH, f) (0 != (SumOf(mH)->opts & f))
 #define SetMessOpt(mH, f)                                                      \
   do {                                                                         \
     SumOf(mH)->opts |= f;                                                      \
-    TOCSetDirty((*mH)->tocH, true);                                            \
+    TOCSetDirty((mH)->tocH, true);                                             \
   } while (0)
 #define ClearMessOpt(mH, f)                                                    \
   do {                                                                         \
     SumOf(mH)->opts &= ~f;                                                     \
-    TOCSetDirty((*mH)->tocH, true);                                            \
+    TOCSetDirty((mH)->tocH, true);                                             \
   } while (0)
 #define ClearMessFlag(mH, f)                                                   \
   do {                                                                         \
     SumOf(mH)->flags &= ~f;                                                    \
-    TOCSetDirty((*mH)->tocH, true);                                            \
+    TOCSetDirty((mH)->tocH, true);                                             \
   } while (0)
 #define OldWin2Body(win) BodyOf(Win2MessH(win))
 #define HeaderName(num)                                                        \
-  (GetRString(scratch, HEADER_STRN + num), TrimWhite(scratch), scratch)
+  (GetRString(scratch, HEADER_STRN + num), TrimWhite(scratch), (char *)scratch)
 #define IsAddressHead(head)                                                    \
   (head == TO_HEAD || head == BCC_HEAD || head == CC_HEAD)
 #define MessIsRich(mH)                                                         \
   (MessFlagIsSet((mH), FLAG_RICH) || MessOptIsSet((mH), OPT_HTML) ||           \
    UseFlowInExcerpt && MessOptIsSet((mH), OPT_FLOW))
-#define TheBody ((*messH)->bodyPTE)
+#define TheBody (messH->bodyPTE)
 
 /* Accumulator moved to mailbox.h */
 
@@ -153,7 +153,8 @@ typedef GtkWidget *ListHandle;
 /**********************************************************************
  * structure to describe message
  **********************************************************************/
-typedef struct mstruct MessType, *MessPtr, **MessHandle;
+typedef struct mstruct MessType, *MessPtr;
+typedef MessType *MessHandle;  /* was MessType** (Mac Handle); now direct pointer */
 struct mstruct {
   TOCType * tocH;   /* the table of contents to which this message belongs */
   int sumNum;       /* the summary number of this message's summary */

@@ -25,7 +25,7 @@ DAMAGE. */
 #include <stdbool.h>
 
 /* Forward declarations for types used in ACAP */
-typedef struct Personality **PersHandle;
+typedef struct Personality *PersHandle;
 typedef struct ACAPState **ACAPStateHandle;  // ACAP state handle
 /* TransStream is defined in TransStream.h via mydefs.h */
 struct TransStreamStruct;  // Forward declaration

@@ -1065,32 +1065,41 @@ TextEncoding CreateSystemRomanEncoding(void)
 }
 
 /***********************************************************************
- * InsertHTMLLo - insert HTML text with interpretation
- * Placeholder — HTML parsing will be ported separately.
+ * InsertHTMLLo - insert HTML text with style interpretation
+ * Routes HTML through gedit_document_insert_markup() which parses
+ * tags and applies styles via the gedit_document style API.
  ***********************************************************************/
 int InsertHTMLLo(UHandle text, long *htmlOffset, long textLen, long *inOffset,
                  PETEHandle pte, TextEncoding encoding, long flags, StackHandle partRefStack)
 {
 	(void)encoding; (void)flags; (void)partRefStack;
 	if (!text || !*text || !pte || !inOffset) return -1;
-	/* For now, insert as plain text */
+
+	geditDocument *doc = geditctrl_get_document((GtkWidget *)pte);
+	if (!doc) return -1;
+
 	unsigned char *src = *text + *htmlOffset;
 	long len = textLen;
-	if (len < 0) {
-		geditDocument *doc = geditctrl_get_document((GtkWidget *)pte);
-		if (!doc) return -1;
+	if (len < 0)
 		len = gedit_document_get_length(doc) - *htmlOffset;
-	}
-	long offset = *inOffset;
-	if (offset == -1) {
-		geditDocument *doc = geditctrl_get_document((GtkWidget *)pte);
-		if (doc) offset = gedit_document_get_length(doc);
-		else offset = 0;
-	}
-	int err = PeteInsertPtr((GtkWidget *)pte, (int)offset, (const char *)src, (int)len);
-	if (!err) {
-		*htmlOffset += len;
-		if (*inOffset >= 0) *inOffset += len;
-	}
-	return err;
+
+	long insert_offset = *inOffset;
+	if (insert_offset == -1)
+		insert_offset = gedit_document_get_length(doc);
+
+	/* Make a null-terminated copy of the HTML fragment */
+	char *html = g_strndup((const char *)src, len);
+
+	/* Get document length before insertion to compute how much was added */
+	gint len_before = gedit_document_get_length(doc);
+	gedit_document_insert_markup(doc, (gint)insert_offset, html);
+	gint len_after = gedit_document_get_length(doc);
+	gint inserted = len_after - len_before;
+
+	g_free(html);
+
+	*htmlOffset += len;
+	if (*inOffset >= 0) *inOffset += inserted;
+
+	return 0;
 }

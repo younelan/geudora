@@ -57,19 +57,8 @@ char gIMAPErrorString[256] = {0};
 #include "imapnetlib.h"
 #include "lineio.h"
 #include "mail.h"
-/* Undefine c-client macros that conflict with Eudora's util.h */
-#undef AccuInit
-#undef AccuAddPtr
-/* Restore Eudora's AccuAddPtr after undefining c-client's version */
-#define AccuAddPtr AccuAddPtrVoid
 #include "mailxfer.h"
 /* #include "mydefs.h" moved to top */
-/* Undefine macros that conflict with prefdefs.h */
-#undef PREF_IMAP_EXTRA_LOGGING
-#undef PREF_IMAP_STUPID_PASSWORD
-#undef PREF_SSL_IMAP_SETTING
-#undef PREF_IMAP_POLITE_LOGOUT
-#undef PREF_IMAP_EXPUNGE_EXCLUSIVITY
 #include "junk.h"
 #include "pop.h"
 #include "sendmail.h"
@@ -87,10 +76,6 @@ char gIMAPErrorString[256] = {0};
 #include "Globals.h"
 #include "StringDefs.h"
 
-#ifdef CommandPeriod
-#undef CommandPeriod
-#endif
-extern bool CommandPeriod;
 #ifndef ReallyDoAnAlert_declared
 #define ReallyDoAnAlert_declared 1
 int ReallyDoAnAlert(int templ, int which);
@@ -104,12 +89,6 @@ int ReallyDoAnAlert(int templ, int which);
 #define IMAP_ANSWERED_STRING_FLAG "\\Answered"
 #define IMAP_DRAFT_STRING_FLAG "\\Draft"
 
-bool gCommandPeriod = false;
-#ifdef CommandPeriod
-#undef CommandPeriod
-#endif
-#define CommandPeriod gCommandPeriod
-
 unsigned char dashes[] = "--";
 
 // for message decoding
@@ -120,11 +99,11 @@ long gIMAPMsgEnd;
 enum { IMAPParamErr = 1, IMAPOperationAlreadyUnderwayErr, IMAPResyncFailed };
 
 // global handle to list of pending deliveries
-struct DeliveryNode **gDeliveryQueue = nil;
+struct DeliveryNode *gDeliveryQueue = nil;
 
 // global handle of uids that need updating on
 // screen
-struct UpdateNode **gWindowUpdates = nil;
+struct UpdateNode *gWindowUpdates = nil;
 
 // global IMAP Stream for FILTERING only
 IMAPStreamPtr gFilterStream = nil;
@@ -316,27 +295,27 @@ struct STRINGFileStruct {
 //
 
 OSErr CheckIMAPSettingsForPers(void);
-OSErr SpecToUIDList(TOCType * tocH, struct UIDNode ***uidList,
-                    struct DeliveryNode **node);
-void MergeUidLists(struct UIDNode ***localList, struct UIDNode ***remoteList,
-                   struct UIDNode ***updateList);
+OSErr SpecToUIDList(TOCType * tocH, UIDNodeHandle *uidList,
+                    DeliveryNodeHandle node);
+void MergeUidLists(UIDNodeHandle *localList, UIDNodeHandle *remoteList,
+                   UIDNodeHandle *updateList);
 bool UIDFetchMessages(IMAPStreamPtr imapStream,
-                      struct MailboxNode **mailboxInfo,
-                      struct UIDNode **uidList, struct DeliveryNode **delivery,
+                      MailboxNodeHandle mailboxInfo,
+                      UIDNodeHandle uidList, DeliveryNodeHandle delivery,
                       bool isAutoCheck);
-Handle UIDNodeList2Handle(struct UIDNode ***uidList);
-unsigned long GetLocalHighestUid(struct UIDNode **list);
-unsigned long GetUIDNodeCount(struct UIDNode **list);
+Handle UIDNodeList2Handle(UIDNodeHandle *uidList);
+unsigned long GetLocalHighestUid(UIDNodeHandle list);
+unsigned long GetUIDNodeCount(UIDNodeHandle list);
 void ParseHeaderInMemory(MSumPtr sum, Handle headersH);
 
 //
 //	Delivery Queue
 //
-struct DeliveryNode **NewDeliveryNode(TOCType * tocH);
-void QueueDeliveryNode(struct DeliveryNode **node);
-void DequeueDeliveryNode(struct DeliveryNode **node);
-void AbortDeliveryNode(struct DeliveryNode **node);
-void ZapDeliveryNode(struct DeliveryNode ***node);
+struct DeliveryNode *NewDeliveryNode(TOCType * tocH);
+void QueueDeliveryNode(struct DeliveryNode *node);
+void DequeueDeliveryNode(struct DeliveryNode *node);
+void AbortDeliveryNode(struct DeliveryNode *node);
+void ZapDeliveryNode(DeliveryNodeHandle *node);
 bool SameTOC(TOCType * toc1, TOCType * toc2);
 
 //
@@ -439,11 +418,11 @@ bool IMAPSearchServer(TOCType * searchWin, PersHandle pers,
                       BoxCountHandle boxesToSearch, Handle specsToSeach,
                       IMAPSCHandle searchCriteria, bool matchAll, long firstUID,
                       bool alreadyOnline);
-void BuildSearchResults(struct DeliveryNode **delivery,
-                        struct UIDNode **results);
+void BuildSearchResults(struct DeliveryNode *delivery,
+                        struct UIDNode *results);
 bool ReturnSearchHits(IMAPStreamPtr imapStream,
-                      struct DeliveryNode **searchNode, FSSpecPtr spec,
-                      struct UIDNode ***uids);
+                      DeliveryNodeHandle searchNode, FSSpecPtr spec,
+                      UIDNodeHandle *uids);
 void BuildHeaderSearchString(bool anyHeader, bool anyRec, Str255 pHeaders);
 void IMAPMailboxUIDRange(IMAPStreamPtr imapStream, unsigned long numMessages,
                          unsigned long *first, unsigned long *last);
@@ -505,7 +484,7 @@ OSErr CheckIMAPSettingsForPers(void) {
 
   // prompt for the user's password if we need
   // it
-  if ((!PrefIsSet(PREF_KERBEROS)) && !(*(*CurPers)->password))
+  if ((!PrefIsSet(PREF_KERBEROS)) && !(*CurPers->password))
     err = PersFillPw(CurPers, 0);
 
   // make sure the user has selected the
@@ -533,10 +512,10 @@ OSErr CheckIMAPSettingsForPers(void) {
 MailboxNodeHandle FetchNewMessages(TOCType * tocToSync, bool fetchFlags,
                                    bool sameThread, bool filter,
                                    bool isAutoCheck) {
-  struct MailboxNode **mailboxNode = nil;
+  struct MailboxNode *mailboxNode = nil;
   OSErr err = noErr;
   struct XferFlags flags;
-  struct DeliveryNode **node;
+  struct DeliveryNode *node;
   IMAPTransferRec imapInfo;
   PersHandle pers = nil, oldPers = CurPers;
   FSSpec mailboxSpec;
@@ -565,8 +544,8 @@ MailboxNodeHandle FetchNewMessages(TOCType * tocToSync, bool fetchFlags,
   node = NewDeliveryNode(tocToSync);
   if (node) {
     // figure out who this mailbox belongs to
-    mailboxNode = TOCToMbox((*node)->toc);
-    pers = TOCToPers((*node)->toc);
+    mailboxNode = TOCToMbox(node->toc);
+    pers = TOCToPers(node->toc);
 
     // remove any old task errors
     CleanUpResyncTaskErrors(mailboxNode);
@@ -577,9 +556,9 @@ MailboxNodeHandle FetchNewMessages(TOCType * tocToSync, bool fetchFlags,
     CurPers = pers;
     if (filter && (mailboxNode == LocateInboxForPers(pers)) &&
         !PrefIsSet(PREF_IMAP_NO_FILTER_INBOX))
-      (*node)->filter = true;
+      node->filter = true;
     else
-      (*node)->filter = false;
+      node->filter = false;
     CurPers = oldPers;
 
     // and queue it in the global list of
@@ -617,7 +596,7 @@ MailboxNodeHandle FetchNewMessages(TOCType * tocToSync, bool fetchFlags,
           AbortDeliveryNode(node);
 
         if (false && PrefIsSet(PREF_KEYCHAIN))
-          Zero((*CurPers)->password);
+          Zero(CurPers->password);
       }
       CurPers = oldPers;
     }
@@ -750,8 +729,8 @@ OSErr IMAPProcessMailboxes(FSSpecHandle mailboxes, TaskKindEnum task) {
       // password will get zapped when the
       // thread ends.
       if (!InAThread() && false && PrefIsSet(PREF_KEYCHAIN)) {
-        for (pers = PersList; pers; pers = (*pers)->next)
-          Zero((*CurPers)->password);
+        for (pers = PersList; pers; pers = pers->next)
+          Zero(CurPers->password);
       }
       // Cleanup
       free(resync);
@@ -852,8 +831,8 @@ bool ResyncCurrentIMAPMailbox(void) {
     // if we're using the keychain, go forget
     // the passwords we just asked for
     if (false && PrefIsSet(PREF_KEYCHAIN)) {
-      for (pers = PersList; pers; pers = (*pers)->next)
-        Zero((*CurPers)->password);
+      for (pers = PersList; pers; pers = pers->next)
+        Zero(CurPers->password);
     }
   } else {
     ZapHandle(resync);
@@ -911,8 +890,8 @@ bool DoIMAPProcessMailboxes(FSSpecHandle mailboxes, TaskKindEnum task) {
         if (node) {
           // figure out who this mailbox
           // belongs to
-          mailboxNode = TOCToMbox((*node)->toc);
-          pers = TOCToPers((*node)->toc);
+          mailboxNode = TOCToMbox(node->toc);
+          pers = TOCToPers(node->toc);
 
           // if this is the inbox, set the flag
           // in the delivery node so filtering
@@ -921,9 +900,9 @@ bool DoIMAPProcessMailboxes(FSSpecHandle mailboxes, TaskKindEnum task) {
           CurPers = pers;
           if ((mailboxNode == LocateInboxForPers(pers)) &&
               !PrefIsSet(PREF_IMAP_NO_FILTER_INBOX))
-            (*node)->filter = true;
+            node->filter = true;
           else
-            (*node)->filter = false;
+            node->filter = false;
           CurPers = oldPers;
 
           // and queue it in the global list of
@@ -993,7 +972,7 @@ MailboxNodeHandle DoFetchNewMessages(FSSpecPtr mailboxSpec, bool fetchFlags,
 
   // find the right deliveryNode
   delivery = FindNodeByToc(tocH);
-  if (delivery && !(*delivery)->aborted) {
+  if (delivery && !delivery->aborted) {
     // find the MailboxNode the spec describes
     mailboxInfo = TOCToMbox(tocH);
     pers = TOCToPers(tocH);
@@ -1001,12 +980,12 @@ MailboxNodeHandle DoFetchNewMessages(FSSpecPtr mailboxSpec, bool fetchFlags,
     if (pers && mailboxInfo) {
       // this is used later to update the
       // mailbox information
-      (*delivery)->mailbox = mailboxInfo;
+      delivery->mailbox = mailboxInfo;
 
       // make sure this is an IMAP mailbox, and
       // that it can be SELECTed.
-      if (((*mailboxInfo)->attributes & LATT_NOT_IMAP) ||
-          ((*mailboxInfo)->attributes & LATT_NOSELECT)) {
+      if ((mailboxInfo->attributes & LATT_NOT_IMAP) ||
+          (mailboxInfo->attributes & LATT_NOSELECT)) {
         AbortDeliveryNode(delivery);
         return (nil);
       }
@@ -1016,8 +995,8 @@ MailboxNodeHandle DoFetchNewMessages(FSSpecPtr mailboxSpec, bool fetchFlags,
       // display some progress indicating which
       // mailbox we're synching
       LockMailboxNodeHandle(mailboxInfo);
-      PathToMailboxName((*mailboxInfo)->mailboxName, (unsigned char *)m,
-                        (*mailboxInfo)->delimiter);
+      PathToMailboxName(mailboxInfo->mailboxName, (unsigned char *)m,
+                        mailboxInfo->delimiter);
       UnlockMailboxNodeHandle(mailboxInfo);
       ComposeRString(s, IMAP_RESYNC_MAILBOX, (unsigned char *)m);
       PROGRESS_START;
@@ -1031,7 +1010,7 @@ MailboxNodeHandle DoFetchNewMessages(FSSpecPtr mailboxSpec, bool fetchFlags,
       // Make sure the mailbox resync wasn't
       // cancelled by the user while they were
       // being displayed. -jdboyd 5/24/02
-      if (!(*delivery)->aborted) {
+      if (!delivery->aborted) {
         // build a list containing all the UIDs
         // of the cached messages
         err = SpecToUIDList(tocH, &localList, delivery);
@@ -1054,7 +1033,7 @@ MailboxNodeHandle DoFetchNewMessages(FSSpecPtr mailboxSpec, bool fetchFlags,
           // mailbox
           PROGRESS_MESSAGER(kpSubTitle, IMAP_LOGGING_IN);
           LockMailboxNodeHandle(mailboxInfo);
-          if (IMAPOpenMailbox(imapStream, (*mailboxInfo)->mailboxName, false)) {
+          if (IMAPOpenMailbox(imapStream, mailboxInfo->mailboxName, false)) {
             // now look for some mail
             PROGRESS_MESSAGER(kpSubTitle, LOOK_MAIL);
 
@@ -1065,7 +1044,7 @@ MailboxNodeHandle DoFetchNewMessages(FSSpecPtr mailboxSpec, bool fetchFlags,
 
             // check to make sure we haven't
             // aborted ...
-            if (!(*delivery)->aborted) {
+            if (!delivery->aborted) {
               // if the remote mailbox contains
               // no messages, updating the
               // cache is as easy as deleteing
@@ -1074,14 +1053,14 @@ MailboxNodeHandle DoFetchNewMessages(FSSpecPtr mailboxSpec, bool fetchFlags,
                 // tell caller to remove
                 // everything from the local
                 // cahce
-                (*delivery)->td = MSUM_DELETE_ALL;
+                delivery->td = MSUM_DELETE_ALL;
                 err = noErr;
 
                 // Audit the fact that a
                 // mailcheck started and
                 // finished, but that nothing
                 // was fetched.
-                AuditCheckStart(++gCheckSessionID, (*CurPersSafe)->persId,
+                AuditCheckStart(++gCheckSessionID, CurPersSafe->persId,
                                 isAutoCheck);
                 AuditCheckDone(gCheckSessionID, 0, 0);
               }
@@ -1093,8 +1072,8 @@ MailboxNodeHandle DoFetchNewMessages(FSSpecPtr mailboxSpec, bool fetchFlags,
                 // of the mailbox has changed,
                 // we'll have to download
                 // everything.
-                if (((*mailboxInfo)->uidValidity != 0) &&
-                    (newUIDValidity != (*mailboxInfo)->uidValidity))
+                if ((mailboxInfo->uidValidity != 0) &&
+                    (newUIDValidity != mailboxInfo->uidValidity))
                   redownloadAll = true;
 
                 // if we're redownloading
@@ -1135,7 +1114,7 @@ MailboxNodeHandle DoFetchNewMessages(FSSpecPtr mailboxSpec, bool fetchFlags,
                     // tell caller to remove
                     // everything from the
                     // local cache
-                    (*delivery)->td = MSUM_DELETE_ALL;
+                    delivery->td = MSUM_DELETE_ALL;
                   } else {
                     if (!fetchFlags) {
                       // if we didn't fetch new
@@ -1153,7 +1132,7 @@ MailboxNodeHandle DoFetchNewMessages(FSSpecPtr mailboxSpec, bool fetchFlags,
                       // nothing is to be
                       // removed from the local
                       // cache
-                      (*delivery)->td = nil;
+                      delivery->td = nil;
                     } else {
                       // Merge the two lists.
                       // The three lists will
@@ -1177,7 +1156,7 @@ MailboxNodeHandle DoFetchNewMessages(FSSpecPtr mailboxSpec, bool fetchFlags,
                   }
 
                   // Update mailbox info.
-                  (*mailboxInfo)->uidValidity = newUIDValidity;
+                  mailboxInfo->uidValidity = newUIDValidity;
 
                   // Actually go fetch the new
                   // messages.
@@ -1191,29 +1170,29 @@ MailboxNodeHandle DoFetchNewMessages(FSSpecPtr mailboxSpec, bool fetchFlags,
                 }
               }
 
-              if (!(*delivery)->aborted) {
+              if (!delivery->aborted) {
                 dState = HGetState((Handle)delivery);
                 LDRef(delivery);
                 // create the list of summaries
                 // to be updated, destroy the
                 // updateList
                 if (updateList)
-                  (*delivery)->tu = UIDNodeList2Handle(&updateList);
+                  delivery->tu = UIDNodeList2Handle(&updateList);
 
                 // create the list of summaries
                 // to be deleted, destroy the
                 // localList
                 if (localList)
-                  (*delivery)->td = UIDNodeList2Handle(&localList);
+                  delivery->td = UIDNodeList2Handle(&localList);
                 HSetState((Handle)delivery, dState);
 
                 // are there summaries to be
                 // added?
-                if ((*delivery)->ta)
+                if (delivery->ta)
                   IMAPMailboxChanged(mailboxInfo);
               }
             } else {
-              if (!(*delivery)->aborted)
+              if (!delivery->aborted)
                 err = IMAPError(kIMAPResync, kIMAPSelectMailboxErr,
                                 errIMAPSelectMailbox);
               else
@@ -1249,14 +1228,14 @@ MailboxNodeHandle DoFetchNewMessages(FSSpecPtr mailboxSpec, bool fetchFlags,
       }
 
       // complete or abort the delivery ...
-      if ((*delivery)->aborted) {
+      if (delivery->aborted) {
         // remember that the user cancelled.
         // The delievery node will be removed
         // later.
         err = userCancelled;
       } else {
         // we're really, truely done now.
-        (*delivery)->finished = true;
+        delivery->finished = true;
       }
 
       CurPers = oldPers;
@@ -1323,7 +1302,7 @@ OSErr SpecToUIDList(TOCType * tocH, UIDNodeHandle *list,
     // mailbox get closed and the TOC flushed
     // out from under us.  If we notice the TOC
     // has vanished, stop. jdboyd 03/22/02
-    if ((*deliveryNode)->aborted) {
+    if (deliveryNode->aborted) {
       break;
     }
 
@@ -1336,9 +1315,9 @@ OSErr SpecToUIDList(TOCType * tocH, UIDNodeHandle *list,
       }
     }
 
-    node = NewZH(UIDNode);
+    node = g_malloc0(sizeof(UIDNode));
     if (node) {
-      (*node)->uid = tocH->sums[sumNum].uidHash;
+      node->uid = tocH->sums[sumNum].uidHash;
 
       // ordered insert this node into the list
       UID_LL_OrderedInsert(list, &node, false);
@@ -1356,9 +1335,9 @@ OSErr SpecToUIDList(TOCType * tocH, UIDNodeHandle *list,
     for (sumNum = 0; (sumNum < hidTocH->count) && (err == noErr); sumNum++) {
       CycleBalls();
 
-      node = NewZH(UIDNode);
+      node = g_malloc0(sizeof(UIDNode));
       if (node) {
-        (*node)->uid = hidTocH->sums[sumNum].uidHash;
+        node->uid = hidTocH->sums[sumNum].uidHash;
 
         // ordered insert this node into the
         // list
@@ -1401,7 +1380,7 @@ unsigned long GetUIDNodeCount(UIDNodeHandle list) {
 
   while (scan) {
     count++;
-    scan = (*scan)->next;
+    scan = scan->next;
   }
 
   return (count);
@@ -1417,7 +1396,7 @@ unsigned long GetLocalHighestUid(UIDNodeHandle list) {
   if (list)
     LL_Last(list, scan);
 
-  return (scan ? (*scan)->uid : 0);
+  return (scan ? scan->uid : 0);
 }
 
 /**********************************************************************
@@ -1432,19 +1411,19 @@ void UID_LL_OrderedInsert(UIDNodeHandle *head, UIDNodeHandle *item,
   if (head && *head) {
     // find the first node with a smaller UID
     // than the one we're inserting
-    while (t && (*t)->uid < (**item)->uid)
-      t = (*t)->next;
+    while (t && t->uid < (*item)->uid)
+      t = t->next;
 
     // if this node has the same uid, replace
     // it with this new node.
-    if ((t) && ((*t)->uid == (**item)->uid)) {
-      (*t)->l_seen = (**item)->l_seen;
-      (*t)->l_deleted = (**item)->l_deleted;
-      (*t)->l_flagged = (**item)->l_flagged;
-      (*t)->l_answered = (**item)->l_answered;
-      (*t)->l_draft = (**item)->l_draft;
-      (*t)->l_recent = (**item)->l_recent;
-      (*t)->l_sent = (**item)->l_sent;
+    if ((t) && (t->uid == (*item)->uid)) {
+      t->l_seen = (*item)->l_seen;
+      t->l_deleted = (*item)->l_deleted;
+      t->l_flagged = (*item)->l_flagged;
+      t->l_answered = (*item)->l_answered;
+      t->l_draft = (*item)->l_draft;
+      t->l_recent = (*item)->l_recent;
+      t->l_sent = (*item)->l_sent;
 
       ZapHandle(*item);
     }
@@ -1455,16 +1434,16 @@ void UID_LL_OrderedInsert(UIDNodeHandle *head, UIDNodeHandle *item,
       // if this node has a parent, make it
       // point to the new item.
       if (p)
-        (*p)->next = *item;
+        p->next = *item;
       // if it doesn't, it's the head.  Make
       // the head point here now.
       else
         *head = *item;
 
-      (**item)->next = t;
+      (*item)->next = t;
     }
-    if (t && *t)
-      (*t)->l_IsNew = isNew;
+    if (t)
+      t->l_IsNew = isNew;
   } else
     *head = *item;
 }
@@ -1498,17 +1477,17 @@ void MergeUidLists(UIDNodeHandle *localList, UIDNodeHandle *remoteList,
   localScan = *localList;
   while (localScan) {
     CycleBalls();
-    nextLocal = (*localScan)->next;
+    nextLocal = localScan->next;
 
     // compare this message with each remote
     // message
     remoteScan = *remoteList;
     while (remoteScan && localScan &&
-           ((*remoteScan)->uid <= (*localScan)->uid)) {
-      nextRemote = (*remoteScan)->next;
+           (remoteScan->uid <= localScan->uid)) {
+      nextRemote = remoteScan->next;
 
       // this message is still on the server
-      if ((*remoteScan)->uid == (*localScan)->uid) {
+      if (remoteScan->uid == localScan->uid) {
         // remove this node from the localList
         // and delete it
         LL_Remove(*localList, localScan, (UIDNodeHandle));
@@ -1520,7 +1499,7 @@ void MergeUidLists(UIDNodeHandle *localList, UIDNodeHandle *remoteList,
 
         // add the node from the remoteList to
         // the updateList.
-        (*remoteScan)->next = nil;
+        remoteScan->next = nil;
         UID_LL_OrderedInsert(updateList, &remoteScan, false);
       }
 
@@ -1556,7 +1535,7 @@ bool UIDFetchMessages(IMAPStreamPtr imapStream, MailboxNodeHandle mailboxInfo,
 
   // audit the fact an IMAP mailcheck is about
   // to happen ...
-  AuditCheckStart(++gCheckSessionID, (*CurPersSafe)->persId, isAutoCheck);
+  AuditCheckStart(++gCheckSessionID, CurPersSafe->persId, isAutoCheck);
   StartStreamAudit(imapStream->mailStream->transStream, kAuditBytesReceived);
 
   // these are the headers we'll be fetching
@@ -1582,7 +1561,7 @@ bool UIDFetchMessages(IMAPStreamPtr imapStream, MailboxNodeHandle mailboxInfo,
          PrefIsSet(PREF_IMAP_FULL_MESSAGE_AND_ATTACHMENTS)) &&
         uidList) {
       imapStream->mailStream->refN =
-          OpenMessDestFile(mailboxInfo, (*uidList)->uid, &spoolSpec);
+          OpenMessDestFile(mailboxInfo, uidList->uid, &spoolSpec);
       if (imapStream->mailStream->refN == -1)
         result = false;
     }
@@ -1608,7 +1587,7 @@ bool UIDFetchMessages(IMAPStreamPtr imapStream, MailboxNodeHandle mailboxInfo,
     for (i = 0; i < initialMessageCount; i++) {
       // if we were aborted, stop the resync
       // now.
-      if ((*delivery)->aborted) {
+      if (delivery->aborted) {
         result = false;
         break;
       }
@@ -1618,9 +1597,9 @@ bool UIDFetchMessages(IMAPStreamPtr imapStream, MailboxNodeHandle mailboxInfo,
       if (PrefIsSet(PREF_IMAP_DONT_USE_UID_RANGE)) {
         node = uidList;
         for (n = 0; n < i; n++)
-          node = (*node)->next;
-        firstUID = lastUID = (*node)->uid;
-        sprintf((char *)sequence, "%lu", (*node)->uid);
+          node = node->next;
+        firstUID = lastUID = node->uid;
+        sprintf((char *)sequence, "%lu", node->uid);
       } else
         i = GenerateUIDStringFromUIDNodeHandle(uidList, i, &firstUID, &lastUID,
                                                sequence);
@@ -1633,7 +1612,7 @@ bool UIDFetchMessages(IMAPStreamPtr imapStream, MailboxNodeHandle mailboxInfo,
         // happy meal
         if (fetchFullMessages) {
           for (n = firstUID;
-               (n <= lastUID) && (!(*delivery)->aborted) && !CommandPeriod;
+               (n <= lastUID) && (!delivery->aborted) && !CommandPeriod;
                n++) {
             // increment the progress bar now
             PROGRESS_BAR(((100 * fetchedMessages++) / initialMessageCount),
@@ -1706,14 +1685,14 @@ int SaveMinimalHeader(MAILSTREAM *stream) {
   if (node && delivery) {
     // find the node this header belongs to
     while (node) {
-      if ((*node)->uid == stream->headerUID)
+      if (node->uid == stream->headerUID)
         break;
-      node = (*node)->next;
+      node = node->next;
     }
 
     // found it.  Now parse the headers and
     // stick them into the delivery node
-    if (node && (*node)->uid) {
+    if (node && node->uid) {
       // display a little progress
       if (stream->showProgress) {
         if (((ticks = TickCount()) - (stream->lastProgress) > 60) ||
@@ -1730,7 +1709,7 @@ int SaveMinimalHeader(MAILSTREAM *stream) {
 
       // if this message has been marked as a
       // draft, treat it as an outgoing message
-      if ((*node)->l_sent)
+      if (node->l_sent)
         sum.opts |= OPT_IMAP_SENT;
 
       // fill in the summary with the header
@@ -1752,26 +1731,26 @@ int SaveMinimalHeader(MAILSTREAM *stream) {
 
       // grab the uid of the message we're
       // downloading
-      sum.uidHash = (*node)->uid;
+      sum.uidHash = node->uid;
 
       // if the /seen flag is set, mark this
       // message as read.
-      if ((*node)->l_seen)
+      if (node->l_seen)
         sum.state = READ;
 
       // if this message has been answered,
       // mark it as replied.
-      if ((*node)->l_answered)
+      if (node->l_answered)
         sum.state = REPLIED;
 
       // if this message has been marked as
       // deleted, flag it as deleted
-      if ((*node)->l_deleted)
+      if (node->l_deleted)
         sum.opts |= OPT_DELETED;
 
       // if this message is flagged, mark it
       // with the flagged label
-      if ((*node)->l_flagged) {
+      if (node->l_flagged) {
         short color = GetRLong(IMAP_FLAGGED_LABEL);
         if (color > 0 && color < 16) {
           sum.flags &= ~(FLAG_HUE1 | FLAG_HUE2 | FLAG_HUE3 | FLAG_HUE4);
@@ -1782,12 +1761,12 @@ int SaveMinimalHeader(MAILSTREAM *stream) {
       // if this message is being put into a
       // mailbox that will be filtered, flag
       // it.
-      if ((*delivery)->filter)
+      if (delivery->filter)
         sum.flags |= FLAG_UNFILTERED;
 
       // remember the size of the message as
       // well.
-      if ((sum.length = (*node)->size) == 0)
+      if ((sum.length = node->size) == 0)
         sum.length = 1 K;
 
       // flag this summary so we know to go
@@ -1805,11 +1784,11 @@ int SaveMinimalHeader(MAILSTREAM *stream) {
       // stick the summary into the sum list
       dState = HGetState((Handle)delivery);
       LDRef(delivery);
-      if ((*delivery)->ta) {
+      if (delivery->ta) {
         // Calculate current size using
         // InlineGetHandleSize
-        offset = InlineGetHandleSize((*delivery)->ta);
-        void *newData = realloc((*delivery)->ta, offset + sizeof(MSumType));
+        offset = InlineGetHandleSize(delivery->ta);
+        void *newData = realloc(delivery->ta, offset + sizeof(MSumType));
         if (!newData) {
           err = memFullErr;
           WarnUser(MEM_ERR, err);
@@ -1817,14 +1796,14 @@ int SaveMinimalHeader(MAILSTREAM *stream) {
           goto done;
         }
       } else {
-        (*delivery)->ta = NuHTempBetter(sizeof(MSumType));
-        if (!(*delivery)->ta) {
+        delivery->ta = NuHTempBetter(sizeof(MSumType));
+        if (!delivery->ta) {
           WarnUser(MEM_ERR, MemError());
           HSetState((Handle)delivery, dState);
           goto done;
         }
       }
-      memmove(*((*delivery)->ta) + offset, &sum, sizeof(MSumType));
+      memmove(*(delivery->ta) + offset, &sum, sizeof(MSumType));
       HSetState((Handle)delivery, dState);
     }
   }
@@ -1875,7 +1854,7 @@ void ParseHeaderInMemory(MSumPtr sum, Handle headersH) {
   // fill in some of the fields
   sum->state = UNREAD;
   sum->tableId = DEFAULT_TABLE;
-  sum->persId = sum->popPersId = (*CurPersSafe)->persId;
+  sum->persId = sum->popPersId = CurPersSafe->persId;
   if (PrefIsSet(PREF_SHOW_ALL))
     sum->flags |= FLAG_SHOW_ALL;
   if (HasUnicode())
@@ -2111,22 +2090,22 @@ Handle UIDNodeList2Handle(UIDNodeHandle *uidList) {
       Zero(sum);
 
       // uid
-      sum.uidHash = (*scan)->uid;
+      sum.uidHash = scan->uid;
 
       // flags
       sum.state = UNREAD;
-      if ((*scan)->l_seen)
+      if (scan->l_seen)
         sum.state = READ;
-      if ((*scan)->l_answered)
+      if (scan->l_answered)
         sum.state = REPLIED;
-      if ((*scan)->l_deleted)
+      if (scan->l_deleted)
         sum.opts |= OPT_DELETED;
-      if ((*scan)->l_sent)
+      if (scan->l_sent)
         sum.opts |= OPT_IMAP_SENT;
 
       // if this message is flagged, mark it
       // with the flagged label
-      if ((*scan)->l_flagged) {
+      if (scan->l_flagged) {
         short color = GetRLong(IMAP_FLAGGED_LABEL);
         if (color > 0 && color < 16) {
           sum.flags &= ~(FLAG_HUE1 | FLAG_HUE2 | FLAG_HUE3 | FLAG_HUE4);
@@ -2178,17 +2157,17 @@ bool IMAPDelivery(TOCType * inToc, Handle *toAdd, Handle *toUpdate,
   while (node) {
     dState = HGetState((Handle)node);
     LDRef(node);
-    if (((*node)->aborted == false) && (SameTOC(inToc, (*node)->toc))) {
+    if ((node->aborted == false) && (SameTOC(inToc, node->toc))) {
       HSetState((Handle)node, dState);
       // grab the lists of summaries built so
       // far
-      *toAdd = (*node)->ta;
-      *toUpdate = (*node)->tu;
-      *toDelete = (*node)->td;
-      *toCopy = (*node)->tc;
-      *results = (*node)->results;
+      *toAdd = node->ta;
+      *toUpdate = node->tu;
+      *toDelete = node->td;
+      *toCopy = node->tc;
+      *results = node->results;
       if (checkAttachments)
-        *checkAttachments = (*node)->cleanupAttachments;
+        *checkAttachments = node->cleanupAttachments;
 
       // return true if there are messages
       // waiting
@@ -2198,27 +2177,27 @@ bool IMAPDelivery(TOCType * inToc, Handle *toAdd, Handle *toUpdate,
       // remember if messages are going to be
       // added to the mailbox.
       if (*toAdd)
-        SetIMAPMailboxNeeds((*node)->mailbox, kNeedsSelect, true);
+        SetIMAPMailboxNeeds(node->mailbox, kNeedsSelect, true);
 
       // set the lists back to nil
-      (*node)->ta = (*node)->tu = (*node)->td = (*node)->tc =
-          (Handle)((*node)->results = (IMAPSResultHandle)nil);
+      node->ta = node->tu = node->td = node->tc =
+          (Handle)(node->results = (IMAPSResultHandle)nil);
 
       // if we're finished with this mailbox,
       // remove the delivery node.
-      if ((*node)->finished) {
+      if (node->finished) {
         // Set the filter flag for foreground
         // filtering
         if (filter)
-          *filter = (*node)->filter;
+          *filter = node->filter;
 
         // Mark the mailbox as needing to be
         // filtered for background filtering
-        if ((*node)->filter && (*node)->mailbox &&
+        if (node->filter && node->mailbox &&
             !PrefIsSet(PREF_FOREGROUND_IMAP_FILTERING))
-          SetIMAPMailboxNeeds((*node)->mailbox, kNeedsFilter, true);
+          SetIMAPMailboxNeeds(node->mailbox, kNeedsFilter, true);
 
-        *mbox = (*node)->mailbox;
+        *mbox = node->mailbox;
         DequeueDeliveryNode(node);
         ZapDeliveryNode(&node);
         messagesWaiting = true;
@@ -2252,13 +2231,13 @@ bool IMAPDelivery(TOCType * inToc, Handle *toAdd, Handle *toUpdate,
     // clean up the delivery queue of aborted
     // nodes if we're sure they're not in use
     // by a thread somewere.
-    if ((*node)->aborted && !GetNumBackgroundThreads()) {
-      next = (*node)->next;
+    if (node->aborted && !GetNumBackgroundThreads()) {
+      next = node->next;
       DequeueDeliveryNode(node);
       ZapDeliveryNode(&node);
       node = next;
     } else
-      node = (*node)->next;
+      node = node->next;
   }
 
   return (messagesWaiting);
@@ -2283,14 +2262,14 @@ void IMAPAbortResync(TOCType * toc) {
     // quit, if we're aborting multiple resync
     // operations.  Ignore nodes that are
     // already aborted. jdboyd 03/22/02
-    if ((*node)->aborted == false) {
+    if (node->aborted == false) {
       state = HGetState((Handle)node);
       LDRef(node);
-      if (SameTOC(toc, (*node)->toc)) {
+      if (SameTOC(toc, node->toc)) {
         HSetState((Handle)node, state);
         // is this mailbox done with the
         // network part of delivery?
-        if ((*node)->finished) {
+        if (node->finished) {
           // then remove the delivery
           // information form the list
           DequeueDeliveryNode(node);
@@ -2303,7 +2282,7 @@ void IMAPAbortResync(TOCType * toc) {
 
           // also, clean up marked for
           // filtering messages
-          if ((*node)->filter)
+          if (node->filter)
             ResetFilterFlags(toc);
         }
         break;
@@ -2311,7 +2290,7 @@ void IMAPAbortResync(TOCType * toc) {
         HSetState((Handle)node, state);
     }
 
-    node = (*node)->next;
+    node = node->next;
   }
 }
 
@@ -2323,10 +2302,10 @@ DeliveryNodeHandle NewDeliveryNode(TOCType * tocH) {
   DeliveryNodeHandle node = NULL;
 
   if (tocH) {
-    node = NewZH(DeliveryNode);
+    node = g_malloc0(sizeof(DeliveryNode));
     if (node) {
-      (*node)->toc = tocH;
-      (*node)->mailbox = TOCToMbox(tocH);
+      node->toc = tocH;
+      node->mailbox = TOCToMbox(tocH);
     }
   }
 
@@ -2339,11 +2318,11 @@ DeliveryNodeHandle NewDeliveryNode(TOCType * tocH) {
  ************************************************************************/
 void QueueDeliveryNode(DeliveryNodeHandle node) {
   if (node &&
-      ((*node)->mailbox || ((*node)->toc && (*node)->toc->virtualTOC))) {
+      (node->mailbox || (node->toc && node->toc->virtualTOC))) {
     // ensure realistic tocRef
-    ASSERT((*(*node)->mailbox)->tocRef < 1000);
+    ASSERT(node->mailbox->tocRef < 1000);
 
-    (*(*node)->mailbox)->tocRef++;
+    node->mailbox->tocRef++;
     LL_Queue(gDeliveryQueue, node, (DeliveryNodeHandle));
   } else {
     // the caller has not properly set up the
@@ -2358,14 +2337,14 @@ void QueueDeliveryNode(DeliveryNodeHandle node) {
  ************************************************************************/
 void DequeueDeliveryNode(DeliveryNodeHandle node) {
   if (node &&
-      ((*node)->mailbox || ((*node)->toc && (*node)->toc->virtualTOC) ||
-       ((*node)->aborted))) {
-    if ((*node)->mailbox) {
+      (node->mailbox || (node->toc && node->toc->virtualTOC) ||
+       (node->aborted))) {
+    if (node->mailbox) {
       // ensure realistic tocRef
-      ASSERT((*(*node)->mailbox)->tocRef < 1000);
+      ASSERT(node->mailbox->tocRef < 1000);
 
-      if ((*(*node)->mailbox)->tocRef)
-        (*(*node)->mailbox)->tocRef--;
+      if (node->mailbox->tocRef)
+        node->mailbox->tocRef--;
     }
   } else {
     // the DeliveryNodeHandle is no longer
@@ -2381,8 +2360,8 @@ void DequeueDeliveryNode(DeliveryNodeHandle node) {
  ************************************************************************/
 void AbortDeliveryNode(DeliveryNodeHandle node) {
   if (node) {
-    (*node)->aborted = true; // set the aborted flag
-    (*node)->toc = nil;      // forget about the mailbox, it
+    node->aborted = true; // set the aborted flag
+    node->toc = nil;      // forget about the mailbox, it
                              // may go away
   }
 }
@@ -2392,14 +2371,15 @@ void AbortDeliveryNode(DeliveryNodeHandle node) {
  *zap it and everyone it loves
  ************************************************************************/
 void ZapDeliveryNode(DeliveryNodeHandle *node) {
-  ZapHandle((**node)->ta);
-  ZapHandle((**node)->tu);
-  ZapHandle((**node)->tc);
-  if ((**node)->td != MSUM_DELETE_ALL)
-    ZapHandle((**node)->td);
-  ZapHandle((**node)->results);
+  ZapHandle((*node)->ta);
+  ZapHandle((*node)->tu);
+  ZapHandle((*node)->tc);
+  if ((*node)->td != MSUM_DELETE_ALL)
+    ZapHandle((*node)->td);
+  ZapHandle((*node)->results);
 
-  ZapHandle(*node);
+  g_free(*node);
+  *node = NULL;
 }
 
 /************************************************************************
@@ -2431,13 +2411,13 @@ DeliveryNodeHandle FindNodeByToc(TOCType * toc) {
   while (node) {
     state = HGetState((Handle)node);
     LDRef(node);
-    if (SameTOC(toc, (*node)->toc)) {
+    if (SameTOC(toc, node->toc)) {
       HSetState((Handle)node, state);
       break;
     }
     HSetState((Handle)node, state);
 
-    node = (*node)->next;
+    node = node->next;
   }
 
   return (node);
@@ -2648,12 +2628,12 @@ OSErr UIDDownloadMessages(TOCType * inToc, Handle uids, bool forceForeground,
         err = SetupXferMailThread(false, false, true, false, flags, &imapInfo);
 
         // and remove any old task errors
-        RemoveTaskErrors(IMAPFetchingTask, (*CurPers)->persId);
+        RemoveTaskErrors(IMAPFetchingTask, CurPers->persId);
 
         // forget the keychain password so it's
         // not written to the settings file
         if (false && PrefIsSet(PREF_KEYCHAIN))
-          Zero((*CurPers)->password);
+          Zero(CurPers->password);
       }
     }
   }
@@ -2704,8 +2684,8 @@ bool DoDownloadMessages(TOCType * tocH, Handle uids, bool attachmentsToo) {
     // display some progress indicating which
     // mailbox we're downloading to.
     LockMailboxNodeHandle(mailboxNode);
-    PathToMailboxName((*mailboxNode)->mailboxName, mName,
-                      (*mailboxNode)->delimiter);
+    PathToMailboxName(mailboxNode->mailboxName, mName,
+                      mailboxNode->delimiter);
     UnlockMailboxNodeHandle(mailboxNode);
     PROGRESS_START;
     ComposeRString((char *)progressMessage, IMAP_FETCHING_MESSAGE,
@@ -2720,7 +2700,7 @@ bool DoDownloadMessages(TOCType * tocH, Handle uids, bool attachmentsToo) {
       // resides in on the server
       PROGRESS_MESSAGER(kpSubTitle, IMAP_LOGGING_IN);
       LockMailboxNodeHandle(mailboxNode);
-      if (IMAPOpenMailbox(imapStream, (*mailboxNode)->mailboxName, false)) {
+      if (IMAPOpenMailbox(imapStream, mailboxNode->mailboxName, false)) {
         PROGRESS_MESSAGER(kpSubTitle, LEFT_TO_TRANSFER);
 
         // make sure the uidvalidty of the
@@ -2729,7 +2709,7 @@ bool DoDownloadMessages(TOCType * tocH, Handle uids, bool attachmentsToo) {
         // specified messages before doing a
         // resync.
         newUIDValidity = UIDValidity(imapStream);
-        if (newUIDValidity == (*mailboxNode)->uidValidity) {
+        if (newUIDValidity == mailboxNode->uidValidity) {
           // iterate through the list of uids,
           // and fetch each message.
           totalUids = numUids;
@@ -2841,7 +2821,7 @@ short OpenMessDestFile(MailboxNodeHandle mailboxInfo, unsigned long uid,
   // mailbox.  Must be unique per message fetch
   // operation.
   LockMailboxNodeHandle(mailboxInfo);
-  IMAPTempFileName((*mailboxInfo)->uidValidity, uid, tempName);
+  IMAPTempFileName(mailboxInfo->uidValidity, uid, tempName);
   UnlockMailboxNodeHandle(mailboxInfo);
 
   // create (or open) the spool file in the
@@ -3048,7 +3028,7 @@ bool IsSpooledMessageFile(Str255 name, MailboxNodeHandle node) {
   Str31 tmp;
 
   LockMailboxNodeHandle(node);
-  uvString[0] = snprintf((char*)(uvString+1), 31, "%ld", (long)((*node)->uidValidity));
+  uvString[0] = snprintf((char*)(uvString+1), 31, "%ld", (long)(node->uidValidity));
   UnlockMailboxNodeHandle(node);
   uvString[uvString[0] + 1] = '.';
   uvString[0] = uvString[0] + 1;
@@ -3419,7 +3399,7 @@ bool IMAPDeleteMessages(TOCType * tocH, Handle uids, bool nuke, bool expunge,
             ((unsigned long *)(*uids))[count]) {
           if (tocH->sums[sumNum].messH)
             CloseMyWindow(
-                GetMyWindowWindowPtr((*tocH->sums[sumNum].messH)->win));
+                GetMyWindowWindowPtr(tocH->sums[sumNum].messH->win));
           break;
         }
       }
@@ -3484,12 +3464,12 @@ bool IMAPDeleteMessages(TOCType * tocH, Handle uids, bool nuke, bool expunge,
 
       // and remove any old task errors
       RemoveTaskErrors(undelete ? IMAPUndeleteTask : IMAPDeleteTask,
-                       (*CurPers)->persId);
+                       CurPers->persId);
 
       // forget the keychain password so it's
       // not written to the settings file
       if (false && PrefIsSet(PREF_KEYCHAIN))
-        Zero((*CurPers)->password);
+        Zero(CurPers->password);
     }
   }
 
@@ -3544,7 +3524,7 @@ bool IMAPDeleteMessageDuringFiltering(TOCType * tocH, PersHandle pers,
     trashNode = GetIMAPTrashMailbox(pers, false, false);
     if (trashNode) {
       LockMailboxNodeHandle(trashNode);
-      trashToc = TOCBySpec(&(*trashNode)->mailboxSpec);
+      trashToc = TOCBySpec(&trashNode->mailboxSpec);
       UnlockMailboxNodeHandle(trashNode);
 
       if (trashToc) {
@@ -3986,7 +3966,7 @@ bool IMAPMarkMessageAsDeleted(TOCType * tocH, unsigned long uid,
       // SELECT the mailbox this message
       // resides in on the server
       LockMailboxNodeHandle(mailboxNode);
-      if (IMAPOpenMailbox(imapStream, (*mailboxNode)->mailboxName, false)) {
+      if (IMAPOpenMailbox(imapStream, mailboxNode->mailboxName, false)) {
         char uidStr[64];
         snprintf(uidStr, sizeof(uidStr), "%lu", uid);
         result = undelete ? UIDUnDeleteMessages(imapStream, uidStr)
@@ -4003,7 +3983,7 @@ bool IMAPMarkMessageAsDeleted(TOCType * tocH, unsigned long uid,
               // Close the message as well ...
               if (tocH->sums[sumNum].messH)
                 CloseMyWindow(
-                    GetMyWindowWindowPtr((*tocH->sums[sumNum].messH)->win));
+                    GetMyWindowWindowPtr(tocH->sums[sumNum].messH->win));
             }
 
             // if fancy trash mode is off, then
@@ -4059,8 +4039,8 @@ bool DoDeleteMessage(TOCType * tocH, Handle uids, bool nuke, bool expunge,
     // display some progress indicating which
     // mailbox we're downloading to.
     LockMailboxNodeHandle(mailboxNode);
-    PathToMailboxName((*mailboxNode)->mailboxName, (unsigned char *)mName,
-                      (*mailboxNode)->delimiter);
+    PathToMailboxName(mailboxNode->mailboxName, (unsigned char *)mName,
+                      mailboxNode->delimiter);
     UnlockMailboxNodeHandle(mailboxNode);
     if (undelete)
       ComposeRString(progressMessage, IMAP_UNDELETING_MESSAGES,
@@ -4077,7 +4057,7 @@ bool DoDeleteMessage(TOCType * tocH, Handle uids, bool nuke, bool expunge,
       // resides in on the server
       PROGRESS_MESSAGER(kpSubTitle, IMAP_LOGGING_IN);
       LockMailboxNodeHandle(mailboxNode);
-      if (IMAPOpenMailbox(imapStream, (*mailboxNode)->mailboxName, false)) {
+      if (IMAPOpenMailbox(imapStream, mailboxNode->mailboxName, false)) {
         // if this stream is read only, don't
         // even try to delete messages.
         if (IsReadOnly(imapStream->mailStream)) {
@@ -4154,7 +4134,7 @@ bool DoDeleteMessage(TOCType * tocH, Handle uids, bool nuke, bool expunge,
     // TOCType * trashToc = nil;
 
     LockMailboxNodeHandle(trashNode);
-    if ((tocH = FindTOC(&((*trashNode)->mailboxSpec)))) {
+    if ((tocH = FindTOC(&(trashNode->mailboxSpec)))) {
       if (tocH->win && IsWindowVisible(GetMyWindowWindowPtr(tocH->win)))
         FetchNewMessages(tocH, true, false, false, false);
     }
@@ -4289,7 +4269,7 @@ OSErr IMAPTransferMessages(TOCType * fromTocH, TOCType * toTocH, Handle uids,
             ((unsigned long *)(*uids))[count]) {
           if (fromTocH->sums[sumNum].messH)
             CloseMyWindow(
-                GetMyWindowWindowPtr((*fromTocH->sums[sumNum].messH)->win));
+                GetMyWindowWindowPtr(fromTocH->sums[sumNum].messH->win));
           break;
         }
       }
@@ -4344,16 +4324,16 @@ OSErr IMAPTransferMessages(TOCType * fromTocH, TOCType * toTocH, Handle uids,
       err = SetupXferMailThread(false, false, true, false, flags, &imapInfo);
 
       // and remove any old task errors
-      RemoveTaskErrors(IMAPTransferTask, (*CurPers)->persId);
-      RemoveTaskErrors(IMAPTransferTask, (*CurPers)->persId);
+      RemoveTaskErrors(IMAPTransferTask, CurPers->persId);
+      RemoveTaskErrors(IMAPTransferTask, CurPers->persId);
     }
     CurPers = oldPers;
 
     // forget the keychain password so it's not
     // written to the settings file
     if (false && PrefIsSet(PREF_KEYCHAIN)) {
-      Zero((*fromPers)->password);
-      Zero((*toPers)->password);
+      Zero(fromPers->password);
+      Zero(toPers->password);
     }
   }
 
@@ -4530,12 +4510,12 @@ OSErr TransferMessageBetweenServers(
   CurPers = fromPers;
   PROGRESS_MESSAGER(kpSubTitle, IMAP_LOGGING_IN);
   LockMailboxNodeHandle(fromBox);
-  if ((result = IMAPOpenMailbox(fromStream, (*fromBox)->mailboxName, false)) ==
+  if ((result = IMAPOpenMailbox(fromStream, fromBox->mailboxName, false)) ==
       true) {
     // open and select the destination mailbox
     CurPers = toPers;
     LockMailboxNodeHandle(toBox);
-    if ((result = IMAPOpenMailbox(toStream, (*toBox)->mailboxName, false)) ==
+    if ((result = IMAPOpenMailbox(toStream, toBox->mailboxName, false)) ==
         true) {
       // set up the STRINGDataStruct we'll use
       // to read the source message
@@ -4576,11 +4556,11 @@ OSErr TransferMessageBetweenServers(
               snprintf(seq, sizeof(seq), "%lu", uid);
               if (FetchFlags(fromStream, seq, &uidNode)) {
                 if (uidNode) {
-                  if ((*uidNode)->uid == uid) {
-                    FlagsString(&flags, (*uidNode)->l_seen,
-                                (*uidNode)->l_deleted, (*uidNode)->l_flagged,
-                                (*uidNode)->l_answered, (*uidNode)->l_draft,
-                                (*uidNode)->l_recent, (*uidNode)->l_sent);
+                  if (uidNode->uid == uid) {
+                    FlagsString(&flags, uidNode->l_seen,
+                                uidNode->l_deleted, uidNode->l_flagged,
+                                uidNode->l_answered, uidNode->l_draft,
+                                uidNode->l_recent, uidNode->l_sent);
                   }
                   ZapHandle(uidNode);
                 }
@@ -4670,7 +4650,7 @@ OSErr TransferMessageOnServer(PersHandle fromPers, IMAPStreamPtr fromStream,
   // copy the messages from the source to the
   // destination
   PROGRESS_MESSAGER(kpSubTitle, IMAP_LOGGING_IN);
-  if ((result = IMAPOpenMailbox(fromStream, (*fromBox)->mailboxName, false)) ==
+  if ((result = IMAPOpenMailbox(fromStream, fromBox->mailboxName, false)) ==
       true) {
     result = CopyMessages(fromStream, toBox, uids, copy, false);
 
@@ -4802,7 +4782,7 @@ OSErr IMAPTransferMessagesToServer(TOCType * fromTocH, TOCType * toTocH,
       // forget the keychain password so it's
       // not written to the settings file
       if (false && PrefIsSet(PREF_KEYCHAIN)) {
-        Zero((*toPers)->password);
+        Zero(toPers->password);
       }
     }
   }
@@ -4825,7 +4805,7 @@ OSErr SpoolOnePopMessage(TOCType * fromTocH, short fromSumNum,
 
   // get the message from the toc and sumnum
   if ((messH = fromTocH->sums[fromSumNum].messH)) {
-    messWin = (*messH)->win;
+    messWin = messH->win;
     messWinWP = GetMyWindowWindowPtr(messWin);
     UsingWindow(messWinWP);
   }
@@ -4937,7 +4917,7 @@ OSErr DoTransferMessagesToServer(TOCType * toTocH, IMAPAppendHandle spoolData,
     if (imapStream) {
       // open the destination mailbox
       LockMailboxNodeHandle(toBox);
-      if (IMAPOpenMailbox(imapStream, (*toBox)->mailboxName, false)) {
+      if (IMAPOpenMailbox(imapStream, toBox->mailboxName, false)) {
         for (count = 0; (count < numMessages) && (err == noErr); count++) {
           // indicate which message we're
           // transferring
@@ -5199,7 +5179,7 @@ bool CopyMessages(IMAPStreamPtr imapStream, MailboxNodeHandle mbox, Handle uids,
                                      (char *)imapStream->mailboxName))) {
       ;
       if (fromMBox) {
-        fromTocH = TOCBySpec(&(*fromMBox)->mailboxSpec);
+        fromTocH = TOCBySpec(&fromMBox->mailboxSpec);
         if (fromTocH) {
           // create a delivery node for the
           // UIDPLUS responses.
@@ -5211,23 +5191,23 @@ bool CopyMessages(IMAPStreamPtr imapStream, MailboxNodeHandle mbox, Handle uids,
           if (node) {
             // Allocate a new UIDPLUS response
             // item in the delivery node
-            if ((*node)->tc == NULL)
-              (*node)->tc = NuHandleClear(sizeof(UIDCopyStruct));
+            if (node->tc == NULL)
+              node->tc = NuHandleClear(sizeof(UIDCopyStruct));
             else {
               // some copies are already
               // pending
-              numCopies = GetHandleSize((*node)->tc);
-              SetHandleBig_((*node)->tc,
+              numCopies = GetHandleSize(node->tc);
+              SetHandleBig_(node->tc,
                             (numCopies + 1) * sizeof(UIDCopyStruct));
             }
             if (MemError() != noErr)
-              ZapHandle((*node)->tc);
+              ZapHandle(node->tc);
 
             // Store the interesting bits about
             // this copy
-            ucptr = &((UIDCopyPtr)(*((*node)->tc)))[numCopies];
-            if ((*node)->tc != NULL) {
-              ucptr->toSpec = (*mbox)->mailboxSpec;
+            ucptr = &((UIDCopyPtr)(*(node->tc)))[numCopies];
+            if (node->tc != NULL) {
+              ucptr->toSpec = mbox->mailboxSpec;
               ucptr->copy = copy;
 
               // store copies of the old
@@ -5288,11 +5268,11 @@ bool CopyMessages(IMAPStreamPtr imapStream, MailboxNodeHandle mbox, Handle uids,
         // copy
         uid = ((unsigned long *)(*uids))[i];
         sprintf((char *)uidStr, "%lu", uid);
-        result = UIDCopy(imapStream, (char *)uidStr, (*mbox)->mailboxName);
+        result = UIDCopy(imapStream, (char *)uidStr, mbox->mailboxName);
       } else {
         uid = ((unsigned long *)(*uids))[i];
         i = GenerateUIDString(uids, i, uidStr);
-        result = UIDCopy(imapStream, (char *)uidStr, (*mbox)->mailboxName);
+        result = UIDCopy(imapStream, (char *)uidStr, mbox->mailboxName);
       }
       UnlockMailboxNodeHandle(mbox);
 
@@ -5303,8 +5283,8 @@ bool CopyMessages(IMAPStreamPtr imapStream, MailboxNodeHandle mbox, Handle uids,
         // Do we have the latest information on
         // the destination mailbox?
         if (setup &&
-            (((*mbox)->uidValidity == 0) ||
-             (imapStream->mailStream->UIDPLUSuv == (*mbox)->uidValidity))) {
+            ((mbox->uidValidity == 0) ||
+             (imapStream->mailStream->UIDPLUSuv == mbox->uidValidity))) {
           if (imapStream->mailStream->UIDPLUSResponse.data)
             imapStream->mailStream->UIDPLUSResponse.data =
                 realloc(imapStream->mailStream->UIDPLUSResponse.data,
@@ -5361,7 +5341,7 @@ bool CopyMessages(IMAPStreamPtr imapStream, MailboxNodeHandle mbox, Handle uids,
       if (result && node && setup) {
         // we're done!
         QueueDeliveryNode(node);
-        (*node)->finished = true;
+        node->finished = true;
       } else // something went wrong setting up
              // ...
         ZapDeliveryNode(&node);
@@ -5423,15 +5403,15 @@ short GenerateUIDStringFromUIDNodeHandle(UIDNodeHandle uids, short index,
   if (index <= numMessages) {
     node = uids;
     for (n = 0; n < index; n++)
-      node = (*node)->next;
+      node = node->next;
 
-    uid = (*node)->uid;
+    uid = node->uid;
     lastUid = uid;
 
     // Is there a message after this one?
     if (index < (numMessages - 1)) {
-      node = (*node)->next;
-      nextUid = (*node)->uid;
+      node = node->next;
+      nextUid = node->uid;
       lastUid = uid;
 
       // Increment through the list until we
@@ -5440,9 +5420,9 @@ short GenerateUIDStringFromUIDNodeHandle(UIDNodeHandle uids, short index,
              (index < (numMessages - 1))) {
         index++;
         lastUid = nextUid;
-        node = (*node)->next;
+        node = node->next;
         if (node)
-          nextUid = (*node)->uid;
+          nextUid = node->uid;
       }
     }
   }
@@ -5518,28 +5498,28 @@ OSErr UpdateLocalSummaries(TOCType * fromTocH, Handle uids, bool undelete,
     // set up delete request.
     node = NewDeliveryNode(fromTocH);
     if (node) {
-      (*node)->filter = false;
+      node->filter = false;
 
       // expunge?  Then remove the summaries
       // from the sourcemailbox
       if (expunge) {
         state = HGetState((Handle)node);
         LDRef(node);
-        (*node)->td = NuHandle(numUids * sizeof(MSumType));
+        node->td = NuHandle(numUids * sizeof(MSumType));
         HSetState((Handle)node, state);
-        if ((*node)->td) {
+        if (node->td) {
           Zero(sum);
 
-          (*node)->cleanupAttachments = cleanupAttachments;
+          node->cleanupAttachments = cleanupAttachments;
 
           // scan through fromTocH, copying
           // summaries from there to the new
           // tocH
           for (count = 0; count < numUids; count++) {
             sum.uidHash = ((unsigned long *)(*uids))[count];
-            BMD(&sum, &((MSumPtr)(*((*node)->td)))[count], sizeof(MSumType));
+            BMD(&sum, &((MSumPtr)(*(node->td)))[count], sizeof(MSumType));
           }
-          (*node)->finished = true;
+          node->finished = true;
           TOCSetDirty(fromTocH, true);
           QueueDeliveryNode(node);
         } else {
@@ -5551,9 +5531,9 @@ OSErr UpdateLocalSummaries(TOCType * fromTocH, Handle uids, bool undelete,
       else {
         state = HGetState((Handle)node);
         LDRef(node);
-        (*node)->tu = NuHandle(numUids * sizeof(MSumType));
+        node->tu = NuHandle(numUids * sizeof(MSumType));
         HSetState((Handle)node, state);
-        if ((*node)->tu) {
+        if (node->tu) {
           Zero(sum);
 
           // scan through fromTocH, copying
@@ -5570,13 +5550,13 @@ OSErr UpdateLocalSummaries(TOCType * fromTocH, Handle uids, bool undelete,
                   sum.opts = fromTocH->sums[sumNum].opts | OPT_DELETED;
                 }
                 sum.state = fromTocH->sums[sumNum].state;
-                BMD(&sum, &((MSumPtr)(*((*node)->tu)))[count],
+                BMD(&sum, &((MSumPtr)(*(node->tu)))[count],
                     sizeof(MSumType));
                 sumNum = fromTocH->count;
               }
             }
           }
-          (*node)->finished = true;
+          node->finished = true;
           TOCSetDirty(fromTocH, true);
           QueueDeliveryNode(node);
         } else {
@@ -5617,7 +5597,7 @@ bool IMAPRemoveDeletedMessages(TOCType * tocH) {
   // this toc that are to be deleted
   for (sum = 0; sum < tocH->count; sum++) {
     if ((tocH->sums[sum].opts & OPT_DELETED) && (tocH->sums[sum].messH)) {
-      CloseMyWindow(GetMyWindowWindowPtr((*tocH->sums[sum].messH)->win));
+      CloseMyWindow(GetMyWindowWindowPtr(tocH->sums[sum].messH->win));
     }
   }
 
@@ -5643,12 +5623,12 @@ bool IMAPRemoveDeletedMessages(TOCType * tocH) {
         result = true;
 
       // and remove any old task errors
-      RemoveTaskErrors(IMAPExpungeTask, (*CurPers)->persId);
+      RemoveTaskErrors(IMAPExpungeTask, CurPers->persId);
 
       // forget the keychain password so it's
       // not written to the settings file
       if (false && PrefIsSet(PREF_KEYCHAIN))
-        Zero((*CurPers)->password);
+        Zero(CurPers->password);
     }
     CurPers = oldPers;
   }
@@ -5737,8 +5717,8 @@ bool DoExpungeMailboxLo(TOCType * tocH, bool bCheckLocal) {
         // which mailbox we're going to expunge
         if (InAThread()) {
           LockMailboxNodeHandle(mailboxNode);
-          PathToMailboxName((*mailboxNode)->mailboxName, (unsigned char *)mName,
-                            (*mailboxNode)->delimiter);
+          PathToMailboxName(mailboxNode->mailboxName, (unsigned char *)mName,
+                            mailboxNode->delimiter);
           UnlockMailboxNodeHandle(mailboxNode);
           ComposeRString(progressMessage, IMAP_EXPUNGE_MAILBOX,
                          (unsigned char *)mName);
@@ -5751,7 +5731,7 @@ bool DoExpungeMailboxLo(TOCType * tocH, bool bCheckLocal) {
         imapStream = GetIMAPConnection(IMAPExpungeTask, CAN_PROGRESS);
         if (imapStream) {
           LockMailboxNodeHandle(mailboxNode);
-          if (IMAPOpenMailbox(imapStream, (*mailboxNode)->mailboxName, false)) {
+          if (IMAPOpenMailbox(imapStream, mailboxNode->mailboxName, false)) {
             if ((result = Expunge(imapStream))) {
               // remove these messages from the
               // tocH on screen note, this will
@@ -6094,18 +6074,18 @@ bool IMAPMessageBeingDownloaded(TOCType * tocH, short s) {
   if (!onItsWay) {
     // are there any threads currently
     // downloading this message?
-    for (index = gThreadData; index && !onItsWay; index = (*index)->next) {
-      if ((*index)->currentTask == IMAPFetchingTask) {
+    for (index = gThreadData; index && !onItsWay; index = index->next) {
+      if (index->currentTask == IMAPFetchingTask) {
         state = HGetState((Handle)index);
         LDRef(index);
-        if (SameTOC((*index)->imapInfo.destToc, tocH)) {
-          if ((*index)->imapInfo.uids) {
+        if (SameTOC(index->imapInfo.destToc, tocH)) {
+          if (index->imapInfo.uids) {
             for (numUids = 0;
-                 numUids < (GetHandleSize((*index)->imapInfo.uids) /
+                 numUids < (GetHandleSize(index->imapInfo.uids) /
                             sizeof(unsigned long));
                  numUids++) {
               if (((unsigned long *)(*(
-                      Handle)((*index)->imapInfo.uids)))[numUids] ==
+                      Handle)(index->imapInfo.uids)))[numUids] ==
                   tocH->sums[s].uidHash) {
                 onItsWay = true;
               }
@@ -6153,25 +6133,25 @@ void IMAPAbortMessageFetch(TOCType * tocH, short sumNum) {
 
   // don't cancel the download if the message
   // window is open anywhere.
-  if (tocH->sums[sumNum].messH && (*tocH->sums[sumNum].messH)->win)
+  if (tocH->sums[sumNum].messH && tocH->sums[sumNum].messH->win)
     return;
 
   // are there any threads currently
   // downloading this message?
-  for (index = gThreadData; index; index = (*index)->next) {
-    if ((*index)->currentTask == IMAPFetchingTask) {
+  for (index = gThreadData; index; index = index->next) {
+    if (index->currentTask == IMAPFetchingTask) {
       state = HGetState((Handle)index);
       LDRef(index);
-      if (SameTOC((*index)->imapInfo.destToc, tocH)) {
-        if ((*index)->imapInfo.uids) {
-          for (numUids = 0; numUids < (GetHandleSize((*index)->imapInfo.uids) /
+      if (SameTOC(index->imapInfo.destToc, tocH)) {
+        if (index->imapInfo.uids) {
+          for (numUids = 0; numUids < (GetHandleSize(index->imapInfo.uids) /
                                        sizeof(unsigned long));
                numUids++) {
             if (((unsigned long *)(*(
-                    Handle)((*index)->imapInfo.uids)))[numUids] ==
+                    Handle)(index->imapInfo.uids)))[numUids] ==
                 tocH->sums[sumNum].uidHash) {
               // cancel the thread
-              SetThreadGlobalCommandPeriod((*index)->threadID, true);
+              SetThreadGlobalCommandPeriod(index->threadID, true);
               HSetState((Handle)index, state);
               break;
             }
@@ -6329,7 +6309,7 @@ OSErr RsyncCurPersInbox(void) {
   // and resync it.
   if (inBox) {
     LockMailboxNodeHandle(inBox);
-    err = GetMailbox(&(*inBox)->mailboxSpec, false);
+    err = GetMailbox(&inBox->mailboxSpec, false);
     UnlockMailboxNodeHandle(inBox);
   }
 
@@ -6476,7 +6456,7 @@ bool SaveAttachmentStub(IMAPStreamPtr stream, unsigned long uid, char *section,
 
     // save the stub information to the message
     // spool file
-    snprintf((char*)buffer, 256, "%ld", (long)((*CurPersSafe)->persId));
+    snprintf((char*)buffer, 256, "%ld", (long)(CurPersSafe->persId));
     PCat(buffer, (unsigned char *)"\x01,");
     FSWriteP(stream->mailStream->refN, buffer);
 
@@ -6586,7 +6566,7 @@ OSErr IE(IMAPStreamPtr imapStream, short operation, short explanation,
   if (imapStream && imapStream->mbox) {
     *mboxName = 1;
     mboxName[1] = ' ';
-    PCopy(mboxName, (*imapStream->mbox)->mailboxSpec.name);
+    PCopy(mboxName, imapStream->mbox->mailboxSpec.name);
   } else
     *mboxName = 0;
 
@@ -6594,7 +6574,7 @@ OSErr IE(IMAPStreamPtr imapStream, short operation, short explanation,
   // the name of the mailbox
   if ((operation == kIMAPCompleteResync) && imapStream && imapStream->mbox) {
     PtoCcpy(fmt, GetRString(scratch, IMAP_OPERATIONS_STRN + operation));
-    ComposeString(explanationText, fmt, (*imapStream->mbox)->mailboxSpec.name);
+    ComposeString(explanationText, fmt, imapStream->mbox->mailboxSpec.name);
     PtoCcpy(explanationTextC, explanationText);
     ComposeRString(operationText, IMAP_ERR_OPERATION_FMT, explanationTextC);
     // have mbox name, do not append
@@ -6777,7 +6757,7 @@ bool EmptyImapTrashes(IMAPEmptyTrashEnum which) {
 
   // loop through all personalities and empty
   // the trash.
-  for (CurPers = PersList; CurPers; CurPers = (*CurPers)->next) {
+  for (CurPers = PersList; CurPers; CurPers = CurPers->next) {
     // is this an IMAP personality?
     if (IsIMAPPers(CurPers)) {
 
@@ -6825,7 +6805,7 @@ bool IMAPEmptyPersTrash(void) {
   // locate the trash mailbox
   if ((persTrash = GetIMAPTrashMailbox(CurPers, false, true))) {
     LockMailboxNodeHandle(persTrash);
-    trashToc = TOCBySpec(&((*persTrash)->mailboxSpec));
+    trashToc = TOCBySpec(&(persTrash->mailboxSpec));
     UnlockMailboxNodeHandle(persTrash);
 
     // remove all deleted messages from the
@@ -6855,7 +6835,7 @@ bool IMAPWipeBox(TOCType * tocToWipe, MailboxNodeHandle nodeToWipe) {
   for (sum = 0; sum < tocToWipe->count; sum++) {
     if (tocToWipe->sums[sum].messH)
       CloseMyWindow(
-          GetMyWindowWindowPtr((*(tocToWipe->sums[sum].messH))->win));
+          GetMyWindowWindowPtr(tocToWipe->sums[sum].messH->win));
   }
 
   // Create a new IMAP stream
@@ -6863,7 +6843,7 @@ bool IMAPWipeBox(TOCType * tocToWipe, MailboxNodeHandle nodeToWipe) {
     // SELECT the mailbox this message resides
     // in on the server
     LockMailboxNodeHandle(nodeToWipe);
-    if (IMAPOpenMailbox(imapStream, (*nodeToWipe)->mailboxName, false)) {
+    if (IMAPOpenMailbox(imapStream, nodeToWipe->mailboxName, false)) {
       // mark all the messages for deletion and
       // expunge
       result = UIDDeleteMessages(imapStream, "1:*", true);
@@ -7083,17 +7063,17 @@ unsigned long DownloadIMAPAttachments(FSSpecHandle attachments,
         Zero(flags);
         Zero(imapInfo);
         imapInfo.attachments = attachments;
-        imapInfo.targetBox = (*mailbox)->mailboxSpec;
+        imapInfo.targetBox = mailbox->mailboxSpec;
         imapInfo.command = IMAPAttachmentFetch;
         err = SetupXferMailThread(false, false, true, false, flags, &imapInfo);
 
         // and remove any old task errors
-        RemoveTaskErrors(IMAPAttachmentFetch, (*CurPers)->persId);
+        RemoveTaskErrors(IMAPAttachmentFetch, CurPers->persId);
 
         // forget the keychain password so it's
         // not written to the settings file
         if (false && PrefIsSet(PREF_KEYCHAIN))
-          Zero((*CurPers)->password);
+          Zero(CurPers->password);
       }
     }
     CurPers = oldPers;
@@ -7154,8 +7134,8 @@ unsigned long DoDownloadIMAPAttachments(FSSpecHandle attachments,
         // display some progress indicating
         // which mailbox we're downloading to?
         LockMailboxNodeHandle(mailbox);
-        PathToMailboxName((*mailbox)->mailboxName, (unsigned char *)mName,
-                          (*mailbox)->delimiter);
+        PathToMailboxName(mailbox->mailboxName, (unsigned char *)mName,
+                          mailbox->delimiter);
         UnlockMailboxNodeHandle(mailbox);
         ComposeRString(progressMessage, IMAP_FETCH_ATTACHMENT_NAME,
                        (unsigned char *)mName);
@@ -7169,7 +7149,7 @@ unsigned long DoDownloadIMAPAttachments(FSSpecHandle attachments,
           // SELECT the mailbox the attachment
           // resides in on the server
           LockMailboxNodeHandle(mailbox);
-          if (IMAPOpenMailbox(imapStream, (*mailbox)->mailboxName, false)) {
+          if (IMAPOpenMailbox(imapStream, mailbox->mailboxName, false)) {
             // indicate what we're downloading
             ComposeRString(progressMessage, IMAP_FETCH_ATTACHMENT_NAME,
                            stubSpec.name);
@@ -7343,7 +7323,7 @@ unsigned long DoDownloadIMAPAttachments(FSSpecHandle attachments,
             AFSpSetFInfo(&stubSpec, &stubSpec, &decodedInfo);
 
           // record for statistics
-          if ((tocH = TOCBySpec(&(*mailbox)->mailboxSpec))) {
+          if ((tocH = TOCBySpec(&mailbox->mailboxSpec))) {
             long sumNum;
 
             if (!TOCFindMessByMID(stub.uid, tocH, &sumNum))
@@ -7368,7 +7348,7 @@ unsigned long DoDownloadIMAPAttachments(FSSpecHandle attachments,
 
           // find the summary of the message
           // who'se attachment we just fetched.
-          tocH = TOCBySpec(&(*mailbox)->mailboxSpec);
+          tocH = TOCBySpec(&mailbox->mailboxSpec);
           if (tocH) {
             if (noErr == (TOCFindMessByMID(stub.uid, tocH, &sumNum))) {
               if (sumNum < tocH->count) {
@@ -7402,11 +7382,11 @@ unsigned long DoDownloadIMAPAttachments(FSSpecHandle attachments,
 
   // make the window aware of the new
   // attachment
-  update = NewZH(UpdateNode);
+  update = g_malloc0(sizeof(UpdateNode));
   if (update) {
-    (*update)->mailboxSpec = (*mailbox)->mailboxSpec;
-    (*update)->uid = result;
-    (*update)->attachSpecs = attachments;
+    update->mailboxSpec = mailbox->mailboxSpec;
+    update->uid = result;
+    update->attachSpecs = attachments;
     LL_Queue(gWindowUpdates, update, (UpdateNodeHandle));
   }
 
@@ -7519,7 +7499,7 @@ MailboxNodeHandle PETEHandleToMailboxNode(PETEHandle pte) {
     kind = GetWindowKind(GetMyWindowWindowPtr(win));
 
     if (kind == MESS_WIN)
-      tocH = (*Win2MessH(win))->tocH;
+      tocH = Win2MessH(win)->tocH;
     else if (kind == MBOX_WIN)
       tocH = (TOCType *)GetMyWindowPrivateData(win);
 
@@ -7563,7 +7543,7 @@ OSErr FetchIMAPAttachment(PETEHandle pte, FSSpecPtr spec,
   if ((err = GetStubInfo(spec, &stub)) == noErr) {
     // which toc are we dealing with?
     LockMailboxNodeHandle(mailbox);
-    mailboxTocH = FindTOC(&(*mailbox)->mailboxSpec);
+    mailboxTocH = FindTOC(&mailbox->mailboxSpec);
     UnlockMailboxNodeHandle(mailbox);
 
     if (mailboxTocH) {
@@ -7788,7 +7768,7 @@ bool SpoolFileToAttachment(MailboxNodeHandle mailbox, unsigned long uid,
 
   // convert the uid to a messNum
   LockMailboxNodeHandle(mailbox);
-  toTocH = TOCBySpec(&(*mailbox)->mailboxSpec);
+  toTocH = TOCBySpec(&mailbox->mailboxSpec);
   UnlockMailboxNodeHandle(mailbox);
   if (!toTocH) {
     inUse = false;
@@ -7961,24 +7941,24 @@ bool CanFetchAttachment(FSSpecPtr spec) {
 
       // are there any threads currently
       // operating on this stub?
-      for (index = gThreadData; index && result; index = (*index)->next) {
+      for (index = gThreadData; index && result; index = index->next) {
         state = HGetState((Handle)index);
-        LDRef((Handle)(*index)->imapInfo.attachments);
+        LDRef((Handle)index->imapInfo.attachments);
         // scan through this thread's
         // attachments specs
-        if ((*index)->imapInfo.attachments) {
-          LDRef((Handle)(*index)->imapInfo.attachments);
+        if (index->imapInfo.attachments) {
+          LDRef((Handle)index->imapInfo.attachments);
           for (ascan = 0;
                result &&
-               ascan < (GetHandleSize((*index)->imapInfo.attachments) /
+               ascan < (GetHandleSize(index->imapInfo.attachments) /
                         sizeof(FSSpec));
                ascan++) {
             if (SameSpec(
                     spec,
-                    &(*((FSSpec **)((*index)->imapInfo.attachments)))[ascan]))
+                    &(*((FSSpec **)(index->imapInfo.attachments)))[ascan]))
               result = false;
           }
-          UL((*index)->imapInfo.attachments);
+          UL(index->imapInfo.attachments);
         }
         HSetState((Handle)index, state);
       }
@@ -8005,19 +7985,19 @@ void UpdateIMAPWindows(void) {
 
   // go through the list of nodes ...
   while (node) {
-    next = (*node)->next;
+    next = node->next;
 
     // remove the node from the list
     LL_Remove(gWindowUpdates, node, (UpdateNodeHandle));
 
     // Which mailbox does this message live in?
     LDRef(node);
-    tocH = TOCBySpec(&(*node)->mailboxSpec);
+    tocH = TOCBySpec(&node->mailboxSpec);
 
     if (tocH) // the toc is still open ...
     {
       // which message needs to be updated?
-      if (TOCFindMessByMID((*node)->uid, tocH, &sumNum) == noErr) {
+      if (TOCFindMessByMID(node->uid, tocH, &sumNum) == noErr) {
         // update the message's summary.
         if (HasStubFileAttachment(tocH, sumNum))
           tocH->sums[sumNum].opts |= OPT_FETCH_ATTACHMENTS;
@@ -8031,11 +8011,11 @@ void UpdateIMAPWindows(void) {
         // with this message?
         if ((messH = tocH->sums[sumNum].messH)) {
           // is the message open?
-          if ((win = (*messH)->win)) {
+          if ((win = messH->win)) {
             // is the message visible?
             if (IsWindowVisible(GetMyWindowWindowPtr(win))) {
               // then refresh the message
-              if (!RedoIMAPAttachmentIcons(win, nil, (*node)->attachSpecs)) {
+              if (!RedoIMAPAttachmentIcons(win, nil, node->attachSpecs)) {
                 // reopen the window if there
                 // was no attachment info, or
                 // if we failed.
@@ -8049,7 +8029,7 @@ void UpdateIMAPWindows(void) {
         // cause it to be redisplayed
         if (tocH->previewID == tocH->sums[sumNum].serialNum) {
           if (!RedoIMAPAttachmentIcons(nil, tocH->previewPTE,
-                                       (*node)->attachSpecs))
+                                       node->attachSpecs))
             tocH->previewID = 0;
         }
 
@@ -8074,7 +8054,7 @@ void UpdateIMAPWindows(void) {
                       searchTocH->sums[searchSum].uidHash) {
                     // redisplay it
                     if (!RedoIMAPAttachmentIcons(nil, searchTocH->previewPTE,
-                                                 (*node)->attachSpecs))
+                                                 node->attachSpecs))
                       searchTocH->previewID = 0;
                   }
                 }
@@ -8088,7 +8068,7 @@ void UpdateIMAPWindows(void) {
     UL(node);
 
     // Cleanup
-    ZapHandle((*node)->attachSpecs);
+    ZapHandle(node->attachSpecs);
     ZapHandle(node);
 
     // move on to the next node in the list
@@ -8240,7 +8220,7 @@ bool FetchAllIMAPAttachments(TOCType * tocH, short sumNum,
     // if the message is already open, nothing
     // to do.
     if ((messH = tocH->sums[sumNum].messH)) {
-      win = (*messH)->win;
+      win = messH->win;
       UsingWindow(GetMyWindowWindowPtr(win));
     }
 
@@ -8328,7 +8308,7 @@ bool FetchAllIMAPAttachmentsBySpec(FSSpecPtr spec, MailboxNodeHandle mailbox,
   if ((err = GetStubInfo(spec, &stub)) == noErr) {
     // which toc are we dealing with?
     LockMailboxNodeHandle(mailbox);
-    mailboxTocH = FindTOC(&(*mailbox)->mailboxSpec);
+    mailboxTocH = FindTOC(&mailbox->mailboxSpec);
     UnlockMailboxNodeHandle(mailbox);
 
     if (mailboxTocH) {
@@ -8370,7 +8350,7 @@ bool HasStubFileAttachment(TOCType * tocH, short sumNum) {
     // if the message is already open, nothing
     // to do.
     if ((messH = tocH->sums[sumNum].messH)) {
-      win = (*messH)->win;
+      win = messH->win;
       UsingWindow(GetMyWindowWindowPtr(win));
     }
 
@@ -8446,7 +8426,7 @@ bool IMAPSearch(TOCType * searchWin, BoxCountHandle boxesToSearch,
     return (false);
 
   // Search each personality as needed.
-  for (pers = PersList; pers && (err == noErr); pers = (*pers)->next) {
+  for (pers = PersList; pers && (err == noErr); pers = pers->next) {
     // create a handle to store the indices
     // into boxesToSearch
     if (!(toSearch = NuHandle(0)) || (err = MemError())) {
@@ -8495,7 +8475,7 @@ bool IMAPSearch(TOCType * searchWin, BoxCountHandle boxesToSearch,
       if (node == NULL) {
         node = NewDeliveryNode(searchWin);
         if (node) {
-          (*node)->filter = false;
+          node->filter = false;
 
           // queue the delivery node
           QueueDeliveryNode(node);
@@ -8548,7 +8528,7 @@ bool IMAPSearchMailbox(TOCType * searchWin, BoxCountHandle allBoxes,
   FSSpec spec;
 
   // must have a mailbox to search
-  if (!boxToSearch || !*boxToSearch)
+  if (!boxToSearch)
     return (false);
 
   // must thave some search criteria
@@ -8564,7 +8544,7 @@ bool IMAPSearchMailbox(TOCType * searchWin, BoxCountHandle allBoxes,
 
   node = NewDeliveryNode(searchWin);
   if (node) {
-    (*node)->filter = false;
+    node->filter = false;
 
     // grumble grumble
     numBoxes = GetHandleSize_(allBoxes) / sizeof(BoxCountElem);
@@ -8579,8 +8559,8 @@ bool IMAPSearchMailbox(TOCType * searchWin, BoxCountHandle allBoxes,
                       spec.name);
       spec.parID = SpecDirId(&spec);
 
-      if (((*boxToSearch)->mailboxSpec.vRefNum == spec.vRefNum) &&
-          ((*boxToSearch)->mailboxSpec.parID == spec.parID)) {
+      if ((boxToSearch->mailboxSpec.vRefNum == spec.vRefNum) &&
+          (boxToSearch->mailboxSpec.parID == spec.parID)) {
         toSearch = NuHandle(sizeof(short));
         if (toSearch) {
           *((short *)(*toSearch)) = i;
@@ -8594,7 +8574,7 @@ bool IMAPSearchMailbox(TOCType * searchWin, BoxCountHandle allBoxes,
       QueueDeliveryNode(node);
 
       // then do the search
-      IMAPSearchServer(searchWin, FindPersById((*boxToSearch)->persId),
+      IMAPSearchServer(searchWin, FindPersById(boxToSearch->persId),
                        allBoxes, toSearch, searchCriteria, matchAll, firstUID,
                        false);
     } else
@@ -8666,12 +8646,12 @@ bool IMAPSearchServer(TOCType * searchWin, PersHandle pers,
                                              &imapInfo)) == noErr);
 
         // and remove any old task errors
-        RemoveTaskErrors(IMAPSearchTask, (*CurPers)->persId);
+        RemoveTaskErrors(IMAPSearchTask, CurPers->persId);
 
         // forget the keychain password so it's
         // not written to the settings file
         if (false && PrefIsSet(PREF_KEYCHAIN))
-          Zero((*CurPers)->password);
+          Zero(CurPers->password);
       }
       CurPers = oldPers;
     }
@@ -8721,7 +8701,7 @@ bool DoIMAPServerSearch(TOCType * searchWin, BoxCountHandle allBoxes,
   unsigned long chunkLen = GetRLong(IMAP_SEARCH_CHUNK_SIZE);
 
   // must have some place to put the results
-  if (!delivery || (*delivery)->aborted)
+  if (!delivery || delivery->aborted)
     return (false);
 
   // must have a list of all mailboxes
@@ -8738,7 +8718,7 @@ bool DoIMAPServerSearch(TOCType * searchWin, BoxCountHandle allBoxes,
 
   // increment the delivery node since we're
   // starting a search thread
-  (*delivery)->threadCount++;
+  delivery->threadCount++;
 
   // the personalitiy we're searching is the
   // owner of the first mailbox to search ...
@@ -8763,7 +8743,7 @@ bool DoIMAPServerSearch(TOCType * searchWin, BoxCountHandle allBoxes,
     // server we're searching
     pState = HGetState((Handle)CurPers);
     LDRef(CurPers);
-    ComposeRString(progressMessage, IMAP_SEARCHING_PERS, (*CurPers)->name);
+    ComposeRString(progressMessage, IMAP_SEARCHING_PERS, CurPers->name);
     HSetState((Handle)CurPers, pState);
     PROGRESS_START;
     PROGRESS_MESSAGE(kpTitle, progressMessage);
@@ -8775,7 +8755,7 @@ bool DoIMAPServerSearch(TOCType * searchWin, BoxCountHandle allBoxes,
       if (OpenControlStream(imapStream)) {
         // iterate through the mailboxes to
         // search
-        for (boxCount = 0; (boxCount < numBoxes) && !((*delivery)->aborted);
+        for (boxCount = 0; (boxCount < numBoxes) && !(delivery->aborted);
              boxCount++) {
           // figure out who this mailbox
           // belongs to
@@ -8803,14 +8783,14 @@ bool DoIMAPServerSearch(TOCType * searchWin, BoxCountHandle allBoxes,
           if (mboxToSearch) {
             // open the mailbox on the server
             LockMailboxNodeHandle(mboxToSearch);
-            if (IMAPOpenMailbox(imapStream, (*mboxToSearch)->mailboxName,
+            if (IMAPOpenMailbox(imapStream, mboxToSearch->mailboxName,
                                 false)) {
               // take this opportunity to
               // update the UIDVALIDITY of the
               // mailbox if it hasn't been
               // resynched before.
-              if ((*mboxToSearch)->uidValidity == 0)
-                (*mboxToSearch)->uidValidity = UIDValidity(imapStream);
+              if (mboxToSearch->uidValidity == 0)
+                mboxToSearch->uidValidity = UIDValidity(imapStream);
 
               UnlockMailboxNodeHandle(mboxToSearch);
 
@@ -8821,7 +8801,7 @@ bool DoIMAPServerSearch(TOCType * searchWin, BoxCountHandle allBoxes,
 
               // remember the highest for later
               // use ...
-              (*mboxToSearch)->searchUID = last;
+              mboxToSearch->searchUID = last;
 
               // start the search in the
               // appropriate place
@@ -8845,12 +8825,12 @@ bool DoIMAPServerSearch(TOCType * searchWin, BoxCountHandle allBoxes,
               }
               next = MIN(start + chunkLen, last);
 
-              while (!((*delivery)->aborted) && (start <= last)) {
+              while (!(delivery->aborted) && (start <= last)) {
                 // iterate through the
                 // criteria, and do one search
                 // for each criteria element
                 for (criteriaCount = 0;
-                     (criteriaCount < numCriteria) && !((*delivery)->aborted);
+                     (criteriaCount < numCriteria) && !(delivery->aborted);
                      criteriaCount++) {
                   // make a c-string out of
                   // what we're searching for
@@ -8898,8 +8878,8 @@ bool DoIMAPServerSearch(TOCType * searchWin, BoxCountHandle allBoxes,
                   // indicating which mailbox
                   // we're searching
                   LockMailboxNodeHandle(mboxToSearch);
-                  PathToMailboxName((*mboxToSearch)->mailboxName, mNameP,
-                                    (*mboxToSearch)->delimiter);
+                  PathToMailboxName(mboxToSearch->mailboxName, mNameP,
+                                    mboxToSearch->delimiter);
                   PtoCcpy(mName, mNameP);
                   UnlockMailboxNodeHandle(mboxToSearch);
                   ComposeRString(progressMessage, IMAP_SEARCHING_MAILBOX,
@@ -8930,8 +8910,8 @@ bool DoIMAPServerSearch(TOCType * searchWin, BoxCountHandle allBoxes,
                       // results we just got
                       // ...
                       for (boxScan = boxSearchResults; boxScan;
-                           boxScan = (*boxScan)->next)
-                        (*boxScan)->boxIndex =
+                           boxScan = boxScan->next)
+                        boxScan->boxIndex =
                             ((short *)(*boxesToSearch))[boxCount];
 
                       // now save the search
@@ -8954,15 +8934,15 @@ bool DoIMAPServerSearch(TOCType * searchWin, BoxCountHandle allBoxes,
                           // accumulated
                           allScan = allSearchResults;
                           while (allScan) {
-                            nextScan = (*allScan)->next;
+                            nextScan = allScan->next;
 
                             for (boxScan = boxSearchResults; boxScan;
-                                 boxScan = (*boxScan)->next)
-                              if ((*boxScan)->uid == (*allScan)->uid)
+                                 boxScan = boxScan->next)
+                              if (boxScan->uid == allScan->uid)
                                 break;
 
                             if (!boxScan) {
-                              boxScan = (*allScan)->next;
+                              boxScan = allScan->next;
                               LL_Remove(allSearchResults, allScan,
                                         (UIDNodeHandle));
                               ZapHandle(allScan);
@@ -8987,8 +8967,8 @@ bool DoIMAPServerSearch(TOCType * searchWin, BoxCountHandle allBoxes,
                           // PLUS what we have
                           // just found.
                           while ((boxScan = boxSearchResults)) {
-                            boxSearchResults = (*boxScan)->next;
-                            (*boxScan)->next = nil;
+                            boxSearchResults = boxScan->next;
+                            boxScan->next = nil;
                             UID_LL_OrderedInsert(&allSearchResults, &boxScan,
                                                  false);
                           }
@@ -9033,12 +9013,12 @@ bool DoIMAPServerSearch(TOCType * searchWin, BoxCountHandle allBoxes,
   // aborted? decrement the thread count.
   // Other threads will abort, and node will be
   // removed at idle time from main thread
-  if (delivery && ((*delivery)->aborted || CommandPeriod))
-    (*delivery)->threadCount--;
+  if (delivery && (delivery->aborted || CommandPeriod))
+    delivery->threadCount--;
   else {
-    (*delivery)->threadCount--;
-    if ((*delivery)->threadCount <= 0)
-      (*delivery)->finished = true;
+    delivery->threadCount--;
+    if (delivery->threadCount <= 0)
+      delivery->finished = true;
   }
 
   // cleanup
@@ -9167,16 +9147,16 @@ bool ReturnSearchHits(IMAPStreamPtr imapStream, DeliveryNodeHandle searchNode,
   // build a list of uids to fetch
   next = nil;
   for (node = *uids; node; node = next) {
-    next = (*node)->next;
+    next = node->next;
 
     // if the summary can't be found ...
-    if ((TOCFindMessByMID((*node)->uid, tocToSync, &sumNum) != noErr) &&
+    if ((TOCFindMessByMID(node->uid, tocToSync, &sumNum) != noErr) &&
         ((hidTocH == nil) ||
-         (TOCFindMessByMID((*node)->uid, hidTocH, &sumNum) != noErr))) {
+         (TOCFindMessByMID(node->uid, hidTocH, &sumNum) != noErr))) {
       // remove this node from the search
       // results ...
       LL_Remove(*uids, node, (UIDNodeHandle));
-      (*node)->next = nil;
+      node->next = nil;
 
       // and put it in the list of uids to
       // fetch.
@@ -9186,19 +9166,19 @@ bool ReturnSearchHits(IMAPStreamPtr imapStream, DeliveryNodeHandle searchNode,
 
   // Return the remaining results.  These
   // messages exist locally.
-  if (*uids && **uids) {
+  if (*uids) {
     BuildSearchResults(searchNode, *uids);
     UID_LL_Zap(uids);
     *uids = nil;
   }
 
   // go fetch the missing summaries
-  if (uidsToFetch && *uidsToFetch) {
+  if (uidsToFetch) {
     // set up the structure that the summaries
     // will be returned in.
     deliveryNode = NewDeliveryNode(tocToSync);
     if (deliveryNode) {
-      (*deliveryNode)->filter = false;
+      deliveryNode->filter = false;
 
       // queue it in the global list of
       // deliveries.  It will be removed in the
@@ -9209,7 +9189,7 @@ bool ReturnSearchHits(IMAPStreamPtr imapStream, DeliveryNodeHandle searchNode,
                                 false);
 
       if (result) {
-        (*deliveryNode)->finished = true;
+        deliveryNode->finished = true;
 
         // no threading.  Get results
         // immediately
@@ -9252,18 +9232,18 @@ void BuildSearchResults(DeliveryNodeHandle delivery, UIDNodeHandle results) {
   SignedByte state;
 
   // must have some results
-  if (results && *results) {
+  if (results) {
     // must have someplace to put the results
-    if (delivery && !(*delivery)->aborted) {
+    if (delivery && !delivery->aborted) {
       // allocate a handle big enough for all
       // the results
-      for (resultScan = results; resultScan; resultScan = (*resultScan)->next)
+      for (resultScan = results; resultScan; resultScan = resultScan->next)
         numResults++;
       state = HGetState((Handle)delivery);
       LDRef(delivery);
-      if ((*delivery)->results) {
-        offset = GetHandleSize((Handle)(*delivery)->results);
-        SetHandleBig_((*delivery)->results,
+      if (delivery->results) {
+        offset = GetHandleSize((Handle)delivery->results);
+        SetHandleBig_(delivery->results,
                       offset + (numResults * sizeof(IMAPSResultStruct)));
         if ((err = MemError())) {
           WarnUser(MEM_ERR, err);
@@ -9271,9 +9251,9 @@ void BuildSearchResults(DeliveryNodeHandle delivery, UIDNodeHandle results) {
           return;
         }
       } else {
-        (*delivery)->results = (IMAPSResultHandle)NuHTempBetter(
+        delivery->results = (IMAPSResultHandle)NuHTempBetter(
             numResults * sizeof(IMAPSResultStruct));
-        if (!(*delivery)->results) {
+        if (!delivery->results) {
           WarnUser(MEM_ERR, MemError());
           HSetState((Handle)delivery, state);
           return;
@@ -9282,10 +9262,10 @@ void BuildSearchResults(DeliveryNodeHandle delivery, UIDNodeHandle results) {
 
       // put the results into the handle
       for ((resultScan = results) && (offset = 0); resultScan;
-           (resultScan = (*resultScan)->next) && offset++) {
-        imapResult.box = (*resultScan)->boxIndex;
-        imapResult.uidHash = (*resultScan)->uid;
-        BMD(&imapResult, (*((*delivery)->results)) + offset,
+           (resultScan = resultScan->next) && offset++) {
+        imapResult.box = resultScan->boxIndex;
+        imapResult.uidHash = resultScan->uid;
+        BMD(&imapResult, (*(delivery->results)) + offset,
             sizeof(IMAPSResultStruct));
       }
       HSetState((Handle)delivery, state);
@@ -9306,22 +9286,22 @@ void IMAPAbortSearch(TOCType * searchWin) {
   // Is there a search going on this window?
   if (node) {
     // has the search finished?
-    if (!(*node)->finished) {
+    if (!node->finished) {
       // if not, mark the node as aborted.
       AbortDeliveryNode(node);
 
       // set command period for all the search
       // threads for this window
-      for (index = gThreadData; index; index = (*index)->next) {
+      for (index = gThreadData; index; index = index->next) {
         // is this a search thread?
-        if ((*index)->currentTask == IMAPSearchTask) {
+        if (index->currentTask == IMAPSearchTask) {
           // does this search thread belong to
           // the current search window?
           state = HGetState((Handle)index);
           LDRef(index);
-          if (SameTOC((*index)->imapInfo.destToc, searchWin)) {
+          if (SameTOC(index->imapInfo.destToc, searchWin)) {
             // cancel the thread
-            SetThreadGlobalCommandPeriod((*index)->threadID, true);
+            SetThreadGlobalCommandPeriod(index->threadID, true);
 
             // continue through all threads
             // like this
@@ -9371,8 +9351,8 @@ bool IMAPStartFiltering(TOCType * tocToFilter, bool connect) {
 
       // display some progress information
       LockMailboxNodeHandle(boxToFilter);
-      PathToMailboxName((*boxToFilter)->mailboxName, mName,
-                        (*boxToFilter)->delimiter);
+      PathToMailboxName(boxToFilter->mailboxName, mName,
+                        boxToFilter->delimiter);
       UnlockMailboxNodeHandle(boxToFilter);
       ComposeRString((char *)progressMessage, IMAP_SEARCHING_MAILBOX, mName);
       PROGRESS_MESSAGE(kpSubTitle, (const char *)progressMessage);
@@ -9383,7 +9363,7 @@ bool IMAPStartFiltering(TOCType * tocToFilter, bool connect) {
         // Select the mailbox
         LockMailboxNodeHandle(boxToFilter);
         if ((result = IMAPOpenMailbox(
-                 gFilterStream, (*boxToFilter)->mailboxName, false)) == false) {
+                 gFilterStream, boxToFilter->mailboxName, false)) == false) {
           IMAPError(kIMAPSearching, kIMAPSelectMailboxErr,
                     errIMAPSearchMailboxErr);
           CleanupConnection(&gFilterStream);
@@ -9458,8 +9438,8 @@ bool IMAPTermMatch(MTPtr mt, MSumPtr sum) {
   if (UIDFind(gFilterStream, (char *)cHeaders, mt->headerID == FILTER_BODY,
               mt->verb == mbmNotContains, (char *)cSearchString, sum->uidHash,
               sum->uidHash, &searchResults)) {
-    if (searchResults && *searchResults) {
-      if ((*searchResults)->uid == sum->uidHash)
+    if (searchResults) {
+      if (searchResults->uid == sum->uidHash)
         match = true;
       ZapHandle(searchResults);
     }
@@ -9572,12 +9552,12 @@ void IMAPProccessBoxesMainThread(bool bResync, bool bExpunge, bool bSearch) {
 
   // go through all mailboxes, resynching and
   // expunging the ones that need it.
-  for (pers = PersList; pers; pers = (*pers)->next) {
+  for (pers = PersList; pers; pers = pers->next) {
     if (IsIMAPPers(pers)) {
-      if ((*pers)->mailboxTree) {
+      if (pers->mailboxTree) {
         state = HGetState((Handle)pers);
         LDRef(pers);
-        IMAPMailboxPostProcess((*pers)->mailboxTree, bResync, bExpunge,
+        IMAPMailboxPostProcess(pers->mailboxTree, bResync, bExpunge,
                                bSearch);
         HSetState((Handle)pers, state);
       }
@@ -9604,7 +9584,7 @@ void IMAPMailboxPostProcess(MailboxNodeHandle tree, bool resync, bool expunge,
         SetIMAPMailboxNeeds(scan, kNeedsExpunge, false);
 
         LockMailboxNodeHandle(scan);
-        if ((scanTOC = FindTOC(&((*scan)->mailboxSpec)))) {
+        if ((scanTOC = FindTOC(&(scan->mailboxSpec)))) {
           // expunge the mailbox
           DoExpungeMailboxLo(scanTOC, false);
         }
@@ -9612,13 +9592,13 @@ void IMAPMailboxPostProcess(MailboxNodeHandle tree, bool resync, bool expunge,
       }
 
       // check out the children
-      if ((*scan)->childList) {
+      if (scan->childList) {
         LockMailboxNodeHandle(scan);
-        IMAPMailboxPostProcess((*scan)->childList, resync, expunge, search);
+        IMAPMailboxPostProcess(scan->childList, resync, expunge, search);
         UnlockMailboxNodeHandle(scan);
       }
 
-      scan = (*scan)->next;
+      scan = scan->next;
     }
   }
 
@@ -9634,7 +9614,7 @@ void IMAPMailboxPostProcess(MailboxNodeHandle tree, bool resync, bool expunge,
 
         // is it visible?
         LockMailboxNodeHandle(scan);
-        if ((scanTOC = FindTOC(&((*scan)->mailboxSpec)))) {
+        if ((scanTOC = FindTOC(&(scan->mailboxSpec)))) {
           if (scanTOC->win &&
               IsWindowVisible(GetMyWindowWindowPtr(scanTOC->win))) {
             SetIMAPMailboxNeeds(scan, kNeedsResync, false);
@@ -9645,13 +9625,13 @@ void IMAPMailboxPostProcess(MailboxNodeHandle tree, bool resync, bool expunge,
       }
 
       // check out the children
-      if ((*scan)->childList) {
+      if (scan->childList) {
         LockMailboxNodeHandle(scan);
-        IMAPMailboxPostProcess((*scan)->childList, resync, expunge, search);
+        IMAPMailboxPostProcess(scan->childList, resync, expunge, search);
         UnlockMailboxNodeHandle(scan);
       }
 
-      scan = (*scan)->next;
+      scan = scan->next;
     }
   }
 
@@ -9670,13 +9650,13 @@ void IMAPMailboxPostProcess(MailboxNodeHandle tree, bool resync, bool expunge,
       }
 
       // check out the children
-      if ((*scan)->childList) {
+      if (scan->childList) {
         LockMailboxNodeHandle(scan);
-        IMAPMailboxPostProcess((*scan)->childList, resync, expunge, search);
+        IMAPMailboxPostProcess(scan->childList, resync, expunge, search);
         UnlockMailboxNodeHandle(scan);
       }
 
-      scan = (*scan)->next;
+      scan = scan->next;
     }
   }
 }
@@ -9729,9 +9709,9 @@ void IMAPTocHBusy(TOCType * tocH, bool busy) {
   MailboxNodeHandle box = TOCToMbox(tocH);
   if (box) {
     if (busy)
-      (*box)->tocRef++;
-    else if ((*box)->tocRef)
-      (*box)->tocRef--;
+      box->tocRef++;
+    else if (box->tocRef)
+      box->tocRef--;
   }
 }
 
@@ -9913,15 +9893,15 @@ MailboxNodeHandle GetNextWaitingMailboxNode(MailboxNodeHandle tree) {
     // is the node we're looking for one of the
     // children of this node?
     LockMailboxNodeHandle(scan);
-    if ((*scan)->childList)
-      node = GetNextWaitingMailboxNode(((*scan)->childList));
+    if (scan->childList)
+      node = GetNextWaitingMailboxNode((scan->childList));
     UnlockMailboxNodeHandle(scan);
 
     if (node)
       break;
 
     // otherwise, check the next node.
-    scan = (*scan)->next;
+    scan = scan->next;
   }
 
   // Return the node
@@ -9939,10 +9919,10 @@ void GetNextWaitingIMAPToc(TOCType * *toc) {
   TOCType *tocH = NULL, *hidTocH = NULL;
   SignedByte state;
 
-  for (pers = PersList; pers; pers = (*pers)->next) {
+  for (pers = PersList; pers; pers = pers->next) {
     state = HGetState((Handle)pers);
     LDRef(pers);
-    scan = GetNextWaitingMailboxNode((*pers)->mailboxTree);
+    scan = GetNextWaitingMailboxNode(pers->mailboxTree);
     HSetState((Handle)(pers), state);
 
     if (scan)
@@ -9950,7 +9930,7 @@ void GetNextWaitingIMAPToc(TOCType * *toc) {
   }
 
   if (scan) {
-    spec = (*scan)->mailboxSpec;
+    spec = scan->mailboxSpec;
     tocH = TOCBySpec(&spec);
     if (tocH) {
       // are there no unfiltered messages in
@@ -9996,8 +9976,8 @@ OSErr IMAPFilterProgress(TOCType * tocH) {
   if (gNumUnfiltered) {
     // is there already a thread set up to
     // filter this toc?
-    for (index = gThreadData; index; index = (*index)->next) {
-      if ((*index)->currentTask == IMAPFilterTask)
+    for (index = gThreadData; index; index = index->next) {
+      if (index->currentTask == IMAPFilterTask)
         return (noErr);
     }
 
@@ -10013,7 +9993,7 @@ OSErr IMAPFilterProgress(TOCType * tocH) {
       err = SetupXferMailThread(false, false, true, false, flags, &imapInfo);
 
       // ... and remove any old task errors
-      RemoveTaskErrors(IMAPFilterTask, (*CurPers)->persId);
+      RemoveTaskErrors(IMAPFilterTask, CurPers->persId);
 
       PopPers();
     }
@@ -10034,7 +10014,7 @@ long IMAPCountUnfilteredMessages(MailboxNodeHandle mbox) {
   TOCType * tocH;
 
   if (mbox) {
-    tocH = FindTOC(&((*mbox)->mailboxSpec));
+    tocH = FindTOC(&(mbox->mailboxSpec));
     if (tocH) {
       count = CountFlaggedMessages(tocH);
 
@@ -10078,7 +10058,7 @@ OSErr DoIMAPFilterProgress(void) {
 
       // update the progress message
       ComposeRString((char *)progressMessage, IMAP_FILTERING_MESSAGES,
-                     (*CurPers)->name);
+                     CurPers->name);
       PROGRESS_MESSAGE(kpTitle, (const char *)progressMessage);
       PROGRESS_MESSAGER(kpSubTitle, LEFT_TO_FILTER);
       remaining = 0;
@@ -10288,8 +10268,8 @@ bool IsIMAPOperationUnderway(TaskKindEnum task) {
   threadDataHandle index;
 
   if (task != UndefinedTask) {
-    for (index = gThreadData; index && !result; index = (*index)->next) {
-      if ((*index)->imapInfo.command == task)
+    for (index = gThreadData; index && !result; index = index->next) {
+      if (index->imapInfo.command == task)
         result = true;
     }
   }
@@ -10311,15 +10291,15 @@ bool IsIMAPMailboxBusy(TOCType * tocH) {
     // queue, or has someone asked to keep it
     // around?
     mbox = TOCToMbox(tocH);
-    if (mbox && ((*mbox)->tocRef > 0))
+    if (mbox && (mbox->tocRef > 0))
       return true;
 
     // is this toc in use by a thread
     // somewhere?
-    for (index = gThreadData; index; index = (*index)->next) {
-      if (SameTOC((*index)->imapInfo.sourceToc, tocH) ||
-          SameTOC((*index)->imapInfo.destToc, tocH) ||
-          SameTOC((*index)->imapInfo.delToc, tocH))
+    for (index = gThreadData; index; index = index->next) {
+      if (SameTOC(index->imapInfo.sourceToc, tocH) ||
+          SameTOC(index->imapInfo.destToc, tocH) ||
+          SameTOC(index->imapInfo.delToc, tocH))
         return true;
     }
   }
@@ -10369,7 +10349,7 @@ void IMAPRemoveCachedContents(TOCType * tocH, short sumNum) {
     // close the message window
     if ((MessHandle)tocH->sums[sumNum].messH)
       CloseMyWindow(GetMyWindowWindowPtr(
-          (*(MessHandle)tocH->sums[sumNum].messH)->win));
+          ((MessHandle)tocH->sums[sumNum].messH)->win));
 
     // adjust the preview pane
     if (tocH->previewID == tocH->sums[sumNum].serialNum &&
@@ -10501,7 +10481,7 @@ OSErr QueueMessFlagChange(TOCType * tocH, short sumNum, StateEnum state,
     Zero(flags);
 
     flags.uid = tocH->sums[sumNum].uidHash;
-    flags.mailbox = (*mb)->uidValidity;
+    flags.mailbox = mb->uidValidity;
     flags.seen =
         (tocH->sums[sumNum].state == READ) ? 1 : 0; // set seen flag if
                                                        // message is marked READ
@@ -10534,15 +10514,15 @@ OSErr QueueMessFlagChange(TOCType * tocH, short sumNum, StateEnum state,
     LockMailboxNodeHandle(mb);
     if (LockMailboxNodeFlags(mb)) {
       // is this flag change already queued?
-      if ((*mb)->queuedFlags != nil) {
+      if (mb->queuedFlags != nil) {
         short numChanges = 0;
         LocalFlagChangePtr curFlags;
 
-        queuedFlagsSize = GetHandleSize((Handle)(*mb)->queuedFlags);
+        queuedFlagsSize = GetHandleSize((Handle)mb->queuedFlags);
         numChanges = queuedFlagsSize / sizeof(LocalFlagChangeStruct);
 
         while (numChanges > 0) {
-          curFlags = &((*((*mb)->queuedFlags))[numChanges - 1]);
+          curFlags = &((*(mb->queuedFlags))[numChanges - 1]);
 
           if (curFlags->uid == flags.uid) {
             BMD(&flags, curFlags, sizeof(LocalFlagChangeStruct));
@@ -10556,21 +10536,21 @@ OSErr QueueMessFlagChange(TOCType * tocH, short sumNum, StateEnum state,
       // must add this new flag change ...
       if (!done) {
         // grow the queued flag handle
-        if ((*mb)->queuedFlags == nil) {
+        if (mb->queuedFlags == nil) {
           queuedFlagsSize = sizeof(LocalFlagChangeStruct);
-          (*mb)->queuedFlags = NewZH(LocalFlagChangeStruct);
+          mb->queuedFlags = NewZH(LocalFlagChangeStruct);
           err = MemError();
         } else {
-          oldFlagSize = GetHandleSize((Handle)(*mb)->queuedFlags);
+          oldFlagSize = GetHandleSize((Handle)mb->queuedFlags);
           queuedFlagsSize = oldFlagSize + sizeof(LocalFlagChangeStruct);
-          SetHandleSize((Handle)((*mb)->queuedFlags), queuedFlagsSize);
+          SetHandleSize((Handle)(mb->queuedFlags), queuedFlagsSize);
           err = MemError();
         }
 
         // save the flag change
-        if (((*mb)->queuedFlags) && (err == noErr))
+        if ((mb->queuedFlags) && (err == noErr))
           BMD(&flags,
-              &(((LocalFlagChangePtr)(*(*mb)->queuedFlags))[(
+              &(((LocalFlagChangePtr)(*mb->queuedFlags))[(
                   oldFlagSize / sizeof(LocalFlagChangeStruct))]),
               sizeof(LocalFlagChangeStruct));
         else
@@ -10587,7 +10567,7 @@ OSErr QueueMessFlagChange(TOCType * tocH, short sumNum, StateEnum state,
     // when we process these new commands
     if (err == noErr) {
       SetIMAPMailboxNeeds(mb, kNeedsExecCmd, true);
-      SetIMAPMailboxNeeds((*pers)->mailboxTree, kNeedsExecCmd, true);
+      SetIMAPMailboxNeeds(pers->mailboxTree, kNeedsExecCmd, true);
     }
   } else
     err = IMAPError(kIMAPQueueFlagChange, kIMAPNotIMAPMailboxErr,
@@ -10612,7 +10592,7 @@ OSErr PerformQueuedCommands(PersHandle pers, IMAPStreamPtr imapStream,
     return noErr;
 
   // no commands queued?
-  if (!DoesIMAPMailboxNeed((*pers)->mailboxTree, kNeedsExecCmd))
+  if (!DoesIMAPMailboxNeed(pers->mailboxTree, kNeedsExecCmd))
     return noErr;
 
   // is some other thread already doing this?
@@ -10634,11 +10614,11 @@ OSErr PerformQueuedCommands(PersHandle pers, IMAPStreamPtr imapStream,
 
   // perform the queued commands
   err =
-      PerformQueuedCommandsLo(pers, (*pers)->mailboxTree, imapStream, progress);
+      PerformQueuedCommandsLo(pers, pers->mailboxTree, imapStream, progress);
 
   // success?
   if (err == noErr)
-    SetIMAPMailboxNeeds((*pers)->mailboxTree, kNeedsExecCmd, false);
+    SetIMAPMailboxNeeds(pers->mailboxTree, kNeedsExecCmd, false);
 
   return err;
 }
@@ -10656,19 +10636,19 @@ OSErr PerformQueuedCommandsLo(PersHandle pers, MailboxNodeHandle tree,
   // personality
   while (tree) {
     // are there queued flags waiting?
-    if ((*tree)->queuedFlags) {
+    if (tree->queuedFlags) {
       // SELECT the mailbox
-      if (IMAPOpenMailbox(imapStream, (*tree)->mailboxName, false)) {
+      if (IMAPOpenMailbox(imapStream, tree->mailboxName, false)) {
         // display some progress
         if (progress) {
           ComposeRString((char *)scratch, IMAP_QUEUED_COMMANDS,
-                         (*tree)->mailboxSpec.name);
+                         tree->mailboxSpec.name);
           PROGRESS_START;
           PROGRESS_MESSAGE(kpSubTitle, (const char *)scratch);
         }
 
         // update message flags ...
-        if ((*tree)->queuedFlags)
+        if (tree->queuedFlags)
           err = UpdateMessFlags(imapStream, tree, true);
 
         // perform queued transfers once
@@ -10680,7 +10660,7 @@ OSErr PerformQueuedCommandsLo(PersHandle pers, MailboxNodeHandle tree,
 
         // write mailbox info back out to the
         // file.
-        WriteIMAPMailboxInfo(&(*tree)->mailboxSpec, tree);
+        WriteIMAPMailboxInfo(&tree->mailboxSpec, tree);
 
         // return an error if any of this fails
         retErr = retErr ? retErr : err;
@@ -10688,12 +10668,12 @@ OSErr PerformQueuedCommandsLo(PersHandle pers, MailboxNodeHandle tree,
     }
 
     // check the children
-    if ((*tree)->childList)
-      retErr |= PerformQueuedCommandsLo(pers, (*tree)->childList, imapStream,
+    if (tree->childList)
+      retErr |= PerformQueuedCommandsLo(pers, tree->childList, imapStream,
                                         progress);
 
     // next box
-    tree = (*tree)->next;
+    tree = tree->next;
   }
 
   if (progress)
@@ -10715,10 +10695,10 @@ void ExecuteAllPendingIMAPCommands(void) {
   IMAPStreamPtr imapStream;
 
   PushPers(CurPers);
-  for (CurPers = PersList; CurPers; CurPers = (*CurPers)->next) {
+  for (CurPers = PersList; CurPers; CurPers = CurPers->next) {
     if (IsIMAPPers(CurPers) &&
         PrefIsSet(PREF_IMAP_EXECUTE_QUEUED_COMMANDS_ON_QUIT) &&
-        DoesIMAPMailboxNeed((*CurPers)->mailboxTree, kNeedsExecCmd)) {
+        DoesIMAPMailboxNeed(CurPers->mailboxTree, kNeedsExecCmd)) {
       // execute all pending IMAP commands for
       // this pers and clean up immediately
       imapStream = GetIMAPConnection(UndefinedTask, false);
@@ -10758,7 +10738,7 @@ OSErr UpdateMessFlags(IMAPStreamPtr imapStream, MailboxNodeHandle mailbox,
 
   // must have been passed a personality, must
   // have some queued flags
-  if (!mailbox || !((*mailbox)->queuedFlags))
+  if (!mailbox || !(mailbox->queuedFlags))
     return (noErr);
 
   // lock the mailbox node.  Don't let it go
@@ -10772,19 +10752,19 @@ OSErr UpdateMessFlags(IMAPStreamPtr imapStream, MailboxNodeHandle mailbox,
     // update.  Another thread may have
     // processed them while we were waiting for
     // the lock.
-    if (((*mailbox)->queuedFlags != nil) &&
-        ((queuedFlagsSize = GetHandleSize((Handle)(*mailbox)->queuedFlags)) !=
+    if ((mailbox->queuedFlags != nil) &&
+        ((queuedFlagsSize = GetHandleSize((Handle)mailbox->queuedFlags)) !=
          0)) {
       // now update the flags
 
       // don't  let them go anywhere
-      LDRef((*mailbox)->queuedFlags);
+      LDRef(mailbox->queuedFlags);
 
       // first update the flags
       totalFlags = numChanges = queuedFlagsSize / sizeof(LocalFlagChangeStruct);
       while (numChanges > 0 && !CommandPeriod) {
         curFlags =
-            &((LocalFlagChangePtr)(*((*mailbox)->queuedFlags)))[numChanges - 1];
+            &((LocalFlagChangePtr)(*(mailbox->queuedFlags)))[numChanges - 1];
 
         // remember if we see a message that
         // needs to be trashed ...
@@ -10805,7 +10785,7 @@ OSErr UpdateMessFlags(IMAPStreamPtr imapStream, MailboxNodeHandle mailbox,
             // similar.  We can execute them at
             // once.
             for (i = 0; i < totalFlags; i++) {
-              scan = &((LocalFlagChangePtr)(*((*mailbox)->queuedFlags)))[i];
+              scan = &((LocalFlagChangePtr)(*(mailbox->queuedFlags)))[i];
 
               if (scan->processed == 0) // this flag has not been
                                         // processed yet
@@ -10844,7 +10824,7 @@ OSErr UpdateMessFlags(IMAPStreamPtr imapStream, MailboxNodeHandle mailbox,
       if (bPendingTrash) {
         // find the toc we're trashing messages
         // from
-        srcToc = TOCBySpec(&(*mailbox)->mailboxSpec);
+        srcToc = TOCBySpec(&mailbox->mailboxSpec);
 
         // find the hidden toc, if it exists
         hidTocH = GetHiddenCacheMailbox(mailbox, false, false);
@@ -10860,7 +10840,7 @@ OSErr UpdateMessFlags(IMAPStreamPtr imapStream, MailboxNodeHandle mailbox,
           numChanges = 0;
           totalFlags = queuedFlagsSize / sizeof(LocalFlagChangeStruct);
           for (i = 0; i < totalFlags; i++) {
-            curFlags = &((LocalFlagChangePtr)(*((*mailbox)->queuedFlags)))[i];
+            curFlags = &((LocalFlagChangePtr)(*(mailbox->queuedFlags)))[i];
             if (curFlags->trashed)
               numChanges++;
           }
@@ -10874,7 +10854,7 @@ OSErr UpdateMessFlags(IMAPStreamPtr imapStream, MailboxNodeHandle mailbox,
             if (true) {
               for (i = 0; i < totalFlags; i++) {
                 curFlags =
-                    &((LocalFlagChangePtr)(*((*mailbox)->queuedFlags)))[i];
+                    &((LocalFlagChangePtr)(*(mailbox->queuedFlags)))[i];
                 if (curFlags->trashed) {
                   AccuAddLong(&uidsToChange, curFlags->uid);
 
@@ -10918,9 +10898,9 @@ OSErr UpdateMessFlags(IMAPStreamPtr imapStream, MailboxNodeHandle mailbox,
       }
 
       // Cleanup
-      UL((*mailbox)->queuedFlags);
-      ZapHandle((*mailbox)->queuedFlags);
-      (*mailbox)->queuedFlags = nil;
+      UL(mailbox->queuedFlags);
+      ZapHandle(mailbox->queuedFlags);
+      mailbox->queuedFlags = nil;
     }
     // we're done with the flags.  Other people
     // are free to muck with them
@@ -11026,12 +11006,12 @@ bool LockMailboxNodeFlags(MailboxNodeHandle mailbox) {
     return (false);
 
   // if already locked, wait for unlock
-  while (!CommandPeriod && (*mailbox)->flagLock) {
+  while (!CommandPeriod && mailbox->flagLock) {
     CycleBalls();
     MyYieldToAnyThread();
     if (CommandPeriod) return (false);
   }
-  (*mailbox)->flagLock = true;
+  mailbox->flagLock = true;
 
   return (true);
 }
@@ -11041,7 +11021,7 @@ bool LockMailboxNodeFlags(MailboxNodeHandle mailbox) {
  *when done changing them
  **********************************************************************/
 bool UnlockMailboxNodeFlags(MailboxNodeHandle mailbox) {
-  (*mailbox)->flagLock = false;
+  mailbox->flagLock = false;
   return (true);
 }
 
@@ -11055,17 +11035,17 @@ bool PendingMessFlagChange(unsigned long uid, MailboxNodeHandle mailbox) {
   long numChanges;
   LocalFlagChangePtr curFlags;
 
-  if (!mailbox || !*mailbox)
+  if (!mailbox)
     return (false);
 
-  if ((*mailbox)->queuedFlags) {
-    queuedFlagsSize = GetHandleSize((Handle)(*mailbox)->queuedFlags);
+  if (mailbox->queuedFlags) {
+    queuedFlagsSize = GetHandleSize((Handle)mailbox->queuedFlags);
     if (queuedFlagsSize > 0) {
       numChanges = queuedFlagsSize / sizeof(LocalFlagChangeStruct);
       while (numChanges && !result) {
         curFlags =
-            &((LocalFlagChangePtr)(*((*mailbox)->queuedFlags)))[numChanges - 1];
-        if ((curFlags->mailbox == (*mailbox)->uidValidity) &&
+            &((LocalFlagChangePtr)(*(mailbox->queuedFlags)))[numChanges - 1];
+        if ((curFlags->mailbox == mailbox->uidValidity) &&
             (curFlags->uid == uid))
           result = true;
         numChanges--;
@@ -11149,21 +11129,21 @@ bool FastIMAPMessageDelete(TOCType * tocH, Handle uids, bool bFTM) {
 void CleanUpResyncTaskErrors(MailboxNodeHandle mbox) {
   PersHandle pers;
 
-  if (mbox && (*mbox)) {
+  if (mbox) {
     // who does this mailbox belong to?
     pers = MailboxNodeToPers(mbox);
     if (pers) {
       // remove any Resync related errors
-      RemoveTaskErrors(IMAPResyncTask, (*pers)->persId);
+      RemoveTaskErrors(IMAPResyncTask, pers->persId);
 
       // remove any errors about multple
       // resyncs
-      RemoveTaskErrors(IMAPResyncTask, (*pers)->persId);
+      RemoveTaskErrors(IMAPResyncTask, pers->persId);
 
       // remove any checking mail errors if
       // this was a mail check
       if (mbox == LocateInboxForPers(pers))
-        RemoveTaskErrors(CheckingTask, (*pers)->persId);
+        RemoveTaskErrors(CheckingTask, pers->persId);
     }
   }
 }
@@ -11189,7 +11169,7 @@ void IMAPAlert(IMAPStreamPtr stream, TaskKindEnum taskKind) {
 
     if (!PrefIsSet(PREF_IGNORE_IMAP_ALERTS) && InAThread())
       AddTaskErrorsS("", (const char *)stream->mailStream->alertStr,
-                     IMAPAlertTask, (*CurPers)->persId);
+                     IMAPAlertTask, CurPers->persId);
 
     // clear the alert string
     stream->mailStream->alertStr[0] = 0;
@@ -11199,7 +11179,7 @@ void IMAPAlert(IMAPStreamPtr stream, TaskKindEnum taskKind) {
     // time, remove the ALERT from the TP
     // Window
     if (taskKind == lastTaskToAlert)
-      RemoveTaskErrors(IMAPAlertTask, (*CurPers)->persId);
+      RemoveTaskErrors(IMAPAlertTask, CurPers->persId);
   }
 
   return;
@@ -11475,7 +11455,7 @@ void IMAPWarnings(void) {
   if (gbDisplayIMAPWarnings && !GetNumBackgroundThreads()) {
     gbDisplayIMAPWarnings = false;
 
-    for (pers = PersList; pers; pers = (*pers)->next) {
+    for (pers = PersList; pers; pers = pers->next) {
       if (IsIMAPPers(pers)) {
         PushPers(pers);
         CurPers = pers;
@@ -11492,7 +11472,7 @@ void IMAPWarnings(void) {
         if (!JunkPrefHasIMAPSupport() && !JunkPrefNoIMAPSupportWarning()) {
           // Warn the user that SpamWatch has
           // been disabled.
-          ComposeStdAlert(Note, JUNK_PREFNOIMAP_WARNING, (*pers)->name);
+          ComposeStdAlert(Note, JUNK_PREFNOIMAP_WARNING, pers->name);
           // Don't warn again.
           SetPrefLong(PREF_JUNK_MAILBOX, GetPrefLong(PREF_JUNK_MAILBOX) |
                                              bJunkPrefNoIMAPSupportWarning);
@@ -11518,7 +11498,7 @@ void IMAPWarnings(void) {
             !JunkPrefNewIMAPSupportWarning()) {
           // Warn the user that SpamWatch has
           // been re-enabled
-          ComposeStdAlert(Note, JUNK_PREFIMAPAVAIL_WARNING, (*pers)->name);
+          ComposeStdAlert(Note, JUNK_PREFIMAPAVAIL_WARNING, pers->name);
           // Don't warn again.  Ever.  Even if
           // it appears to go away.
           SetPrefLong(PREF_JUNK_MAILBOX, GetPrefLong(PREF_JUNK_MAILBOX) |
@@ -11606,17 +11586,17 @@ void IMAPPoll(PersHandle pers) {
 
   // do nothing if there's already a polling
   // operation underway
-  for (index = gThreadData; index; index = (*index)->next)
-    if (((*index)->imapInfo.command == IMAPPollingTask) &&
-        SameSpec(&(*index)->imapInfo.targetBox,
-                 &(*(*pers)->mailboxTree)->mailboxSpec))
+  for (index = gThreadData; index; index = index->next)
+    if ((index->imapInfo.command == IMAPPollingTask) &&
+        SameSpec(&index->imapInfo.targetBox,
+                 &pers->mailboxTree->mailboxSpec))
       return;
 
   // remove any old task errors
-  RemoveTaskErrors(IMAPPollingTask, (*pers)->persId);
+  RemoveTaskErrors(IMAPPollingTask, pers->persId);
 
   // poll away
-  IMAPPollMailboxes((*pers)->mailboxTree);
+  IMAPPollMailboxes(pers->mailboxTree);
 }
 
 /************************************************************************
@@ -11626,14 +11606,14 @@ void IMAPPoll(PersHandle pers) {
 void IMAPPollMailboxes(MailboxNodeHandle tree) {
   IMAPStreamPtr imapStream = nil;
   Str255 s;
-  PersHandle pers = FindPersById((*tree)->persId);
+  PersHandle pers = FindPersById(tree->persId);
   long numToPoll, remaining;
 
   // how many boxes must we poll?
   numToPoll = remaining = IMAPCountMailboxes(tree, kNeedsPoll);
   if (numToPoll) {
     PROGRESS_START;
-    ComposeRString((char *)s, IMAP_POLLING_MAILBOXES, (*pers)->name);
+    ComposeRString((char *)s, IMAP_POLLING_MAILBOXES, pers->name);
     PROGRESS_MESSAGE(kpTitle, (const char *)s);
 
     // open an imap stream to the server.
@@ -11670,13 +11650,13 @@ void IMAPPollMailboxTree(IMAPStreamPtr imapStream, MailboxNodeHandle tree,
 
     // is this an IMAP mailbox that can contain
     // messages?
-    if (!((*tree)->attributes & LATT_NOSELECT) &&
-        !((*tree)->attributes & LATT_ROOT)) {
+    if (!(tree->attributes & LATT_NOSELECT) &&
+        !(tree->attributes & LATT_ROOT)) {
       // does it need to be polled?
       if (DoesIMAPMailboxNeed(tree, kNeedsPoll)) {
         // display some progress indicating
         // which mailbox we're polling
-        PathToMailboxName((*tree)->mailboxName, m, (*tree)->delimiter);
+        PathToMailboxName(tree->mailboxName, m, tree->delimiter);
         ComposeRString((char *)s, IMAP_POLL_MAILBOX, (char *)m);
         PROGRESS_MESSAGE(kpSubTitle, (const char *)s);
         BYTE_PROGRESS(0, numToPoll - (*remaining), numToPoll);
@@ -11684,7 +11664,7 @@ void IMAPPollMailboxTree(IMAPStreamPtr imapStream, MailboxNodeHandle tree,
 
         // how many messages are in the local
         // mailbox cache?
-        tocH = TOCBySpec(&(*tree)->mailboxSpec);
+        tocH = TOCBySpec(&tree->mailboxSpec);
         if (tocH) {
           // make sure this toc doesn't go
           // anywhere.
@@ -11701,7 +11681,7 @@ void IMAPPollMailboxTree(IMAPStreamPtr imapStream, MailboxNodeHandle tree,
 
             // how many messages does the
             // server think are in the mailbox?
-            if (IMAPOpenMailbox(imapStream, (*tree)->mailboxName, false)) {
+            if (IMAPOpenMailbox(imapStream, tree->mailboxName, false)) {
               // are there more than the local
               // cache knows about?
               if (GetMessageCount(imapStream) != numMessages) {
@@ -11728,13 +11708,13 @@ void IMAPPollMailboxTree(IMAPStreamPtr imapStream, MailboxNodeHandle tree,
       }
     }
     // check this node's children
-    if ((*tree)->childList)
-      IMAPPollMailboxTree(imapStream, (*tree)->childList, numToPoll, remaining);
+    if (tree->childList)
+      IMAPPollMailboxTree(imapStream, tree->childList, numToPoll, remaining);
 
     UnlockMailboxNodeHandle(tree);
 
     // check the next node.
-    tree = (*tree)->next;
+    tree = tree->next;
   }
 }
 
@@ -11834,7 +11814,7 @@ bool IMAPDoQuit(void) {
     mBox = TOCToMbox(tocH);
     if (mBox) {
       // is this mailbox waiting for updates?
-      if ((*mBox)->tocRef) {
+      if (mBox->tocRef) {
         // perform them.
         UpdateIMAPMailbox(tocH);
 
@@ -11870,16 +11850,16 @@ void IMAPCollectFlags(void) {
     ProgressMessage(kpTitle, "Collecting flags from mailboxes");
 
     for (CurPers = PersList; CurPers && !CommandPeriod;
-         CurPers = (*CurPers)->next) {
+         CurPers = CurPers->next) {
       if (MailboxTreeGood(CurPers)) {
-        ComposeString((unsigned char *)p, "%p", (*CurPers)->name);
+        ComposeString((unsigned char *)p, "%p", CurPers->name);
         PROGRESS_MESSAGE(kpSubTitle, (const char *)p);
 
         imapStream = GetIMAPConnection(IMAPResyncTask, CAN_PROGRESS);
         if (imapStream) {
           state = HGetState((Handle)CurPers);
           LDRef(CurPers);
-          IMAPCollectFlagsFromTree(imapStream, (*CurPers)->mailboxTree,
+          IMAPCollectFlagsFromTree(imapStream, CurPers->mailboxTree,
                                    flagsFileRefN);
           HSetState((Handle)CurPers, state);
         }
@@ -11906,11 +11886,11 @@ void IMAPCollectFlagsFromTree(IMAPStreamPtr imapStream, MailboxNodeHandle tree,
     LockMailboxNodeHandle(scan);
 
     ComposeString((unsigned char *)p, "Scanning %p.",
-                  (*scan)->mailboxSpec.name);
+                  scan->mailboxSpec.name);
     ProgressMessage(kpSubTitle, (const char *)p);
 
     // open the mailbox on the server
-    if (IMAPOpenMailbox(imapStream, (*scan)->mailboxName, false)) {
+    if (IMAPOpenMailbox(imapStream, scan->mailboxName, false)) {
       // open a file to dump the flags into
       imapStream->mailStream->flagsRefN = refN;
 
@@ -11921,11 +11901,11 @@ void IMAPCollectFlagsFromTree(IMAPStreamPtr imapStream, MailboxNodeHandle tree,
       imapStream->mailStream->flagsRefN = -1;
     }
 
-    if ((*scan)->childList)
-      IMAPCollectFlagsFromTree(imapStream, (*scan)->childList, refN);
+    if (scan->childList)
+      IMAPCollectFlagsFromTree(imapStream, scan->childList, refN);
 
     UnlockMailboxNodeHandle(scan);
-    scan = (*scan)->next;
+    scan = scan->next;
   }
 }
 

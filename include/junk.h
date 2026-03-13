@@ -137,7 +137,7 @@ ADVISED OF THE POSSIBILITY OF SUCH DAMAGE. */
 #define kStatFalsePositives 6
 #define kStatFetchBytes 7
 
-#define blJunk 0
+/* blJunk is an enum member (value 12) in StrnDefs.h — do not redefine */
 
 OSErr FilterJunk(TOCType * fromTocH);
 #define GetJunkTOC() GetSpecialTOC(JUNK)

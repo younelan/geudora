@@ -67,10 +67,19 @@ extern bool FakeTabs;
 #include <time.h>
 #include <unistd.h>
 
-#ifdef CommandPeriod
-#undef CommandPeriod
+/* CommandPeriod: thread-local cancel flag, defined in threading.h.
+   fileutil.c can't include threading.h (conflicts with local stubs),
+   so bring in the minimal declarations needed. */
+struct threadGlobals_;
+typedef struct threadGlobals_ *threadGlobalsPtr;
+extern _Thread_local threadGlobalsPtr CurThreadGlobals;
+/* Access the cancel flag via an inline helper to avoid needing the full
+   struct definition here. Implemented in threading.c. */
+extern short *_CommandPeriodPtr(void);
+#ifndef CommandPeriod
+#define CommandPeriod (*_CommandPeriodPtr())
 #endif
-extern bool CommandPeriod;
+
 #ifndef ReallyDoAnAlert_declared
 #define ReallyDoAnAlert_declared 1
 int ReallyDoAnAlert(int templ, int which);

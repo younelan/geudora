@@ -29,15 +29,17 @@ ADVISED OF THE POSSIBILITY OF SUCH DAMAGE. */
 #include "mydefs.h"
 
 /* Forward declarations */
-typedef struct mstruct **MessHandle;
+typedef struct mstruct *MessHandle;
 typedef struct MyWindow *MyWindowPtr;
 
 #define PERS_VERS 0
 
 /* MailboxNode forward declaration - needed for IMAP support */
-typedef struct MailboxNode MailboxNode, *MailboxNodePtr, **MailboxNodeHandle;
+typedef struct MailboxNode MailboxNode, *MailboxNodePtr;
+typedef MailboxNode *MailboxNodeHandle;
 
-typedef struct Personality Personality, *PersPtr, **PersHandle;
+typedef struct Personality Personality, *PersPtr;
+typedef Personality *PersHandle;
 struct Personality {
   uint32_t persId;
   short version;
@@ -101,11 +103,11 @@ bool IsIMAPPers(PersHandle pers);
 
 #define PERS_TYPE(t, r) ((r) ? (((t) & 0xffff0000) | (r)) : (t))
 #define PERS_POPD_TYPE(p)                                                      \
-  (((p) && ((p) != PersList)) ? (PERS_TYPE(OLD_POPD_TYPE, (*(p))->resEnd))     \
+  (((p) && ((p) != PersList)) ? (PERS_TYPE(OLD_POPD_TYPE, (p)->resEnd))        \
                               : OLD_POPD_TYPE)
 #define CUR_POPD_TYPE PERS_POPD_TYPE(CurPers)
 #define CUR_STR_TYPE                                                           \
-  ((CurPers && (*CurPers)->persId) ? PERS_TYPE('STR ', (*CurPers)->resEnd)     \
+  ((CurPers && CurPers->persId) ? PERS_TYPE('STR ', CurPers->resEnd)     \
                                    : 'STR ')
 
 // Global variables and macros

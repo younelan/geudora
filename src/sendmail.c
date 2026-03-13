@@ -345,7 +345,7 @@ int MySendMessage(TransStream stream, TOCType * tocH, int sumNum,
   if (!(messH = SaveB4Send(tocH, sumNum)))
     return (1);
 
-  messWinWP = GetMyWindowWindowPtr((*messH)->win);
+  messWinWP = GetMyWindowWindowPtr(messH->win);
   /*
    * Log, if we must
    */
@@ -402,7 +402,7 @@ int MySendMessage(TransStream stream, TOCType * tocH, int sumNum,
       goto done;
   }
 
-  (*messH)->newsGroupAcc = newsGroupAcc;
+  messH->newsGroupAcc = newsGroupAcc;
   if (sErr = TransmitMessageHi(stream, messH, True, !PrefIsSet(PREF_POP_SEND)))
     goto done;
   do {
@@ -415,7 +415,7 @@ int MySendMessage(TransStream stream, TOCType * tocH, int sumNum,
     (newsGroupAcc).data = NULL;
     (newsGroupAcc).offset = (newsGroupAcc).size = 0;
   } while (0);
-  Zero((*messH)->newsGroupAcc);
+  Zero(messH->newsGroupAcc);
 
   // TimeStamp(tocH,sumNum,GMTDateTime(),ZoneSecs());
 
@@ -560,7 +560,7 @@ SayHello:
           SetPref(PREF_SMTP_DOES_AUTH, NoStr);
         } else {
           SetPref(PREF_SMTP_DOES_AUTH, YesStr);
-          if (PrefIsSet(PREF_KERBEROS) || *(*CurPers)->password) {
+          if (PrefIsSet(PREF_KERBEROS) || *CurPers->password) {
             g_debug("SMTP auth (mech=%d) under way...",
                         (*Ehlo)->saslMech);
             // We have everything we need to attempt authentication
@@ -756,7 +756,7 @@ int SendCmdGetReply(TransStream stream, int cmd, unsigned char *args,
   if (messH && IsAddrErr(sErr) && cmd != smtpRcpt) {
     if (strchr(buffer, '\015'))
       *strchr(buffer, '\015') = 0;
-    AddOutgoingMesgError((*messH)->sumNum, SumOf(messH)->uidHash, sErr,
+    AddOutgoingMesgError(messH->sumNum, SumOf(messH)->uidHash, sErr,
                          BAD_XMIT_ERR_TEXT, "", buffer);
   }
   return (sErr);
@@ -841,7 +841,7 @@ void EhloLine(unsigned char *line, long size) {
   } break;
   case esmtpAmd5:
     SetPref(PREF_SMTP_DOES_AUTH, YesStr);
-    PSCopy(directive, (*CurPers)->password);
+    PSCopy(directive, CurPers->password);
     GenDigest(value, directive, (unsigned char *)digest);
     g_strlcpy((char *)(*Ehlo)->digest, (const char *)digest, sizeof((*Ehlo)->digest));
     g_debug("ESMTP AMD5 auth found");
@@ -915,8 +915,8 @@ int DoRcptTosFrom(TransStream stream, MessHandle messH, short index,
         ZapHandle(rawAddresses);
         if (!addresses) {
           AddOutgoingMesgError(
-              (*messH)->sumNum,
-              (*messH)->tocH->sums[(*messH)->sumNum].uidHash, sErr,
+              messH->sumNum,
+              messH->tocH->sums[messH->sumNum].uidHash, sErr,
               BAD_ADDRESS);
           return (sErr = 550);
         }
@@ -958,8 +958,8 @@ int DoRcptTosFrom(TransStream stream, MessHandle messH, short index,
           if (strlen((const char *)address) > MAX_ALIAS) {
             sErr = 550;
             AddOutgoingMesgError(
-                (*messH)->sumNum,
-                (*messH)->tocH->sums[(*messH)->sumNum].uidHash, sErr,
+                messH->sumNum,
+                messH->tocH->sums[messH->sumNum].uidHash, sErr,
                 BAD_ADDRESS);
             break;
           }
@@ -996,8 +996,8 @@ int DoRcptTosFrom(TransStream stream, MessHandle messH, short index,
                   if (_blen > 0 && buffer[_blen - 1] == '\r')
                     buffer[_blen - 1] = '\0'; }
                 AddOutgoingMesgError(
-                    (*messH)->sumNum,
-                    (*messH)->tocH->sums[(*messH)->sumNum].uidHash, sErr,
+                    messH->sumNum,
+                    messH->tocH->sums[messH->sumNum].uidHash, sErr,
                     BAD_ADDRESS_ERR_TEXT, address, buffer);
               }
             }
@@ -1017,8 +1017,8 @@ int DoRcptTosFrom(TransStream stream, MessHandle messH, short index,
         ZapHandle(rawAddresses);
     } else {
       sErr = 550;
-      AddOutgoingMesgError((*messH)->sumNum,
-                           (*messH)->tocH->sums[(*messH)->sumNum].uidHash,
+      AddOutgoingMesgError(messH->sumNum,
+                           messH->tocH->sums[messH->sumNum].uidHash,
                            sErr, BAD_ADDRESS);
     }
     ZapHandle(text);
@@ -1051,8 +1051,8 @@ OSErr SendPipeRCPT(TransStream stream, PStr newRecip, AccuPtr pipe,
         { size_t _blen = strlen((const char *)buffer);
           if (_blen > 0 && buffer[_blen - 1] == '\r')
             buffer[_blen - 1] = '\0'; }
-        AddOutgoingMesgError((*messH)->sumNum,
-                             (*messH)->tocH->sums[(*messH)->sumNum].uidHash,
+        AddOutgoingMesgError(messH->sumNum,
+                             messH->tocH->sums[messH->sumNum].uidHash,
                              err, BAD_ADDRESS_ERR_TEXT, address, buffer);
       }
       chatter = False;
@@ -1186,8 +1186,8 @@ int TransmitMessageLo(TransStream stream, MessHandle messH, bool chatter,
                       nil, 1, CompGetMID(messH, scratch), pb.parts, &errSpec)) {
       if (errSpec.vRefNum) {
         //	Report error with graphic file
-        AddOutgoingMesgError((*messH)->sumNum,
-                             (*messH)->tocH->sums[(*messH)->sumNum].uidHash,
+        AddOutgoingMesgError(messH->sumNum,
+                             messH->tocH->sums[messH->sumNum].uidHash,
                              sErr, GRAPHIC_FILE_ERR, sErr, errSpec.name);
       }
       sErr = 543;
@@ -1249,8 +1249,8 @@ OSErr AllAttachOnBoardLo(MessHandle messH, bool errReport) {
   for (index = 1; !err; index++) {
     if (err = GetIndAttachment(messH, index, &spec, nil))
       if ((err != 1) && errReport) {
-        AddOutgoingMesgError((*messH)->sumNum,
-                             (*messH)->tocH->sums[(*messH)->sumNum].uidHash,
+        AddOutgoingMesgError(messH->sumNum,
+                             messH->tocH->sums[messH->sumNum].uidHash,
                              err, ATTACH_MESS_ERR, err, spec.name);
         FileSystemError(BINHEX_OPEN, spec.name, err);
       }
@@ -1480,11 +1480,11 @@ OSErr TransmitMessageTextStrip(TransmitPBPtr pb, bool sigToo, bool topLevel) {
     pb->flags |= FLAG_WRAP_OUT; // force wrapping on plain part of m/a
   if ((pb->opts & OPT_BLOAT) && !Flatten)
     Flatten = GetFlatten(); // force flattening
-  ConvertExcerpt((*pb->messH)->bodyPTE, pb->hs.value, 0x7fffffff, nil,
+  ConvertExcerpt(pb->messH->bodyPTE, pb->hs.value, 0x7fffffff, nil,
                  nil); // and convert the excerpts
-  pb->hs.stop = PETEGetTextLen(PETE, (*pb->messH)->bodyPTE);
-  PeteCleanList((*pb->messH)->bodyPTE);
-  (*pb->messH)->win->isDirty = false;
+  pb->hs.stop = PETEGetTextLen(PETE, pb->messH->bodyPTE);
+  PeteCleanList(pb->messH->bodyPTE);
+  pb->messH->win->isDirty = false;
 
   // send it
   if (err = TransmitMessageTextPlain(pb, sigToo, topLevel))
@@ -1631,15 +1631,15 @@ OSErr TransmitTopHeaders(TransmitPBPtr pb) {
    * extra headers saved with message
    */
   BufferSendRelease(pb->stream);
-  if ((*pb->messH)->extras.data)
-    SendExtras(pb->stream, (*pb->messH)->extras.data,
+  if (pb->messH->extras.data)
+    SendExtras(pb->stream, pb->messH->extras.data,
                (pb->flags & FLAG_CAN_ENC) != 0, tid);
   BSCLOSE(pb->stream, 0);
 
   /*
    * newsgroups
    */
-  newsGroupAcc = (*pb->messH)->newsGroupAcc;
+  newsGroupAcc = pb->messH->newsGroupAcc;
   if (newsGroupAcc.offset) {
     BufferSendRelease(pb->stream);
     SendNewsGroups(pb->stream, &newsGroupAcc, tid);
@@ -1834,7 +1834,7 @@ OSErr TransmitMessageBody(TransmitPBPtr pb, bool withClosure) {
 
   if (pb->strip) {
     // send the plain text
-    PETEGetRawText(PETE, (*pb->messH)->bodyPTE, &body);
+    PETEGetRawText(PETE, pb->messH->bodyPTE, &body);
     sErr = SendBodyLines(pb->stream, body, pb->hs.stop, pb->hs.value, pb->flags,
                          True, nil, 0, False, pb->encoder);
   } else {
@@ -2103,8 +2103,8 @@ OSErr FinishSMTP(TransStream stream, MessHandle messH) {
     if (IsAddrErr(sErr)) {
       if (*buffer)
         buffer[strlen(buffer) - 1] = 0;
-      AddOutgoingMesgError((*messH)->sumNum,
-                           (*messH)->tocH->sums[(*messH)->sumNum].uidHash,
+      AddOutgoingMesgError(messH->sumNum,
+                           messH->tocH->sums[messH->sumNum].uidHash,
                            sErr, BAD_XMIT_ERR_TEXT, "", buffer);
     }
   }
@@ -2511,7 +2511,7 @@ short SendXSender(TransStream stream, MessHandle messH) {
   unsigned char from[256];
   short err = 0;
 
-  if ((*CurPers)->popSecure) {
+  if (CurPers->popSecure) {
     CompHeadGetStr(messH, FROM_HEAD, from);
     /* figure out what the return addr means */
     SuckPtrAddresses(&returnCanon, from, strlen((const char *)from), False, True, False, nil);
@@ -2522,9 +2522,9 @@ short SendXSender(TransStream stream, MessHandle messH) {
   }
 
   /* if different or no password, send Sender field */
-  if (!UUPCOut && (!(*CurPers)->popSecure || !popCanon || !returnCanon ||
+  if (!UUPCOut && (!CurPers->popSecure || !popCanon || !returnCanon ||
                    !StringSame((*popCanon), (*returnCanon)))) {
-    if (!(*CurPers)->popSecure)
+    if (!CurPers->popSecure)
       GetRString(buffer, UNVERIFIED);
     else
       *buffer = 0;
@@ -2822,7 +2822,7 @@ done:
 void PrimeProgress(MessHandle messH) {
   unsigned char buff[256];
 
-  MyGetWTitle(GetMyWindowWindowPtr((*messH)->win), buff);
+  MyGetWTitle(GetMyWindowWindowPtr(messH->win), buff);
   //	ByteProgress(buff,0,CountCompBytes(messH));
   Progress(NoChange, NoChange, nil, nil, buff);
 }
@@ -3696,15 +3696,15 @@ MessHandle SaveB4Send(TOCType * tocH, short sumNum) {
   short which;
   MessHandle messH = (MessHandle)tocH->sums[sumNum].messH;
 
-  if (messH && (*messH)->win->isDirty) {
-    which = WannaSend((*messH)->win);
+  if (messH && messH->win->isDirty) {
+    which = WannaSend(messH->win);
     if (which == CANCEL_ITEM || which == WANNA_SAVE_CANCEL)
       return (nil);
-    else if (which == WANNA_SAVE_SAVE && !SaveComp((*messH)->win))
+    else if (which == WANNA_SAVE_SAVE && !SaveComp(messH->win))
       return (nil);
     else if (which == WANNA_SAVE_DISCARD) {
-      (*messH)->win->isDirty = False;
-      CloseMyWindow(GetMyWindowWindowPtr((*messH)->win));
+      messH->win->isDirty = False;
+      CloseMyWindow(GetMyWindowWindowPtr(messH->win));
       messH = nil;
     }
   }

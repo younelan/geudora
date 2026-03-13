@@ -37,22 +37,8 @@
 
 #include "emsapi-mac.h"
 extern MenuHandle GetMHandle(short menuID);
-// Undefine macros from os_unix.h (via imapnetlib.h) that clash with util.h
-// functions. We must do this AFTER imapnetlib.h inclusion if it was included
-// elsewhere, but junk.c includes it now.
-// Undefine CrispinIMAP overrides, then restore Eudora's values
-#undef ALRTStringsStrn
-#define ALRTStringsStrn 16700  /* StrnDefs.h value - restored after CrispinIMAP override */
-#undef NO_SERVER_SSL
-// Undefine blJunk from junk.h which conflicts with StrnDefs.h enum
-#undef blJunk
-
 #include "StrnDefs.h"
 #include "imapnetlib.h"
-#undef AccuInit
-#undef AccuAddPtr
-#define AccuInit AccuInit
-#define AccuAddPtr AccuAddPtrVoid
 
 #include "message.h"
 #include "trans.h"
@@ -520,7 +506,7 @@ int JunkIMAP(TOCType * tocH, short sumNum, bool isJunk, bool dontMove) {
       if (BoxIsJunkBox(tocH)) {
         // Put the message back into the proper inbox.
         if ((imapDest = LocateInboxForPers(imapPers)) != NULL)
-          destTocH = TOCBySpec(&(*imapDest)->mailboxSpec);
+          destTocH = TOCBySpec(&imapDest->mailboxSpec);
       }
     }
     // if they're being marked junk, transfer them to junk
@@ -529,7 +515,7 @@ int JunkIMAP(TOCType * tocH, short sumNum, bool isJunk, bool dontMove) {
       // mailbox
       imapDest = GetIMAPJunkMailbox(imapPers, true, false);
       if (imapDest && (imapDest != TOCToMbox(tocH)))
-        destTocH = TOCBySpec(&(*imapDest)->mailboxSpec);
+        destTocH = TOCBySpec(&imapDest->mailboxSpec);
     }
 
     if (!dontMove) {
@@ -599,7 +585,7 @@ int JunkIMAP(TOCType * tocH, short sumNum, bool isJunk, bool dontMove) {
 
         // Find the proper Inbox to move this messgae back to
         if ((imapDest = LocateInboxForPers(imapPers)) != NULL)
-          destTocH = TOCBySpec(&(*imapDest)->mailboxSpec);
+          destTocH = TOCBySpec(&imapDest->mailboxSpec);
 
         // Move the message
         if (destTocH)
@@ -607,7 +593,7 @@ int JunkIMAP(TOCType * tocH, short sumNum, bool isJunk, bool dontMove) {
       } else if (!BoxIsJunkBox(tocH)) {
         imapDest = GetIMAPJunkMailbox(imapPers, true, false);
         if (imapDest) {
-          if ((destTocH = TOCBySpec(&(*imapDest)->mailboxSpec)) != NULL) {
+          if ((destTocH = TOCBySpec(&imapDest->mailboxSpec)) != NULL) {
             // this gets a little tricky with IMAP filtering ...
             if (filteringUnderway) {
               IMAPStopFiltering(false);
@@ -622,7 +608,7 @@ int JunkIMAP(TOCType * tocH, short sumNum, bool isJunk, bool dontMove) {
               }
               IMAPStartFiltering(tocH, true);
             } else {
-              MoveMessageLo(tocH, sumNum, &(*imapDest)->mailboxSpec, false,
+              MoveMessageLo(tocH, sumNum, &imapDest->mailboxSpec, false,
                             false, true);
             }
           }
@@ -746,7 +732,7 @@ int ArchiveIMAPJunk(void) {
   PersHandle destPers;
 
   PushPers(CurPers);
-  for (CurPers = PersList; CurPers; CurPers = (*CurPers)->next) {
+  for (CurPers = PersList; CurPers; CurPers = CurPers->next) {
     if (IsIMAPPers(CurPers)) {
       threshTime =
           GMTDateTime() - GetRLong(JUNK_MAILBOX_EMPTY_DAYS) * 24 * 3600;
@@ -756,7 +742,7 @@ int ArchiveIMAPJunk(void) {
 
       // Find this personality's junk mailbox
       if ((junkMBox = GetIMAPJunkMailbox(CurPers, false, true))) {
-        spec = (*junkMBox)->mailboxSpec;
+        spec = junkMBox->mailboxSpec;
         if ((tocH = TOCBySpec(&spec))) {
           // count the number of messages to move.  Ignore deleted messages
           for (i = 0; i < tocH->count; i++)
@@ -803,7 +789,7 @@ int ArchiveIMAPJunk(void) {
                 imapSpec.parID = SpecDirId(&spec);
 
                 // Look in the local IMAP tree first for the destination mailbox
-                destMBox = LocateNodeBySpec((*CurPers)->mailboxTree, &imapSpec);
+                destMBox = LocateNodeBySpec(CurPers->mailboxTree, &imapSpec);
 
                 // If not found, look in all IMAP trees for the destination
                 // mailbox
@@ -812,7 +798,7 @@ int ArchiveIMAPJunk(void) {
                                                  &destPers);
 
                 if (destMBox) {
-                  toTocH = TOCBySpec(&(*destMBox)->mailboxSpec);
+                  toTocH = TOCBySpec(&destMBox->mailboxSpec);
                   archiveIMAP = true;
                 } else {
                   // If still not found, use the local mailbox ...
@@ -1219,7 +1205,7 @@ bool JunkItemsEnable(MyWindowPtr win, bool not) {
   case MESS_WIN:
     if (JunkPrefAlwaysEnable())
       return true;
-    tocH = (*Win2MessH(win))->tocH;
+    tocH = Win2MessH(win)->tocH;
     return not == BoxIsJunkBox(tocH);
 
   case MBOX_WIN:
@@ -1605,7 +1591,7 @@ void JunkMoveIMAPMessages(TOCType * tocH, bool isJunk) {
             if (BoxIsJunkBox(realToc)) {
               // Put the message back into the proper inbox.
               if ((dest = LocateInboxForPers(pers)) != NULL)
-                destTocH = TOCBySpec(&(*dest)->mailboxSpec);
+                destTocH = TOCBySpec(&dest->mailboxSpec);
             }
           } else {
             // we're junking something in something other than the junk box
@@ -1613,7 +1599,7 @@ void JunkMoveIMAPMessages(TOCType * tocH, bool isJunk) {
               // Get the proper JUNK mailbox
               dest = GetIMAPJunkMailbox(pers, true, false);
               if (dest && (dest != TOCToMbox(realToc)))
-                destTocH = TOCBySpec(&(*dest)->mailboxSpec);
+                destTocH = TOCBySpec(&dest->mailboxSpec);
             }
           }
         }

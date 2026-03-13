@@ -44,7 +44,7 @@
  * necessary. */
 typedef struct _GtkWidget GtkWidget;
 typedef GtkWidget *PETEHandle;
-typedef struct mstruct **MessHandle;
+typedef struct mstruct *MessHandle;
 
 /* On non-Apple platforms provide a few legacy Mac types used by older
    code; on Apple rely on the system headers to supply these. */

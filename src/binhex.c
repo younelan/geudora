@@ -26,6 +26,7 @@ DAMAGE. */
 #include "util.h"
 #include "progress.h"
 #include "sendmail.h"
+#include "threading.h"
 
 #define FILE_NUM 4
 /* Copyright (c) 1990-1992 by the University of Illinois Board of Trustees */

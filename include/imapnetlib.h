@@ -40,19 +40,20 @@ typedef void **Handle;
 #endif
 
 struct MailboxNode;
-typedef struct MailboxNode **MailboxNodeHandle;
+typedef struct MailboxNode *MailboxNodeHandle;
 
 #ifndef TRANSSTREAM_H
 #include "TransStream.h"
 #endif
 
 typedef struct FSSpec FSSpec, *FSSpecPtr;
-typedef struct Personality **PersHandle;
-typedef struct MailboxNode **MailboxNodeHandle;
+typedef struct Personality *PersHandle;
+typedef struct MailboxNode *MailboxNodeHandle;
 
-typedef struct UIDNode UIDNode, *UIDNodePtr, **UIDNodeHandle;
+typedef struct UIDNode UIDNode, *UIDNodePtr;
+typedef UIDNode *UIDNodeHandle;
 struct UIDNode {
-  struct UIDNode **next;
+  struct UIDNode *next;
   unsigned long uid;
   unsigned int l_seen : 1;
   unsigned int l_deleted : 1;

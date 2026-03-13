@@ -127,9 +127,8 @@ extern threadGlobalsRec ThreadGlobals; // Main thread globals
 
 /* Thread-specific globals access macros */
 #define ProgWindow (CurThreadGlobals->tProgWindow)
-#ifndef CommandPeriod
-#define EudoraCommandPeriod (CurThreadGlobals->tCommandPeriod)
-#endif
+#define CommandPeriod (CurThreadGlobals->tCommandPeriod)
+#define EudoraCommandPeriod CommandPeriod
 #define StringCache (CurThreadGlobals->tStringCache)
 #define SettingsRefN (CurThreadGlobals->tSettingsRefN)
 #define PersStack (CurThreadGlobals->tPersStack)
@@ -189,7 +188,6 @@ typedef struct xferMailParams_ {
 } xferMailParamsRec;
 
 // special structs used inside the IMAPTransferRec_
-typedef struct MailboxNode MailboxNode, *MailboxNodePtr, **MailboxNodeHandle;
 typedef struct IMAPSCStruct IMAPSCStruct, *IMAPSCPtr, **IMAPSCHandle;
 typedef struct IMAPSResultStruct IMAPSResultStruct, *IMAPSResultPtr,
     **IMAPSResultHandle;
@@ -231,7 +229,8 @@ struct IMAPTransferRec_ {
 
 
 typedef struct threadContextData_ threadContextDataRec, *threadContextDataPtr;
-typedef struct threadData_ threadDataRec, *threadDataPtr, **threadDataHandle;
+typedef struct threadData_ threadDataRec, *threadDataPtr;
+typedef threadDataRec *threadDataHandle;
 typedef struct IMAPTransferRec_ IMAPTransferRec, *IMAPTransferPtr;
 
 /* data structures */

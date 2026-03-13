@@ -26,7 +26,8 @@ DAMAGE. */
 #include "imapdownload.h"
 
 // IMAPConnectionStruct - an entity to maintain an open connection to an IMAP server
-typedef struct IMAPConnectionStruct IMAPConnectionStruct, *IMAPConnectionPtr, **IMAPConnectionHandle;
+typedef struct IMAPConnectionStruct IMAPConnectionStruct, *IMAPConnectionPtr;
+typedef IMAPConnectionStruct *IMAPConnectionHandle;
 struct IMAPConnectionStruct
 {
 	IMAPStreamPtr imapStream;	// a stream to an IMAP server

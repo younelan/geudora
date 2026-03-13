@@ -156,6 +156,12 @@ void InvalTaskProgressBeat(ProgressBHandle prbl);
 
 void CheckSelectedGlobals();
 
+/* Accessor for CommandPeriod field — used by files that can't include
+   the full threading.h (e.g. fileutil.c) */
+short *_CommandPeriodPtr(void) {
+  return &CurThreadGlobals->tCommandPeriod;
+}
+
 #ifdef DEBUG_THREAD
 static void MyDebuggerNewThread(pthread_t threadCreated) {
   fprintf(stderr, "Thread started: %p\n", (void *)threadCreated);
@@ -173,8 +179,8 @@ void GetThreadData(ThreadID threadID, threadDataHandle *threadData) {
   threadDataHandle index;
 
   *threadData = nil;
-  for (index = gThreadData; index; index = (*index)->next)
-    if (pthread_equal((*index)->threadID, threadID)) {
+  for (index = gThreadData; index; index = index->next)
+    if (pthread_equal(index->threadID, threadID)) {
       *threadData = index;
       return;
     }
@@ -195,7 +201,7 @@ ProgressBlock **GetCurrentThreadPrbl(void) {
   threadDataHandle threadData = nil;
 
   GetCurrentThreadData(&threadData);
-  return (threadData ? (*threadData)->prbl : nil);
+  return (threadData ? threadData->prbl : nil);
 }
 
 /************************************************************************
@@ -235,7 +241,7 @@ static OSErr CopyOutToTemp(void) {
       if (!tocH->sums[ii].messH && IsQueued(tocH, ii)) {
         pers = FindPersById(tocH->sums[ii].persId);
         ASSERT(pers);
-        if (pers && (*pers)->sendMeNow &&
+        if (pers && pers->sendMeNow &&
             tocH->sums[ii].seconds <= gmtSecs) {
           /*
            * handle open, dirty windows
@@ -250,8 +256,8 @@ static OSErr CopyOutToTemp(void) {
               break;
             SetState(tocH, ii, BUSY_SENDING);
             SetState(tempTocH, tempTocH->count - 1, state);
-            if ((*messH)->win)
-              CloseMyWindow(GetMyWindowWindowPtr((*messH)->win));
+            if (messH->win)
+              CloseMyWindow(GetMyWindowWindowPtr(messH->win));
           }
         }
       }
@@ -295,18 +301,16 @@ static OSErr NewXferMail(threadDataHandle *tData, bool check, bool send,
   IncrementNumBackgroundThreads();
 
   // set up threadContext
-  threadData = (threadDataHandle)calloc(1, sizeof(threadDataPtr));
-  if (threadData)
-    *threadData = (threadDataPtr)calloc(1, sizeof(**threadData));
-  if (!threadData || !*threadData)
+  threadData = (threadDataHandle)calloc(1, sizeof(threadDataRec));
+  if (!threadData)
     theError = -108;
   if (threadData)
-    (*threadData)->next = gThreadData;
+    threadData->next = gThreadData;
   gThreadData = threadData;
   if (!theError)
     theError = InitThreadGlobals(&newThreadGlobals);
   if (!theError) {
-    threadContext = &(*threadData)->threadContext;
+    threadContext = &threadData->threadContext;
     // pthreads don't need A5 world
     threadContext->newThreadGlobals = newThreadGlobals;
 
@@ -314,18 +318,18 @@ static OSErr NewXferMail(threadDataHandle *tData, bool check, bool send,
   }
   if (!theError) {
 #ifdef TASK_PROGRESS_ON
-    if (!((*threadData)->prbl = NewZH(ProgressBlock)))
+    if (!(threadData->prbl = NewZH(ProgressBlock)))
       theError = MemError();
 #endif
-    (*threadData)->xferMailParams.send = send;
-    (*threadData)->xferMailParams.check = check;
-    (*threadData)->xferMailParams.manual = manual;
-    (*threadData)->xferMailParams.scripted = scripted;
-    BlockMoveData(&flags, &(*threadData)->xferMailParams.flags,
-                  sizeof((*threadData)->xferMailParams.flags));
-    (*threadData)->imapInfo.command = UndefinedTask;
+    threadData->xferMailParams.send = send;
+    threadData->xferMailParams.check = check;
+    threadData->xferMailParams.manual = manual;
+    threadData->xferMailParams.scripted = scripted;
+    BlockMoveData(&flags, &threadData->xferMailParams.flags,
+                  sizeof(threadData->xferMailParams.flags));
+    threadData->imapInfo.command = UndefinedTask;
     if (imapInfo)
-      BlockMoveData(imapInfo, &((*threadData)->imapInfo),
+      BlockMoveData(imapInfo, &(threadData->imapInfo),
                     sizeof(IMAPTransferRec));
   }
   if (!theError)
@@ -356,7 +360,7 @@ static OSErr NewXferMail(threadDataHandle *tData, bool check, bool send,
   // thread function
 
   if (!theError)
-    (*threadData)->threadID = threadID;
+    threadData->threadID = threadID;
 #if __profile__
   if (!theError) {
     Size stackSize;
@@ -364,14 +368,14 @@ static OSErr NewXferMail(threadDataHandle *tData, bool check, bool send,
 
     GetDefaultThreadStackSize(kCooperativeThread, &stackSize);
     theError = ProfilerCreateThread(100, stackSize, &threadRef);
-    (*threadData)->threadRef = threadRef;
+    threadData->threadRef = threadRef;
     ASSERT(!theError);
   }
 #endif
   // pthreads start immediately - no SetThreadState needed
 
   if (!theError)
-    (*threadData)->threadID = threadID;
+    threadData->threadID = threadID;
 #ifdef TASK_PROGRESS_ON
   if (TaskProgressWindow && gTaskProgressInitied) {
     if (!theError && threadData)
@@ -388,13 +392,12 @@ static OSErr NewXferMail(threadDataHandle *tData, bool check, bool send,
     DecrementNumBackgroundThreads();
     if (threadData) {
 #ifdef TASK_PROGRESS_ON
-      ASSERT((*threadData)->prbl);
-      DisposProgress((*threadData)->prbl);
+      ASSERT(threadData->prbl);
+      DisposProgress(threadData->prbl);
 #endif
       LL_Remove(gThreadData, threadData, (threadDataHandle));
       DisposeThreadGlobals(newThreadGlobals);
       if (threadData) {
-        free(*threadData);
         free(threadData);
       }
       threadData = nil;
@@ -431,7 +434,7 @@ OSErr SetupXferMailThread(bool check, bool send, bool manual, bool scripted,
         if (!SendThreadRunning) {
           ASSERT(checkData);
           if (checkData) {
-            (*checkData)->xferMailParams.send = send;
+            checkData->xferMailParams.send = send;
             sendData = checkData;
             SendThreadRunning = send;
           }
@@ -553,7 +556,7 @@ TaskKindEnum GetCurrentTaskKind(void) {
   threadDataHandle threadData = nil;
 
   GetCurrentThreadData(&threadData);
-  return (threadData ? (*threadData)->currentTask : UndefinedTask);
+  return (threadData ? threadData->currentTask : UndefinedTask);
 }
 
 /************************************************************************
@@ -564,7 +567,7 @@ void SetCurrentTaskKind(TaskKindEnum taskKind) {
 
   GetCurrentThreadData(&threadData);
   if (threadData)
-    (*threadData)->currentTask = taskKind;
+    threadData->currentTask = taskKind;
 }
 
 /************************************************************************
@@ -574,8 +577,8 @@ void KillThreads(void) {
   threadDataHandle threadDataIndex;
   // Set cancel flag for each thread
   for (threadDataIndex = gThreadData; threadDataIndex;
-       threadDataIndex = (*threadDataIndex)->next)
-    SetThreadGlobalCommandPeriod((*threadDataIndex)->threadID, true);
+       threadDataIndex = threadDataIndex->next)
+    SetThreadGlobalCommandPeriod(threadDataIndex->threadID, true);
 
   // Wait for threads to finish
   while (GetNumBackgroundThreads())
@@ -603,13 +606,13 @@ void *XferMailThread(void *threadParameter) {
   ThreadSwitchProcIn(pthread_self(), threadData);
 
 #ifdef DEBUG
-  (*threadData)->startTime = TickCount();
+  threadData->startTime = TickCount();
 #endif
-  BlockMoveData(&(*threadData)->xferMailParams, &xferMailParams,
+  BlockMoveData(&threadData->xferMailParams, &xferMailParams,
                 sizeof(xferMailParams));
-  BlockMoveData(&(*threadData)->imapInfo, &imapInfo, sizeof(IMAPTransferRec));
+  BlockMoveData(&threadData->imapInfo, &imapInfo, sizeof(IMAPTransferRec));
 #ifdef DEBUG_THREAD
-  MyDebuggerNewThread((*threadData)->threadContext.threadID);
+  MyDebuggerNewThread(threadData->threadContext.threadID);
 #endif
   if (!theError) {
 #ifndef BATCH_DELIVERY_ON
@@ -652,7 +655,7 @@ void ThreadSwitchProcIn(pthread_t threadBeingSwitched, void *switchProcParam) {
   ASSERT(switchProcParam);
 
   threadData = (threadDataHandle)switchProcParam;
-  threadContext = &(*threadData)->threadContext;
+  threadContext = &threadData->threadContext;
 
   // pthreads don't need A5 world switching
 
@@ -663,8 +666,8 @@ void ThreadSwitchProcIn(pthread_t threadBeingSwitched, void *switchProcParam) {
 #endif
 
 #ifdef DEBUG
-  (*threadData)->switchInTime = TickCount();
-  (*threadData)->switchCount++;
+  threadData->switchInTime = TickCount();
+  threadData->switchCount++;
 #endif
 }
 
@@ -680,7 +683,7 @@ void ThreadSwitchProcOut(pthread_t threadBeingSwitched, void *switchProcParam) {
 
   ASSERT(switchProcParam);
   threadData = (threadDataHandle)switchProcParam;
-  threadContext = &(*threadData)->threadContext;
+  threadContext = &threadData->threadContext;
 
   // pthreads don't need A5 world switching
 
@@ -691,7 +694,7 @@ void ThreadSwitchProcOut(pthread_t threadBeingSwitched, void *switchProcParam) {
   CurThreadGlobals = &ThreadGlobals;
 
 #ifdef DEBUG
-  (*threadData)->totalTimeThread += (TickCount() - (*threadData)->switchInTime);
+  threadData->totalTimeThread += (TickCount() - threadData->switchInTime);
 #endif
 }
 
@@ -712,8 +715,8 @@ static OSErr SaveSettingsToMainThread(threadDataHandle threadData) {
   MyThreadBeginCritical();
 
   // prefs that were changed by thread should be changed
-  prefStack = (*threadData)->threadContext.prefStack;
-  (*threadData)->threadContext.prefStack = nil;
+  prefStack = threadData->threadContext.prefStack;
+  threadData->threadContext.prefStack = nil;
   while (prefStack && !StackPop(&prefChange, prefStack)) {
     oldCurPers = CurPers;
     if ((prefChange.persId && (CurPers = FindPersById(prefChange.persId))) ||
@@ -737,35 +740,35 @@ static OSErr SaveSettingsToMainThread(threadDataHandle threadData) {
 
   // go through all personalities in thread and update associated data in main
   // thread
-  for (pers = PersList; pers; pers = (*pers)->next) {
+  for (pers = PersList; pers; pers = pers->next) {
     // change context to main thread
     ThreadSwitchProcOut(nil, threadData);
-    if ((mainPers = FindPersById((*pers)->persId))) {
-//			(*mainPers)->sendQueue = (*pers)->sendQueue;
+    if ((mainPers = FindPersById(pers->persId))) {
+//			mainPers->sendQueue = pers->sendQueue;
 #ifdef DEBUG
       if (!BUG6)
 #endif
-        (*mainPers)->checkTicks =
-            MAX((*mainPers)->checkTicks, (*pers)->checkTicks);
-      (*mainPers)->popSecure = (*pers)->popSecure;
-      if ((*pers)->dirty)
-        (*mainPers)->dirty = 1;
-      (*mainPers)->noUIDL = (*pers)->noUIDL;
+        mainPers->checkTicks =
+            MAX(mainPers->checkTicks, pers->checkTicks);
+      mainPers->popSecure = pers->popSecure;
+      if (pers->dirty)
+        mainPers->dirty = 1;
+      mainPers->noUIDL = pers->noUIDL;
 
       /* only copy passwords back if we're a check thread or a send thread using
        * xtnd xmit */
       /* or if this was an IMAP thread, and the passwords were invalidated */
-      if (((*threadData)->xferMailParams.check ||
-           ((*threadData)->xferMailParams.send &&
+      if ((threadData->xferMailParams.check ||
+           (threadData->xferMailParams.send &&
             (PrefIsSet(PREF_POP_SEND) ||
              (ShouldSMTPAuth() && !PrefIsSet(PREF_SMTP_AUTH_NOTOK))))) ||
-          (((*threadData)->currentTask > SendingTask) &&
-           ((*pers)->password[0] == 0) && ((*pers)->secondPass[0] == 0)))
+          ((threadData->currentTask > SendingTask) &&
+           (pers->password[0] == 0) && (pers->secondPass[0] == 0)))
       {
-        strncpy((*mainPers)->password, (*pers)->password, sizeof((*mainPers)->password) - 1);
-        (*mainPers)->password[sizeof((*mainPers)->password) - 1] = '\0';
-        strncpy((*mainPers)->secondPass, (*pers)->secondPass, sizeof((*mainPers)->secondPass) - 1);
-        (*mainPers)->secondPass[sizeof((*mainPers)->secondPass) - 1] = '\0';
+        strncpy(mainPers->password, pers->password, sizeof(mainPers->password) - 1);
+        mainPers->password[sizeof(mainPers->password) - 1] = '\0';
+        strncpy(mainPers->secondPass, pers->secondPass, sizeof(mainPers->secondPass) - 1);
+        mainPers->secondPass[sizeof(mainPers->secondPass) - 1] = '\0';
       }
     }
     ThreadSwitchProcIn(nil, threadData);
@@ -811,21 +814,19 @@ static OSErr CopySettingsForThread(short sourceRefN, PersHandle sourcePerslist,
 
   /* Clone the personality linked list */
   for (oldPers = sourcePerslist; oldPers && !theError;
-       oldPers = (*oldPers)->next) {
+       oldPers = oldPers->next) {
     /* Allocate a Handle-style clone: pointer to pointer to Personality */
-    clone = (PersHandle)calloc(1, sizeof(PersPtr));
-    if (clone)
-      *clone = (PersPtr)calloc(1, sizeof(Personality));
-    if (!clone || !*clone) {
+    clone = (PersHandle)calloc(1, sizeof(Personality));
+    if (!clone) {
       theError = -108; /* memFullErr */
       break;
     }
     /* Copy the personality data */
-    **clone = **oldPers;
-    (*clone)->next = nil;
+    *clone = *oldPers;
+    clone->next = nil;
 
     if (lastClone)
-      (*lastClone)->next = clone;
+      lastClone->next = clone;
     else
       *destPersList = clone;
     lastClone = clone;
@@ -871,13 +872,13 @@ OSErr PushThreadPrefChange(short pref) {
 
   if (threadData) {
     prefChangeRec prefChange;
-    StackHandle prefStack = (*threadData)->threadContext.prefStack;
+    StackHandle prefStack = threadData->threadContext.prefStack;
 
     if (!prefStack)
       return noErr;
     prefChange.pref = pref;
 
-    prefChange.persId = (CurThreadGlobals && CurPers) ? (*CurPers)->persId : 0;
+    prefChange.persId = (CurThreadGlobals && CurPers) ? CurPers->persId : 0;
     err = noErr;
     StackPush(&prefChange, prefStack);
   }
@@ -932,7 +933,7 @@ void SetThreadGlobalCommandPeriod(ThreadID threadID, bool value) {
   GetThreadData(threadID, &threadData);
 
   if (threadData &&
-      (newGlobals = (*threadData)->threadContext.newThreadGlobals))
+      (newGlobals = threadData->threadContext.newThreadGlobals))
     newGlobals->tCommandPeriod = value;
 }
 
@@ -1015,46 +1016,45 @@ void ThreadTermination(pthread_t threadTerminated, void *terminationProcParam) {
     long totalTicks = 0;
     long perc = 0;
 #endif
-    if ((*threadData)->xferMailParams.check)
+    if (threadData->xferMailParams.check)
       CheckThreadRunning = false;
-    if ((*threadData)->xferMailParams.send)
+    if (threadData->xferMailParams.send)
       SendThreadRunning = false;
 #ifdef DEBUG_THREAD
-    MyDebuggerDisposeThread((*threadData)->threadContext.threadID);
+    MyDebuggerDisposeThread(threadData->threadContext.threadID);
 #endif
 #if __profile__
-    ProfilerDeleteThread((*threadData)->threadRef);
+    ProfilerDeleteThread(threadData->threadRef);
 #endif
-    DisposeThreadGlobals((*threadData)->threadContext.newThreadGlobals);
-    if ((*threadData)->threadContext.prefStack) { // should be set to nil in
+    DisposeThreadGlobals(threadData->threadContext.newThreadGlobals);
+    if (threadData->threadContext.prefStack) { // should be set to nil in
                                                   // SaveSettingsToMainThread
-      free(*((*threadData)->threadContext.prefStack));
-      free((*threadData)->threadContext.prefStack);
+      free(*(threadData->threadContext.prefStack));
+      free(threadData->threadContext.prefStack);
     }
     ThreadSwitchProcOut(threadTerminated, terminationProcParam);
 #ifdef DEBUG
     // log totalTimeAll, totalTimeThread, switchCount
-    totalTicks = TickCount() - (*threadData)->startTime;
-    perc = (long)(((float)(*threadData)->totalTimeThread / (float)totalTicks) *
+    totalTicks = TickCount() - threadData->startTime;
+    perc = (long)(((float)threadData->totalTimeThread / (float)totalTicks) *
                   100);
     fprintf(stderr,
         "Total ticks %ld; %s%s Thread ticks %ld; Percent %ld; Switch count: %d; "
         "Ticks/Switch: %ld\n",
         totalTicks,
-        (*threadData)->xferMailParams.check ? "Check" : "",
-        (*threadData)->xferMailParams.send ? " Send" : "",
-        (*threadData)->totalTimeThread, perc, (*threadData)->switchCount,
-        (*threadData)->switchCount
-            ? (*threadData)->totalTimeThread / (*threadData)->switchCount
+        threadData->xferMailParams.check ? "Check" : "",
+        threadData->xferMailParams.send ? " Send" : "",
+        threadData->totalTimeThread, perc, threadData->switchCount,
+        threadData->switchCount
+            ? threadData->totalTimeThread / threadData->switchCount
             : 0L);
 #endif
 #ifdef TASK_PROGRESS_ON
-    ASSERT((*threadData)->prbl);
-    DisposProgress((*threadData)->prbl);
+    ASSERT(threadData->prbl);
+    DisposProgress(threadData->prbl);
 #endif
     LL_Remove(gThreadData, threadData, (threadDataHandle));
     if (threadData) {
-      free(*threadData);
       free(threadData);
     }
     threadData = nil;
@@ -1086,10 +1086,6 @@ void ThreadTermination(pthread_t threadTerminated, void *terminationProcParam) {
 /* gWazooListHead is defined in wazoo.c and exported via wazoo.h */
 #include "wazoo.h"
 
-#ifdef CommandPeriod
-#undef CommandPeriod
-#endif
-extern bool CommandPeriod;
 #ifndef ReallyDoAnAlert_declared
 #define ReallyDoAnAlert_declared 1
 int ReallyDoAnAlert(int templ, int which);

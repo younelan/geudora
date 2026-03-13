@@ -100,7 +100,8 @@ struct LocalFlagChangeStruct {
 };
 
 // Mailboxnode - the thing mailboxTrees are made of
-typedef struct MailboxNode MailboxNode, *MailboxNodePtr, **MailboxNodeHandle;
+typedef struct MailboxNode MailboxNode, *MailboxNodePtr;
+typedef MailboxNode *MailboxNodeHandle;
 struct MailboxNode {
   char *mailboxName;           // name of the mailbox on the server
   char delimiter;              // delimiter
@@ -198,11 +199,11 @@ long IMAPMailboxMessageCount(FSSpecPtr mailboxSpec, bool check);
 bool ReallyIsIMAPMailbox(FSSpecPtr spec);
 void SetIMAPMailboxNeeds(MailboxNodeHandle node, MailboxNeedsEnum flag,
                          bool on);
-#define DoesIMAPMailboxNeed(n, f) (n ? ((*n)->mailboxneeds & f) != 0 : false)
+#define DoesIMAPMailboxNeed(n, f) (n ? ((n)->mailboxneeds & f) != 0 : false)
 long IMAPCountMailboxes(MailboxNodeHandle tree, MailboxNeedsEnum needs);
 #define IMAPTOCInUse(n)                                                        \
   (n ? (DoesIMAPMailboxNeed(n, kNeedsFilter) ||                                \
-        DoesIMAPMailboxNeed(n, kNeedsResync) || ((*n)->tocRef > 0))            \
+        DoesIMAPMailboxNeed(n, kNeedsResync) || ((n)->tocRef > 0))             \
      : false)
 
 // Mailbox Creation and Deletion

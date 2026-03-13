@@ -285,7 +285,7 @@ OSErr PGPEncrypt(MessHandle messH,FSSpecPtr from,bool encrypt,bool sign,FSSpecPt
 	/*
 	 * gather up the recpients
 	 */
-	if (!(err = GatherCompAddresses((*messH)->win,raw)))
+	if (!(err = GatherCompAddresses(messH->win,raw)))
 	{
 		ExpandAliases(&expanded,raw,0,True);
 		ZapHandle(raw);

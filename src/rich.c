@@ -28,6 +28,9 @@ DAMAGE. */
 #include "messact.h"      /* RelLine2Spec */
 /* ColorParam declared below — color.h depends on mywindow.h which isn't ported yet */
 #include "features.h"     /* HasFeature */
+
+/* CycleBalls was a Mac UI feedback spinner — no-op in GTK */
+static inline void CycleBalls(void) {}
 #include "toc.h"          /* TOCType, UseFlowInExcerpt */
 
 /* Font globals from Globals.h — declared here to avoid pulling in the entire header */
@@ -800,8 +803,8 @@ OSErr InsertRichLo(UHandle text,long textOffset,long textLen,long offset,bool he
 			}
 			if(EncodingError(err) && (encoding == kTextEncodingUnknown) && (messH != nil))
 			{
-				if(!(*messH)->tocH->sums[(*messH)->sumNum].mesgErrH) {
-					AddMesgError((*messH)->tocH, (*messH)->sumNum, GetRString(scratch,BAD_CHARSET_ERR), err);
+				if(!messH->tocH->sums[messH->sumNum].mesgErrH) {
+					AddMesgError(messH->tocH, messH->sumNum, GetRString(scratch,BAD_CHARSET_ERR), err);
 				}
 				if((tempoOffset = offset) == -1) PeteGetTextAndSelection(pte,nil,&tempoOffset,nil);
 				offset = tempiOffset;

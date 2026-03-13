@@ -365,14 +365,14 @@ static void PeteSetDirty_(GtkWidget *pte) {
  * ============================================================ */
 bool MessClose(MyWindowPtr win) {
   MessHandle messH = (MessHandle)GetMyWindowPrivateData(win);
-  TOCType *tocH = (*messH)->tocH;
-  int sumNum = (*messH)->sumNum;
+  TOCType *tocH = messH->tocH;
+  int sumNum = messH->sumNum;
 
-  if (!GrowZoning && TheBody && (*messH)->subPTE &&
-      win->pte == (*messH)->subPTE)
+  if (!GrowZoning && TheBody && messH->subPTE &&
+      win->pte == messH->subPTE)
     MessFocus(messH, TheBody);
 
-  if (PeteIsDirty((*messH)->subPTE))
+  if (PeteIsDirty(messH->subPTE))
     MessSaveSub(messH);
 
   if (!GrowZoning)
@@ -384,17 +384,17 @@ bool MessClose(MyWindowPtr win) {
 
   LL_Remove(MessList, messH, (MessHandle));
 
-  AccuZap(&(*messH)->extras);
-  AccuZap(&(*messH)->aSourceMID);
+  AccuZap(&messH->extras);
+  AccuZap(&messH->aSourceMID);
 
-  if ((*messH)->etlFiles)
-    ZapHandle((*messH)->etlFiles);
+  if (messH->etlFiles)
+    ZapHandle(messH->etlFiles);
 
   win->privateData = nil;
 
-  AccuZap(&(*messH)->newsGroupAcc);
+  AccuZap(&messH->newsGroupAcc);
 
-  ZapHandle(messH);
+  g_free(messH); messH = NULL;
   tocH->sums[sumNum].messH = nil;
 
   if (tocH->imapTOC)
@@ -495,16 +495,16 @@ void SetSubject(TOCType *tocH, short sumNum, unsigned char *sub) {
 
     if (messH) {
       MakeMessTitle(title, tocH, sumNum, true);
-      if ((*messH)->win && (*messH)->win->window) {
+      if (messH->win && messH->win->window) {
         char cTitle[257];
         int len = title[0];
         memcpy(cTitle, title + 1, len);
         cTitle[len] = '\0';
-        gtk_window_set_title(GTK_WINDOW((*messH)->win->window), cTitle);
+        gtk_window_set_title(GTK_WINDOW(messH->win->window), cTitle);
       }
-      if ((*messH)->subPTE && PeteIsValid_((*messH)->subPTE)) {
+      if (messH->subPTE && PeteIsValid_(messH->subPTE)) {
         GtkTextBuffer *buf =
-            gtk_text_view_get_buffer(GTK_TEXT_VIEW((*messH)->subPTE));
+            gtk_text_view_get_buffer(GTK_TEXT_VIEW(messH->subPTE));
         char cSub[256];
         int subLen = sub[0];
         memcpy(cSub, sub + 1, subLen);
@@ -532,12 +532,12 @@ void SetSender(TOCType *tocH, short sumNum, unsigned char *sender) {
     TOCSetDirty(tocH, true);
     if (messH) {
       MakeMessTitle(title, tocH, sumNum, true);
-      if ((*messH)->win && (*messH)->win->window) {
+      if (messH->win && messH->win->window) {
         char cTitle[257];
         int len = title[0];
         memcpy(cTitle, title + 1, len);
         cTitle[len] = '\0';
-        gtk_window_set_title(GTK_WINDOW((*messH)->win->window), cTitle);
+        gtk_window_set_title(GTK_WINDOW(messH->win->window), cTitle);
       }
     }
   }
@@ -552,7 +552,7 @@ void SetFlag(TOCType *tocH, short sumNum, long flag, bool on) {
   else
     tocH->sums[sumNum].flags &= ~flag;
   if (tocH->sums[sumNum].messH)
-    InvalTopMargin((*tocH->sums[sumNum].messH)->win);
+    InvalTopMargin(tocH->sums[sumNum].messH->win);
   TOCSetDirty(tocH, true);
 }
 
@@ -818,7 +818,7 @@ int RelLine2Spec(unsigned char *line, FSSpecPtr spec, uLong *cid,
  * ============================================================ */
 bool SaveMess(MyWindowPtr win) {
   MessHandle messH = Win2MessH(win);
-  TOCType *tocH = (*messH)->tocH;
+  TOCType *tocH = messH->tocH;
   long fromLen;
   Handle text = MessText(messH);
   HeadSpec hSpec;
@@ -834,8 +834,8 @@ bool SaveMess(MyWindowPtr win) {
     if (MessIsRich(messH)) {
       if (!(err = AccuInit(&enriched))) {
         CompHeadFind(messH, 0, &hSpec);
-        if (!(*messH)->extras.offset ||
-            !(err = AccuAddHandle(&enriched, (*messH)->extras.data)))
+        if (!messH->extras.offset ||
+            !(err = AccuAddHandle(&enriched, messH->extras.data)))
           if (!(err = AccuAddFromHandle(&enriched, text, 0, hSpec.value))) {
             if (MessOptIsSet(messH, OPT_HTML)) {
               unsigned char scratch[256];
@@ -853,7 +853,7 @@ bool SaveMess(MyWindowPtr win) {
             }
             if (!err) {
               AccuTrim(&enriched);
-              err = SaveTextAsMessage(nil, enriched.data, (*messH)->tocH,
+              err = SaveTextAsMessage(nil, enriched.data, messH->tocH,
                                       &fromLen);
               ZapHandle(enriched.data);
               enriched.data = nil;
@@ -874,12 +874,12 @@ bool SaveMess(MyWindowPtr win) {
 
   if (!richSave) {
     Handle extras =
-        (!blahBlah && (*messH)->extras.offset) ? (*messH)->extras.data : nil;
-    if (SaveTextAsMessage(extras, text, (*messH)->tocH, &fromLen))
+        (!blahBlah && messH->extras.offset) ? messH->extras.data : nil;
+    if (SaveTextAsMessage(extras, text, messH->tocH, &fromLen))
       return false;
   }
 
-  MSumType *oldSum = &tocH->sums[(*messH)->sumNum];
+  MSumType *oldSum = &tocH->sums[messH->sumNum];
   MSumType *newSum = &tocH->sums[tocH->count - 1];
 
   tocH->usedK -= oldSum->length / 1024;
@@ -898,25 +898,25 @@ bool SaveMess(MyWindowPtr win) {
     if (newSum->from[0]) PCopy(oldSum->from, newSum->from);
   }
 
-  InvalSum(tocH, (*messH)->sumNum);
-  if ((*messH)->win && (*messH)->win->window) {
-    MakeMessTitle(title, tocH, (*messH)->sumNum, true);
+  InvalSum(tocH, messH->sumNum);
+  if (messH->win && messH->win->window) {
+    MakeMessTitle(title, tocH, messH->sumNum, true);
     char cTitle[257];
     int tlen = title[0];
     memcpy(cTitle, title + 1, tlen);
     cTitle[tlen] = '\0';
-    gtk_window_set_title(GTK_WINDOW((*messH)->win->window), cTitle);
+    gtk_window_set_title(GTK_WINDOW(messH->win->window), cTitle);
   }
 
   tocH->count--;
 
-  (*messH)->weeded = fromLen + (blahBlah ? 0 : (*messH)->extras.offset);
+  messH->weeded = fromLen + (blahBlah ? 0 : messH->extras.offset);
   PeteSetURLRescan(TheBody, 0);
   PeteCleanList(win->pte);
   win->isDirty = false;
   ZapHandle(SumOf(messH)->cache);
   SetMessOpt(messH, OPT_EDITED);
-  ZapHandle((*messH)->etlFiles);
+  ZapHandle(messH->etlFiles);
   if (tocH->previewID == SumOf(messH)->serialNum)
     tocH->previewID = 0;
   return true;
@@ -949,8 +949,8 @@ void ShowMessageSeparator(GtkWidget *pte, bool center) {
  * ============================================================ */
 bool MessMenu(MyWindowPtr win, int menu, int item, short modifiers) {
   MessHandle messH = (MessHandle)GetMyWindowPrivateData(win);
-  TOCType *tocH = (*messH)->tocH;
-  int sumNum = (*messH)->sumNum;
+  TOCType *tocH = messH->tocH;
+  int sumNum = messH->sumNum;
   bool result = false;
   short tableId;
   bool turbo = false;
@@ -966,15 +966,15 @@ bool MessMenu(MyWindowPtr win, int menu, int item, short modifiers) {
           AttIsSelected(win, win->pte, -1, -1, attOpen + attPrint, nil, nil))
         ;
       else
-        PrintOneMessage((*messH)->win, (modifiers & shiftKey) != 0,
+        PrintOneMessage(messH->win, (modifiers & shiftKey) != 0,
                         item == FILE_PRINT_ONE_ITEM);
       result = true;
       break;
     case FILE_SAVE_ITEM:
       if (win->isDirty) {
-        if ((*messH)->subPTE && PeteIsDirty((*messH)->subPTE))
+        if (messH->subPTE && PeteIsDirty(messH->subPTE))
           MessSaveSub(messH);
-        if ((*messH)->bodyPTE && PeteIsDirty((*messH)->bodyPTE))
+        if (messH->bodyPTE && PeteIsDirty(messH->bodyPTE))
           SaveMess(win);
         PeteCleanList(win->pte);
         win->isDirty = false;
@@ -993,7 +993,7 @@ bool MessMenu(MyWindowPtr win, int menu, int item, short modifiers) {
     break;
 
   case SERVER_HIER_MENU:
-    ServerMenuChoice((*messH)->tocH, (*messH)->sumNum, item,
+    ServerMenuChoice(messH->tocH, messH->sumNum, item,
                      (modifiers & shiftKey) != 0);
     result = true;
     break;
@@ -1027,7 +1027,7 @@ bool MessMenu(MyWindowPtr win, int menu, int item, short modifiers) {
       Junk(tocH, sumNum, item == MESSAGE_JUNK_ITEM, true);
       break;
     case MESSAGE_DELETE_ITEM:
-      EzOpen((*messH)->openedFromTocH, -1, (*messH)->openedFromSerialNum,
+      EzOpen(messH->openedFromTocH, -1, messH->openedFromSerialNum,
              modifiers, true, true);
       NoSaves = !MessOptIsSet(Win2MessH(win), OPT_WRITE);
       if (CloseMyWindow(win->window)) {
@@ -1095,7 +1095,7 @@ bool MessMenu(MyWindowPtr win, int menu, int item, short modifiers) {
       DoMakeFilter(win);
       break;
     case SPECIAL_FILTER_ITEM: {
-      uint32_t ezOpenSN = (*messH)->ezOpenSerialNum;
+      uint32_t ezOpenSN = messH->ezOpenSerialNum;
       FilterMessage(flkManual, tocH, sumNum);
       if (tocH->count) {
         if (ezOpenSN)
@@ -1124,10 +1124,10 @@ bool MessMenu(MyWindowPtr win, int menu, int item, short modifiers) {
     break;
 
   default:
-    if ((*messH)->openedFromTocH != (*messH)->tocH)
-      sumNum = FindSumBySerialNum((*messH)->openedFromTocH,
-                                  (*messH)->openedFromSerialNum);
-    result = TransferMenuChoice(menu, item, (*messH)->openedFromTocH,
+    if (messH->openedFromTocH != messH->tocH)
+      sumNum = FindSumBySerialNum(messH->openedFromTocH,
+                                  messH->openedFromSerialNum);
+    result = TransferMenuChoice(menu, item, messH->openedFromTocH,
                                 sumNum, modifiers, false);
     break;
   }
@@ -1209,7 +1209,7 @@ void EzOpen(TOCType *tocH, short sumNum, uLong serialNum, long modifiers,
     short realSum;
     realTOC = GetRealTOC(tocH, sumNum, &realSum);
     if (realTOC->sums[realSum].messH)
-      serialNum = (*realTOC->sums[realSum].messH)->ezOpenSerialNum;
+      serialNum = realTOC->sums[realSum].messH->ezOpenSerialNum;
     else if (tocH->previewPTE && tocH->previewID) {
       preview = true;
       serialNum = tocH->ezOpenSerialNum;
@@ -1259,7 +1259,7 @@ static void save_msg_dialog_response_cb(GtkNativeDialog *d, int response,
  * SaveMessageAs - save message as text via GtkFileChooser
  * ============================================================ */
 void SaveMessageAs(MessHandle messH) {
-  MyWindowPtr win = (*messH)->win;
+  MyWindowPtr win = messH->win;
   if (!win || !win->window) return;
 
   GtkFileChooserNative *dialog = gtk_file_chooser_native_new(
@@ -1267,7 +1267,7 @@ void SaveMessageAs(MessHandle messH) {
       GTK_FILE_CHOOSER_ACTION_SAVE, "_Save", "_Cancel");
 
   unsigned char name[32];
-  MakeMessFileName((*messH)->tocH, (*messH)->sumNum, name);
+  MakeMessFileName(messH->tocH, messH->sumNum, name);
   gtk_file_chooser_set_current_name(GTK_FILE_CHOOSER(dialog), (const char *)name);
 
   /* GTK4: run native dialog synchronously with local main loop */
@@ -1310,7 +1310,7 @@ static short SaveAsToOpenFileLo(short refN, MessHandle messH) {
   bool para = PrefIsSet(PREF_PARAGRAPHS);
   bool exclHead =
       PrefIsSet(PREF_EXCLUDE_HEADERS) || (SumOf(messH)->flags & FLAG_SUBSEQUENT);
-  bool isOut = (*messH)->tocH->which == OUT;
+  bool isOut = messH->tocH->which == OUT;
   HeadSpec hs;
 
   PETEGetRawText(nil, TheBody, &text);
@@ -1343,7 +1343,7 @@ static short SaveAsToOpenFileLo(short refN, MessHandle messH) {
   } else {
     err = UnwrapSave(where, bytes, 0, refN);
   }
-  if (!err) BeenThereDoneThat((*messH)->tocH, (*messH)->sumNum);
+  if (!err) BeenThereDoneThat(messH->tocH, messH->sumNum);
   return err;
 }
 
@@ -1445,7 +1445,7 @@ uwdone:
 bool MessKey(MyWindowPtr win, void *eventPtr) {
   EventRecord *event = (EventRecord *)eventPtr;
   MessHandle messH = (MessHandle)GetMyWindowPrivateData(win);
-  TOCType *tocH = (*messH)->tocH;
+  TOCType *tocH = messH->tocH;
   long uLetter = UnadornMessage(event) & charCodeMask;
   bool bodyEdit = !win->ro && win->pte == TheBody;
   bool shift = 0 != (event->modifiers & shiftKey);
@@ -1459,8 +1459,8 @@ bool MessKey(MyWindowPtr win, void *eventPtr) {
     MessMenu(win, MESSAGE_MENU, MESSAGE_DELETE_ITEM, event->modifiers);
     return true;
   } else if (!bodyEdit && (uLetter == tabChar || uLetter == enterChar)) {
-    MessFocus(messH, win->pte == (*messH)->subPTE ? TheBody : (*messH)->subPTE);
-    if (win->pte == (*messH)->subPTE) {
+    MessFocus(messH, win->pte == messH->subPTE ? TheBody : messH->subPTE);
+    if (win->pte == messH->subPTE) {
       GtkTextBuffer *buf = gtk_text_view_get_buffer(GTK_TEXT_VIEW(win->pte));
       GtkTextIter start, end;
       gtk_text_buffer_get_start_iter(buf, &start);
@@ -1500,19 +1500,19 @@ void NextMess(TOCType *tocH, MessHandle messH, short whichWay,
     modifiers &= ~GetPrefLong(PREF_SWITCH_MODIFIERS);
   close = !(modifiers & optionKey);
 
-  if (ezOpen && tocH == (*messH)->openedFromTocH) {
-    EzOpen(tocH, (*messH)->sumNum, 0, 0, true, false);
-    CloseMyWindow((*messH)->win->window);
+  if (ezOpen && tocH == messH->openedFromTocH) {
+    EzOpen(tocH, messH->sumNum, 0, 0, true, false);
+    CloseMyWindow(messH->win->window);
     return;
   }
 
-  if ((*messH)->openedFromTocH && tocH != (*messH)->openedFromTocH) {
-    tocH = (*messH)->openedFromTocH;
-    if (!FindRealSummary(tocH, (*messH)->openedFromSerialNum, &sumNum))
+  if (messH->openedFromTocH && tocH != messH->openedFromTocH) {
+    tocH = messH->openedFromTocH;
+    if (!FindRealSummary(tocH, messH->openedFromSerialNum, &sumNum))
       return;
     diffTOC = true;
   } else {
-    sumNum = (*messH)->sumNum;
+    sumNum = messH->sumNum;
     diffTOC = false;
   }
 
@@ -1523,13 +1523,13 @@ void NextMess(TOCType *tocH, MessHandle messH, short whichWay,
   }
 
   if (next != sumNum) {
-    if (close && (*messH)->win->isDirty) {
-      if (!CloseMyWindow((*messH)->win->window)) return;
+    if (close && messH->win->isDirty) {
+      if (!CloseMyWindow(messH->win->window)) return;
       close = false;
     }
     if (next >= 0 && next < tocH->count) {
       if (tocH->sums[next].messH) {
-        MyWindowPtr nextWin = (*tocH->sums[next].messH)->win;
+        MyWindowPtr nextWin = tocH->sums[next].messH->win;
         if (nextWin && nextWin->window)
           gtk_window_present(GTK_WINDOW(nextWin->window));
       } else {
@@ -1540,14 +1540,14 @@ void NextMess(TOCType *tocH, MessHandle messH, short whichWay,
       BoxCenterSelection(tocH->win);
     }
   }
-  if (close) CloseMyWindow((*messH)->win->window);
+  if (close) CloseMyWindow(messH->win->window);
 }
 
 /* ============================================================
  * MessFind - find in the window
  * ============================================================ */
 bool MessFind(MyWindowPtr win, unsigned char *what) {
-  return FindInPTE(win, (*Win2MessH(win))->bodyPTE, (const char *)what);
+  return FindInPTE(win, Win2MessH(win)->bodyPTE, (const char *)what);
 }
 
 /* ============================================================
@@ -1617,7 +1617,7 @@ int MessGonnaShow(MyWindowPtr win) {
     margin += 22 + 6;
   SetTopMargin(win, margin);
 
-  if ((*messH)->subPTE == NULL) {
+  if (messH->subPTE == NULL) {
     GtkWidget *subEntry = gtk_text_view_new();
     gtk_text_view_set_wrap_mode(GTK_TEXT_VIEW(subEntry), GTK_WRAP_NONE);
     gtk_text_view_set_accepts_tab(GTK_TEXT_VIEW(subEntry), FALSE);
@@ -1627,7 +1627,7 @@ int MessGonnaShow(MyWindowPtr win) {
       gtk_text_buffer_set_text(buf, (const char *)subj, -1);
       gtk_text_buffer_set_modified(buf, FALSE);
     }
-    (*messH)->subPTE = subEntry;
+    messH->subPTE = subEntry;
   }
 
   PeteFocus(win, TheBody, true);
@@ -1638,7 +1638,7 @@ int MessGonnaShow(MyWindowPtr win) {
   MessIBarUpdate(messH);
   CheckAddNotifyControls(win, messH);
   AddMessErrNote(messH);
-  BeenThereDoneThat((*messH)->tocH, (*messH)->sumNum);
+  BeenThereDoneThat(messH->tocH, messH->sumNum);
   HiliteOddReply(messH);
 
   return noErr;
@@ -1651,7 +1651,7 @@ bool CheckAddNotifyControls(MyWindowPtr win, MessHandle messH) {
       !FindControlByRefCon(win, NOTIFY_CNTL)) {
     switch (GetPrefLong(PREF_RECEIPT)) {
     case 2:
-      (*messH)->sound = NOTIFY_SOUND;
+      messH->sound = NOTIFY_SOUND;
       GenerateReceipt(messH, MDN_DISPLAYED, MDN_DISPLAYED_LOCAL,
           MessOptIsSet(messH, OPT_AUTO_OPENED) ? MDN_AUTO_ACTION : MDN_MAN_ACTION,
           MDN_AUTO_SENT);
@@ -1665,18 +1665,18 @@ bool CheckAddNotifyControls(MyWindowPtr win, MessHandle messH) {
 }
 
 static void AddNotifyControls(MessHandle messH) {
-  (*messH)->sound = NOTIFY_SOUND;
-  PlaceNotifyControls((*messH)->win);
+  messH->sound = NOTIFY_SOUND;
+  PlaceNotifyControls(messH->win);
 }
 
 static void PlaceNotifyControls(MyWindowPtr win) { (void)win; }
 
 void AddMessErrNote(MessHandle messH) {
-  TOCType *tocH = (*messH)->tocH;
-  int sumNum = (*messH)->sumNum;
+  TOCType *tocH = messH->tocH;
+  int sumNum = messH->sumNum;
   mesgErrorHandle mesgErrH = tocH->sums[sumNum].mesgErrH;
   if (mesgErrH || tocH->sums[sumNum].state == MESG_ERR)
-    (*messH)->sound = NOTIFY_SOUND;
+    messH->sound = NOTIFY_SOUND;
 }
 
 void PlaceMessErrNote(MessHandle messH) { (void)messH; }
@@ -1685,7 +1685,7 @@ void PlaceMessErrNote(MessHandle messH) { (void)messH; }
  * MessIBarUpdate - update the icon bar state
  * ============================================================ */
 void MessIBarUpdate(MessHandle messH) {
-  MyWindowPtr win = (*messH)->win;
+  MyWindowPtr win = messH->win;
   if (!win) return;
 
   bool on = MessOnPOPD(POPD_ID, messH);
@@ -1704,10 +1704,10 @@ void MessIBarUpdate(MessHandle messH) {
     SetControlValue(blah, fetch);
     if (!on || !MessFlagIsSet(messH, FLAG_SKIPPED))
       SetControlVisibility(blah, false, false);
-    (*messH)->hasFetchIcon = (blah != nil);
+    messH->hasFetchIcon = (blah != nil);
   }
   if ((blah = FindControlByRefCon(win, mcGetGraphics_))) {
-    if (!DisplayGetGraphics((*messH)->win))
+    if (!DisplayGetGraphics(messH->win))
       SetControlVisibility(blah, false, false);
     else
       SetControlVisibility(blah, true, false);
@@ -1715,7 +1715,7 @@ void MessIBarUpdate(MessHandle messH) {
   if ((blah = FindControlByRefCon(win, mcTrash_))) {
     SetControlValue(blah, del);
     if (!on) SetControlVisibility(blah, false, false);
-    (*messH)->hasDelIcon = (blah != nil);
+    messH->hasDelIcon = (blah != nil);
   }
 }
 
@@ -1743,7 +1743,7 @@ int ExportHTML(MessHandle messH) {
   Handle cache;
   long len = 0, grandLen;
 
-  err = CacheMessage((*messH)->tocH, (*messH)->sumNum);
+  err = CacheMessage(messH->tocH, messH->sumNum);
   if (err) return err;
   cache = SumOf(messH)->cache;
   if (!cache || !*cache) return -1;
@@ -1830,7 +1830,7 @@ static void MessUpdate(MyWindowPtr win) {
   if (!win || !win->window) return;
   if (gtk_widget_get_visible(win->window)) {
     MessHandle messH = (MessHandle)GetMyWindowPrivateData(win);
-    if ((*messH)->sound) (*messH)->sound = 0;
+    if (messH->sound) messH->sound = 0;
   }
 }
 
@@ -1844,7 +1844,7 @@ void SetMessTable(TOCType *tocH, short sumNum, short newId) {
     TOCSetDirty(tocH, true);
     if (tocH->previewID == tocH->sums[sumNum].serialNum) tocH->previewID = 0;
     if (tocH->which != OUT && tocH->sums[sumNum].messH)
-      ReopenMessage((*tocH->sums[sumNum].messH)->win);
+      ReopenMessage(tocH->sums[sumNum].messH->win);
   }
 }
 
@@ -1852,11 +1852,11 @@ void SetMessTable(TOCType *tocH, short sumNum, short newId) {
  * MessFocus - switch PTE focus, using gtk_widget_grab_focus
  * ============================================================ */
 void MessFocus(MessHandle messH, PETEHandle pte) {
-  MyWindowPtr win = (*messH)->win;
-  bool wasSub = (win->pte == (*messH)->subPTE);
+  MyWindowPtr win = messH->win;
+  bool wasSub = (win->pte == messH->subPTE);
   PeteFocus(win, pte, true);
   win->ro = (win->pte == TheBody) && !MessOptIsSet(messH, OPT_WRITE);
-  if (wasSub && win->pte != (*messH)->subPTE)
+  if (wasSub && win->pte != messH->subPTE)
     MessSaveSub(messH);
   if (PeteIsValid_(pte))
     gtk_widget_grab_focus(pte);
@@ -1865,13 +1865,13 @@ void MessFocus(MessHandle messH, PETEHandle pte) {
 /* ============================================================ */
 int MessSaveSub(MessHandle messH) {
   unsigned char newSubj[256];
-  PeteSString_(newSubj, (*messH)->subPTE);
-  SetSubject((*messH)->tocH, (*messH)->sumNum, newSubj);
-  PETEMarkDocDirty(nil, (*messH)->subPTE, false);
-  if (PeteIsDirty((*messH)->win->pte))
-    (*messH)->win->isDirty = true;
+  PeteSString_(newSubj, messH->subPTE);
+  SetSubject(messH->tocH, messH->sumNum, newSubj);
+  PETEMarkDocDirty(nil, messH->subPTE, false);
+  if (PeteIsDirty(messH->win->pte))
+    messH->win->isDirty = true;
   else
-    (*messH)->win->isDirty = false;
+    messH->win->isDirty = false;
   return noErr;
 }
 
@@ -1929,7 +1929,7 @@ bool MessagePosition(bool save, MyWindowPtr win) {
 
 bool MessApp1(MyWindowPtr win, void *event) {
   MessHandle messH = Win2MessH(win);
-  PeteEdit(win, (*messH)->bodyPTE, peeEvent, event);
+  PeteEdit(win, messH->bodyPTE, peeEvent, event);
   return true;
 }
 

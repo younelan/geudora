@@ -87,24 +87,8 @@
 #define SORT_MOOD_ITEM        11
 #endif
 
-/* BoxLines column enums — from mailbox.h */
-#ifndef blStat
-#define blStat    1
-#define blJunk    2
-#define blPrior   3
-#define blAttach  4
-#define blFrom    5
-#define blDate    6
-#define blSize    7
-#define blLabel   8
-#define blSubject 9
-#define blServer  10
-#define blMailbox 11
-#define blAnal    12
-#endif
-#ifndef BoxLinesLimit
-#define BoxLinesLimit 13
-#endif
+/* BoxLines column enums — defined in StrnDefs.h (BoxLinesEnum) */
+#include "StrnDefs.h"
 
 /* Extern declarations for functions in other modules */
 extern void SetState(TOCType *tocH, int sumNum, int state);
@@ -378,7 +362,7 @@ bool BoxClose(MyWindowPtr win)
     for (short sumNum = tocH->count - 1; sumNum >= 0; sumNum--) {
         if (tocH->sums[sumNum].messH) {
             MessHandle messH = tocH->sums[sumNum].messH;
-            MyWindowPtr messWin = (*messH)->win;
+            MyWindowPtr messWin = messH->win;
             if (messWin && !messWin->isDirty) {
                 CloseMyWindow(messWin);
             }
@@ -402,7 +386,7 @@ void BoxOpen(MyWindowPtr win)
         if (tocH->sums[sum].selected) {
             if (tocH->sums[sum].messH) {
                 MessHandle messH = tocH->sums[sum].messH;
-                MyWindowPtr messWin = (*messH)->win;
+                MyWindowPtr messWin = messH->win;
                 if (messWin) {
                     /* Show and raise the window */
                     if (messWin->window)
@@ -1059,7 +1043,7 @@ static void SortTOC(TOCType *tocH, bool reverse, SumCompareFn compare)
     /* Update back-pointers from messages to their sum index */
     for (int i = 0; i < count; i++)
         if (sums[i].messH)
-            (*(MessHandle)sums[i].messH)->sumNum = i;
+            ((MessHandle)sums[i].messH)->sumNum = i;
 
     TOCSetDirty(tocH, true);
     (void)reverse; /* reverse is encoded in the comparators */

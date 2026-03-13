@@ -244,10 +244,9 @@ static int emo_scan_text(const char *text, int text_len, int start_offset, int *
  * EmoScanPte - scan a single gEditCtrl for emoticons and replace
  * ASCII patterns with Unicode emoji.
  *
- * Uses GtkTextBuffer directly.  Each replacement is tagged with the
- * "emoticon" tag so it can be identified and reverted.  We store the
- * original ASCII text in a GHashTable keyed by buffer offset (the
- * tag carries per-range data via marks).
+ * Uses gedit_document APIs for proper undo/state tracking.
+ * Each replacement is tagged with the "emoticon" GtkTextTag so it
+ * can be identified and reverted.
  ***********************************************************************/
 void EmoScanPte(GtkWidget *pte, bool toCompletion)
 {
@@ -261,13 +260,7 @@ void EmoScanPte(GtkWidget *pte, bool toCompletion)
 
     GtkTextTag *emo_tag = emo_get_or_create_tag(buffer);
 
-    /* Get the full text.  We scan it as a C string, then apply
-     * replacements back to the buffer using character offsets. */
-    GtkTextIter start_iter, end_iter;
-    gtk_text_buffer_get_start_iter(buffer, &start_iter);
-    gtk_text_buffer_get_end_iter(buffer, &end_iter);
-
-    char *text = gtk_text_buffer_get_text(buffer, &start_iter, &end_iter, TRUE);
+    char *text = gedit_document_get_text(doc);
     if (!text) return;
 
     int text_len = (int)strlen(text);
@@ -284,44 +277,37 @@ void EmoScanPte(GtkWidget *pte, bool toCompletion)
         const char *emoji = emo_table[emo_idx].emoji;
         int emoji_byte_len = (int)strlen(emoji);
 
-        /* Convert byte offset to character offset for GtkTextBuffer.
-         * text is UTF-8, so we need g_utf8_pointer_to_offset. */
-        int char_offset = (int)g_utf8_pointer_to_offset(text, text + match_offset);
-        int char_len = (int)g_utf8_pointer_to_offset(text + match_offset,
-                                                       text + match_offset + ascii_len);
+        /* ASCII emoticon patterns are pure ASCII, so byte offset == char offset */
+        int char_offset = match_offset;
 
         /* Check if this range already has the emoticon tag */
         GtkTextIter check_iter;
         gtk_text_buffer_get_iter_at_offset(buffer, &check_iter, char_offset);
         if (gtk_text_iter_has_tag(&check_iter, emo_tag)) {
-            /* Already replaced — skip past it */
             scan_pos = match_offset + ascii_len;
             continue;
         }
 
-        /* Save the original ASCII text as a mark name so we can revert.
-         * We use the pattern: store original in object data on the tag
-         * instance, keyed by a GtkTextMark at the start position. */
-        GtkTextIter del_start, del_end;
-        gtk_text_buffer_get_iter_at_offset(buffer, &del_start, char_offset);
-        gtk_text_buffer_get_iter_at_offset(buffer, &del_end, char_offset + char_len);
+        /* Delete the ASCII text via document API */
+        gedit_document_delete_range(doc, char_offset, ascii_len);
 
-        /* Delete the ASCII text */
-        gtk_text_buffer_delete(buffer, &del_start, &del_end);
+        /* Insert the emoji via document API */
+        gedit_document_insert_text(doc, char_offset, emoji);
+        int emoji_char_len = (int)g_utf8_strlen(emoji, -1);
 
-        /* Insert the emoji with the emoticon tag */
-        gtk_text_buffer_get_iter_at_offset(buffer, &del_start, char_offset);
-        gtk_text_buffer_insert_with_tags(buffer, &del_start, emoji, emoji_byte_len,
-                                          emo_tag, NULL);
+        /* Apply the emoticon tag */
+        GtkTextIter tag_start, tag_end;
+        gtk_text_buffer_get_iter_at_offset(buffer, &tag_start, char_offset);
+        gtk_text_buffer_get_iter_at_offset(buffer, &tag_end, char_offset + emoji_char_len);
+        gtk_text_buffer_apply_tag(buffer, emo_tag, &tag_start, &tag_end);
 
-        /* Re-fetch text since buffer changed */
+        /* Re-fetch text since document changed */
         g_free(text);
-        gtk_text_buffer_get_start_iter(buffer, &start_iter);
-        gtk_text_buffer_get_end_iter(buffer, &end_iter);
-        text = gtk_text_buffer_get_text(buffer, &start_iter, &end_iter, TRUE);
+        text = gedit_document_get_text(doc);
+        if (!text) return;
         text_len = (int)strlen(text);
 
-        /* Advance past the inserted emoji */
+        /* Advance past the inserted emoji (in bytes) */
         scan_pos = match_offset + emoji_byte_len;
         replacements++;
     }
@@ -348,6 +334,7 @@ void EmoScan(void)
  *
  * Walks the buffer looking for text tagged with "emoticon", and
  * replaces the emoji characters with their original ASCII equivalents.
+ * Uses gedit_document APIs for proper undo/state tracking.
  ***********************************************************************/
 void EmoSearchAndDestroyPte(GtkWidget *pte)
 {
@@ -393,16 +380,15 @@ void EmoSearchAndDestroyPte(GtkWidget *pte)
 
         if (ascii_replacement) {
             int offset = gtk_text_iter_get_offset(&iter);
+            int emoji_char_len = gtk_text_iter_get_offset(&tag_end) - offset;
 
-            /* Delete the emoji */
-            gtk_text_buffer_delete(buffer, &iter, &tag_end);
+            /* Delete emoji and insert ASCII via document API */
+            gedit_document_delete_range(doc, offset, emoji_char_len);
+            gedit_document_insert_text(doc, offset, ascii_replacement);
 
-            /* Insert the ASCII text without the emoticon tag */
-            gtk_text_buffer_get_iter_at_offset(buffer, &iter, offset);
-            gtk_text_buffer_insert(buffer, &iter, ascii_replacement, -1);
-
-            /* Restart from the insertion point */
-            gtk_text_buffer_get_iter_at_offset(buffer, &iter, offset + (int)strlen(ascii_replacement));
+            /* Restart scan from after the inserted ASCII */
+            int ascii_len = (int)g_utf8_strlen(ascii_replacement, -1);
+            gtk_text_buffer_get_iter_at_offset(buffer, &iter, offset + ascii_len);
         }
     }
 }
@@ -420,6 +406,7 @@ void EmoSearchAndDestroy(void)
 /***********************************************************************
  * EmoInsert - insert an emoticon at the current cursor position.
  * 'item' is the 0-based index into the emoticon table.
+ * Delegates to geditctrl_insert_emoji for proper state tracking.
  ***********************************************************************/
 int EmoInsert(MyWindowPtr win, int item)
 {
@@ -427,41 +414,7 @@ int EmoInsert(MyWindowPtr win, int item)
     if (item < 0 || item >= (int)EMO_TABLE_SIZE) return -1;
     if (!emo_initted) EmoInit();
 
-    geditDocument *doc = geditctrl_get_document(win->pte);
-    if (!doc) return -1;
-    GtkTextBuffer *buffer = gedit_document_get_buffer(doc);
-    if (!buffer) return -1;
-
-    const char *emoji = emo_table[item].emoji;
-
-    /* Get current cursor position */
-    GtkTextMark *insert_mark = gtk_text_buffer_get_insert(buffer);
-    GtkTextIter cursor;
-    gtk_text_buffer_get_iter_at_mark(buffer, &cursor, insert_mark);
-
-    int offset = gtk_text_iter_get_offset(&cursor);
-
-    /* Add space before if previous char is a word char */
-    if (offset > 0) {
-        GtkTextIter prev = cursor;
-        gtk_text_iter_backward_char(&prev);
-        gunichar pc = gtk_text_iter_get_char(&prev);
-        if (g_unichar_isalnum(pc) || pc == '_')
-            gtk_text_buffer_insert(buffer, &cursor, " ", 1);
-    }
-
-    /* Insert the emoji with the emoticon tag */
-    GtkTextTag *emo_tag = emo_get_or_create_tag(buffer);
-    gtk_text_buffer_insert_with_tags(buffer, &cursor, emoji, -1, emo_tag, NULL);
-
-    /* Add space after if next char is a word char */
-    gunichar nc = gtk_text_iter_get_char(&cursor);
-    if (nc != 0 && (g_unichar_isalnum(nc) || nc == '_'))
-        gtk_text_buffer_insert(buffer, &cursor, " ", 1);
-
-    /* Place cursor after insertion */
-    gtk_text_buffer_place_cursor(buffer, &cursor);
-
+    geditctrl_insert_emoji(win->pte, emo_table[item].emoji);
     return 0;
 }
 

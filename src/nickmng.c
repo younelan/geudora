@@ -2513,8 +2513,8 @@ int GatherCompAddresses(MyWindowPtr win, char *addrList) {
 void MakeMessNick(MyWindowPtr win, short modifiers) {
 #ifdef VCARD
   MessHandle messH = (MessHandle)GetMyWindowPrivateData(win);
-  TOCType * tocH = (*messH)->tocH;
-  int sumNum = (*messH)->sumNum;
+  TOCType * tocH = messH->tocH;
+  int sumNum = messH->sumNum;
   FSSpec attSpec;
   Handle text;
   long offset;

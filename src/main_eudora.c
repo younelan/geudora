@@ -46,7 +46,6 @@ typedef struct {
 
 /* Global variables for legacy compatibility */
 RootSpec Root;
-bool CommandPeriod;
 long YieldTicks;
 OSErr inProgress = 1;      /* From MachOPreComp.pch */
 OSErr cacheFault = -23042; /* From MachOPreComp.pch */

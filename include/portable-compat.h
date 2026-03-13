@@ -104,7 +104,7 @@ typedef Handle ProxyHandle;
 
 /* Forward declare Personality for PersHandle */
 struct Personality;
-typedef struct Personality **PersHandle;
+typedef struct Personality *PersHandle;
 
 typedef struct {
   uint32_t high;

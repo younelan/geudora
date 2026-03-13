@@ -22,7 +22,7 @@ typedef int OSErr;
 typedef int OSStatus;
 #endif
 
-typedef struct mstruct **MessHandle; /* message.h */
+typedef struct mstruct *MessHandle; /* message.h */
 typedef enum {
   /*    1 */ UNREAD = 1,
   /*    2 */ READ,
@@ -658,9 +658,6 @@ typedef struct {
 
 /* Globals */
 extern RootSpec Root;
-/* CommandPeriod is defined as a macro in threading.h for thread-local access.
-   Do not provide a conflicting global extern here. */
-/* extern bool CommandPeriod; */
 extern long YieldTicks;
 extern int inProgress;
 extern int cacheFault;

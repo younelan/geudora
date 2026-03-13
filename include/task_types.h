@@ -27,6 +27,6 @@ typedef enum {
 #endif
 
 /* Forward declarations for threading types used in progress visibility */
-typedef struct threadData_ **threadDataHandle;
+typedef struct threadData_ *threadDataHandle;
 
 #endif

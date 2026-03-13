@@ -228,7 +228,7 @@ typedef struct TOCType {
 #define TOC_PREF_JUNK_MAILBOX 1
 #define TOC_PREF_REPORT 2
 #define TOC_PREF_LMOS 3
-#define DELETE_ID 3
+/* DELETE_ID is defined in MyRes.h (1003) — do not redefine here */
 
 /* EMS Constants */
 #define EMSF_JUNK_MAIL_ID 10

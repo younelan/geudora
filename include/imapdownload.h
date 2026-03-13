@@ -128,8 +128,8 @@ struct IMAPSResultStruct {
 
 // DeliveryStruct.  Used to keep track of messages to be delivered to all
 // opening IMAP mailboxes
-typedef struct DeliveryNode DeliveryNode, *DeliveryNodePtr,
-    **DeliveryNodeHandle;
+typedef struct DeliveryNode DeliveryNode, *DeliveryNodePtr;
+typedef DeliveryNode *DeliveryNodeHandle; /* was **; now direct pointer */
 struct DeliveryNode {
   TOCType * toc; // toc to identify this deliverynode
 
@@ -155,7 +155,8 @@ struct DeliveryNode {
 };
 
 // UpdateNode.  Used to keep a list of windows waiting to be updated
-typedef struct UpdateNode UpdateNode, *UpdateNodePtr, **UpdateNodeHandle;
+typedef struct UpdateNode UpdateNode, *UpdateNodePtr;
+typedef UpdateNode *UpdateNodeHandle;
 struct UpdateNode {
   FSSpec mailboxSpec;       // the mailbox this message lives in
   unsigned long uid;        // uid of the message

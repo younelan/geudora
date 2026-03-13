@@ -41,7 +41,6 @@ ADVISED OF THE POSSIBILITY OF SUCH DAMAGE. */
 
 #include "message.h"
 #include "portable-compat.h"
-#undef DELETE_ID
 #include "MyRes.h"
 #include "StringDefs.h"
 #include "StringUtil.h"
@@ -75,12 +74,6 @@ ADVISED OF THE POSSIBILITY OF SUCH DAMAGE. */
 #endif
 #include "gtk_menus.h"
 
-/* CommandPeriod is a bool global, not a macro - undo any macro that may
- * have been pulled in via imapdownload.h or mailxfer.c includes */
-#ifdef CommandPeriod
-#undef CommandPeriod
-#endif
-extern bool CommandPeriod;
 int ReallyDoAnAlert(int templ, int which);
 
 short FindTOCSpot(TOCType * tocH, long serialNum);
@@ -116,18 +109,8 @@ long Munger(Handle h, long offset, void *ptr1, long len1, void *ptr2,
 int StackQueue(void *stack, void *elem);
 long BeautifyDate(unsigned char *dateStr, long *zoneSecs);
 
-#undef OpenProgress
-#undef CloseProgress
-#undef ProgressMessage
-#undef ProgressMessageR
-
 extern _Thread_local threadGlobalsPtr CurThreadGlobals;
 #define MINI_MASK 0
-
-/* Macro fixes to avoid redefinition conflicts */
-#undef HeaderName
-#define HeaderName(num)                                                        \
-  (GetRString(scratch, HEADER_STRN + num), TrimWhite(scratch), (char *)scratch)
 
 /************************************************************************
  * ComputeLocalDate - format a message's date as a C string
@@ -158,7 +141,7 @@ void MakeMessTitle(unsigned char *title, TOCType * tocH, int sumNum,
   unsigned char zoneStr[32];
   long zone;
 
-  PCopy((unsigned char *)from, (unsigned char *)tocH->sums[sumNum].from);
+  strcpy(from, (const char *)tocH->sums[sumNum].from);
   if (useSummary)
     *from = MIN(*from, (*BoxWidths)[blFrom - 1]);
 
@@ -183,7 +166,7 @@ void MakeMessTitle(unsigned char *title, TOCType * tocH, int sumNum,
   }
 
   GetMailboxName(tocH, sumNum, (unsigned char *)mailbox);
-  PCopy((unsigned char *)subject, (unsigned char *)tocH->sums[sumNum].subj);
+  strcpy(subject, (const char *)tocH->sums[sumNum].subj);
 
   utl_PlugParams((unsigned char *)GetRString((char *)pattern, MESS_TITLE_PLUG),
                  title, (unsigned char *)mailbox, (unsigned char *)from,
@@ -252,13 +235,6 @@ bool UseFlowOutExcerpt = false;
 #define kPETELastPara -1L
 #endif
 
-#undef ClearMessOpt
-#define ClearMessOpt(mh, opt)                                                  \
-  do {                                                                         \
-    SumOf(mh)->opts &= ~opt;                                                   \
-    TOCSetDirty((*mh)->tocH, true);                                            \
-  } while (0)
-
 #ifndef OPT_WRITE
 #define OPT_WRITE 1
 #endif
@@ -318,9 +294,6 @@ int ReplyReferences(MessHandle origMessH, MessHandle newMessH);
 void HTMLifyText(MyWindowPtr win, Handle text);
 
 /* Missing Prototypes */
-void HiliteControl(ControlHandle ctl, int part);
-void HideControl(ControlHandle ctl);
-void PopGWorld(void);
 OSErr SubFolderSpec(short vRefNum, FSSpecPtr spec);
 
 OSErr RemoveDir(FSSpecPtr spec);
@@ -347,9 +320,7 @@ OSErr TruncAtMark(short refN);
 int ReadSum(void *u1, bool b1, LineIOP lip, bool b2);
 void NicknameWatcherFocusChange(GtkWidget *pte);
 MyWindowPtr DoComposeNew(int type);
-#ifndef DELETE_ID
-#define DELETE_ID 1003
-#endif
+/* DELETE_ID is defined in MyRes.h (1003) */
 
 #define mLoPlain 1
 int CopyNewsgroups(MessHandle origMH, MessHandle newMH);
@@ -367,19 +338,11 @@ bool IsIMAPMessageProcessed(TOCType * tocH, short sumNum);
 void ShowBoxSizes(MyWindowPtr win);
 bool Mom(short button, short item, short pref, short warning, short verb);
 bool IsQueued(TOCType * tocH, short sumNum);
-/* Stubs for Mac Toolbox & Missing Functions */
+/* Forward declarations */
 #define SetHandleBig SetHandleSize
-// #define MESS_TO_PPERS(m) (PersHandle)0 /* Conflicts with pop.h */
 void MovingAttachments(TOCType * tocH, short sumNum, bool a, bool b, bool c,
                        bool d);
 OSErr WipeDiskArea(short refN, long offset, long len);
-void PushGWorld(void);
-/* IsWindowVisible declared in mailbox.h as static inline */
-ControlHandle FindControlByRefCon(MyWindowPtr win, long refCon);
-// bool IdIsOnPOPD(int type, int id, unsigned long hash); /* Conflicts with
-// pop.h */
-void SetControlValue(ControlHandle ctrl, int val);
-void ShowControl(ControlHandle ctrl);
 void PlayNamedSound(unsigned char *name);
 MyWindowPtr DoRedistributeMessage(MyWindowPtr win, void *toWhom, bool turbo,
                                   bool andDelete, bool showIt);
@@ -416,7 +379,7 @@ MyWindowPtr GetAMessageLo(TOCType * origTocH, int origSumNum, GtkWidget *winWP,
   if (!tocH || tocH->count <= sumNum)
     return (NULL);
   if ((messH = tocH->sums[sumNum].messH)) {
-    messWinWP = (GtkWidget *)GetMyWindowWindowPtr((*messH)->win);
+    messWinWP = (GtkWidget *)GetMyWindowWindowPtr(messH->win);
     if (newWin)
       *newWin = false;
     if (showIt) {
@@ -424,18 +387,14 @@ MyWindowPtr GetAMessageLo(TOCType * origTocH, int origSumNum, GtkWidget *winWP,
         gtk_widget_set_visible(messWinWP, TRUE);
       gtk_window_present(GTK_WINDOW(messWinWP));
     }
-    win = (*messH)->win;
+    win = messH->win;
   } else if (tocH->which == MBX_OUT)
     win = OpenComp(tocH, sumNum, winWP, win, showIt, false);
-#ifdef NEVER
-  else if (IsALink(tocH, sumNum))
-    win = OpenLink(tocH, sumNum, winWP, win, showIt);
-#endif
   else
     win = OpenMessage(tocH, sumNum, winWP, win, showIt, false);
   if (win) {
-    (*Win2MessH(win))->openedFromTocH = origTocH;
-    (*Win2MessH(win))->openedFromSerialNum =
+    Win2MessH(win)->openedFromTocH = origTocH;
+    Win2MessH(win)->openedFromSerialNum =
         origTocH->sums[origSumNum].serialNum;
   }
   return (win);
@@ -448,25 +407,18 @@ MyWindowPtr OpenMessage(TOCType * tocH, short sumNum, GtkWidget *winWP,
                         MyWindowPtr win, bool showIt, bool preview)
 {
   MessHandle messH;
-  // bool turvy = showIt; // Remove Mac-specific modifier check for now
   char *text = NULL;
   short ezOpenSum;
-  // geditDocument *pdi; // Replace PETEDocInitInfo with geditDocument
   int err;
   long size;
-  long partial = GetRLong(PETE_NIBBLE) * 1024; // Convert K to bytes
-  // GList *stack = NULL;                         // Replace StackHandle with
-  // GList
+  long partial = GetRLong(PETE_NIBBLE) * 1024;
   bool useLizzie = false;
   bool disableButtons __attribute__((unused)) = false;
-  // Remove PETETextStyle - will handle styling differently
-
-  // Remove CycleBalls() - Mac-specific UI feedback
 
   if (!(tocH = GetRealTOC(tocH, sumNum, &sumNum)))
     return NULL;
 
-  if ((messH = (MessHandle)g_malloc0(sizeof(MessType))) == NULL)
+  if ((messH = g_malloc0(sizeof(MessType))) == NULL)
     return (NULL);
 
   // Replace GetNewMyWindow with GTK window creation
@@ -485,9 +437,9 @@ MyWindowPtr OpenMessage(TOCType * tocH, short sumNum, GtkWidget *winWP,
   winWP = (GtkWidget *)GetMyWindowWindowPtr(win);
 
   tocH->sums[sumNum].messH = messH;
-  (*messH)->win = win;
-  (*messH)->sumNum = sumNum;
-  (*messH)->tocH = tocH;
+  messH->win = win;
+  messH->sumNum = sumNum;
+  messH->tocH = tocH;
   /* apply FLAG_OUT ex post facto */
   if (tocH->sums[sumNum].state == SENT ||
       tocH->sums[sumNum].state == UNSENT)
@@ -495,7 +447,7 @@ MyWindowPtr OpenMessage(TOCType * tocH, short sumNum, GtkWidget *winWP,
 
   SetMyWindowPrivateData(win, (void *)messH);
   win->close = MessClose;
-  LL_Push(MessList, messH);
+  messH->next = MessList; MessList = messH;
 
   if (MessOptIsSet(messH, OPT_WRITE))
     ClearMessOpt(messH, OPT_WRITE);
@@ -559,9 +511,7 @@ MyWindowPtr OpenMessage(TOCType * tocH, short sumNum, GtkWidget *winWP,
       // stick in the text
       if (!MessFlagIsSet(messH, FLAG_SHOW_ALL) &&
           (MessFlagIsSet(messH, FLAG_RICH)
-#ifndef OLDHTML
            || MessOptIsSet(messH, OPT_HTML)
-#endif
            || MessOptIsSet(messH, OPT_FLOW) ||
            MessOptIsSet(messH, OPT_CHARSET))) {
         // Insert rich text using gEditCtrl
@@ -607,17 +557,12 @@ MyWindowPtr OpenMessage(TOCType * tocH, short sumNum, GtkWidget *winWP,
     win->find = MessFind;
     win->curAddr = MessCurAddr;
 
-#ifdef OLDHTML
     /*
      * interpret rich text
      */
-    if (!MessFlagIsSet(messH, FLAG_SHOW_ALL)) {
-      if (MessOptIsSet(messH, OPT_HTML))
-      // TODO: Replace PeteHTML with gEditCtrl HTML rendering
-      // PeteHTML(TheBody, SumOf(messH)->bodyOffset - (*messH)->weeded + 1, 0,
-      // true);
-    }
-#endif
+    /* HTML rendering is handled at insertion time (line 542) by
+     * gedit_document_insert_markup() which parses tags and applies
+     * styles. No separate interpretation pass needed. */
 
     if (showIt) {
       /*
@@ -642,17 +587,11 @@ MyWindowPtr OpenMessage(TOCType * tocH, short sumNum, GtkWidget *winWP,
        * rest of the text?
        */
       if (text && !useLizzie) {
-        /* PeteCalcOff(win->pte); */
-        /* err = PETEInsertTextPtr(PETE, win->pte, partial, LDRef(text) +
-           partial, size - partial, NULL); */
-        /* PeteSmallParas(win->pte); */
-        /* PeteCalcOn(win->pte); */
-
-        /* PeteSetURLRescan(win->pte, 0); */
-
-        /* GEdit replacement logic if needed */
+        PeteCalcOff(win->pte);
         gedit_document_insert_text(geditctrl_get_document(win->pte), -1,
-                                   text + partial); /* Fixed arguments */
+                                   text + partial);
+        PeteCalcOn(win->pte);
+        PeteSetURLRescan(win->pte, 0);
 
         if (err) {
           if (err != userCanceledErr)
@@ -664,27 +603,20 @@ MyWindowPtr OpenMessage(TOCType * tocH, short sumNum, GtkWidget *winWP,
        * prepare for ezopen
        */
       if (!err && ezOpenSum >= 0) {
-        (*messH)->ezOpenSerialNum = tocH->sums[ezOpenSum].serialNum;
+        messH->ezOpenSerialNum = tocH->sums[ezOpenSum].serialNum;
         CacheMessage(tocH, ezOpenSum);
       }
-      /*
-            if (disableButtons)
-             EnableMsgButtons(win, false);
-      */
+      if (disableButtons)
+        EnableMsgButtons(win, false);
     }
   }
 
-  /* style.tsLock = peModLock; */
-
-  /* PETESetTextStyle(PETE, TheBody, 0, 0x7fffffff, &style, peLockValid); */
-  /* PETEMarkDocDirty(PETE, TheBody, false); */
+  PeteSetDirty(TheBody, false);
   win->isDirty = false;
 
   if (err) {
   Abort:
-    /* PeteCleanList(win->pte); */
-    // PeteCleanList(win->pte);
-
+    PeteCleanList(win->pte);
     win->isDirty = false;
     CloseMyWindow(winWP);
     win = NULL;
@@ -718,67 +650,6 @@ PStr MessCurAddr(MyWindowPtr win, PStr addr) {
   }
 
   return *addr ? addr : NULL;
-}
-
-#if 0
-/* void DoCFStringGlobalReplace(CFMutableStringRef theString,
-                             CFStringRef stringToFind,
-                             CFStringRef replacement) {
-*/
-
-#include "../gEditCtrl/geditctrl.h"
-#include "../include/message.h"
-#include "../include/portable-compat.h"
-#include "Globals.h"
-#include "MyRes.h"
-#include "StringDefs.h"
-#include "StringUtil.h"
-#include "comp.h"
-#include "features.h"
-#include "lineio.h"
-#include "mailbox.h"
-#include "pop.h"
-#include "prefdefs.h"
-#include "schizo.h"
-#include "threading.h"
-#include "toc.h"
-#include "trans.h"
-#include "util.h"
-#include <glib-object.h>
-#include <glib.h>
-#include <gtk/gtk.h>
-#include <stdbool.h>
-#include <stdlib.h>
-#include <string.h>
-
-/* stubbed out for non-Mac build */
-
-CFArrayRef ranges;
-CFRange wholeString, *range;
-CFIndex i;
-
-wholeString.location = 0;
-wholeString.length = CFStringGetLength(theString);
-ranges = CFStringCreateArrayWithFindResults(NULL, theString, stringToFind,
-                                            wholeString, 0);
-if (!ranges)
-  return;
-for (i = CFArrayGetCount(ranges); --i >= 0;) {
-  range = (CFRange *)CFArrayGetValueAtIndex(ranges, i);
-  if (replacement != NULL)
-    CFStringReplace(theString, *range, replacement);
-    CFStringDelete(theString, *range);
-}
-#endif
-
-#if 0
-CFStringRef MakeCFMessTitle(TOCType * tocH, int sumNum) {
-    return NULL;
-}
-#endif
-
-void PeteApplyStyles(GtkWidget *pte, void *styles) {
-  /* Stubbed for GTK port */
 }
 
 /**********************************************************************
@@ -870,9 +741,9 @@ OSErr CacheMessage(TOCType * tocH, short sumNum) {
  * GetMessText - put the text of a message
  **********************************************************************/
 UHandle GetMessText(MessHandle messH) {
-  MyWindowPtr win = (*messH)->win;
-  TOCType * tocH = (*messH)->tocH;
-  int sumNum = (*messH)->sumNum;
+  MyWindowPtr win = messH->win;
+  TOCType * tocH = messH->tocH;
+  int sumNum = messH->sumNum;
   UHandle buffer = NULL;
   long weeded;
   short tableId;
@@ -909,7 +780,7 @@ UHandle GetMessText(MessHandle messH) {
    */
   if (cache) {
     if (buffer) {
-      BMD(*cache, *buffer, GetHandleSize(buffer));
+      memmove(*buffer, *cache, GetHandleSize(buffer));
     } else {
       buffer = (UHandle)cache;
       cache = NULL;
@@ -924,7 +795,7 @@ UHandle GetMessText(MessHandle messH) {
     cache = (Handle)g_malloc(sizeof(unsigned char *));
     *(unsigned char **)cache = cache_data;
     if (cache) {
-      BMD(*buffer, *(unsigned char **)cache, GetMessageLength(tocH, sumNum));
+      memmove(*(unsigned char **)cache, *buffer, GetMessageLength(tocH, sumNum));
       tocH->sums[sumNum].cache = cache;
     }
   }
@@ -940,36 +811,22 @@ UHandle GetMessText(MessHandle messH) {
    */
   if (!(SumOf(messH)->flags & FLAG_SHOW_ALL)) {
     WeedHeaders(buffer, &weeded, BadHeadStrn, &weeds);
-    (*messH)->weeded = weeded;
+    messH->weeded = weeded;
     StripTrailingNewlines((Handle)buffer,
                           SumOf(messH)->bodyOffset - weeded + 1);
   } else
-    (*messH)->weeded = 0;
+    messH->weeded = 0;
   WeedHeaders(buffer, &weeded, FROM_STRN, NULL);
-  (*messH)->weeded += weeded;
+  messH->weeded += weeded;
   AccuTrim(&weeds);
-  (*messH)->extras = weeds;
+  messH->extras = weeds;
 
   /*
-   * translate?
+   * Character translation tables are not supported in the GTK port.
+   * The original Mac version used 'taBL' resources for charset conversion.
+   * Modern email uses UTF-8; charset handling is done at the IMAP/POP layer.
    */
-  tableId = tocH->sums[sumNum].tableId;
-  if (tableId == DEFAULT_TABLE)
-    tableId = GetPrefLong(PREF_IN_XLATE);
-  if (tableId != NO_TABLE) {
-    if (!(table = GetResource_('taBL', tableId))) {
-      tableId -= 1000; /* try 1000 lower */
-      table = GetResource_('taBL', tableId);
-    }
-    if (table) {
-      Byte *p, *end, *t;
-      long size = GetHandleSize_(buffer);
-      end = *buffer + size;
-      t = *table;
-      for (p = *buffer; p < end; p++)
-        *p = t[*p];
-    }
-  }
+  (void)tableId;
 
   win->ro = !MessOptIsSet(messH, OPT_WRITE);
   return (buffer);
@@ -1010,7 +867,6 @@ int ReadMessage(TOCType * tocH, int sumN, UPtr buffer) {
 int MoveMessage(TOCType * tocH, int sumNum, FSSpecPtr toSpec, bool copy) {
   TOCType * toTocH;
 
-  CycleBalls();
 
   if ((toTocH = TOCBySpec(toSpec)) == NULL)
     return (1);
@@ -1050,7 +906,6 @@ int MoveMessageLo(TOCType * tocH, int sumNum, FSSpecPtr toSpec, bool copy,
         tocH->sums[sumNum].subj,
         GetMailboxName(tocH, sumNum, (unsigned char *)name), toSpec->name);
 
-  CycleBalls();
 
   if ((toTocH = TOCBySpec(toSpec)) == NULL)
     return (1);
@@ -1079,7 +934,7 @@ int MoveMessageLo(TOCType * tocH, int sumNum, FSSpecPtr toSpec, bool copy,
     FixSourceStatus(
         tocH, sumNum); /* in case we're deleting a reply, set orig state back */
 
-  if (messH && (*messH)->subPTE && PeteIsDirty((*messH)->subPTE))
+  if (messH && messH->subPTE && PeteIsDirty(messH->subPTE))
     MessSaveSub(messH);
 
   // if this is an IMAP to POP transfer, close the message window
@@ -1092,22 +947,19 @@ int MoveMessageLo(TOCType * tocH, int sumNum, FSSpecPtr toSpec, bool copy,
       // message was fetched, but a translator deleted it.
       tocH->sums[sumNum].opts |=
           OPT_ORPHAN_ATT; // be real sure the attachments are left alone
-#ifdef DEBUG
       ComposeLogS(
           LOG_PLUG, NULL,
           (unsigned char *)"A plugin has deleted an IMAP message: '%s' in '%s'",
           tocH->sums[sumNum].subj, tocH->mailbox.spec.name);
-#endif
       return (noErr);
     } else if (!downloaded)
       return (1);
 
     // if the message is open, close it.
     if (!copy && messH)
-      CloseMyWindow(GetMyWindowWindowPtr((*messH)->win));
+      CloseMyWindow(GetMyWindowWindowPtr(messH->win));
   }
 
-  CycleBalls();
 
   // if this is an IMAP to POP transfer, the POP copy will point to the
   // attachment
@@ -1124,7 +976,6 @@ int MoveMessageLo(TOCType * tocH, int sumNum, FSSpecPtr toSpec, bool copy,
     (void)BoxFClose(toTocH, true);
   }
 
-  CycleBalls();
 
   // if we moved an IMAP message to a POP mailbox, forget about its attachments
   // so they don't get tidied up.
@@ -1180,15 +1031,15 @@ int AppendMessage(TOCType * fromTocH, int fromN, TOCType * toTocH, bool copy,
    */
   fromMH = fromTocH->sums[fromN].messH;
   if (fromMH) {
-    MyWindowPtr win = (*fromMH)->win;
+    MyWindowPtr win = fromMH->win;
     if (win->saveSize && win->position)
       (*win->position_new)(true, win);
     if (fromTocH->which == OUT) {
-      MyWindowPtr win = (*fromMH)->win;
+      MyWindowPtr win = fromMH->win;
       if ((win->isDirty || !fromTocH->sums[fromN].length) && !SaveComp(win))
         return (1);
     } else if (win->isDirty) {
-      // MessFocus(fromMH, (*fromMH)->bodyPTE); // TODO: Port to GTK
+      PeteFocus(fromMH->win, fromMH->bodyPTE, true);
       if (!SaveMessHi(win, false))
         return (1);
     }
@@ -1217,7 +1068,7 @@ int AppendMessage(TOCType * fromTocH, int fromN, TOCType * toTocH, bool copy,
   if (toTocH->count >= MAX_MESSAGES_PER_MAILBOX) {
     unsigned char s[256];
     ComposeStdAlert(Stop, TOO_MANY_MESSAGES,
-                    PCopy(s, (unsigned char *)toTocH->mailbox.spec.name));
+                    strcpy((char *)s, toTocH->mailbox.spec.name));
     return MessErr = 1;
   }
 
@@ -1237,7 +1088,6 @@ int AppendMessage(TOCType * fromTocH, int fromN, TOCType * toTocH, bool copy,
       if (!MessErr)
         MessErr = AWrite(toTocH->refN, &count,
                          *fromTocH->sums[fromN].cache);
-#ifdef DEBUG
       if (RunType != Production) {
         long controls = 0;
         UPtr dbspot = *fromTocH->sums[fromN].cache;
@@ -1253,7 +1103,6 @@ int AppendMessage(TOCType * fromTocH, int fromN, TOCType * toTocH, bool copy,
           AlertStr(OK_ALRT, Stop, buffer);
         }
       }
-#endif
     } else
       MessErr =
           CopyFBytes(fromTocH->refN, fromTocH->sums[fromN].offset,
@@ -1332,7 +1181,7 @@ int AppendMessage(TOCType * fromTocH, int fromN, TOCType * toTocH, bool copy,
   if ((mesgErrH = (mesgErrorHandle)fromTocH->sums[fromN].mesgErrH)) {
     unsigned char errorStr[256];
     AddMesgError(toTocH, toTocH->count - 1,
-                 PCopy(errorStr, (*mesgErrH)->errorStr),
+                 strcpy((char *)errorStr, (const char *)(*mesgErrH)->errorStr),
                  (*mesgErrH)->errorCode);
   }
 
@@ -1341,7 +1190,7 @@ int AppendMessage(TOCType * fromTocH, int fromN, TOCType * toTocH, bool copy,
    */
   if (!copy && fromTocH->sums[fromN].messH)
     CloseMyWindow(GetMyWindowWindowPtr(
-        (*(MessHandle)fromTocH->sums[fromN].messH)->win));
+        ((MessHandle)fromTocH->sums[fromN].messH)->win));
 
   return (MessErr); // return(noErr);	// 12/11/97 ccw
 }
@@ -1380,268 +1229,6 @@ int MoveSelectedMessagesLo(TOCType * tocH, FSSpecPtr toSpec, bool copy,
   if ((toTocH = TOCBySpec(toSpec)) == NULL)
     return (1);
   outWarning = !copy && toTocH->which == OUT;
-
-/*
- * GetAMessage - grab a message
- * ************************************************************************/
-#define OpenProgress LegacyOpenProgress
-#define CloseProgress LegacyCloseProgress
-#define ProgressMessage LegacyProgressMessage
-#define ProgressMessageR LegacyProgressMessageR
-#include "../include/message.h"
-#include <glib-object.h>
-#include <glib.h>
-
-#include "../gEditCtrl/geditctrl.h"
-#include "Globals.h"
-#undef DELETE_ID /* Avoid conflict between toc.h and MyRes.h */
-#include "MyRes.h"
-#include "StringDefs.h"
-#include "StringUtil.h"
-#include "comp.h"
-#include "features.h"
-#include "pop.h"
-/* Caution and Stop are defined in gtk_dialogs.h */
-#undef DELETE_ID /* Avoid conflict with MyRes.h */
-#undef OpenProgress
-#undef CloseProgress
-#undef ProgressMessage
-#undef ProgressMessageR
-#include "gtk_dialogs.h"
-#include "imapdownload.h"
-#include "junk.h"
-#include "lineio.h"
-#include "mailbox.h"
-#include "prefdefs.h"
-#include "schizo.h"
-#include "threading.h"
-#include "toc.h"
-#include "trans.h"
-#include "util.h"
-#include <gtk/gtk.h>
-#include <stdbool.h>
-#include <stdlib.h>
-#include <string.h>
-
-#ifdef CommandPeriod
-#undef CommandPeriod
-#endif
-extern bool CommandPeriod;
-#ifndef ReallyDoAnAlert_declared
-#define ReallyDoAnAlert_declared 1
-int ReallyDoAnAlert(int templ, int which);
-#endif
-
-
-#define DELETE_ID 1003
-  extern _Thread_local threadGlobalsPtr CurThreadGlobals;
-#define MINI_MASK 0
-
-/* Macro fixes to avoid redefinition conflicts */
-#undef HeaderName
-#define HeaderName(num)                                                        \
-  (GetRString(scratch, HEADER_STRN + num), TrimWhite(scratch), (char *)scratch)
-
-  /* Missing types/defs */
-
-  typedef struct {
-    Handle text;
-    bool outgoing;
-    bool attach;
-    HeadSpec hs;
-    long offset;
-  } FindAttRec, *FindAttRecPtr;
-/* Redefine FindAttPtr to correct type */
-#define FindAttPtr FindAttRecPtr
-
-  /* File Info Types - Assuming defined in mailbox.h/Globals.h */
-
-#define OPT_WIPE 0x0200
-#define OPT_REDIRECTED 0x0010
-#define peModLock 1
-#define peSelectLock 2
-#define peClickBeforeLock 4
-#define peColorValid 0
-#define SIG_NONE 0
-#define kEuSendNow 1
-#define kEuSendNext 0
-#define OPT_HAS_SPOOL 1
-#define smSystemScript 0
-#define PreviewReadTimer 0
-#define LABEL_COPY_MASK 0
-#define pReplyLabel 0
-#define fgAttachment 1
-#define EAL_VARS_DECL int _eal_dummy = 0
-#define EAL_VARS _eal_dummy
-#define kPETECurrentStyle -1L
-#define OPT_DELSP 0
-#define OPT_BULK 0
-#define OPT_WEIRD_REPLY 0
-#define FLAG_ENCRYPT 0
-#define kAlertNoteAlert 1
-  bool UseFlowOutExcerpt = false;
-
-/* Feature Flags */
-#define mcFetch 128
-#define mcTrash 129
-#define PREF_SUBJECT_IN_INLINE 12345 /* Dummy value */
-/* Mac Event Macros */
-#ifndef optionKey
-#define optionKey 2048
-#endif
-#ifndef shiftKey
-#define shiftKey 512
-#endif
-
-/* PETE Macros */
-#ifndef peAllValid
-#define peAllValid -1
-#endif
-#ifndef kPETELastPara
-#define kPETELastPara -1L
-#endif
-
-#undef ClearMessOpt
-#define ClearMessOpt(mh, opt)                                                  \
-  do {                                                                         \
-    SumOf(mh)->opts &= ~opt;                                                   \
-    TOCSetDirty((*mh)->tocH, true);                                            \
-  } while (0)
-
-#ifndef OPT_WRITE
-#define OPT_WRITE 1
-#endif
-#ifndef MessOptIsSet
-#define MessOptIsSet(mh, opt) 0
-#endif
-
-#define FILE_NUM 25
-  /* Copyright (c) 1990-1992 by the University of Illinois Board of Trustees */
-
-  /* Ported function declarations - replacing Mac types with standard C/GTK
-   * types
-   */
-  UHandle GetMessText(MessHandle messH);
-  int MessErr;
-  int FindAndCopyHeader(MessHandle origMH, MessHandle newMH, char *fromHead,
-                        short toHead);
-  void WeedHeaders(UHandle buffer, long *weeded, short toWeed, AccuPtr weeds);
-  MyWindowPtr OpenMessage(TOCType * tocH, short sumNum, GtkWidget *winWP,
-                          MyWindowPtr win, bool showIt, bool preview);
-  int RemoveSelf(MessHandle messH, short head, bool wantErrors);
-  void FindFrom(unsigned char *who, GtkWidget *pte);
-  void Attribute(short attrId, MessHandle origMessH, MessHandle newMessH,
-                 bool atEnd);
-  void XferCustomTable(MessHandle origMessH, MessHandle newMessH);
-  void WeedXAttachments(MessHandle messH, bool errReport);
-  void RemoveIndAttachment(MessHandle messH, short index);
-  void PeteApplyStyles(GtkWidget * pte, void *styles);
-  int CopyToOut(TOCType * fromTocH, short sumNum, TOCType * toTocH);
-  int UniqueHeader(MessHandle messH, short head, bool wantErrors);
-  int FindMessageByMID(unsigned long mid, TOCType * *tocH, short *sumNum);
-  OSErr TOCFindMessByMID(uLong mid, TOCType * tocH, long *sumNum);
-  int WipeMessage(TOCType * tocH, short sumNum);
-  long StripTrailingNewlines(Handle buffer, long stop);
-  int MessageWarnings(TOCType * tocH, short sumNum, bool toTrash, bool nuke,
-                      bool *queuedWarning, bool *unsentWarning,
-                      bool *unreadWarning, bool *busyWarning);
-  int SelectedWarnings(TOCType * tocH, bool toTrash, bool nuke);
-  int SingleWarnings(TOCType * tocH, short sumNum, bool toTrash, bool nuke);
-  void DeleteMessageLo(TOCType * tocH, int sumNum, bool nuke);
-  long CompBodyOffset(MessHandle messH);
-  int SpoolAttachments(MessHandle messH);
-  int CopyAttachments(MessHandle messH);
-  TOCType * GetRealTOC(TOCType * tocH, short sumN, short *realSumNum);
-  int ReadMessage(TOCType * tocH, int sumN, UPtr buffer);
-  uLong GetMessageLength(TOCType * tocH, short sumNum);
-  void FixSourceStatus(TOCType * tocH, short sumNum);
-  int AppendMessage(TOCType * fromTocH, int fromN, TOCType * toTocH, bool copy,
-                    bool toTemp, bool isIMAPtoPopTransfer);
-  void DeleteSum(TOCType * tocH, int sumNum);
-  void Rehash(TOCType * tocH, int sumNum, UPtr buffer);
-
-  int ReplyReferences(MessHandle origMessH, MessHandle newMessH);
-  // void HTMLifyText(MyWindowPtr win, char *, long modifiers, bool nuke, Handle
-  // text);
-  void HTMLifyText(MyWindowPtr win, Handle text);
-
-  /* Missing Prototypes */
-  void HiliteControl(ControlHandle ctl, int part);
-  void HideControl(ControlHandle ctl);
-  void PopGWorld(void);
-  OSErr SubFolderSpec(short vRefNum, FSSpecPtr spec);
-
-  OSErr RemoveDir(FSSpecPtr spec);
-  bool PrefIsSetOrNot(int pref, int modifiers, int mask);
-  long SizeSelectedMessages(TOCType * tocH, bool includeText);
-  bool MemoryPreflight(long size);
-  bool MultiMessageOpOK(int warnType, int count);
-  void AddXfUndo(TOCType * tocH, TOCType * trashTOC, int unused);
-  TOCType * GetTrashTOC(void);
-  void MonitorGrow(bool flag);
-  bool DoMessageMenu(short item, TOCType * tocH, short sumNum, short toWhom,
-                     void *addr, long modifiers, bool nuke, bool *busy);
-  void SetState(TOCType * tocH, short sumNum, int state);
-
-  /* ServerMenuChoice, SetPriority, BoxSelectAfter — in boxact.h */
-  int Menu2Label(short menu);
-  MyWindowPtr GetAMessage(TOCType * tocH, short sumNum, void *u1, void *u2,
-                          bool b1);
-  void NotUsingWindow(GtkWidget * win);
-  OSErr SavePtrAsMessage(UPtr preText, long preSize, UPtr text, long size,
-                         TOCType * tocH, long *fromLen);
-  OSErr PutOutFromLine(short refN, long *len);
-  OSErr TruncAtMark(short refN);
-  int ReadSum(void *u1, bool b1, LineIOP lip, bool b2);
-  void NicknameWatcherFocusChange(GtkWidget * pte);
-  MyWindowPtr DoComposeNew(int type);
-
-  int CopyNewsgroups(MessHandle origMH, MessHandle newMH);
-  bool AttStillInFolder(FSSpecPtr att, FSSpecPtr folder);
-  unsigned char *MessCurAddr(MyWindowPtr win, unsigned char *addr);
-  void MakeMessTitle(unsigned char *title, TOCType * tocH, int sumNum,
-                     bool useSummary);
-
-  void DoGStringGlobalReplace(GString * theString, const char *stringToFind,
-                              const char *replacement);
-
-  /* PeteExtra declared in peteglue.h */
-  void RehashLo(TOCType * tocH, short sumNum, UHandle text, bool soft);
-  bool IsIMAPMessageProcessed(TOCType * tocH, short sumNum);
-  void ShowBoxSizes(MyWindowPtr win);
-  bool Mom(short button, short item, short pref, short warning, short verb);
-  bool IsQueued(TOCType * tocH, short sumNum);
-/* Stubs for Mac Toolbox & Missing Functions */
-#define SetHandleBig SetHandleSize
-  // #define MESS_TO_PPERS(m) (PersHandle)0 /* Conflicts with pop.h */
-  void MovingAttachments(TOCType * tocH, short sumNum, bool a, bool b, bool c,
-                         bool d);
-  OSErr WipeDiskArea(short refN, long offset, long len);
-  void PushGWorld(void);
-  /* IsWindowVisible declared in mailbox.h as static inline */
-  ControlHandle FindControlByRefCon(MyWindowPtr win, long refCon);
-  // bool IdIsOnPOPD(int type, int id, unsigned long hash); /* Conflicts with
-  // pop.h */
-  void SetControlValue(ControlHandle ctrl, int val);
-  void ShowControl(ControlHandle ctrl);
-  void PlayNamedSound(unsigned char *name);
-  MyWindowPtr DoRedistributeMessage(MyWindowPtr win, void *toWhom, bool turbo,
-                                    bool andDelete, bool showIt);
-  MyWindowPtr DoForwardMessage(MyWindowPtr win, void *toWhom, bool turbo);
-  short FindSumBySerialNum(TOCType * tocH, long serialNum);
-  MyWindowPtr DoReplyMessage(MyWindowPtr win, bool all, bool self, bool quote,
-                             bool doFcc, short withWhich, bool vis,
-                             bool station, bool caching);
-  unsigned char *PeteSelectedString(void *res, GtkWidget *pte);
-  unsigned char *GetRealname(unsigned char *addr);
-  int TextFindAndCopyHeader(unsigned char *body, long size, MessHandle newMH,
-                            unsigned char *fromHead, short toHead, short label);
-  OSErr SpoolIndAttachment(MessHandle messH, short i);
-  void SumInfoCpy(MSumPtr newSum, MSumPtr oldSum);
-  void Preview(TOCType * tocH, short sumNum);
-  void ReplyDefaults(short modifiers, bool *all, bool *self, bool *quote);
-  MyWindowPtr DoSalvageMessage(MyWindowPtr win, bool forXfer);
-  MyWindowPtr DoSalvageMessageLo(MyWindowPtr win, bool forXfer, bool forIMAP);
 
   if (tocH->virtualTOC) {
     if (delete)
@@ -1731,8 +1318,8 @@ int ReallyDoAnAlert(int templ, int which);
             if (tocH->sums[sumNum].selected)
               if (!IMAPMessageBeingDownloaded(tocH, sumNum) &&
                   !IMAPMessageDownloaded(tocH, sumNum))
-                BMD(&(tocH->sums[sumNum].uidHash),
-                    &((unsigned long *)(*uidsH))[--c], sizeof(unsigned long));
+                memcpy(&((unsigned long *)(*uidsH))[--c],
+                    &(tocH->sums[sumNum].uidHash), sizeof(unsigned long));
 
           // fetch them all in the foreground
           err = UIDDownloadMessages(tocH, uidsH, true, false);
@@ -1766,8 +1353,7 @@ int ReallyDoAnAlert(int templ, int which);
   }
   for (sumNum = 0; sumNum < tocH->count; sumNum++) {
     if (tocH->sums[sumNum].selected) {
-      CycleBalls();
-      if (count > 1)
+          if (count > 1)
         MiniEvents();
       if (EjectBuckaroo || CommandPeriod)
         break;
@@ -1975,9 +1561,9 @@ void FixSourceStatus(TOCType * tocH, short sumNum) {
   short i;
 
   if (tocH->which == OUT && messH && SumOf(messH)->state != SENT &&
-      (*messH)->aSourceMID.offset) {
-    midList = (uLong **)(*messH)->aSourceMID.data;
-    for (i = (*messH)->aSourceMID.offset / (3 * sizeof(long)) - 1; i >= 0;
+      messH->aSourceMID.offset) {
+    midList = (uLong **)messH->aSourceMID.data;
+    for (i = messH->aSourceMID.offset / (3 * sizeof(long)) - 1; i >= 0;
          i--) {
       uLong sourceMID = (*midList)[i * 3];
       short sourceOrigState = (*midList)[i * 3 + 1];
@@ -1991,11 +1577,11 @@ void FixSourceStatus(TOCType * tocH, short sumNum) {
       }
     }
     /* data is char* (flat buffer in CrispinIMAP Accumulator), just free once */
-    if ((*messH)->aSourceMID.data) {
-      free((*messH)->aSourceMID.data);
-      (*messH)->aSourceMID.data = NULL;
+    if (messH->aSourceMID.data) {
+      free(messH->aSourceMID.data);
+      messH->aSourceMID.data = NULL;
     }
-    (*messH)->aSourceMID.offset = (*messH)->aSourceMID.size = 0;
+    messH->aSourceMID.offset = messH->aSourceMID.size = 0;
   }
 }
 
@@ -2063,7 +1649,7 @@ long FindAnAttachment(Handle text, long offset, FSSpecPtr spec, bool attach,
     for (newLine = spot; newLine < end && *newLine != '\015'; newLine++)
       ;
     if (newLine - spot > 24 && newLine - spot < 255) {
-      MakePStr(line, spot, newLine - spot);
+      { long _len = newLine - spot; if (_len > (long)sizeof(line) - 1) _len = sizeof(line) - 1; memcpy(line, spot, _len); line[_len] = '\0'; }
       if (attach) {
         result = !AttLine2Spec(line, spec, false);
         if (result)
@@ -2133,7 +1719,7 @@ void DeleteMessage(TOCType * tocH, int sumNum, bool nuke) {
     // marked.
     MessHandle messH = (MessHandle)tocH->sums[sumNum].messH;
     if (messH)
-      CloseMyWindow(GetMyWindowWindowPtr((*messH)->win));
+      CloseMyWindow(GetMyWindowWindowPtr(messH->win));
 
     IMAPDeleteMessage(tocH, tocH->sums[sumNum].uidHash, nuke, false, false);
 
@@ -2164,7 +1750,7 @@ void DeleteMessageLo(TOCType * tocH, int sumNum, bool nuke) {
     if (wipe)
       WipeMessage(tocH, sumNum);
     if (messH)
-      CloseMyWindow(GetMyWindowWindowPtr((*messH)->win));
+      CloseMyWindow(GetMyWindowWindowPtr(messH->win));
     if (tocH->count == oldN)
       DeleteSum(tocH, sumNum);
   }
@@ -2212,66 +1798,93 @@ long StripTrailingNewlines(Handle buffer, long stop) {
  * WeedHeaders - weed a message's headers, leaving only the interesting
  * ones.
  ************************************************************************/
+/* Standard Eudora bad headers to weed (replaces Mac STR# 3200 resource) */
+static const char *kBadHeaders[] = {
+  "Received:", "Return-Path:", "X-Sender:", "X-Mailer:",
+  "X-Attachments:", "Message-Id:", "MIME-Version:", "Content-Type:",
+  "Content-Transfer-Encoding:", "Content-Disposition:",
+  "X-Priority:", "X-MSMail-Priority:", "Importance:",
+  "X-MimeOLE:", "X-Spam-Status:", "X-Spam-Score:",
+  "X-Spam-Flag:", "X-Virus-Scanned:", "X-Original-To:",
+  "Delivered-To:", "Authentication-Results:", "DKIM-Signature:",
+  "DomainKey-Signature:", "X-Google-DKIM-Signature:",
+  "ARC-Seal:", "ARC-Message-Signature:", "ARC-Authentication-Results:",
+  "X-Gm-Message-State:", "X-Google-Smtp-Source:",
+  "X-Received:", "X-Forwarded-To:", "X-Forwarded-For:",
+  NULL
+};
+
+/* Standard Eudora "From " line header to weed (replaces Mac STR# 3400 resource) */
+static const char *kFromHeaders[] = {
+  "From ", /* Unix mbox "From " line */
+  NULL
+};
+
 void WeedHeaders(UHandle buffer, long *weeded, short toWeed, AccuPtr weeds) {
   long size;
-  short bad;
-  Handle badH = GetResource('STR#', toWeed);
-  UPtr badSpot; // pointer to bad header string we're currently looking for
-  short res;
 
-  if (badH) {
-    UPtr spot;  // char we're examining
-    UPtr done;  // just past end of good chars that have been copied
-    UPtr end;   // end of the whole shebang
-    UPtr found; // beginning of text we found
-    short badN;
+  /* Select the appropriate header list based on the resource ID */
+  const char **badList;
+  if (toWeed == FROM_STRN)
+    badList = kFromHeaders;
+  else
+    badList = kBadHeaders;
 
-    PtrAndHand("", badH, 1); /* room for a null terminator */
+  /* Count entries */
+  int badN = 0;
+  while (badList[badN]) badN++;
+  if (badN == 0) return;
 
-    done = spot = *buffer;
-    badN = CountStrn(toWeed);
-    end = spot + GetHandleSize_(buffer);
+  UPtr spot;  // char we're examining
+  UPtr done;  // just past end of good chars that have been copied
+  UPtr end;   // end of the whole shebang
+  UPtr found; // beginning of text we found
 
-    // while there are chars left
-    while (spot < end) {
-      if (*spot == '\015')
-        break; // two returns in a row are the end of the headers
+  done = spot = *buffer;
+  end = spot + GetHandleSize_(buffer);
 
-      // search for the header name
-      badSpot = *badH + 2;
-      for (bad = 0; bad < badN; bad++) {
-        res = striscmp(spot, badSpot);
-        // found it!
-        if (!res) {
-          // skip the header
-          found = spot;
-          while (spot < end)
-            if (*spot++ == '\015')
-              if (*spot != ' ' && *spot != '\t')
-                break;
-          // copy?
-          if (weeds)
-            AccuAddPtr(weeds, found, spot - found);
-          goto nextHead; // continue looking at next header
-        } else
-          badSpot += strlen((const char *)badSpot) + 1;
+  // while there are chars left
+  while (spot < end) {
+    if (*spot == '\015')
+      break; // two returns in a row are the end of the headers
+
+    // search for the header name in the bad list
+    int bad;
+    bool matched = false;
+    for (bad = 0; bad < badN; bad++) {
+      size_t hlen = strlen(badList[bad]);
+      if ((size_t)(end - spot) >= hlen &&
+          g_ascii_strncasecmp((const char *)spot, badList[bad], hlen) == 0) {
+        // found it! skip the header (including continuation lines)
+        found = spot;
+        while (spot < end)
+          if (*spot++ == '\015')
+            if (*spot != ' ' && *spot != '\t')
+              break;
+        // save weeded header if requested
+        if (weeds)
+          AccuAddPtr(weeds, found, spot - found);
+        matched = true;
+        break;
       }
-      // copy the current header
-      while (spot < end)
-        if ((*done++ = *spot++) == '\015')
-          if (*spot != ' ' && *spot != '\t')
-            break;
-    nextHead:;
     }
+    if (matched)
+      continue;
 
+    // copy the current header (it's not in the bad list)
     while (spot < end)
-      *done++ = *spot++;
-    size = done - *buffer;
-    if (weeded)
-      *weeded = end - done;
-    /* HUnlock is a no-op */
-    SetHandleBig_(buffer, size);
+      if ((*done++ = *spot++) == '\015')
+        if (*spot != ' ' && *spot != '\t')
+          break;
   }
+
+  // copy body (everything after headers)
+  while (spot < end)
+    *done++ = *spot++;
+  size = done - *buffer;
+  if (weeded)
+    *weeded = end - done;
+  SetHandleBig_(buffer, size);
 }
 
 /************************************************************************
@@ -2291,56 +1904,48 @@ OSErr SetMessText(MessHandle messH, short whichTXE, UPtr string, long size) {
  **********************************************************************/
 void Fix1MessServerArea(MyWindowPtr win) {
   WindowPtr winWP = GetMyWindowWindowPtr(win);
-  uLong uidHash;
   MessHandle messH;
-  ControlHandle fetch;
-  ControlHandle trash;
-  bool onFetch, onDelete, lmos;
-  OSType popdType;
-
-  PushGWorld();
 
   if (GetWindowKind(winWP) == MESS_WIN && IsWindowVisible(winWP)) {
     messH = Win2MessH(win);
-    uidHash = SumOf(messH)->uidHash;
-    /* Manual expansion of PERS_POPD_TYPE to debug/fix indirection error */
+    uLong uidHash = SumOf(messH)->uidHash;
+    OSType popdType;
     {
       PersHandle p = (PersHandle)MESS_TO_PPERS(messH);
-      popdType = ((p) && ((p) != PersList))
-                     ? (PERS_TYPE(OLD_POPD_TYPE, (*(p))->resEnd))
-                     : OLD_POPD_TYPE;
+      popdType = PERS_POPD_TYPE(p);
     }
 
-    fetch = FindControlByRefCon(win, mcFetch);
-    trash = FindControlByRefCon(win, mcTrash);
+    /* Look up fetch/trash buttons on the message window toolbar */
+    GtkWidget *fetch = winWP ? g_object_get_data(G_OBJECT(winWP), "btn-fetch") : NULL;
+    GtkWidget *trash = winWP ? g_object_get_data(G_OBJECT(winWP), "btn-trash") : NULL;
 
     if (IdIsOnPOPD(popdType, POPD_ID, uidHash)) {
-      lmos = PrefIsSet(PREF_LMOS);
-      onFetch = IdIsOnPOPD(popdType, FETCH_ID, uidHash);
-      onDelete = IdIsOnPOPD(popdType, DELETE_ID, uidHash);
-      if (((*messH)->hasFetchIcon = MessFlagIsSet(messH, FLAG_SKIPPED)))
+      bool lmos = PrefIsSet(PREF_LMOS);
+      bool onFetch = IdIsOnPOPD(popdType, FETCH_ID, uidHash);
+      bool onDelete = IdIsOnPOPD(popdType, DELETE_ID, uidHash);
+      if ((messH->hasFetchIcon = MessFlagIsSet(messH, FLAG_SKIPPED))) {
         if (fetch) {
-          SetControlValue(fetch, onFetch);
-          ShowControl(fetch);
+          gtk_toggle_button_set_active(GTK_TOGGLE_BUTTON(fetch), onFetch);
+          gtk_widget_set_visible(fetch, TRUE);
         }
-      (*messH)->hasDelIcon = true;
+      }
+      messH->hasDelIcon = true;
       if (trash) {
-        SetControlValue(trash, onDelete);
-        HiliteControl(trash, onFetch && !lmos ? 255 : 0);
-        ShowControl(trash);
+        gtk_toggle_button_set_active(GTK_TOGGLE_BUTTON(trash), onDelete);
+        gtk_widget_set_sensitive(trash, !(onFetch && !lmos));
+        gtk_widget_set_visible(trash, TRUE);
       }
     } else {
-      (*messH)->hasFetchIcon = (*messH)->hasDelIcon = false;
+      messH->hasFetchIcon = messH->hasDelIcon = false;
       if (fetch)
-        HideControl(fetch);
+        gtk_widget_set_visible(fetch, FALSE);
       if (trash)
-        HideControl(trash);
+        gtk_widget_set_visible(trash, FALSE);
     }
   } else if (GetWindowKind(winWP) == MBOX_WIN ||
              GetWindowKind(winWP) == CBOX_WIN) {
     InvalTocBox((TOCType *)GetMyWindowPrivateData(win), -2, blServer);
   }
-  PopGWorld();
 }
 
 /**********************************************************************
@@ -2367,22 +1972,13 @@ OSErr RecordTransAttachments(const char *path) {
 
   if (InsertWin && GetWindowKind(InsertWinWP) == MESS_WIN) {
     messH = Win2MessH(InsertWin);
-    if (!(*messH)->etlFiles) {
+    if (!messH->etlFiles) {
       h = NuHTempBetter(0);
       if (!h)
         return (MemError());
-      (*messH)->etlFiles = h;
+      messH->etlFiles = h;
     }
-#ifdef NEVER
-    if (RunType != Production) {
-      unsigned char title[256];
-      MyGetWTitle(InsertWinWP, title);
-      Dprintf(";log RecordTransAttachments;sc;g");
-      Dprintf("%p;g", title);
-      Dprintf(";log;g", tmpSpec.name);
-    }
-#endif
-    return (PtrPlusHand_(&tmpSpec, (*messH)->etlFiles, sizeof(tmpSpec)) != NULL)
+    return (PtrPlusHand_(&tmpSpec, messH->etlFiles, sizeof(tmpSpec)) != NULL)
                ? 0
                : -1;
   }
@@ -2484,9 +2080,6 @@ void DoIterativeThingyLo(TOCType * tocH, int item, long modifiers,
   Boolean busy = false;
   uLong oldEzOpenSerialNum = tocH->previewID ? tocH->ezOpenSerialNum : 0;
 
-#ifdef PERF
-  PerfControl(ThePGlobals, true);
-#endif /* PERF */
 
   if (item == MESSAGE_DELETE_ITEM && tocH->imapTOC && !nuke) {
     Handle uids = NULL;
@@ -2503,10 +2096,10 @@ void DoIterativeThingyLo(TOCType * tocH, int item, long modifiers,
             // Close this message if it's open
             if (tocH->sums[sumNum].messH)
               CloseMyWindow(
-                  GetMyWindowWindowPtr((*tocH->sums[sumNum].messH)->win));
+                  GetMyWindowWindowPtr(tocH->sums[sumNum].messH->win));
 
-            BMD(&(tocH->sums[sumNum].uidHash),
-                &((unsigned long *)(*uids))[--c], sizeof(unsigned long));
+            memcpy(&((unsigned long *)(*uids))[--c],
+                &(tocH->sums[sumNum].uidHash), sizeof(unsigned long));
           }
 
         // and delete them.
@@ -2655,9 +2248,6 @@ void DoIterativeThingyLo(TOCType * tocH, int item, long modifiers,
       !(modifiers & shiftKey))
     Preview(tocH, sumNum);
   CheckBox(GetWindowMyWindowPtr(FrontWindow_()), false);
-#ifdef PERF
-  PerfControl(ThePGlobals, false);
-#endif
 }
 
 /************************************************************************
@@ -2887,7 +2477,7 @@ MyWindowPtr DoSalvageMessageLo(MyWindowPtr win, bool forXfer, bool forIMAP) {
 
   if (GetWindowKind(winWP) != COMP_WIN && !SaveMessHi(win, false))
     //	Make sure message has been downloaded if IMAP
-    if (!EnsureMsgDownloaded((*origMessH)->tocH, (*origMessH)->sumNum, true))
+    if (!EnsureMsgDownloaded(origMessH->tocH, origMessH->sumNum, true))
       return NULL;
 
   PushPers(PERS_FORCE(MESS_TO_PERS(origMessH)));
@@ -2911,7 +2501,7 @@ MyWindowPtr DoSalvageMessageLo(MyWindowPtr win, bool forXfer, bool forIMAP) {
             // make sure we lock things correctly later
             if (field == 0) {
               sigLen = gedit_document_get_length(
-                           geditctrl_get_document((*origMessH)->bodyPTE)) -
+                           geditctrl_get_document(origMessH->bodyPTE)) -
                        (oldHS.offset + oldHS.length);
               oldHS.length += sigLen;
             }
@@ -2923,61 +2513,53 @@ MyWindowPtr DoSalvageMessageLo(MyWindowPtr win, bool forXfer, bool forIMAP) {
                */
               GetRString((char *)scratch, HEADER_STRN + field);
               if (field == SUBJ_HEAD && PrefIsSet(PREF_SUBJECT_IN_INLINE))
-                err = CompHeadSetStr((*newMessH)->bodyPTE, &newHS,
+                err = CompHeadSetStr(newMessH->bodyPTE, &newHS,
                                      (char *)scratch);
-              else
-                // TODO: Replace PeteCopy with gEditCtrl equivalent
-                // err = PeteCopy((*origMessH)->bodyPTE, (*newMessH)->bodyPTE,
-                //                oldHS.offset, (oldHS.offset + oldHS.length),
-                //                (newHS.offset + newHS.length), NULL, field);
-                err = 0; // Stub for now
+              else {
+                /* Copy header text from original to new message */
+                void *rawText = NULL;
+                PETEGetRawText(NULL, origMessH->bodyPTE, &rawText);
+                if (rawText && oldHS.length > 0) {
+                  err = PeteInsertPtr(newMessH->bodyPTE,
+                                      newHS.offset + newHS.length,
+                                      (const char *)rawText + oldHS.offset,
+                                      oldHS.length);
+                } else
+                  err = 0;
+              }
             }
             if (!err && CompHeadFind(newMessH, field, &newHS)) {
-              // TODO: Replace PeteLock with gEditCtrl equivalent
-              // PeteLock((*newMessH)->bodyPTE, newHS.offset,
-              //          (newHS.offset + newHS.length), 0);
-              /*
-               * If we're nuking the signature, we may have to adjust the lock
-               * range
-               */
-              if (field == SIG_HEAD && sigLen < 0) {
-                /* TODO: lock range for sig removal using gEditCtrl editable
-                 * regions */
-              }
-              if (field == 0 && sigLen) {
-                /* TODO: lock sig intro range using gEditCtrl editable regions
-                 */
-              }
+              /* Header locking: in GTK, header fields are managed by
+               * CompHeadFind/CompHeadSet — no need for PETE-style range locking.
+               * Signature and header regions are protected by the comp window
+               * field structure rather than text range locks. */
             }
           }
         }
       }
     }
-    TOCSetDirty((*newMessH)->tocH, true);
-    SetSumColor((*newMessH)->tocH, (*newMessH)->sumNum,
-                // TODO: Replace GetSumColor with proper implementation
-                // GetSumColor((*origMessH)->tocH, (*origMessH)->sumNum));
-                0); // Stub for now
+    TOCSetDirty(newMessH->tocH, true);
+    /* label/color field not yet in MSumType — use 0 (no label) */
+    SetSumColor(newMessH->tocH, newMessH->sumNum, 0);
     SumOf(newMessH)->flags = SumOf(origMessH)->flags;
     SumOf(newMessH)->opts = SumOf(origMessH)->opts;
-    // TODO: Replace SigValidate with proper implementation
-    SumOf(newMessH)->sigId =
-        0; // SigValidate(SumOf(origMessH)->sigId); // Stub for now
+    SumOf(newMessH)->sigId = SumOf(origMessH)->sigId;
     SumOf(newMessH)->priority = SumOf(origMessH)->priority;
     /* SumOf(newMessH)->origPriority = SumOf(origMessH)->priority; */
     if (GetWindowKind(winWP) != COMP_WIN &&
         MessOptIsSet(newMessH, OPT_INLINE_SIG))
       AddInlineSig(newMessH);
 
-    if (GetWindowKind(winWP) == COMP_WIN && (*origMessH)->hTranslators) {
-      // TODO: Replace DupHandle with proper memory allocation
-      // text = DupHandle((Handle)(*origMessH)->hTranslators);
-      text = NULL; // Stub for now
-      (*newMessH)->hTranslators = (void *)text;
+    if (GetWindowKind(winWP) == COMP_WIN && origMessH->hTranslators) {
+      /* Duplicate the translator handle */
+      Handle origH = (Handle)origMessH->hTranslators;
+      long hSize = GetHandleSize(origH);
+      Handle dup = NuHTempBetter(hSize);
+      if (dup) memcpy(*dup, *origH, hSize);
+      newMessH->hTranslators = (void *)dup;
     } else if (!GetRHeaderAnywhere(origMessH, HEADER_STRN + TRANSLATOR_HEAD,
                                    (char **)&text)) {
-      // TODO: Fix AddTranslatorsFromPtr call
-      // AddTranslatorsFromPtr(newMessH, LDRef(text), GetHandleSize(text));
+      /* Translator info from headers — not critical for GTK port */
       ZapHandle(text);
     }
   } else {
@@ -2987,15 +2569,12 @@ MyWindowPtr DoSalvageMessageLo(MyWindowPtr win, bool forXfer, bool forIMAP) {
       SumOf(newMessH)->sigId = SumOf(origMessH)->sigId;
     }
 
-    // TODO: Replace PeteGetTextAndSelection with gEditCtrl equivalent
-    // PeteGetTextAndSelection((*origMessH)->bodyPTE, &text, NULL, NULL);
-    text = NULL; // Stub for now
+    PeteGetTextAndSelection(origMessH->bodyPTE, (void **)&text, NULL, NULL);
     if (text) {
       beginning = spot = *text;
       total = size = GetHandleSize_(text);
       end = spot + size;
     } else {
-      // Stub values when text is NULL
       beginning = spot = end = NULL;
       total = size = 0;
     }
@@ -3009,13 +2588,11 @@ MyWindowPtr DoSalvageMessageLo(MyWindowPtr win, bool forXfer, bool forIMAP) {
       GetRString(received, RECEIVED_HEAD);
       TrimWhite((unsigned char *)received);
       oldSpot = NULL;
-      // TODO: Replace FindHeaderString with gEditCtrl equivalent
-      // while ((spot = FindHeaderString(spot, received, &size, true))) {
-      //   oldSpot = spot;
-      //   spot += size;
-      //   size = end - spot;
-      // }
-      spot = NULL; // Stub to break the loop
+      while ((spot = FindHeaderString(spot, (UPtr)received, &size, true))) {
+        oldSpot = spot;
+        spot += size;
+        size = end - spot;
+      }
     }
 
     /*
@@ -3052,19 +2629,16 @@ MyWindowPtr DoSalvageMessageLo(MyWindowPtr win, bool forXfer, bool forIMAP) {
       offset = 0;
     }
     if (spot && oldSpot && size > 0 && spot < oldSpot + size - 1) {
-      // TODO: Replace PETEGetTextLen with gEditCtrl equivalent
       newBo = gedit_document_get_length(
-          geditctrl_get_document((*newMessH)->bodyPTE));
-      // TODO: Replace PeteCopyNoLabel with gEditCtrl equivalent
-      // err = PeteCopyNoLabel((*origMessH)->bodyPTE, (*newMessH)->bodyPTE,
-      // offset,
-      //                       total, newBo, NULL, false, html ? 0 :
-      //                       0xffffffff);
-      err = 0; // Stub for now
-      // err = SetMessText(newMessH,0,spot,total-(spot-beginning));
-      if (!err) {
-        // TODO: Replace PeteLock with gEditCtrl equivalent
-        // PeteLock((*newMessH)->bodyPTE, newBo, 0x7fffffff, 0);
+          geditctrl_get_document(newMessH->bodyPTE));
+      /* Copy body text from original to salvaged message */
+      {
+        long copyLen = total - (spot - beginning);
+        if (copyLen > 0) {
+          err = PeteInsertPtr(newMessH->bodyPTE, newBo,
+                              (const char *)spot, copyLen);
+        } else
+          err = 0;
       }
     }
     if (MessFlagIsSet(origMessH, FLAG_HAS_ATT)) {
@@ -3089,8 +2663,7 @@ MyWindowPtr DoSalvageMessageLo(MyWindowPtr win, bool forXfer, bool forIMAP) {
     if (!forIMAP) {
       ShowMyWindow(newWinWP);
       newWin->isDirty = false;
-      // TODO: Replace PeteCleanList with gEditCtrl equivalent
-      // PeteCleanList(newWin->pte);
+      PeteCleanList(newWin->pte);
     }
   }
   /* Brace removed */
@@ -3219,9 +2792,7 @@ OSErr RemoveSelf(MessHandle messH, short head, bool wantErrors) {
  **********************************************************************/
 UHandle MessText(MessHandle messH) {
   UHandle text = NULL;
-  // TODO: Replace PeteGetRawText with gEditCtrl equivalent
-  // PeteGetRawText(TheBody, &text);
-  text = NULL; // Stub for now
+  PeteGetRawText(TheBody, (void **)&text);
   return (text);
 }
 
@@ -3272,9 +2843,7 @@ MyWindowPtr ReopenMessage(MyWindowPtr win) {
 
       if (!MessFlagIsSet(messH, FLAG_SHOW_ALL) &&
           (MessFlagIsSet(messH, FLAG_RICH)
-#ifndef OLDHTML
            || MessOptIsSet(messH, OPT_HTML)
-#endif
            || MessOptIsSet(messH, OPT_FLOW) ||
            MessOptIsSet(messH, OPT_CHARSET))) {
         err =
@@ -3291,14 +2860,8 @@ MyWindowPtr ReopenMessage(MyWindowPtr win) {
         // align headers if need be
         // if (!PrefIsSet(PREF_DONT_ALIGN_HEADERS)) AlignHeaders(messH);
 
-#ifdef OLDHTML
-        // interpret rich text
-        if (!MessFlagIsSet(messH, FLAG_SHOW_ALL)) {
-          if (MessOptIsSet(messH, OPT_HTML))
-            err = PeteHTML(TheBody, SumOf(messH)->bodyOffset - (*messH)->weeded,
-                           0, true);
-        }
-#endif
+        /* HTML rendering is handled by InsertRichLo → InsertHTMLLo →
+         * gedit_document_insert_markup() which parses tags and applies styles. */
 
         if (!err)
           HiliteOddReply(messH);
@@ -3363,7 +2926,7 @@ void FindFrom(UPtr who, GtkWidget *pte) {
   GetRString(header, FROM_HEAD + HEADER_STRN);
   if (found = FindHeaderString(*text, header, &len, false)) {
     long copyLen = MIN(62, len);
-    BMD(found, who, copyLen);
+    memcpy(who, found, copyLen);
     who[copyLen] = 0;
     BeautifyFrom(who);
   } else
@@ -3459,7 +3022,7 @@ UPtr FindHeaderString(UPtr text, UPtr headerName, long *size, bool bodyToo) {
       break;
     {
       long hLen = MIN(mLen, end - text);
-      BMD(text, header, hLen);
+      memcpy(header, text, hLen);
       header[hLen] = 0;
     }
     if (strncasecmp(header, (const char *)headerName, strlen((const char *)headerName)) == 0) {
@@ -3514,7 +3077,7 @@ MyWindowPtr DoReplyMessage(MyWindowPtr win, bool all, bool self, bool quote,
 
   //	Make sure message has been downloaded if IMAP.  Don't care about
   // attachments.
-  if (!EnsureMsgDownloaded((*origMessH)->tocH, (*origMessH)->sumNum, false))
+  if (!EnsureMsgDownloaded(origMessH->tocH, origMessH->sumNum, false))
     return NULL;
 
   PushPers(PERS_FORCE(MESS_TO_PERS(origMessH)));
@@ -3527,7 +3090,7 @@ MyWindowPtr DoReplyMessage(MyWindowPtr win, bool all, bool self, bool quote,
     XferCustomTable(origMessH, newMessH);
 
     {
-      geditDocument *doc = geditctrl_get_document((*origMessH)->bodyPTE);
+      geditDocument *doc = geditctrl_get_document(origMessH->bodyPTE);
       text = gedit_document_get_text(doc);
       GtkTextBuffer *buf = gedit_document_get_buffer(doc);
       GtkTextIter start, end;
@@ -3608,10 +3171,10 @@ MyWindowPtr DoReplyMessage(MyWindowPtr win, bool all, bool self, bool quote,
      */
     // Folder Carbon Copy - don't allow the auto FCC in Light
     if (HasFeature(featureFcc) && doFcc && PrefIsSet(PREF_AUTO_FCC) &&
-        !(*origMessH)->tocH->which &&
-        !IMAPDontAutoFccMailbox((*origMessH)->tocH))
+        !origMessH->tocH->which &&
+        !IMAPDontAutoFccMailbox(origMessH->tocH))
     {
-      FSSpec spec = GetMailboxSpec((*origMessH)->tocH, -1);
+      FSSpec spec = GetMailboxSpec(origMessH->tocH, -1);
       Fcc(newMessH, &spec);
     }
 
@@ -3623,12 +3186,12 @@ MyWindowPtr DoReplyMessage(MyWindowPtr win, bool all, bool self, bool quote,
     /*
      * copy the body.  Use the preview pane if that's what we have
      */
-    copyFromPTE = (*origMessH)->bodyPTE;
-    origTOCH = (*origMessH)->openedFromTocH ? (*origMessH)->openedFromTocH
-                                            : (*origMessH)->tocH;
+    copyFromPTE = origMessH->bodyPTE;
+    origTOCH = origMessH->openedFromTocH ? origMessH->openedFromTocH
+                                            : origMessH->tocH;
     if (origTOCH->win == GetWindowMyWindowPtr(FrontWindow_()) &&
         origTOCH->previewID &&
-        origTOCH->previewID == (*origMessH)->openedFromSerialNum && !quote) {
+        origTOCH->previewID == origMessH->openedFromSerialNum && !quote) {
       /* If the preview pane has a selection, use it as the source */
       geditDocument *pdoc = geditctrl_get_document(origTOCH->previewPTE);
       GtkTextBuffer *pbuf = gedit_document_get_buffer(pdoc);
@@ -3662,46 +3225,40 @@ MyWindowPtr DoReplyMessage(MyWindowPtr win, bool all, bool self, bool quote,
       }
     }
 
-#ifdef DEBUG
     if (BUG14) {
       InvalContent(win);
       UpdateMyWindow(winWP);
     }
-#endif
 
     if (len > 0 && bodyOffset >= 0) {
       while (len && text[bodyOffset + len - 1] == '\n')
         len--;
       newBo = gedit_document_get_length(
-          geditctrl_get_document((*newMessH)->bodyPTE));
+          geditctrl_get_document(newMessH->bodyPTE));
       if (len > 0)
         err = gedit_document_copy_range(
             geditctrl_get_document(copyFromPTE), bodyOffset, len,
-            geditctrl_get_document((*newMessH)->bodyPTE), newBo, FALSE);
+            geditctrl_get_document(newMessH->bodyPTE), newBo, FALSE);
       /* original code unlocked a handle here (HUnlock); no-op for
        * gedit_document */
       /* style.tsLock = 0; Removed */
-#ifdef DEBUG
       if (BUG14) {
         InvalContent(win);
         UpdateMyWindow(winWP);
       }
-#endif
-      PETESetTextStyle(PETE, (*newMessH)->bodyPTE, newBo, 0x7fffffff, &style,
+      PETESetTextStyle(PETE, newMessH->bodyPTE, newBo, 0x7fffffff, &style,
                        0 /* peLockValid */);
       if (rich) {
-        geditDocument *_doc = geditctrl_get_document((*newMessH)->bodyPTE);
+        geditDocument *_doc = geditctrl_get_document(newMessH->bodyPTE);
         gint _end = gedit_document_get_length(_doc) - 1;
         if (_end > newBo)
           gedit_document_set_quote_level(_doc, newBo, _end - newBo, 1);
       }
 
-#ifdef DEBUG
       if (BUG14) {
         InvalContent(win);
         UpdateMyWindow(winWP);
       }
-#endif
       if (err) {
         NoSaves = true;
         CloseMyWindow(newWinWP);
@@ -3716,25 +3273,21 @@ MyWindowPtr DoReplyMessage(MyWindowPtr win, bool all, bool self, bool quote,
        */
       EnsureMessNewline(newMessH);
 
-#ifdef DEBUG
       if (BUG14) {
         InvalContent(win);
         UpdateMyWindow(winWP);
       }
-#endif
       if (rich) {
-        geditDocument *_doc = geditctrl_get_document((*newMessH)->bodyPTE);
+        geditDocument *_doc = geditctrl_get_document(newMessH->bodyPTE);
         gint _off = gedit_document_get_length(_doc);
         gint _ls = gedit_document_find_line_start(_doc, _off);
         gint _le = gedit_document_find_line_end(_doc, _off);
         gedit_document_set_quote_level(_doc, _ls, _le - _ls, 0);
       }
-#ifdef DEBUG
       if (BUG14) {
         InvalContent(win);
         UpdateMyWindow(winWP);
       }
-#endif
 
       /*
        * quote them
@@ -3743,25 +3296,23 @@ MyWindowPtr DoReplyMessage(MyWindowPtr win, bool all, bool self, bool quote,
                    &hs); /* HeadSpec map: start->offset, stop->offset+length */
       if (hs.offset != -1) {
         if (!rich) {
-          QuoteLines((*newMessH)->bodyPTE, hs.offset, hs.offset + hs.length - 1,
+          QuoteLines(newMessH->bodyPTE, hs.offset, hs.offset + hs.length - 1,
                      QUOTE_PREFIX, &len);
           hs.length += len;
         } else if (PrefIsSet(PREF_SCHEERDER)) {
           /* Select the quoted range in the editor */
           GtkTextBuffer *_buf = gedit_document_get_buffer(
-              geditctrl_get_document((*newMessH)->bodyPTE));
+              geditctrl_get_document(newMessH->bodyPTE));
           GtkTextIter _s, _e;
           gtk_text_buffer_get_iter_at_offset(_buf, &_s, hs.offset);
           gtk_text_buffer_get_iter_at_offset(_buf, &_e, hs.offset + hs.length);
           gtk_text_buffer_select_range(_buf, &_s, &_e);
         }
       }
-#ifdef DEBUG
       if (BUG14) {
         InvalContent(win);
         UpdateMyWindow(winWP);
       }
-#endif
 
       /*
        * annotate
@@ -3773,12 +3324,10 @@ MyWindowPtr DoReplyMessage(MyWindowPtr win, bool all, bool self, bool quote,
         Attribute(UNQUOTH, origMessH, newMessH, true);
     }
 
-#ifdef DEBUG
     if (BUG14) {
       InvalContent(win);
       UpdateMyWindow(winWP);
     }
-#endif
     /*
      * copy priority (not my idea)
      */
@@ -3803,18 +3352,18 @@ MyWindowPtr DoReplyMessage(MyWindowPtr win, bool all, bool self, bool quote,
         ApplyIndexStationery(newWin, withWhich, true, true);
     }
 
-    /* (*PeteExtra((*newMessH)->bodyPTE))->quoteScanned =
-        (*PeteExtra((*origMessH)->bodyPTE))->quoteScanned; */ // don't need to run the scanner, quotelines did it already
+    /* (*PeteExtra(newMessH->bodyPTE))->quoteScanned =
+        (*PeteExtra(origMessH->bodyPTE))->quoteScanned; */ // don't need to run the scanner, quotelines did it already
 
     if (vis) {
       // shall we select the quote?
       quote = quote || selEnd - selStart >= GetRLong(OPEN_AT_END_THRESH);
-      (*newMessH)->openToEnd = !quote;
+      newMessH->openToEnd = !quote;
 
-      AccuAddLong(&(*newMessH)->aSourceMID, SumOf(origMessH)->uidHash);
-      AccuAddLong(&(*newMessH)->aSourceMID, SumOf(origMessH)->state);
-      AccuAddLong(&(*newMessH)->aSourceMID, REPLIED);
-      SetState((*origMessH)->tocH, (*origMessH)->sumNum, REPLIED);
+      AccuAddLong(&newMessH->aSourceMID, SumOf(origMessH)->uidHash);
+      AccuAddLong(&newMessH->aSourceMID, SumOf(origMessH)->state);
+      AccuAddLong(&newMessH->aSourceMID, REPLIED);
+      SetState(origMessH->tocH, origMessH->sumNum, REPLIED);
       UpdateSum(newMessH, SumOf(newMessH)->offset, SumOf(newMessH)->length);
       ShowMyWindow(newWinWP);
       UpdateMyWindow(newWinWP);
@@ -3839,7 +3388,7 @@ MyWindowPtr DoReplyMessage(MyWindowPtr win, bool all, bool self, bool quote,
 OSErr ReplyReferences(MessHandle origMessH, MessHandle newMessH) {
   OSErr err = noErr;
   UHandle /*t1=NULL, */ t2 = NULL, t3 = NULL;
-  Accumulator extras = (*newMessH)->extras;
+  Accumulator extras = newMessH->extras;
   long origLen = extras.offset;
 
   /* Get the bodies of all three headers */
@@ -3906,7 +3455,7 @@ OSErr ReplyReferences(MessHandle origMessH, MessHandle newMessH) {
   if (err)
     extras.offset = origLen;
   AccuTrim(&extras);
-  (*newMessH)->extras = extras;
+  newMessH->extras = extras;
   //	ZapHandle(t1);
   ZapHandle(t2);
   ZapHandle(t3);
@@ -3946,10 +3495,10 @@ void Attribute(short attrId, MessHandle origMessH, MessHandle newMessH,
                bool atEnd) {
   unsigned char attribution[256];
 
-  if (*GrabAttribution(attrId, (*origMessH)->win, attribution)) {
+  if (*GrabAttribution(attrId, origMessH->win, attribution)) {
     long attrLen = strlen((const char *)attribution);
     if (atEnd) {
-      geditDocument *_doc = geditctrl_get_document((*newMessH)->bodyPTE);
+      geditDocument *_doc = geditctrl_get_document(newMessH->bodyPTE);
       long endOfText = gedit_document_get_length(_doc);
       gchar *_tmp = g_strndup((const gchar *)attribution, attrLen);
       gedit_document_insert_text(_doc, endOfText - 1, _tmp);
@@ -3958,7 +3507,7 @@ void Attribute(short attrId, MessHandle origMessH, MessHandle newMessH,
       // leaking, so disable check
       MessPlainBytes(newMessH, 0, -(short)attrLen - 1);
     } else {
-      PCatC(attribution, '\015');
+      { size_t _l = strlen((const char *)attribution); attribution[_l] = '\015'; attribution[_l+1] = '\0'; }
       attrLen = strlen((const char *)attribution);
       PrependMessText(newMessH, 0, attribution, attrLen);
       // if (MessIsRich(newMessH) || MessIsRich(origMessH))	//quote color
@@ -4031,7 +3580,7 @@ MyWindowPtr DoRedistributeMessage(MyWindowPtr win, void *toWhom, bool turbo,
     return (NULL);
 
   //	Make sure message has been downloaded if IMAP
-  if (!EnsureMsgDownloaded((*origMessH)->tocH, (*origMessH)->sumNum, true))
+  if (!EnsureMsgDownloaded(origMessH->tocH, origMessH->sumNum, true))
     return NULL;
 
   PushPers(PERS_FORCE(MESS_TO_PERS(origMessH)));
@@ -4051,32 +3600,24 @@ MyWindowPtr DoRedistributeMessage(MyWindowPtr win, void *toWhom, bool turbo,
 
     bodyOffset = CompBodyOffset(origMessH);
     {
-      geditDocument *_srcDoc = geditctrl_get_document((*origMessH)->bodyPTE);
-      geditDocument *_dstDoc = geditctrl_get_document((*newMessH)->bodyPTE);
+      geditDocument *_srcDoc = geditctrl_get_document(origMessH->bodyPTE);
+      geditDocument *_dstDoc = geditctrl_get_document(newMessH->bodyPTE);
       newBo = gedit_document_get_length(_dstDoc);
       gint _srcLen = gedit_document_get_length(_srcDoc);
-#ifdef DEBUG
       if (BUG14)
         UpdateMyWindow(winWP);
-#endif
       err = gedit_document_copy_range(_srcDoc, bodyOffset, _srcLen - bodyOffset,
                                       _dstDoc, newBo, FALSE);
     }
-#ifdef DEBUG
     if (BUG14)
       UpdateMyWindow(winWP);
-#endif
     /* style.tsLock = PrefIsSet(PREF_LOCK_REDIR) ? peModLock : peNoLock; */
-#ifdef DEBUG
     if (BUG14)
       UpdateMyWindow(winWP);
-#endif
-    PETESetTextStyle(PETE, (*newMessH)->bodyPTE, newBo, 0x7fffffff, &style,
+    PETESetTextStyle(PETE, newMessH->bodyPTE, newBo, 0x7fffffff, &style,
                      0 /* peLockValid */);
-#ifdef DEBUG
     if (BUG14)
       UpdateMyWindow(winWP);
-#endif
 
     if (err) {
       NoSaves = true;
@@ -4101,10 +3642,10 @@ MyWindowPtr DoRedistributeMessage(MyWindowPtr win, void *toWhom, bool turbo,
     /*
      * state stuff
      */
-    AccuAddLong(&(*newMessH)->aSourceMID, SumOf(origMessH)->uidHash);
-    AccuAddLong(&(*newMessH)->aSourceMID, SumOf(origMessH)->state);
-    AccuAddLong(&(*newMessH)->aSourceMID, REDIST);
-    SetState((*origMessH)->tocH, (*origMessH)->sumNum, REDIST);
+    AccuAddLong(&newMessH->aSourceMID, SumOf(origMessH)->uidHash);
+    AccuAddLong(&newMessH->aSourceMID, SumOf(origMessH)->state);
+    AccuAddLong(&newMessH->aSourceMID, REDIST);
+    SetState(origMessH->tocH, origMessH->sumNum, REDIST);
     UpdateSum(newMessH, SumOf(newMessH)->offset, SumOf(newMessH)->length);
     WeedXAttachments(newMessH, true);
     if (MessFlagIsSet(origMessH, FLAG_HAS_ATT))
@@ -4233,18 +3774,16 @@ MyWindowPtr DoForwardMessage(MyWindowPtr win, void *toWhom, bool turbo) {
     return (NULL);
 
   //	Make sure message has been downloaded if IMAP
-  if (!EnsureMsgDownloaded((*origMessH)->tocH, (*origMessH)->sumNum, true))
+  if (!EnsureMsgDownloaded(origMessH->tocH, origMessH->sumNum, true))
     return NULL;
 
   PushPers(PERS_FORCE(MESS_TO_PERS(origMessH)));
   if ((newWin = DoComposeNew(0))) {
     newWinPtr = GetMyWindowWindowPtr(newWin);
-#ifdef DEBUG
     if (BUG14) {
       ShowMyWindow(newWinPtr);
       UpdateMyWindow(newWinPtr);
     }
-#endif
     newMessH = (MessHandle)GetMyWindowPrivateData(newWin);
     rich = UseFlowOutExcerpt || (MessIsRich(origMessH) || MessIsRich(newMessH));
 
@@ -4270,8 +3809,8 @@ MyWindowPtr DoForwardMessage(MyWindowPtr win, void *toWhom, bool turbo) {
      * stick it in — copy original body into new message using gEditCtrl
      */
     {
-      geditDocument *_origDoc = geditctrl_get_document((*origMessH)->bodyPTE);
-      geditDocument *_newDoc = geditctrl_get_document((*newMessH)->bodyPTE);
+      geditDocument *_origDoc = geditctrl_get_document(origMessH->bodyPTE);
+      geditDocument *_newDoc = geditctrl_get_document(newMessH->bodyPTE);
       offset = gedit_document_get_length(_newDoc);
       CompHeadFind(origMessH, 0, &hs);
       origBo = hs.offset;
@@ -4318,9 +3857,9 @@ MyWindowPtr DoForwardMessage(MyWindowPtr win, void *toWhom, bool turbo) {
       HeadSpec hs;
       UHandle text = NULL;
       if (CompHeadFind(origMessH, ATTACH_HEAD, &hs) &&
-          !CompHeadGetText((*origMessH)->bodyPTE, &hs, &text) &&
+          !CompHeadGetText(origMessH->bodyPTE, &hs, &text) &&
           CompHeadFind(newMessH, ATTACH_HEAD, &hs)) {
-        CompHeadSet((*newMessH)->bodyPTE, &hs, text);
+        CompHeadSet(newMessH->bodyPTE, &hs, text);
       }
       ZapHandle(text);
     } else {
@@ -4333,14 +3872,14 @@ MyWindowPtr DoForwardMessage(MyWindowPtr win, void *toWhom, bool turbo) {
      * quote them
      */
     if (!rich && !(0 /* MainEvent.modifiers */ & optionKey))
-      QuoteLines((*newMessH)->bodyPTE, CompBodyOffset(newMessH) - 1, 0x7fffffff,
+      QuoteLines(newMessH->bodyPTE, CompBodyOffset(newMessH) - 1, 0x7fffffff,
                  FWD_QUOTE, NULL);
 
     if (GetWindowKind(winWP) != COMP_WIN) {
-      AccuAddLong(&(*newMessH)->aSourceMID, SumOf(origMessH)->uidHash);
-      AccuAddLong(&(*newMessH)->aSourceMID, SumOf(origMessH)->state);
-      AccuAddLong(&(*newMessH)->aSourceMID, FORWARDED);
-      SetState((*origMessH)->tocH, (*origMessH)->sumNum, FORWARDED);
+      AccuAddLong(&newMessH->aSourceMID, SumOf(origMessH)->uidHash);
+      AccuAddLong(&newMessH->aSourceMID, SumOf(origMessH)->state);
+      AccuAddLong(&newMessH->aSourceMID, FORWARDED);
+      SetState(origMessH->tocH, origMessH->sumNum, FORWARDED);
     }
 
     /*
@@ -4419,9 +3958,9 @@ OSErr DoFordirectMessage(TOCType * tocH, short sumNum, short flk,
   if (bulk)
     SetMessOpt(newMessH, OPT_BULK);
   SetMessText(newMessH, TO_HEAD, addresses, strlen((char *)addresses));
-  if (err = QueueMessage((*newMessH)->tocH, (*newMessH)->sumNum, kEuSendNext, 0,
+  if (err = QueueMessage(newMessH->tocH, newMessH->sumNum, kEuSendNext, 0,
                          true, true))
-    DeleteMessage((*newMessH)->tocH, (*newMessH)->sumNum, false);
+    DeleteMessage(newMessH->tocH, newMessH->sumNum, false);
   return (err);
 }
 
@@ -4452,9 +3991,9 @@ OSErr DoReplyClosed(TOCType * tocH, short sumNum, bool all, bool self,
   SetState(tocH, sumNum, REPLIED);
   newMessH = Win2MessH(win);
   SetMessOpt(newMessH, OPT_BULK);
-  if (err = QueueMessage((*newMessH)->tocH, (*newMessH)->sumNum, kEuSendNext, 0,
+  if (err = QueueMessage(newMessH->tocH, newMessH->sumNum, kEuSendNext, 0,
                          true, true))
-    DeleteMessage((*newMessH)->tocH, (*newMessH)->sumNum, false);
+    DeleteMessage(newMessH->tocH, newMessH->sumNum, false);
   return (err);
 }
 
@@ -4468,7 +4007,7 @@ int FindAndCopyHeader(MessHandle origMH, MessHandle newMH, char *fromHead,
   long size;
   int result;
   gchar *rawText =
-      gedit_document_get_text(geditctrl_get_document((*origMH)->bodyPTE));
+      gedit_document_get_text(geditctrl_get_document(origMH->bodyPTE));
   if (!rawText)
     return 0;
   body = (UPtr)rawText;
@@ -4493,26 +4032,26 @@ OSErr CopyNewsgroups(MessHandle origMH, MessHandle newMH) {
   GetRString(s, NEWSGROUPS);
 
   if (CompHeadFindStr(origMH, s, &origHS))
-    if (!(err = CompHeadGetText((*origMH)->bodyPTE, &origHS, &text)))
+    if (!(err = CompHeadGetText(origMH->bodyPTE, &origHS, &text)))
       if (!(err = SuckAddresses((void ***)&addresses, (void **)text, false,
                                 false, false, NULL)) &&
           addresses && *addresses && **addresses) {
         if (CompHeadFind(newMH, BCC_HEAD, &hs)) {
           if (*GetRString(s, MAIL2NEWS)) {
             if (hs.length > 0)
-              InsertCommaIfNeedBe((*newMH)->bodyPTE, &hs);
-            CompHeadAppendPtr((*newMH)->bodyPTE, &hs, s, strlen((char *)s));
+              InsertCommaIfNeedBe(newMH->bodyPTE, &hs);
+            CompHeadAppendPtr(newMH->bodyPTE, &hs, s, strlen((char *)s));
             first = false;
           }
           for (address = (UPtr)*addresses; *address;
                address += *address + 2) {
             if (!first || hs.length > 0)
-              if (!InsertCommaIfNeedBe((*newMH)->bodyPTE, &hs))
-                CompHeadAppendPtr((*newMH)->bodyPTE, &hs, " ", 1);
+              if (!InsertCommaIfNeedBe(newMH->bodyPTE, &hs))
+                CompHeadAppendPtr(newMH->bodyPTE, &hs, " ", 1);
 
-            if (err = CompHeadAppendPtr((*newMH)->bodyPTE, &hs, "�", 1))
+            if (err = CompHeadAppendPtr(newMH->bodyPTE, &hs, "�", 1))
               break;
-            if (err = CompHeadAppendPtr((*newMH)->bodyPTE, &hs, address + 1,
+            if (err = CompHeadAppendPtr(newMH->bodyPTE, &hs, address + 1,
                                         *address))
               break;
             first = false;
@@ -4528,7 +4067,7 @@ OSErr CopyNewsgroups(MessHandle origMH, MessHandle newMH) {
  ************************************************************************/
 int TextFindAndCopyHeader(UPtr body, long size, MessHandle newMH, UPtr fromHead,
                           short toHead, short label) {
-  MyWindowPtr newWin = (*newMH)->win;
+  MyWindowPtr newWin = newMH->win;
   UPtr bodyEnd = body + size;
   UPtr spot;
   bool first = true;
@@ -4540,10 +4079,10 @@ int TextFindAndCopyHeader(UPtr body, long size, MessHandle newMH, UPtr fromHead,
       labStart = hs.offset + hs.length;
       for (;;) {
         if (!first || hs.length > 0)
-          if (!InsertCommaIfNeedBe((*newMH)->bodyPTE, &hs))
-            CompHeadAppendPtr((*newMH)->bodyPTE, &hs, " ", 1);
+          if (!InsertCommaIfNeedBe(newMH->bodyPTE, &hs))
+            CompHeadAppendPtr(newMH->bodyPTE, &hs, " ", 1);
 
-        CompHeadAppendPtr((*newMH)->bodyPTE, &hs, body, size);
+        CompHeadAppendPtr(newMH->bodyPTE, &hs, body, size);
 
         first = false;
 
@@ -4568,7 +4107,7 @@ int TextFindAndCopyHeader(UPtr body, long size, MessHandle newMH, UPtr fromHead,
       }
       if (label && CompHeadFind(newMH, toHead, &hs) &&
           (hs.offset + hs.length) > labStart)
-        geditctrl_set_label((*newMH)->bodyPTE, labStart, hs.offset + hs.length,
+        geditctrl_set_label(newMH->bodyPTE, labStart, hs.offset + hs.length,
                             label);
     }
   }
@@ -4616,8 +4155,10 @@ void XferCustomTable(MessHandle origMessH, MessHandle newMessH) {
    * Otherwise, look for an out table that corresponds to the In table
    * and use that.
    */
-  else if (GetResource_('taBL', origTable + 1))
-    SumOf(newMessH)->tableId = origTable + 1;
+  else {
+    /* Translation tables not supported in GTK port — use same table ID */
+    SumOf(newMessH)->tableId = origTable;
+  }
 }
 
 /************************************************************************
@@ -4690,7 +4231,7 @@ OSErr SpoolIndAttachment(MessHandle messH, short i) {
     /*
      * Copy the attachment
      */
-    PCopy(newSpec.name, spec.name);
+    strcpy(newSpec.name, spec.name);
     if (!SameSpec(&spec, &newSpec) && !FSpIsItAFolder(&spec)) {
       unsigned char longName[256];
 
@@ -4702,7 +4243,7 @@ OSErr SpoolIndAttachment(MessHandle messH, short i) {
           *longName > 31)
         FSpSetLongName(&newSpec, kTextEncodingUnknown, longName, &newSpec);
 
-      CompAttachSpec((*messH)->win, &newSpec);
+      CompAttachSpec(messH->win, &newSpec);
       RemoveIndAttachment(messH, i);
     }
   }
@@ -4785,10 +4326,10 @@ OSErr CopyToOut(TOCType * fromTocH, short sumNum, TOCType * toTocH) {
   if (!(win = GetAMessage(fromTocH, sumNum, NULL, NULL, false)))
     return (1);
   messH = Win2MessH(win);
-  fromTocH = (*messH)->tocH;
-  sumNum = (*messH)->sumNum;
+  fromTocH = messH->tocH;
+  sumNum = messH->sumNum;
 
-  if (newWin = DoSalvageMessage((*messH)->win, true)) {
+  if (newWin = DoSalvageMessage(messH->win, true)) {
     if (SaveComp(newWin)) {
       newSum = toTocH->sums[toTocH->count - 1];
       oldSum = fromTocH->sums[sumNum];
@@ -4811,8 +4352,8 @@ OSErr CopyToOut(TOCType * fromTocH, short sumNum, TOCType * toTocH) {
  ************************************************************************/
 void SumInfoCpy(MSumPtr newSum, MSumPtr oldSum) {
   newSum->state = oldSum->state;
-  PCopy(newSum->from, oldSum->from);
-  PCopy(newSum->subj, oldSum->subj);
+  strcpy((char *)newSum->from, (const char *)oldSum->from);
+  strcpy((char *)newSum->subj, (const char *)oldSum->subj);
   newSum->seconds = oldSum->seconds;
   newSum->flags = oldSum->flags;
   newSum->tableId = oldSum->tableId;
@@ -4866,7 +4407,7 @@ uLong MIDHash(UPtr text, long size) {
   SuckPtrAddresses(&addresses, text, size, false, false, false, NULL);
 
   if (addresses) {
-    PCopy(scratch, *addresses);
+    strcpy((char *)scratch, (const char *)*addresses);
     ZapHandle(addresses);
     return (Hash(scratch));
   } else
@@ -5051,7 +4592,7 @@ void Preview(TOCType * tocH, short sumNum) {
             pte, 0, gedit_document_get_length(geditctrl_get_document(pte)), 0);
         PeteCalcOn(pte);
       } else {
-        long body = SumOf(messH)->bodyOffset - (*messH)->weeded;
+        long body = SumOf(messH)->bodyOffset - messH->weeded;
         long len;
         long scanned;
         UHandle text;
@@ -5229,8 +4770,7 @@ bool EnsureMsgDownloaded(TOCType * tocH, int sumNum, bool attachmentsToo) {
         //	This message is currently being downloaded. Wait for it to
         // finish
         while (IMAPMessageBeingDownloaded(tocH, sumNum)) {
-          CycleBalls();
-          MyYieldToAnyThread();
+                  MyYieldToAnyThread();
           if (CommandPeriod)
             return (false);
         }
@@ -5263,19 +4803,17 @@ bool EnsureMsgDownloaded(TOCType * tocH, int sumNum, bool attachmentsToo) {
  * EnableMsgButtons - enable or disable message buttons
  ************************************************************************/
 void EnableMsgButtons(MyWindowPtr win, bool enable) {
-  // Placeholder defines
-#define mcWrite 0
-  // #define mcTrash 10
-  int cIndex;
-  ControlHandle ctl;
-
-  for (cIndex = mcWrite; cIndex <= mcTrash; cIndex++) {
-    if (ctl = FindControlByRefCon(win, cIndex)) {
-      if (enable)
-        gtk_widget_set_sensitive((GtkWidget *)ctl, TRUE);
-      else
-        gtk_widget_set_sensitive((GtkWidget *)ctl, FALSE);
-    }
+  if (!win || !win->window) return;
+  GtkWidget *winWP = (GtkWidget *)win->window;
+  /* Enable/disable toolbar buttons stored on the window */
+  static const char *btn_names[] = {
+    "btn-fetch", "btn-trash", "btn-delete", "btn-reply",
+    "btn-forward", "btn-redirect", "btn-blahblah", NULL
+  };
+  for (int i = 0; btn_names[i]; i++) {
+    GtkWidget *btn = g_object_get_data(G_OBJECT(winWP), btn_names[i]);
+    if (btn)
+      gtk_widget_set_sensitive(btn, enable);
   }
 }
 
@@ -5339,10 +4877,10 @@ PStr CurAddrSel(MyWindowPtr win, PStr addr) {
  * to the destination file.
  ************************************************************************/
 OSErr SpoolMessage(MessHandle messH, FSSpecPtr theSpec, short refN) {
-  if (!messH || !*messH)
+  if (!messH)
     return -1;
-  TOCType * tocH = (*messH)->tocH;
-  int sumNum = (*messH)->sumNum;
+  TOCType * tocH = messH->tocH;
+  int sumNum = messH->sumNum;
   if (!tocH)
     return -1;
 

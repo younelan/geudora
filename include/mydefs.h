@@ -358,8 +358,9 @@ typedef AppleEvent *AppleEventPtr;
 #define IsAnySP(c) (c == optSpace || c == ' ' || c == '\t' || c == '\r')
 #define K *1024
 #define MAX_ALIAS 200
-#define SAVE_PORT GrafPtr oldPort = GetQDGlobalsThePort()
-#define REST_PORT SetPort_(oldPort)
+/* Mac QuickDraw port management — no-op in GTK */
+#define SAVE_PORT
+#define REST_PORT
 #ifdef DEBUG
 #define CHECKPOINT                                                             \
   do {                                                                         \

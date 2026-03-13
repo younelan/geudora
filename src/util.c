@@ -63,11 +63,7 @@ struct SoundEntryStruct {
 #include <krb.h>
 #endif
 
-/* Undo CrispinIMAP macro renames that leak through Globals.h -> os_unix.h,
-   then restore the util.h mapping of AccuAddPtr -> AccuAddPtrVoid */
-#undef AccuInit
-#undef AccuAddPtr
-#define AccuAddPtr AccuAddPtrVoid
+/* AccuAddPtr -> AccuAddPtrVoid mapping is in util.h */
 
 /* Forward-declare Dprintf (defined in shame.c) */
 void Dprintf(const char *fmt, ...);
@@ -829,7 +825,7 @@ PStr GetRString(PStr theString, short theIndex) {
   short oldSpot;
   long n;
   unsigned char sizeStr[64];
-  uLong curPersId = CurThreadGlobals ? (CurPers ? (*CurPers)->persId : 0) : 0;
+  uLong curPersId = CurThreadGlobals ? (CurPers ? CurPers->persId : 0) : 0;
   bool dontReadCache = NoDominant || !StringCache || NoProxify;
   bool dontWriteCache =
       NoDominant || NoProxify || GrowZoning || (EjectBuckaroo && !StringCache);

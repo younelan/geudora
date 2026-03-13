@@ -70,8 +70,6 @@ typedef void *WindowPtr;
 #endif
 typedef WindowPtr DialogPtr; /* Added */
 
-/* Re-define kAMOAvoidAll */
-#undef kAMOAvoidAll
 #define kAMOAvoidAll 2
 #ifndef smSystemScript
 enum { smSystemScript = 0 };
@@ -588,6 +586,43 @@ static void on_mbox_row_activated(GtkTreeView *tree_view, GtkTreePath *path,
 static void attach_mbox_context_menu(GtkWidget *tree, TOCType *toc);
 
 /* Message list selection callback */
+/* Find the end of headers in raw message text (double newline boundary).
+ * Returns byte offset of body start, or 0 if not found. */
+static long find_body_start(const char *text, long len) {
+  for (long i = 0; i < len - 1; i++) {
+    if (text[i] == '\n' && text[i + 1] == '\n')
+      return i + 2;
+    if (text[i] == '\r' && text[i + 1] == '\n' &&
+        i + 3 < len && text[i + 2] == '\r' && text[i + 3] == '\n')
+      return i + 4;
+  }
+  return 0;
+}
+
+/* Extract a specific header value from raw headers text.
+ * Returns newly allocated string or NULL. */
+static gchar *extract_header(const char *headers, long hdr_len,
+                              const char *name) {
+  size_t nlen = strlen(name);
+  const char *p = headers;
+  const char *end = headers + hdr_len;
+  while (p < end) {
+    const char *eol = memchr(p, '\n', end - p);
+    if (!eol) eol = end;
+    /* Check for header name match (case-insensitive) */
+    if ((long)(eol - p) > (long)nlen + 1 &&
+        g_ascii_strncasecmp(p, name, nlen) == 0 && p[nlen] == ':') {
+      const char *val = p + nlen + 1;
+      while (val < eol && (*val == ' ' || *val == '\t')) val++;
+      long vlen = eol - val;
+      if (vlen > 0 && val[vlen - 1] == '\r') vlen--;
+      return ensure_utf8(g_strndup(val, vlen));
+    }
+    p = eol + 1;
+  }
+  return NULL;
+}
+
 static void on_mbox_msg_selected(GtkTreeSelection *sel, gpointer data) {
   MboxSelCtx *ctx = (MboxSelCtx *)data;
   TOCType *toc = ctx->toc;
@@ -599,7 +634,7 @@ static void on_mbox_msg_selected(GtkTreeSelection *sel, gpointer data) {
   gtk_tree_model_get(model, &iter, COL_INDEX, &idx, -1);
   if (idx < 0 || idx >= toc->count) return;
 
-  /* Read the message body from the mailbox file */
+  /* Read the message from the mailbox file */
   MSumPtr sum = &toc->sums[idx];
   if (!preview) return;
 
@@ -617,9 +652,48 @@ static void on_mbox_msg_selected(GtkTreeSelection *sel, gpointer data) {
   fclose(fp);
   text[nread] = '\0';
 
-  gchar *utf8 = ensure_utf8(text);
-  gtk_text_buffer_set_text(buf, utf8, -1);
-  g_free(utf8);
+  /* Find where headers end and body begins */
+  long body_off = sum->bodyOffset;
+  if (body_off <= 0 || body_off > (long)nread)
+    body_off = find_body_start(text, nread);
+
+  /* Build preview: short header summary + body */
+  gchar *from = extract_header(text, body_off, "From");
+  gchar *date = extract_header(text, body_off, "Date");
+  gchar *subj = extract_header(text, body_off, "Subject");
+
+  GString *preview_text = g_string_new(NULL);
+  if (from) { g_string_append_printf(preview_text, "From: %s\n", from); g_free(from); }
+  if (subj) { g_string_append_printf(preview_text, "Subject: %s\n", subj); g_free(subj); }
+  if (date) { g_string_append_printf(preview_text, "Date: %s\n", date); g_free(date); }
+  g_string_append(preview_text, "\n");
+
+  /* Append body text */
+  if (body_off < (long)nread) {
+    gchar *body_utf8 = ensure_utf8(text + body_off);
+    g_string_append(preview_text, body_utf8);
+    g_free(body_utf8);
+  }
+
+  gtk_text_buffer_set_text(buf, preview_text->str, -1);
+
+  /* Style the header lines bold */
+  GtkTextIter start_iter, end_iter;
+  gtk_text_buffer_get_start_iter(buf, &start_iter);
+  /* Find the blank line separating headers from body in preview */
+  end_iter = start_iter;
+  gboolean found = gtk_text_iter_forward_search(
+      &start_iter, "\n\n", GTK_TEXT_SEARCH_TEXT_ONLY, NULL, &end_iter, NULL);
+  if (found) {
+    GtkTextTag *bold_tag = gtk_text_buffer_create_tag(buf, NULL,
+        "weight", PANGO_WEIGHT_BOLD,
+        "foreground", "#555555",
+        NULL);
+    gtk_text_buffer_get_start_iter(buf, &start_iter);
+    gtk_text_buffer_apply_tag(buf, bold_tag, &start_iter, &end_iter);
+  }
+
+  g_string_free(preview_text, TRUE);
   g_free(text);
 }
 
@@ -815,6 +889,7 @@ void InitMailboxWin(MyWindowPtr win, TOCType * toc, bool showIt) {
   gtk_text_view_set_editable(GTK_TEXT_VIEW(preview), FALSE);
   gtk_text_view_set_wrap_mode(GTK_TEXT_VIEW(preview), GTK_WRAP_WORD_CHAR);
   g_object_set_data(G_OBJECT(winWP), "preview", preview);
+  g_object_set_data(G_OBJECT(winWP), "mbox-tree", tree);
 
   GtkWidget *scroll2 = gtk_scrolled_window_new();
   gtk_scrolled_window_set_child(GTK_SCROLLED_WINDOW(scroll2), preview);
@@ -838,6 +913,17 @@ void InitMailboxWin(MyWindowPtr win, TOCType * toc, bool showIt) {
 
   /* Replace the empty scrolled-window content with our paned layout */
   gtk_window_set_child(GTK_WINDOW(winWP), vpaned);
+}
+
+/* ── Message viewer toolbar callbacks ── */
+static void on_fixed_toggled(GtkToggleButton *btn, gpointer ud) {
+  (void)ud;
+  GtkWidget *v = g_object_get_data(G_OBJECT(btn), "body-view");
+  if (!v) return;
+  if (gtk_toggle_button_get_active(btn))
+    gtk_widget_add_css_class(v, "monospace");
+  else
+    gtk_widget_remove_css_class(v, "monospace");
 }
 
 /* Double-click / Enter on tree row → open message window */
@@ -868,59 +954,185 @@ static void on_mbox_row_activated(GtkTreeView *tree_view, GtkTreePath *path,
     return;
   }
 
-  /* Incoming messages: open read-only viewer window */
-  FILE *fp = fopen(toc->mailbox.spec.path, "rb");
-  if (!fp) fp = fopen(toc->path, "rb");
-  if (!fp) return;
+  /* Incoming messages: use OpenMessage which handles header weeding,
+   * rich text, IMAP download, and all the original Eudora logic */
+  extern MyWindowPtr OpenMessage(TOCType *tocH, short sumNum, GtkWidget *winWP,
+                                  MyWindowPtr win, bool showIt, bool preview);
+  MyWindowPtr mwin = OpenMessage(toc, idx, NULL, NULL, false, false);
+  if (!mwin || !mwin->pte) return;
 
-  if (fseek(fp, sum->offset, SEEK_SET) != 0) { fclose(fp); return; }
-  long len = sum->length;
-  if (len <= 0 || len > 10 * 1024 * 1024) { fclose(fp); return; }
+  GtkWidget *winWP = (GtkWidget *)mwin->window;
+  gtk_window_set_default_size(GTK_WINDOW(winWP), 700, 550);
 
-  char *raw = g_malloc(len + 1);
-  size_t nread = fread(raw, 1, len, fp);
-  fclose(fp);
-  raw[nread] = '\0';
-
-  /* Ensure UTF-8 */
-  if (!g_utf8_validate(raw, nread, NULL)) {
-    gchar *utf8 = ensure_utf8(raw);
-    g_free(raw);
-    raw = utf8;
+  /* ── CSS: themed header background + toolbar ── */
+  {
+    static gboolean msgview_css_loaded = FALSE;
+    if (!msgview_css_loaded) {
+      GtkCssProvider *css = gtk_css_provider_new();
+      gtk_css_provider_load_from_string(css,
+        ".msg-header-box {"
+        "  background-color: alpha(currentColor, 0.06);"
+        "  border-bottom: 1px solid alpha(currentColor, 0.15);"
+        "}"
+        ".msg-toolbar {"
+        "  background-color: alpha(currentColor, 0.03);"
+        "  border-bottom: 1px solid alpha(currentColor, 0.10);"
+        "}"
+        ".msg-toolbar button { min-height: 24px; min-width: 24px; padding: 2px 6px; }"
+        ".msg-hdr-label { font-weight: bold; opacity: 0.6; }"
+        ".msg-subject-value { font-weight: bold; font-size: 1.1em; }"
+      );
+      gtk_style_context_add_provider_for_display(
+        gdk_display_get_default(), GTK_STYLE_PROVIDER(css),
+        GTK_STYLE_PROVIDER_PRIORITY_USER);
+      g_object_unref(css);
+      msgview_css_loaded = TRUE;
+    }
   }
 
-  GtkWidget *win = gtk_window_new();
-  gchar *safe_from = ensure_utf8(sum->from);
-  gchar *safe_subj = ensure_utf8(sum->subj);
-  gchar *title = g_strdup_printf("%s — %s", safe_from, safe_subj);
-  gtk_window_set_title(GTK_WINDOW(win), title);
-  g_free(title);
-  g_free(safe_from);
-  g_free(safe_subj);
-  gtk_window_set_default_size(GTK_WINDOW(win), 700, 550);
+  /* ── Toolbar: matches original Eudora message icon bar ── */
+  GtkWidget *toolbar = gtk_box_new(GTK_ORIENTATION_HORIZONTAL, 4);
+  gtk_widget_add_css_class(toolbar, "msg-toolbar");
+  gtk_widget_set_margin_start(toolbar, 6);
+  gtk_widget_set_margin_end(toolbar, 6);
+  gtk_widget_set_margin_top(toolbar, 3);
+  gtk_widget_set_margin_bottom(toolbar, 3);
 
-  /* Simple message view: scrolled text view with the raw message */
-  GtkTextBuffer *buf = gtk_text_buffer_new(NULL);
-  gtk_text_buffer_set_text(buf, raw, -1);
-  GtkWidget *view = gtk_text_view_new_with_buffer(buf);
-  gtk_text_view_set_editable(GTK_TEXT_VIEW(view), FALSE);
-  gtk_text_view_set_wrap_mode(GTK_TEXT_VIEW(view), GTK_WRAP_WORD_CHAR);
-  gtk_text_view_set_left_margin(GTK_TEXT_VIEW(view), 12);
-  gtk_text_view_set_right_margin(GTK_TEXT_VIEW(view), 12);
-  g_object_unref(buf);
-  g_free(raw);
+  GtkWidget *trash_btn = gtk_button_new_from_icon_name("user-trash-symbolic");
+  gtk_widget_set_tooltip_text(trash_btn, "Delete message");
+  gtk_box_append(GTK_BOX(toolbar), trash_btn);
 
-  GtkWidget *scroll = gtk_scrolled_window_new();
-  gtk_scrolled_window_set_child(GTK_SCROLLED_WINDOW(scroll), view);
-  gtk_window_set_child(GTK_WINDOW(win), scroll);
+  GtkWidget *reply_btn = gtk_button_new_from_icon_name("mail-reply-sender-symbolic");
+  gtk_widget_set_tooltip_text(reply_btn, "Reply");
+  gtk_box_append(GTK_BOX(toolbar), reply_btn);
+
+  GtkWidget *reply_all_btn = gtk_button_new_from_icon_name("mail-reply-all-symbolic");
+  gtk_widget_set_tooltip_text(reply_all_btn, "Reply All");
+  gtk_box_append(GTK_BOX(toolbar), reply_all_btn);
+
+  GtkWidget *fwd_btn = gtk_button_new_from_icon_name("mail-forward-symbolic");
+  gtk_widget_set_tooltip_text(fwd_btn, "Forward");
+  gtk_box_append(GTK_BOX(toolbar), fwd_btn);
+
+  gtk_box_append(GTK_BOX(toolbar), gtk_separator_new(GTK_ORIENTATION_VERTICAL));
+
+  GtkWidget *blah_btn = gtk_toggle_button_new_with_label("All Headers");
+  gtk_widget_set_tooltip_text(blah_btn, "Show all message headers");
+  gtk_box_append(GTK_BOX(toolbar), blah_btn);
+
+  GtkWidget *fixed_btn = gtk_toggle_button_new_with_label("Fixed");
+  gtk_widget_set_tooltip_text(fixed_btn, "Use fixed-width font");
+  gtk_box_append(GTK_BOX(toolbar), fixed_btn);
+
+  GtkWidget *print_btn = gtk_button_new_from_icon_name("printer-symbolic");
+  gtk_widget_set_tooltip_text(print_btn, "Print message");
+  gtk_box_append(GTK_BOX(toolbar), print_btn);
+
+  /* ── Header area from TOC summary (always reliable) ── */
+  GtkWidget *hdr_box = gtk_box_new(GTK_ORIENTATION_VERTICAL, 0);
+  gtk_widget_add_css_class(hdr_box, "msg-header-box");
+
+  GtkWidget *hdr_grid = gtk_grid_new();
+  gtk_grid_set_column_spacing(GTK_GRID(hdr_grid), 8);
+  gtk_grid_set_row_spacing(GTK_GRID(hdr_grid), 3);
+  gtk_widget_set_margin_start(hdr_grid, 12);
+  gtk_widget_set_margin_end(hdr_grid, 12);
+  gtk_widget_set_margin_top(hdr_grid, 8);
+  gtk_widget_set_margin_bottom(hdr_grid, 8);
+
+  /* Extract headers from the message text that OpenMessage loaded.
+   * The text in the gEditCtrl starts with weeded headers + body. */
+  gchar *msg_text = gedit_document_get_text(geditctrl_get_document(mwin->pte));
+  long msg_len = msg_text ? strlen(msg_text) : 0;
+  long body_off = find_body_start(msg_text, msg_len);
+
+  gchar *hdr_subj = msg_text ? extract_header(msg_text, body_off, "Subject") : NULL;
+  gchar *hdr_from = msg_text ? extract_header(msg_text, body_off, "From") : NULL;
+  gchar *hdr_to   = msg_text ? extract_header(msg_text, body_off, "To") : NULL;
+  gchar *hdr_cc   = msg_text ? extract_header(msg_text, body_off, "Cc") : NULL;
+  gchar *hdr_date = msg_text ? extract_header(msg_text, body_off, "Date") : NULL;
+
+  /* Fall back to TOC summary fields */
+  if (!hdr_subj || !hdr_subj[0]) { g_free(hdr_subj); hdr_subj = ensure_utf8(sum->subj); }
+  if (!hdr_from || !hdr_from[0]) { g_free(hdr_from); hdr_from = ensure_utf8(sum->from); }
+  if (!hdr_date || !hdr_date[0]) {
+    g_free(hdr_date);
+    char datebuf[32] = "";
+    if (sum->seconds > 0) {
+      time_t t = (time_t)sum->seconds;
+      struct tm *tm = localtime(&t);
+      if (tm) strftime(datebuf, sizeof(datebuf), "%a, %d %b %Y %H:%M", tm);
+    }
+    hdr_date = g_strdup(datebuf);
+  }
+
+  int hdr_row = 0;
+  /* Subject first, prominent */
+  if (hdr_subj && hdr_subj[0]) {
+    GtkWidget *lbl = gtk_label_new("Subject:");
+    gtk_widget_add_css_class(lbl, "msg-hdr-label");
+    gtk_widget_set_halign(lbl, GTK_ALIGN_END);
+    gtk_widget_set_valign(lbl, GTK_ALIGN_START);
+    gtk_grid_attach(GTK_GRID(hdr_grid), lbl, 0, hdr_row, 1, 1);
+    GtkWidget *val = gtk_label_new(hdr_subj);
+    gtk_widget_add_css_class(val, "msg-subject-value");
+    gtk_label_set_wrap(GTK_LABEL(val), TRUE);
+    gtk_label_set_selectable(GTK_LABEL(val), TRUE);
+    gtk_widget_set_halign(val, GTK_ALIGN_START);
+    gtk_widget_set_hexpand(val, TRUE);
+    gtk_grid_attach(GTK_GRID(hdr_grid), val, 1, hdr_row, 1, 1);
+    hdr_row++;
+  }
+  struct { const char *label; gchar *value; } hdrs[] = {
+    {"From:", hdr_from}, {"To:", hdr_to}, {"Cc:", hdr_cc},
+    {"Date:", hdr_date}, {NULL, NULL}
+  };
+  for (int h = 0; hdrs[h].label; h++) {
+    if (!hdrs[h].value || !hdrs[h].value[0]) continue;
+    GtkWidget *lbl = gtk_label_new(hdrs[h].label);
+    gtk_widget_add_css_class(lbl, "msg-hdr-label");
+    gtk_widget_set_halign(lbl, GTK_ALIGN_END);
+    gtk_widget_set_valign(lbl, GTK_ALIGN_START);
+    gtk_grid_attach(GTK_GRID(hdr_grid), lbl, 0, hdr_row, 1, 1);
+    GtkWidget *val = gtk_label_new(hdrs[h].value);
+    gtk_label_set_wrap(GTK_LABEL(val), TRUE);
+    gtk_label_set_selectable(GTK_LABEL(val), TRUE);
+    gtk_widget_set_halign(val, GTK_ALIGN_START);
+    gtk_widget_set_hexpand(val, TRUE);
+    gtk_grid_attach(GTK_GRID(hdr_grid), val, 1, hdr_row, 1, 1);
+    hdr_row++;
+  }
+  gtk_box_append(GTK_BOX(hdr_box), hdr_grid);
+  g_free(hdr_subj); g_free(hdr_from); g_free(hdr_to);
+  g_free(hdr_cc); g_free(hdr_date);
+  g_free(msg_text);
+
+  /* ── Body: the gEditCtrl from OpenMessage (already has text loaded) ── */
+  GtkWidget *body_scroll = gtk_scrolled_window_new();
+  gtk_scrolled_window_set_child(GTK_SCROLLED_WINDOW(body_scroll), mwin->pte);
+  gtk_widget_set_vexpand(body_scroll, TRUE);
+
+  /* Make body read-only */
+  geditctrl_set_editable(mwin->pte, false);
+
+  /* ── Fixed Width toggle ── */
+  g_object_set_data(G_OBJECT(fixed_btn), "body-view", mwin->pte);
+  g_signal_connect(fixed_btn, "toggled", G_CALLBACK(on_fixed_toggled), NULL);
+
+  /* ── Layout: toolbar + header + body ── */
+  GtkWidget *vbox = gtk_box_new(GTK_ORIENTATION_VERTICAL, 0);
+  gtk_box_append(GTK_BOX(vbox), toolbar);
+  gtk_box_append(GTK_BOX(vbox), hdr_box);
+  gtk_box_append(GTK_BOX(vbox), body_scroll);
+  gtk_window_set_child(GTK_WINDOW(winWP), vbox);
 
   /* Make transient to the toplevel */
   GtkWidget *toplevel = gtk_widget_get_ancestor(GTK_WIDGET(tree_view),
                                                  GTK_TYPE_WINDOW);
   if (toplevel)
-    gtk_window_set_transient_for(GTK_WINDOW(win), GTK_WINDOW(toplevel));
+    gtk_window_set_transient_for(GTK_WINDOW(winWP), GTK_WINDOW(toplevel));
 
-  gtk_window_present(GTK_WINDOW(win));
+  gtk_window_present(GTK_WINDOW(winWP));
 }
 
 /**********************************************************************
@@ -1854,7 +2066,7 @@ int RedoWho(TOCType * tocH, short sumNum) {
         PSCopy((unsigned char *)tocH->sums[sumNum].from, who);
         if (tocH->sums[sumNum].messH) {
           MakeMessTitle(hName, tocH, sumNum, True);
-          SetWTitle_(GetMyWindowWindowPtr((*tocH->sums[sumNum].messH)->win),
+          SetWTitle_(GetMyWindowWindowPtr(tocH->sums[sumNum].messH->win),
                      hName);
         }
       }
@@ -1974,7 +2186,7 @@ bool DeleteSum(TOCType * tocH, int sumNum) {
     BMD(sum + 1, sum, (tocH->count - 1 - sumNum) * sizeof(MSumType));
     for (mNum = sumNum; mNum < tocH->count - 1; mNum++)
       if ((MessHandle)tocH->sums[mNum].messH)
-        (*(MessHandle)tocH->sums[mNum].messH)->sumNum--;
+        ((MessHandle)tocH->sums[mNum].messH)->sumNum--;
   }
   /* Shrink TOC by one summary.
    * Do NOT g_realloc here — that can move the block and invalidate the
@@ -1993,32 +2205,70 @@ bool DeleteSum(TOCType * tocH, int sumNum) {
 /**********************************************************************
  * InvalSum - invalidate an entire message summary line
  **********************************************************************/
-void InvalSum(TOCType * tocH, short sum) {
-  /* GTK Port: Invalidation handled by widgets
-  Rect r;
+void InvalSum(TOCType * tocH, short sumNum) {
   MyWindowPtr win = tocH->win;
-  // GrafPtr oldPort;
-  long top, bottom;
-
-  if (!win)
-    return;
-  if (!IsWindowVisible(GetMyWindowWindowPtr(win)))
+  if (!win || !win->window)
     return;
 
-  top = win->topMargin + win->vPitch * (sum - GetControlValue(win->vBar));
-  bottom = top + win->vPitch + 1;
-  if (bottom < win->contR.top || top > win->contR.bottom)
-    //	This summary is not visible
+  GtkWidget *winWP = (GtkWidget *)win->window;
+  GtkWidget *tree = g_object_get_data(G_OBJECT(winWP), "mbox-tree");
+  if (!tree || !GTK_IS_TREE_VIEW(tree))
     return;
 
+  GtkTreeModel *model = gtk_tree_view_get_model(GTK_TREE_VIEW(tree));
+  if (!model || !GTK_IS_LIST_STORE(model))
+    return;
 
-  r.top = top;
-  r.bottom = bottom;
-  r.left = win->contR.left;
-  r.right = win->contR.right;
-  InvalWindowRect(GetMyWindowWindowPtr(win), &r);
-  tocH->resort = MAX(tocH->resort, kNoSlowResort);
-  */
+  /* Find the row matching this sumNum and update it */
+  MSumPtr sum = &tocH->sums[sumNum];
+  GtkTreeIter iter;
+  gboolean valid = gtk_tree_model_get_iter_first(model, &iter);
+  while (valid) {
+    int row_idx = -1;
+    gtk_tree_model_get(model, &iter, COL_INDEX, &row_idx, -1);
+    if (row_idx == sumNum) {
+      /* Update all columns for this row */
+      char datebuf[32] = "";
+      if (sum->seconds > 0) {
+        time_t t = (time_t)sum->seconds;
+        struct tm *tm = localtime(&t);
+        if (tm) strftime(datebuf, sizeof(datebuf), "%Y-%m-%d %H:%M", tm);
+      }
+      char sizebuf[16];
+      if (sum->length >= 1024)
+        snprintf(sizebuf, sizeof(sizebuf), "%ldK", sum->length / 1024);
+      else
+        snprintf(sizebuf, sizeof(sizebuf), "%ld", sum->length);
+      const char *attach = (sum->flags & FLAG_HAS_ATT) ? "\xf0\x9f\x93\x8e" : "";
+      int label = label_from_flags(sum->flags);
+      char labelbuf[8] = "";
+      if (label > 0) snprintf(labelbuf, sizeof(labelbuf), "%d", label);
+      char junkbuf[8] = "";
+      if (sum->spamScore > 0)
+        snprintf(junkbuf, sizeof(junkbuf), "%ld", (long)sum->spamScore);
+      gchar *safe_who = ensure_utf8(sum->from);
+      gchar *safe_subj = ensure_utf8(sum->subj);
+
+      gtk_list_store_set(GTK_LIST_STORE(model), &iter,
+                         COL_STATUS,   state_str(sum->state),
+                         COL_PRIORITY, priority_str(sum->priority),
+                         COL_ATTACH,   attach,
+                         COL_LABEL,    labelbuf,
+                         COL_WHO,      safe_who,
+                         COL_DATE,     datebuf,
+                         COL_SIZE,     sizebuf,
+                         COL_JUNK,     junkbuf,
+                         COL_SUBJECT,  safe_subj,
+                         -1);
+      g_free(safe_who);
+      g_free(safe_subj);
+      return;
+    }
+    valid = gtk_tree_model_iter_next(model, &iter);
+  }
+
+  /* Row not found — message may be new, repopulate the entire list */
+  populate_mbox_list(GTK_LIST_STORE(model), tocH);
 }
 
 /************************************************************************
@@ -2336,7 +2586,7 @@ int RemoveMailbox(FSSpecPtr spec, bool trashChain) {
     for (sumNum = 0; sumNum < tocH->count; sumNum++)
       if (tocH->sums[sumNum].messH)
         CloseMyWindow(
-            GetMyWindowWindowPtr((*tocH->sums[sumNum].messH)->win));
+            GetMyWindowWindowPtr(tocH->sums[sumNum].messH->win));
     if (tocH->win)
       CloseMyWindow(GetMyWindowWindowPtr(tocH->win));
   }
@@ -3181,8 +3431,8 @@ void PopupMailboxPath(MyWindowPtr win, TOCType * tocH, short sum, Point pt) {
         GetWTitle(winWP, s); //	Add name of message
         MyAppendMenu(hMenu, s);
         messH = Win2MessH(win);
-        tocH = (*messH)->tocH;
-        sum = (*messH)->sumNum;
+        tocH = messH->tocH;
+        sum = messH->sumNum;
       } else {
         //	This is a mailbox.
         tocH = (TOCType *)GetMyWindowPrivateData(win);
@@ -3878,8 +4128,8 @@ void DecodeIMAPMessages(TOCType * toc, FSSpecPtr spec) {
           InvalSum(toc, sumNum);
 
           //	Redisplay message
-          if ((messH = toc->sums[sumNum].messH) && (*messH)->bodyPTE &&
-              (win = (*messH)->win))
+          if ((messH = toc->sums[sumNum].messH) && messH->bodyPTE &&
+              (win = messH->win))
             RedisplayIMAPMessage(win);
 
           //	Update the preview pane.
