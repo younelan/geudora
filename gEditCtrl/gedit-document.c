@@ -177,9 +177,28 @@ void gedit_document_insert_text(geditDocument *self, gint offset,
     self->redo_stack = g_queue_new();
   }
 
+  /* Normalize line endings: GtkTextBuffer only understands \n.
+   * Email uses \r\n (RFC 2822), Mac Classic uses \r. */
+  gchar *normalized = NULL;
+  if (text && strchr(text, '\r')) {
+    GString *tmp = g_string_sized_new(strlen(text));
+    for (const gchar *p = text; *p; p++) {
+      if (*p == '\r') {
+        g_string_append_c(tmp, '\n');
+        if (p[1] == '\n') p++;
+      } else {
+        g_string_append_c(tmp, *p);
+      }
+    }
+    normalized = g_string_free(tmp, FALSE);
+    text = normalized;
+  }
+
   GtkTextIter iter;
   gtk_text_buffer_get_iter_at_offset(self->buffer, &iter, offset);
   gtk_text_buffer_insert(self->buffer, &iter, text, -1);
+
+  g_free(normalized);
 
   /* adjust style run offsets for inserted text (chars) */
   if (text && *text) {

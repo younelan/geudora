@@ -662,45 +662,466 @@ void geditctrl_set_rich_text(GtkWidget *ctrl, gint offset, gboolean is_rich) {
                     GINT_TO_POINTER(is_rich ? 1 : 0));
 }
 
+/* --- HTML markup parser with style application --- */
+
+/* Style span recorded during HTML parse pass */
+typedef struct {
+  gint start;    /* char offset in plain text */
+  gint end;      /* char offset in plain text */
+  gint bold;     /* 1=set, 0=unset, -1=preserve */
+  gint italic;
+  gint underline;
+  gint font_size;    /* 0=default, >0 absolute pt size */
+  GdkRGBA color;
+  gboolean has_color;
+  gchar *link_url;   /* non-NULL for <a href> */
+  geditAlignment alignment;
+  gboolean has_alignment;
+  gint quote_level;
+  gboolean has_quote_level;
+  gboolean is_hr;
+} MarkupStyleSpan;
+
+/* Stack entry for nested formatting state */
+typedef struct {
+  gint bold_count;
+  gint italic_count;
+  gint underline_count;
+  gint font_size;
+  GdkRGBA color;
+  gboolean has_color;
+  gchar *link_url;
+  geditAlignment alignment;
+  gint quote_level;
+} MarkupState;
+
+/* Extract an attribute value from a tag string. Returns newly allocated string or NULL. */
+static gchar *markup_get_attr(const gchar *tag, gint tag_len, const gchar *attr_name) {
+  gchar *tag_copy = g_strndup(tag, tag_len);
+  gchar *found = NULL;
+  gchar *pos = tag_copy;
+  gint attr_name_len = strlen(attr_name);
+
+  while (*pos) {
+    /* Skip whitespace */
+    while (*pos && g_ascii_isspace(*pos)) pos++;
+    if (!*pos) break;
+
+    /* Check if this attribute matches */
+    if (g_ascii_strncasecmp(pos, attr_name, attr_name_len) == 0 &&
+        pos[attr_name_len] == '=') {
+      pos += attr_name_len + 1;
+      /* Skip optional quotes */
+      char quote = 0;
+      if (*pos == '"' || *pos == '\'') { quote = *pos; pos++; }
+      const gchar *start = pos;
+      if (quote) {
+        while (*pos && *pos != quote) pos++;
+      } else {
+        while (*pos && !g_ascii_isspace(*pos) && *pos != '>') pos++;
+      }
+      found = g_strndup(start, pos - start);
+      break;
+    }
+    /* Skip to next attribute */
+    while (*pos && !g_ascii_isspace(*pos)) pos++;
+  }
+  g_free(tag_copy);
+  return found;
+}
+
+/* Parse a CSS color like #rrggbb or named colors */
+static gboolean markup_parse_color(const gchar *str, GdkRGBA *out) {
+  if (!str || !*str) return FALSE;
+  return gdk_rgba_parse(out, str);
+}
+
+/* Parse font size attribute (1-7 scale or +N/-N) */
+static gint markup_parse_font_size(const gchar *str) {
+  if (!str || !*str) return 0;
+  gint val;
+  if (*str == '+' || *str == '-')
+    val = 3 + atoi(str); /* relative to base size 3 */
+  else
+    val = atoi(str);
+  /* Map HTML 1-7 scale to point sizes */
+  static const gint sizes[] = { 0, 8, 10, 12, 14, 18, 24, 36 };
+  if (val < 1) val = 1;
+  if (val > 7) val = 7;
+  return sizes[val];
+}
+
 void gedit_document_insert_markup(geditDocument *self, gint offset,
                                    const gchar *markup) {
   if (!self || !markup) return;
-  /* Simple markup parser: strips <b>, <i>, <u>, <br>, <hr/> tags and
-     inserts the plain text. A full implementation would create style runs
-     for bold/italic/underline ranges. */
+
+  /* Pass 1: Parse HTML, extract plain text, record style spans */
   GString *plain = g_string_new(NULL);
+  GArray *spans = g_array_new(FALSE, TRUE, sizeof(MarkupStyleSpan));
+
+  /* Formatting state with nesting counts */
+  gint bold_count = 0, italic_count = 0, underline_count = 0;
+  gint cur_font_size = 0;
+  GdkRGBA cur_color = {0, 0, 0, 1};
+  gboolean has_color = FALSE;
+  gchar *cur_link = NULL;
+  geditAlignment cur_align = gedit_ALIGN_LEFT;
+  gint cur_quote_level = 0;
+  gboolean in_pre = FALSE;
+
+  /* Track open style span starts for deferred span creation */
+  gint link_start = -1;
+
   const gchar *p = markup;
   while (*p) {
     if (*p == '<') {
-      /* Skip tag */
       const gchar *end = strchr(p, '>');
-      if (end) {
-        /* Check for <br> or <br/> — insert newline */
-        if (g_ascii_strncasecmp(p, "<br", 3) == 0)
-          g_string_append_c(plain, '\n');
-        else if (g_ascii_strncasecmp(p, "<hr", 3) == 0)
-          g_string_append(plain, "\n---\n");
-        p = end + 1;
-      } else {
+      if (!end) {
         g_string_append_c(plain, *p);
         p++;
+        continue;
       }
-    } else if (*p == '&') {
-      /* Basic HTML entities */
+      gint tag_len = end - p - 1; /* length of tag content (between < and >) */
+      const gchar *tag = p + 1;   /* points past '<' */
+      gboolean is_closing = (tag[0] == '/');
+      const gchar *tag_name = is_closing ? tag + 1 : tag;
+      gint name_len = 0;
+      while (name_len < tag_len && tag_name[name_len] != ' ' &&
+             tag_name[name_len] != '/' && tag_name[name_len] != '>')
+        name_len++;
+
+      /* --- Block elements that insert line breaks --- */
+      if (!is_closing &&
+          (g_ascii_strncasecmp(tag_name, "br", name_len) == 0 && name_len == 2)) {
+        g_string_append_c(plain, '\n');
+      }
+      else if (!is_closing &&
+               (g_ascii_strncasecmp(tag_name, "hr", name_len) == 0 && name_len == 2)) {
+        /* Insert newline then record HR span */
+        if (plain->len > 0 && plain->str[plain->len - 1] != '\n')
+          g_string_append_c(plain, '\n');
+        gint hr_pos = plain->len;
+        g_string_append_c(plain, '\n');
+        MarkupStyleSpan hr_span = {0};
+        hr_span.start = hr_pos;
+        hr_span.end = hr_pos + 1;
+        hr_span.bold = -1; hr_span.italic = -1; hr_span.underline = -1;
+        hr_span.is_hr = TRUE;
+        g_array_append_val(spans, hr_span);
+      }
+      /* <p>, <div> — paragraph break */
+      else if ((g_ascii_strncasecmp(tag_name, "p", name_len) == 0 && name_len == 1) ||
+               (g_ascii_strncasecmp(tag_name, "div", name_len) == 0 && name_len == 3)) {
+        if (!is_closing) {
+          if (plain->len > 0 && plain->str[plain->len - 1] != '\n')
+            g_string_append_c(plain, '\n');
+          /* Check for align attribute */
+          gchar *align_val = markup_get_attr(tag, end - tag, "align");
+          if (align_val) {
+            if (g_ascii_strcasecmp(align_val, "center") == 0)
+              cur_align = gedit_ALIGN_CENTER;
+            else if (g_ascii_strcasecmp(align_val, "right") == 0)
+              cur_align = gedit_ALIGN_RIGHT;
+            else
+              cur_align = gedit_ALIGN_LEFT;
+            g_free(align_val);
+          }
+        } else {
+          if (plain->len > 0 && plain->str[plain->len - 1] != '\n')
+            g_string_append_c(plain, '\n');
+          cur_align = gedit_ALIGN_LEFT;
+        }
+      }
+      /* --- Inline style tags --- */
+      else if ((g_ascii_strncasecmp(tag_name, "b", name_len) == 0 && name_len == 1) ||
+               (g_ascii_strncasecmp(tag_name, "strong", name_len) == 0 && name_len == 6)) {
+        if (is_closing) { if (bold_count > 0) bold_count--; }
+        else bold_count++;
+      }
+      else if ((g_ascii_strncasecmp(tag_name, "i", name_len) == 0 && name_len == 1) ||
+               (g_ascii_strncasecmp(tag_name, "em", name_len) == 0 && name_len == 2) ||
+               (g_ascii_strncasecmp(tag_name, "cite", name_len) == 0 && name_len == 4) ||
+               (g_ascii_strncasecmp(tag_name, "var", name_len) == 0 && name_len == 3) ||
+               (g_ascii_strncasecmp(tag_name, "address", name_len) == 0 && name_len == 7)) {
+        if (is_closing) { if (italic_count > 0) italic_count--; }
+        else italic_count++;
+      }
+      else if (g_ascii_strncasecmp(tag_name, "u", name_len) == 0 && name_len == 1) {
+        if (is_closing) { if (underline_count > 0) underline_count--; }
+        else underline_count++;
+      }
+      /* Headings: bold + size */
+      else if (name_len == 2 && g_ascii_tolower(tag_name[0]) == 'h' &&
+               tag_name[1] >= '1' && tag_name[1] <= '6') {
+        if (is_closing) {
+          if (bold_count > 0) bold_count--;
+          cur_font_size = 0;
+          if (plain->len > 0 && plain->str[plain->len - 1] != '\n')
+            g_string_append_c(plain, '\n');
+        } else {
+          bold_count++;
+          gint level = tag_name[1] - '0';
+          /* h1=24pt, h2=18pt, h3=14pt, h4=12pt, h5=10pt, h6=8pt */
+          static const gint heading_sizes[] = { 0, 24, 18, 14, 12, 10, 8 };
+          cur_font_size = heading_sizes[level];
+          /* h5, h6 also italic */
+          if (level >= 5) italic_count++;
+          if (plain->len > 0 && plain->str[plain->len - 1] != '\n')
+            g_string_append_c(plain, '\n');
+        }
+      }
+      /* <font> with color/size attributes */
+      else if (g_ascii_strncasecmp(tag_name, "font", name_len) == 0 && name_len == 4) {
+        if (is_closing) {
+          has_color = FALSE;
+          cur_font_size = 0;
+        } else {
+          gchar *color_val = markup_get_attr(tag, end - tag, "color");
+          if (color_val) {
+            if (markup_parse_color(color_val, &cur_color))
+              has_color = TRUE;
+            g_free(color_val);
+          }
+          gchar *size_val = markup_get_attr(tag, end - tag, "size");
+          if (size_val) {
+            cur_font_size = markup_parse_font_size(size_val);
+            g_free(size_val);
+          }
+        }
+      }
+      /* <a href> links */
+      else if (g_ascii_strncasecmp(tag_name, "a", name_len) == 0 && name_len == 1) {
+        if (is_closing) {
+          /* Close link span */
+          if (cur_link && link_start >= 0 && (gint)plain->len > link_start) {
+            MarkupStyleSpan lspan = {0};
+            lspan.start = link_start;
+            lspan.end = plain->len;
+            lspan.bold = -1; lspan.italic = -1;
+            lspan.underline = 1;
+            lspan.has_color = TRUE;
+            lspan.color = (GdkRGBA){0.0, 0.0, 0.8, 1.0}; /* blue */
+            lspan.link_url = g_strdup(cur_link);
+            g_array_append_val(spans, lspan);
+          }
+          g_free(cur_link);
+          cur_link = NULL;
+          link_start = -1;
+          if (underline_count > 0) underline_count--;
+        } else {
+          gchar *href = markup_get_attr(tag, end - tag, "href");
+          if (href) {
+            cur_link = href;
+            link_start = plain->len;
+            underline_count++;
+          }
+        }
+      }
+      /* <blockquote> */
+      else if (g_ascii_strncasecmp(tag_name, "blockquote", name_len) == 0 && name_len == 10) {
+        if (is_closing) {
+          if (cur_quote_level > 0) cur_quote_level--;
+          if (plain->len > 0 && plain->str[plain->len - 1] != '\n')
+            g_string_append_c(plain, '\n');
+        } else {
+          cur_quote_level++;
+          if (plain->len > 0 && plain->str[plain->len - 1] != '\n')
+            g_string_append_c(plain, '\n');
+        }
+      }
+      /* <center> */
+      else if (g_ascii_strncasecmp(tag_name, "center", name_len) == 0 && name_len == 6) {
+        if (is_closing) cur_align = gedit_ALIGN_LEFT;
+        else cur_align = gedit_ALIGN_CENTER;
+      }
+      /* <pre>, <code>, <tt>, <kbd>, <samp> — we don't change font but preserve whitespace for <pre> */
+      else if (g_ascii_strncasecmp(tag_name, "pre", name_len) == 0 && name_len == 3) {
+        in_pre = is_closing ? FALSE : TRUE;
+        if (!is_closing && plain->len > 0 && plain->str[plain->len - 1] != '\n')
+          g_string_append_c(plain, '\n');
+      }
+      /* <ul>, <ol>, <li> — list handling */
+      else if ((g_ascii_strncasecmp(tag_name, "ul", name_len) == 0 && name_len == 2) ||
+               (g_ascii_strncasecmp(tag_name, "ol", name_len) == 0 && name_len == 2)) {
+        if (plain->len > 0 && plain->str[plain->len - 1] != '\n')
+          g_string_append_c(plain, '\n');
+      }
+      else if (g_ascii_strncasecmp(tag_name, "li", name_len) == 0 && name_len == 2) {
+        if (!is_closing) {
+          if (plain->len > 0 && plain->str[plain->len - 1] != '\n')
+            g_string_append_c(plain, '\n');
+        }
+      }
+      /* Skip head, title, style, script content (ignore everything until closing) */
+      else if (!is_closing &&
+               ((g_ascii_strncasecmp(tag_name, "style", name_len) == 0 && name_len == 5) ||
+                (g_ascii_strncasecmp(tag_name, "script", name_len) == 0 && name_len == 6))) {
+        /* Skip to closing tag */
+        gchar *close_tag = g_strdup_printf("</%.*s>", name_len, tag_name);
+        const gchar *close_pos = g_strstr_len(end + 1, -1, close_tag);
+        if (!close_pos) {
+          /* Try case-insensitive search */
+          const gchar *scan = end + 1;
+          while (*scan) {
+            if (*scan == '<' && *(scan+1) == '/') {
+              if (g_ascii_strncasecmp(scan + 2, tag_name, name_len) == 0) {
+                close_pos = strchr(scan, '>');
+                break;
+              }
+            }
+            scan++;
+          }
+        }
+        g_free(close_tag);
+        if (close_pos) { p = close_pos + 1; continue; }
+      }
+      /* Ignore: html, head, body, title, meta, link, img, table, tr, td, th, etc. */
+
+      p = end + 1;
+      continue;
+    }
+    /* HTML entities */
+    else if (*p == '&') {
       if (g_str_has_prefix(p, "&amp;")) { g_string_append_c(plain, '&'); p += 5; }
       else if (g_str_has_prefix(p, "&lt;")) { g_string_append_c(plain, '<'); p += 4; }
       else if (g_str_has_prefix(p, "&gt;")) { g_string_append_c(plain, '>'); p += 4; }
       else if (g_str_has_prefix(p, "&quot;")) { g_string_append_c(plain, '"'); p += 6; }
       else if (g_str_has_prefix(p, "&nbsp;")) { g_string_append_c(plain, ' '); p += 6; }
+      else if (g_str_has_prefix(p, "&apos;")) { g_string_append_c(plain, '\''); p += 6; }
+      else if (g_str_has_prefix(p, "&#")) {
+        /* Numeric character reference */
+        const gchar *semi = strchr(p, ';');
+        if (semi && semi - p < 10) {
+          gunichar ch;
+          if (p[2] == 'x' || p[2] == 'X')
+            ch = (gunichar)strtoul(p + 3, NULL, 16);
+          else
+            ch = (gunichar)strtoul(p + 2, NULL, 10);
+          if (ch > 0 && ch < 0x110000) {
+            gchar utf8[6];
+            gint len = g_unichar_to_utf8(ch, utf8);
+            g_string_append_len(plain, utf8, len);
+          }
+          p = semi + 1;
+        } else {
+          g_string_append_c(plain, *p); p++;
+        }
+      }
       else { g_string_append_c(plain, *p); p++; }
-    } else {
+      continue;
+    }
+    /* Regular text character */
+    else {
+      /* Collapse whitespace outside <pre> */
+      if (!in_pre && (*p == ' ' || *p == '\t' || *p == '\r' || *p == '\n')) {
+        /* Collapse runs of whitespace to single space */
+        if (plain->len == 0 || plain->str[plain->len - 1] != ' ')
+          g_string_append_c(plain, ' ');
+        p++;
+        while (*p && !in_pre && (*p == ' ' || *p == '\t' || *p == '\r' || *p == '\n'))
+          p++;
+        continue;
+      }
+      /* Record style state for this character */
+      gint char_start = plain->len;
       g_string_append_c(plain, *p);
       p++;
+
+      /* Create style span for styled characters */
+      if (bold_count > 0 || italic_count > 0 || underline_count > 0 ||
+          has_color || cur_font_size > 0) {
+        /* Try to extend previous span if same style */
+        gboolean extended = FALSE;
+        if (spans->len > 0) {
+          MarkupStyleSpan *prev = &g_array_index(spans, MarkupStyleSpan, spans->len - 1);
+          if (prev->end == char_start && !prev->is_hr && !prev->link_url &&
+              !prev->has_alignment && !prev->has_quote_level &&
+              prev->bold == (bold_count > 0 ? 1 : -1) &&
+              prev->italic == (italic_count > 0 ? 1 : -1) &&
+              prev->underline == (underline_count > 0 ? 1 : -1) &&
+              prev->font_size == cur_font_size &&
+              prev->has_color == has_color) {
+            prev->end = char_start + 1;
+            extended = TRUE;
+          }
+        }
+        if (!extended) {
+          MarkupStyleSpan span = {0};
+          span.start = char_start;
+          span.end = char_start + 1;
+          span.bold = bold_count > 0 ? 1 : -1;
+          span.italic = italic_count > 0 ? 1 : -1;
+          span.underline = underline_count > 0 ? 1 : -1;
+          span.font_size = cur_font_size;
+          span.has_color = has_color;
+          if (has_color) span.color = cur_color;
+          g_array_append_val(spans, span);
+        }
+      }
+
+      /* Record alignment/quote for paragraph-level styling */
+      if (cur_align != gedit_ALIGN_LEFT || cur_quote_level > 0) {
+        /* These are applied per-paragraph in pass 2 */
+        if (spans->len > 0) {
+          MarkupStyleSpan *last = &g_array_index(spans, MarkupStyleSpan, spans->len - 1);
+          if (last->end == char_start + 1 && !last->has_alignment && !last->has_quote_level) {
+            if (cur_align != gedit_ALIGN_LEFT) {
+              last->has_alignment = TRUE;
+              last->alignment = cur_align;
+            }
+            if (cur_quote_level > 0) {
+              last->has_quote_level = TRUE;
+              last->quote_level = cur_quote_level;
+            }
+          }
+        }
+      }
+      continue;
     }
   }
-  if (plain->len > 0)
+
+  g_free(cur_link);
+
+  /* Pass 2: Insert plain text, then apply style spans */
+  if (plain->len > 0) {
     gedit_document_insert_text(self, offset, plain->str);
+
+    /* Apply recorded style spans */
+    for (guint i = 0; i < spans->len; i++) {
+      MarkupStyleSpan *sp = &g_array_index(spans, MarkupStyleSpan, i);
+      gint sp_off = offset + sp->start;
+      gint sp_len = sp->end - sp->start;
+
+      if (sp->is_hr) {
+        gedit_document_insert_hr(self, sp_off);
+        continue;
+      }
+
+      /* Inline styles */
+      if (sp->bold != -1 || sp->italic != -1 || sp->underline != -1 ||
+          sp->has_color || sp->font_size > 0) {
+        gedit_document_add_style_run(self, sp_off, sp_len,
+                                      sp->bold, sp->italic, sp->underline,
+                                      sp->has_color ? &sp->color : NULL,
+                                      sp->font_size > 0 ? sp->font_size : -1);
+      }
+
+      /* Links */
+      if (sp->link_url) {
+        gedit_document_set_link(self, sp_off, sp_len, sp->link_url);
+        g_free(sp->link_url);
+      }
+
+      /* Paragraph-level styles */
+      if (sp->has_alignment)
+        gedit_document_set_alignment(self, sp_off, sp_len, sp->alignment);
+      if (sp->has_quote_level)
+        gedit_document_set_quote_level(self, sp_off, sp_len, sp->quote_level);
+    }
+  }
+
   g_string_free(plain, TRUE);
+  g_array_free(spans, TRUE);
 }
 
 /* Set font family on the current selection */
