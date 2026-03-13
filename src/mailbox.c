@@ -137,7 +137,7 @@ void SelectBoxRange(TOCType * tocH, int start, int end, bool add, int u1,
 /* Restored declarations */
 /* GetRString declared in gtk_dialogs.h */
 /* HGetState/HSetState provided by legacy_shim.h */
-char *FindHeaderString(char *text, char *header, long *len, bool caseSens);
+char *FindHeaderString(char *text, char *headerName, long *size, bool bodyToo);
 void MBDrawerOpen(MyWindowPtr win);
 /* TOCType * GetOutTOC(void); - Redundant macro conflict */
 void BeautifyFrom(unsigned char *who);
@@ -577,7 +577,9 @@ enum {
 /* Context for message list selection callback */
 typedef struct {
   TOCType *toc;
-  GtkWidget *preview;  /* GtkTextView for message preview */
+  GtkWidget *preview;      /* Preview container box */
+  GtkWidget *preview_hdr;  /* Header grid container */
+  GtkWidget *preview_body; /* Body GtkTextView */
 } MboxSelCtx;
 
 /* Forward declarations for callbacks */
@@ -585,42 +587,55 @@ static void on_mbox_row_activated(GtkTreeView *tree_view, GtkTreePath *path,
                                   GtkTreeViewColumn *column, gpointer data);
 static void attach_mbox_context_menu(GtkWidget *tree, TOCType *toc);
 
+/* Forward declarations for shared header helpers */
+static char *read_raw_headers(TOCType *tocH, int sumNum, long *hdr_len);
+static gchar *extract_header(const char *text, long textLen, const char *name);
+static GtkWidget *build_header_grid(const char *raw, long hdr_len, MSumPtr sum);
+
 /* Message list selection callback */
-/* Find the end of headers in raw message text (double newline boundary).
- * Returns byte offset of body start, or 0 if not found. */
+/* Find blank line separating headers from body.
+ * A "blank line" is two consecutive line endings with nothing between them.
+ * Handles any mix of \r\n, \r, \n line endings (real emails mix them). */
 static long find_body_start(const char *text, long len) {
-  for (long i = 0; i < len - 1; i++) {
-    if (text[i] == '\n' && text[i + 1] == '\n')
-      return i + 2;
-    if (text[i] == '\r' && text[i + 1] == '\n' &&
-        i + 3 < len && text[i + 2] == '\r' && text[i + 3] == '\n')
-      return i + 4;
+  long i = 0;
+  /* Skip leading blank lines (mbox offset may include trailing newlines) */
+  while (i < len && (text[i] == '\r' || text[i] == '\n'))
+    i++;
+  while (i < len) {
+    /* Skip to end of current line (find the line ending) */
+    while (i < len && text[i] != '\r' && text[i] != '\n')
+      i++;
+    if (i >= len) break;
+    /* Skip this line ending */
+    long eol_start = i;
+    if (text[i] == '\r') { i++; if (i < len && text[i] == '\n') i++; }
+    else if (text[i] == '\n') { i++; }
+    /* Check if next char is also a line ending (= blank line) */
+    if (i < len && (text[i] == '\r' || text[i] == '\n')) {
+      /* Skip the second line ending to get body start */
+      if (text[i] == '\r') { i++; if (i < len && text[i] == '\n') i++; }
+      else if (text[i] == '\n') { i++; }
+      return i;
+    }
+    /* Check if we're at start of a continuation line (whitespace = folded header) */
+    /* Not a blank line, continue scanning */
   }
   return 0;
 }
 
-/* Extract a specific header value from raw headers text.
- * Returns newly allocated string or NULL. */
-static gchar *extract_header(const char *headers, long hdr_len,
-                              const char *name) {
-  size_t nlen = strlen(name);
-  const char *p = headers;
-  const char *end = headers + hdr_len;
-  while (p < end) {
-    const char *eol = memchr(p, '\n', end - p);
-    if (!eol) eol = end;
-    /* Check for header name match (case-insensitive) */
-    if ((long)(eol - p) > (long)nlen + 1 &&
-        g_ascii_strncasecmp(p, name, nlen) == 0 && p[nlen] == ':') {
-      const char *val = p + nlen + 1;
-      while (val < eol && (*val == ' ' || *val == '\t')) val++;
-      long vlen = eol - val;
-      if (vlen > 0 && val[vlen - 1] == '\r') vlen--;
-      return ensure_utf8(g_strndup(val, vlen));
-    }
-    p = eol + 1;
-  }
-  return NULL;
+/* Extract a header value using Eudora's FindHeaderString.
+ * Returns newly allocated UTF-8 string or NULL.
+ * name is without colon, e.g. "To", "From" — colon is added here. */
+static gchar *extract_header(const char *text, long textLen, const char *name) {
+  char hdr[MAX_HEADER];
+  snprintf(hdr, sizeof(hdr), "%s:", name);
+  long size = textLen;
+  char *val = FindHeaderString((char *)text, hdr, &size, false);
+  if (!val || size <= 0) return NULL;
+  gchar *dup = g_strndup(val, size);
+  gchar *utf8 = ensure_utf8(dup);
+  if (utf8 != dup) g_free(dup);
+  return utf8;
 }
 
 static void on_mbox_msg_selected(GtkTreeSelection *sel, gpointer data) {
@@ -634,67 +649,44 @@ static void on_mbox_msg_selected(GtkTreeSelection *sel, gpointer data) {
   gtk_tree_model_get(model, &iter, COL_INDEX, &idx, -1);
   if (idx < 0 || idx >= toc->count) return;
 
-  /* Read the message from the mailbox file */
+  /* Read the message from the mailbox file — same path as full view */
   MSumPtr sum = &toc->sums[idx];
-  if (!preview) return;
+  GtkWidget *hdr_box = ctx->preview_hdr;
+  GtkWidget *body_tv = ctx->preview_body;
+  if (!hdr_box || !body_tv) return;
 
-  GtkTextBuffer *buf = gtk_text_view_get_buffer(GTK_TEXT_VIEW(preview));
-  FILE *fp = fopen(toc->mailbox.spec.path, "r");
-  if (!fp) {
-    gtk_text_buffer_set_text(buf, "(cannot open mailbox file)", -1);
+  /* Clear previous header grid */
+  GtkWidget *child;
+  while ((child = gtk_widget_get_first_child(hdr_box)))
+    gtk_box_remove(GTK_BOX(hdr_box), child);
+
+  /* Build header grid — same build_header_grid() as full view */
+  long hdr_len = 0;
+  char *raw = read_raw_headers(toc, idx, &hdr_len);
+  geditDocument *doc = geditctrl_get_document(body_tv);
+  gint docLen = gedit_document_get_length(doc);
+  if (docLen > 0) gedit_document_delete_range(doc, 0, docLen);
+
+  if (!raw) {
+    gedit_document_insert_text(doc, 0, "(cannot open mailbox file)");
     return;
   }
-  fseek(fp, sum->offset, SEEK_SET);
-  long len = sum->length;
-  if (len > 64 * 1024) len = 64 * 1024; /* cap preview at 64K */
-  char *text = g_malloc(len + 1);
-  size_t nread = fread(text, 1, len, fp);
-  fclose(fp);
-  text[nread] = '\0';
 
-  /* Find where headers end and body begins */
-  long body_off = sum->bodyOffset;
-  if (body_off <= 0 || body_off > (long)nread)
-    body_off = find_body_start(text, nread);
+  GtkWidget *grid = build_header_grid(raw, hdr_len, sum);
+  gtk_box_append(GTK_BOX(hdr_box), grid);
 
-  /* Build preview: short header summary + body */
-  gchar *from = extract_header(text, body_off, "From");
-  gchar *date = extract_header(text, body_off, "Date");
-  gchar *subj = extract_header(text, body_off, "Subject");
-
-  GString *preview_text = g_string_new(NULL);
-  if (from) { g_string_append_printf(preview_text, "From: %s\n", from); g_free(from); }
-  if (subj) { g_string_append_printf(preview_text, "Subject: %s\n", subj); g_free(subj); }
-  if (date) { g_string_append_printf(preview_text, "Date: %s\n", date); g_free(date); }
-  g_string_append(preview_text, "\n");
-
-  /* Append body text */
-  if (body_off < (long)nread) {
-    gchar *body_utf8 = ensure_utf8(text + body_off);
-    g_string_append(preview_text, body_utf8);
+  /* Set body text — use markup renderer for HTML messages */
+  long rawTotal = strlen(raw);
+  if (hdr_len < rawTotal) {
+    gchar *body_utf8 = ensure_utf8(raw + hdr_len);
+    bool isHTML = (sum->opts & OPT_HTML) != 0;
+    if (isHTML)
+      gedit_document_insert_markup(doc, 0, body_utf8);
+    else
+      gedit_document_insert_text(doc, 0, body_utf8);
     g_free(body_utf8);
   }
-
-  gtk_text_buffer_set_text(buf, preview_text->str, -1);
-
-  /* Style the header lines bold */
-  GtkTextIter start_iter, end_iter;
-  gtk_text_buffer_get_start_iter(buf, &start_iter);
-  /* Find the blank line separating headers from body in preview */
-  end_iter = start_iter;
-  gboolean found = gtk_text_iter_forward_search(
-      &start_iter, "\n\n", GTK_TEXT_SEARCH_TEXT_ONLY, NULL, &end_iter, NULL);
-  if (found) {
-    GtkTextTag *bold_tag = gtk_text_buffer_create_tag(buf, NULL,
-        "weight", PANGO_WEIGHT_BOLD,
-        "foreground", "#555555",
-        NULL);
-    gtk_text_buffer_get_start_iter(buf, &start_iter);
-    gtk_text_buffer_apply_tag(buf, bold_tag, &start_iter, &end_iter);
-  }
-
-  g_string_free(preview_text, TRUE);
-  g_free(text);
+  g_free(raw);
 }
 
 
@@ -882,17 +874,26 @@ void InitMailboxWin(MyWindowPtr win, TOCType * toc, bool showIt) {
   gtk_paned_set_start_child(GTK_PANED(vpaned), scroll1);
   gtk_paned_set_resize_start_child(GTK_PANED(vpaned), TRUE);
 
-  /* --- Message preview --- */
-  GtkTextBuffer *prevBuf = gtk_text_buffer_new(NULL);
-  gtk_text_buffer_set_text(prevBuf, "Select a message to preview.", -1);
-  GtkWidget *preview = gtk_text_view_new_with_buffer(prevBuf);
-  gtk_text_view_set_editable(GTK_TEXT_VIEW(preview), FALSE);
-  gtk_text_view_set_wrap_mode(GTK_TEXT_VIEW(preview), GTK_WRAP_WORD_CHAR);
-  g_object_set_data(G_OBJECT(winWP), "preview", preview);
+  /* --- Message preview: header grid + body text --- */
+  GtkWidget *preview_box = gtk_box_new(GTK_ORIENTATION_VERTICAL, 0);
+  GtkWidget *preview_hdr = gtk_box_new(GTK_ORIENTATION_VERTICAL, 0);
+  gtk_widget_add_css_class(preview_hdr, "msg-header-box");
+  gtk_box_append(GTK_BOX(preview_box), preview_hdr);
+
+  GtkWidget *preview_body = geditctrl_new();
+  geditctrl_set_editable(preview_body, FALSE);
+  gtk_widget_set_vexpand(preview_body, TRUE);
+  gedit_document_insert_text(geditctrl_get_document(preview_body), 0,
+                             "Select a message to preview.");
+  gtk_box_append(GTK_BOX(preview_box), preview_body);
+
+  g_object_set_data(G_OBJECT(winWP), "preview-hdr", preview_hdr);
+  g_object_set_data(G_OBJECT(winWP), "preview-body", preview_body);
+  g_object_set_data(G_OBJECT(winWP), "preview", preview_box);
   g_object_set_data(G_OBJECT(winWP), "mbox-tree", tree);
 
   GtkWidget *scroll2 = gtk_scrolled_window_new();
-  gtk_scrolled_window_set_child(GTK_SCROLLED_WINDOW(scroll2), preview);
+  gtk_scrolled_window_set_child(GTK_SCROLLED_WINDOW(scroll2), preview_box);
   gtk_widget_set_vexpand(scroll2, TRUE);
   gtk_paned_set_end_child(GTK_PANED(vpaned), scroll2);
   gtk_paned_set_resize_end_child(GTK_PANED(vpaned), TRUE);
@@ -900,7 +901,9 @@ void InitMailboxWin(MyWindowPtr win, TOCType * toc, bool showIt) {
   /* Connect selection change to preview */
   MboxSelCtx *ctx = g_new0(MboxSelCtx, 1);
   ctx->toc = toc;
-  ctx->preview = preview;
+  ctx->preview = preview_box;
+  ctx->preview_hdr = preview_hdr;
+  ctx->preview_body = preview_body;
   GtkTreeSelection *sel = gtk_tree_view_get_selection(GTK_TREE_VIEW(tree));
   g_signal_connect_data(sel, "changed", G_CALLBACK(on_mbox_msg_selected),
                         ctx, (GClosureNotify)g_free, 0);
@@ -915,7 +918,232 @@ void InitMailboxWin(MyWindowPtr win, TOCType * toc, bool showIt) {
   gtk_window_set_child(GTK_WINDOW(winWP), vpaned);
 }
 
+/* ── Message viewer toolbar helpers ── */
+
+/* Read raw message headers from disk. Caller must g_free the result.
+ * Sets *hdr_len to byte length of headers (up to body start). */
+static char *read_raw_headers(TOCType *tocH, int sumNum, long *hdr_len) {
+  MSumPtr sum = &tocH->sums[sumNum];
+  FILE *fp = fopen(tocH->mailbox.spec.path, "r");
+  if (!fp) { *hdr_len = 0; return NULL; }
+  fseek(fp, sum->offset, SEEK_SET);
+  long rawLen = sum->length;
+  char *raw = g_malloc(rawLen + 1);
+  size_t nrd = fread(raw, 1, rawLen, fp);
+  fclose(fp);
+  raw[nrd] = '\0';
+  long body_off = sum->bodyOffset;
+  if (body_off <= 0 || body_off > (long)nrd)
+    body_off = find_body_start(raw, nrd);
+  *hdr_len = (body_off > 0) ? body_off : (long)nrd;
+  return raw;
+}
+
+/* Build a normal (weeded) header grid from raw message text.
+ * Uses extract_header() — same path as preview, single code path. */
+static GtkWidget *build_header_grid(const char *raw, long hdr_len, MSumPtr sum) {
+  GtkWidget *grid = gtk_grid_new();
+  gtk_grid_set_column_spacing(GTK_GRID(grid), 8);
+  gtk_grid_set_row_spacing(GTK_GRID(grid), 3);
+  gtk_widget_set_margin_start(grid, 12);
+  gtk_widget_set_margin_end(grid, 12);
+  gtk_widget_set_margin_top(grid, 8);
+  gtk_widget_set_margin_bottom(grid, 8);
+  int row = 0;
+
+  struct { const char *label; const char *name; bool isSubject; } fields[] = {
+    {"Subject:", "Subject", true}, {"From:", "From", false},
+    {"To:", "To", false}, {"Cc:", "Cc", false}, {"Date:", "Date", false},
+  };
+  for (int i = 0; i < 5; i++) {
+    gchar *vstr = extract_header(raw, hdr_len, fields[i].name);
+    /* Fallback to TOC summary for Subject/From if not found in raw */
+    if (!vstr || !vstr[0]) {
+      g_free(vstr);
+      if (fields[i].isSubject && sum->subj[0])
+        vstr = ensure_utf8(sum->subj);
+      else if (i == 1 && sum->from[0])  /* From */
+        vstr = ensure_utf8(sum->from);
+      else
+        continue;
+    }
+    if (!vstr || !vstr[0]) { g_free(vstr); continue; }
+
+    GtkWidget *lbl = gtk_label_new(fields[i].label);
+    gtk_widget_add_css_class(lbl, "msg-hdr-label");
+    gtk_widget_set_halign(lbl, GTK_ALIGN_END);
+    gtk_widget_set_valign(lbl, GTK_ALIGN_START);
+    gtk_grid_attach(GTK_GRID(grid), lbl, 0, row, 1, 1);
+
+    GtkWidget *vlbl = gtk_label_new(vstr);
+    gtk_label_set_wrap(GTK_LABEL(vlbl), TRUE);
+    gtk_label_set_selectable(GTK_LABEL(vlbl), TRUE);
+    gtk_widget_set_halign(vlbl, GTK_ALIGN_START);
+    gtk_widget_set_hexpand(vlbl, TRUE);
+    if (fields[i].isSubject)
+      gtk_widget_add_css_class(vlbl, "msg-subject-value");
+    gtk_grid_attach(GTK_GRID(grid), vlbl, 1, row, 1, 1);
+    g_free(vstr);
+    row++;
+  }
+  return grid;
+}
+
+/* Build the "all headers" view — a formatted text view with bold header names */
+static GtkWidget *build_all_headers_view(const char *raw, long hdr_len) {
+  GtkWidget *tv = gtk_text_view_new();
+  gtk_text_view_set_editable(GTK_TEXT_VIEW(tv), FALSE);
+  gtk_text_view_set_wrap_mode(GTK_TEXT_VIEW(tv), GTK_WRAP_WORD_CHAR);
+  gtk_text_view_set_left_margin(GTK_TEXT_VIEW(tv), 12);
+  gtk_text_view_set_right_margin(GTK_TEXT_VIEW(tv), 12);
+  gtk_text_view_set_top_margin(GTK_TEXT_VIEW(tv), 4);
+  gtk_text_view_set_bottom_margin(GTK_TEXT_VIEW(tv), 4);
+
+  GtkTextBuffer *buf = gtk_text_view_get_buffer(GTK_TEXT_VIEW(tv));
+  GtkTextTag *bold_tag = gtk_text_buffer_create_tag(buf, NULL,
+      "weight", PANGO_WEIGHT_BOLD, NULL);
+
+  /* Parse each header line; bold the "Name:" part */
+  gchar *utf8_hdrs = ensure_utf8(g_strndup(raw, hdr_len));
+  /* Normalize line endings for display */
+  GString *norm = g_string_sized_new(hdr_len);
+  for (const char *p = utf8_hdrs; *p; p++) {
+    if (*p == '\r') {
+      g_string_append_c(norm, '\n');
+      if (p[1] == '\n') p++;
+    } else {
+      g_string_append_c(norm, *p);
+    }
+  }
+  g_free(utf8_hdrs);
+
+  /* Insert line by line, bolding header names */
+  const char *text = norm->str;
+  GtkTextIter iter;
+  gtk_text_buffer_get_start_iter(buf, &iter);
+  while (*text) {
+    const char *eol = strchr(text, '\n');
+    if (!eol) eol = text + strlen(text);
+    const char *colon = memchr(text, ':', eol - text);
+    if (colon && colon > text && !IsWhite(*text)) {
+      /* Bold the "Header:" part */
+      gtk_text_buffer_insert_with_tags(buf, &iter, text, colon - text + 1,
+                                        bold_tag, NULL);
+      /* Rest of line as normal text */
+      if (colon + 1 < eol)
+        gtk_text_buffer_insert(buf, &iter, colon + 1, eol - (colon + 1));
+    } else {
+      /* Continuation line or other — insert as-is */
+      gtk_text_buffer_insert(buf, &iter, text, eol - text);
+    }
+    if (*eol == '\n') {
+      gtk_text_buffer_insert(buf, &iter, "\n", 1);
+      text = eol + 1;
+    } else {
+      text = eol;
+    }
+  }
+  g_string_free(norm, TRUE);
+
+  GtkWidget *sw = gtk_scrolled_window_new();
+  gtk_scrolled_window_set_policy(GTK_SCROLLED_WINDOW(sw),
+                                  GTK_POLICY_NEVER, GTK_POLICY_AUTOMATIC);
+  gtk_scrolled_window_set_max_content_height(GTK_SCROLLED_WINDOW(sw), 250);
+  gtk_scrolled_window_set_propagate_natural_height(GTK_SCROLLED_WINDOW(sw), TRUE);
+  gtk_scrolled_window_set_child(GTK_SCROLLED_WINDOW(sw), tv);
+  return sw;
+}
+
 /* ── Message viewer toolbar callbacks ── */
+
+/* Blah-blah-blah: toggle between weeded and all headers */
+static void on_blahblah_toggled(GtkToggleButton *btn, gpointer ud) {
+  (void)ud;
+  MessHandle messH = g_object_get_data(G_OBJECT(btn), "messH");
+  if (!messH || !messH->tocH) return;
+
+  bool showAll = gtk_toggle_button_get_active(btn);
+  TOCType *tocH = messH->tocH;
+  int sumNum = messH->sumNum;
+  MSumPtr sum = &tocH->sums[sumNum];
+
+  if (showAll)
+    SetMessFlag(messH, FLAG_SHOW_ALL);
+  else
+    ClearMessFlag(messH, FLAG_SHOW_ALL);
+
+  long hdr_len = 0;
+  char *raw = read_raw_headers(tocH, sumNum, &hdr_len);
+  if (!raw) return;
+
+  GtkWidget *hdr_box = g_object_get_data(G_OBJECT(btn), "hdr-box");
+  if (hdr_box) {
+    /* Remove old content */
+    GtkWidget *child;
+    while ((child = gtk_widget_get_first_child(hdr_box)))
+      gtk_box_remove(GTK_BOX(hdr_box), child);
+
+    if (showAll) {
+      gtk_box_append(GTK_BOX(hdr_box), build_all_headers_view(raw, hdr_len));
+    } else {
+      gtk_box_append(GTK_BOX(hdr_box), build_header_grid(raw, hdr_len, sum));
+    }
+  }
+  g_free(raw);
+}
+
+/* Reply to the message shown in this window */
+static void on_msg_reply(GtkButton *btn, gpointer ud) {
+  (void)ud;
+  MessHandle messH = g_object_get_data(G_OBJECT(btn), "messH");
+  if (!messH || !messH->win) return;
+  extern MyWindowPtr DoReplyMessage(MyWindowPtr win, bool all, bool self,
+    bool quote, bool doFcc, short withWhich, bool vis, bool station, bool caching);
+  MyWindowPtr replyWin = DoReplyMessage(messH->win, false, false, true,
+                                         true, 0, true, false, false);
+  if (replyWin && replyWin->window)
+    gtk_window_present(GTK_WINDOW(replyWin->window));
+}
+
+/* Reply All */
+static void on_msg_reply_all(GtkButton *btn, gpointer ud) {
+  (void)ud;
+  MessHandle messH = g_object_get_data(G_OBJECT(btn), "messH");
+  if (!messH || !messH->win) return;
+  extern MyWindowPtr DoReplyMessage(MyWindowPtr win, bool all, bool self,
+    bool quote, bool doFcc, short withWhich, bool vis, bool station, bool caching);
+  MyWindowPtr replyWin = DoReplyMessage(messH->win, true, false, true,
+                                         true, 0, true, false, false);
+  if (replyWin && replyWin->window)
+    gtk_window_present(GTK_WINDOW(replyWin->window));
+}
+
+/* Forward */
+static void on_msg_forward(GtkButton *btn, gpointer ud) {
+  (void)ud;
+  MessHandle messH = g_object_get_data(G_OBJECT(btn), "messH");
+  if (!messH || !messH->win) return;
+  extern MyWindowPtr DoForwardMessage(MyWindowPtr win, void *toWhom, bool turbo);
+  MyWindowPtr fwdWin = DoForwardMessage(messH->win, NULL, false);
+  if (fwdWin && fwdWin->window)
+    gtk_window_present(GTK_WINDOW(fwdWin->window));
+}
+
+/* Delete / move to trash */
+static void on_msg_delete(GtkButton *btn, gpointer ud) {
+  (void)ud;
+  MessHandle messH = g_object_get_data(G_OBJECT(btn), "messH");
+  if (!messH || !messH->tocH) return;
+  extern void DeleteMessage(TOCType *tocH, int sumNum, bool nuke);
+  TOCType *tocH = messH->tocH;
+  int sumNum = messH->sumNum;
+  GtkWidget *win = messH->win ? messH->win->window : NULL;
+  DeleteMessage(tocH, sumNum, false);
+  /* Close the message window */
+  if (win)
+    gtk_window_destroy(GTK_WINDOW(win));
+}
+
 static void on_fixed_toggled(GtkToggleButton *btn, gpointer ud) {
   (void)ud;
   GtkWidget *v = g_object_get_data(G_OBJECT(btn), "body-view");
@@ -962,7 +1190,7 @@ static void on_mbox_row_activated(GtkTreeView *tree_view, GtkTreePath *path,
   if (!mwin || !mwin->pte) return;
 
   GtkWidget *winWP = (GtkWidget *)mwin->window;
-  gtk_window_set_default_size(GTK_WINDOW(winWP), 700, 550);
+  gtk_window_set_default_size(GTK_WINDOW(winWP), 750, 600);
 
   /* ── CSS: themed header background + toolbar ── */
   {
@@ -1032,92 +1260,61 @@ static void on_mbox_row_activated(GtkTreeView *tree_view, GtkTreePath *path,
   GtkWidget *hdr_box = gtk_box_new(GTK_ORIENTATION_VERTICAL, 0);
   gtk_widget_add_css_class(hdr_box, "msg-header-box");
 
-  GtkWidget *hdr_grid = gtk_grid_new();
-  gtk_grid_set_column_spacing(GTK_GRID(hdr_grid), 8);
-  gtk_grid_set_row_spacing(GTK_GRID(hdr_grid), 3);
-  gtk_widget_set_margin_start(hdr_grid, 12);
-  gtk_widget_set_margin_end(hdr_grid, 12);
-  gtk_widget_set_margin_top(hdr_grid, 8);
-  gtk_widget_set_margin_bottom(hdr_grid, 8);
-
-  /* Extract headers from the message text that OpenMessage loaded.
-   * The text in the gEditCtrl starts with weeded headers + body. */
-  gchar *msg_text = gedit_document_get_text(geditctrl_get_document(mwin->pte));
-  long msg_len = msg_text ? strlen(msg_text) : 0;
-  long body_off = find_body_start(msg_text, msg_len);
-
-  gchar *hdr_subj = msg_text ? extract_header(msg_text, body_off, "Subject") : NULL;
-  gchar *hdr_from = msg_text ? extract_header(msg_text, body_off, "From") : NULL;
-  gchar *hdr_to   = msg_text ? extract_header(msg_text, body_off, "To") : NULL;
-  gchar *hdr_cc   = msg_text ? extract_header(msg_text, body_off, "Cc") : NULL;
-  gchar *hdr_date = msg_text ? extract_header(msg_text, body_off, "Date") : NULL;
-
-  /* Fall back to TOC summary fields */
-  if (!hdr_subj || !hdr_subj[0]) { g_free(hdr_subj); hdr_subj = ensure_utf8(sum->subj); }
-  if (!hdr_from || !hdr_from[0]) { g_free(hdr_from); hdr_from = ensure_utf8(sum->from); }
-  if (!hdr_date || !hdr_date[0]) {
-    g_free(hdr_date);
-    char datebuf[32] = "";
-    if (sum->seconds > 0) {
-      time_t t = (time_t)sum->seconds;
-      struct tm *tm = localtime(&t);
-      if (tm) strftime(datebuf, sizeof(datebuf), "%a, %d %b %Y %H:%M", tm);
-    }
-    hdr_date = g_strdup(datebuf);
-  }
-
-  int hdr_row = 0;
-  /* Subject first, prominent */
-  if (hdr_subj && hdr_subj[0]) {
-    GtkWidget *lbl = gtk_label_new("Subject:");
-    gtk_widget_add_css_class(lbl, "msg-hdr-label");
-    gtk_widget_set_halign(lbl, GTK_ALIGN_END);
-    gtk_widget_set_valign(lbl, GTK_ALIGN_START);
-    gtk_grid_attach(GTK_GRID(hdr_grid), lbl, 0, hdr_row, 1, 1);
-    GtkWidget *val = gtk_label_new(hdr_subj);
-    gtk_widget_add_css_class(val, "msg-subject-value");
-    gtk_label_set_wrap(GTK_LABEL(val), TRUE);
-    gtk_label_set_selectable(GTK_LABEL(val), TRUE);
-    gtk_widget_set_halign(val, GTK_ALIGN_START);
-    gtk_widget_set_hexpand(val, TRUE);
-    gtk_grid_attach(GTK_GRID(hdr_grid), val, 1, hdr_row, 1, 1);
-    hdr_row++;
-  }
-  struct { const char *label; gchar *value; } hdrs[] = {
-    {"From:", hdr_from}, {"To:", hdr_to}, {"Cc:", hdr_cc},
-    {"Date:", hdr_date}, {NULL, NULL}
-  };
-  for (int h = 0; hdrs[h].label; h++) {
-    if (!hdrs[h].value || !hdrs[h].value[0]) continue;
-    GtkWidget *lbl = gtk_label_new(hdrs[h].label);
-    gtk_widget_add_css_class(lbl, "msg-hdr-label");
-    gtk_widget_set_halign(lbl, GTK_ALIGN_END);
-    gtk_widget_set_valign(lbl, GTK_ALIGN_START);
-    gtk_grid_attach(GTK_GRID(hdr_grid), lbl, 0, hdr_row, 1, 1);
-    GtkWidget *val = gtk_label_new(hdrs[h].value);
-    gtk_label_set_wrap(GTK_LABEL(val), TRUE);
-    gtk_label_set_selectable(GTK_LABEL(val), TRUE);
-    gtk_widget_set_halign(val, GTK_ALIGN_START);
-    gtk_widget_set_hexpand(val, TRUE);
-    gtk_grid_attach(GTK_GRID(hdr_grid), val, 1, hdr_row, 1, 1);
-    hdr_row++;
-  }
+  /* Build header grid from raw message — same source for initial view,
+   * blah-blah toggle off, and preview. Uses shared build_header_grid(). */
+  MessHandle messH = Win2MessH(mwin);
+  long hdr_len = 0;
+  char *raw = read_raw_headers(toc, idx, &hdr_len);
+  GtkWidget *hdr_grid = build_header_grid(raw ? raw : "", hdr_len, sum);
+  g_free(raw);
   gtk_box_append(GTK_BOX(hdr_box), hdr_grid);
-  g_free(hdr_subj); g_free(hdr_from); g_free(hdr_to);
-  g_free(hdr_cc); g_free(hdr_date);
-  g_free(msg_text);
+
+  /* Strip headers from editor — the editor text starts with kept headers
+   * (after WeedHeaders). Find the blank line separating headers from body
+   * in the editor text (which has normalized \n line endings). */
+  {
+    gchar *edtext = gedit_document_get_text(geditctrl_get_document(mwin->pte));
+    if (edtext) {
+      const char *blank = strstr(edtext, "\n\n");
+      if (blank) {
+        long byte_off = (blank - edtext) + 2; /* past the blank line */
+        gint char_off = (gint)g_utf8_strlen(edtext, byte_off);
+        gedit_document_delete_range(geditctrl_get_document(mwin->pte), 0, char_off);
+      }
+      g_free(edtext);
+    }
+  }
 
   /* ── Body: the gEditCtrl from OpenMessage (already has text loaded) ── */
   GtkWidget *body_scroll = gtk_scrolled_window_new();
+  gtk_scrolled_window_set_policy(GTK_SCROLLED_WINDOW(body_scroll),
+                                  GTK_POLICY_AUTOMATIC, GTK_POLICY_AUTOMATIC);
+  gtk_scrolled_window_set_min_content_height(GTK_SCROLLED_WINDOW(body_scroll), 100);
   gtk_scrolled_window_set_child(GTK_SCROLLED_WINDOW(body_scroll), mwin->pte);
   gtk_widget_set_vexpand(body_scroll, TRUE);
 
   /* Make body read-only */
   geditctrl_set_editable(mwin->pte, false);
 
-  /* ── Fixed Width toggle ── */
+  /* ── Connect toolbar button handlers ── */
+  g_object_set_data(G_OBJECT(trash_btn), "messH", messH);
+  g_signal_connect(trash_btn, "clicked", G_CALLBACK(on_msg_delete), NULL);
+
+  g_object_set_data(G_OBJECT(reply_btn), "messH", messH);
+  g_signal_connect(reply_btn, "clicked", G_CALLBACK(on_msg_reply), NULL);
+
+  g_object_set_data(G_OBJECT(reply_all_btn), "messH", messH);
+  g_signal_connect(reply_all_btn, "clicked", G_CALLBACK(on_msg_reply_all), NULL);
+
+  g_object_set_data(G_OBJECT(fwd_btn), "messH", messH);
+  g_signal_connect(fwd_btn, "clicked", G_CALLBACK(on_msg_forward), NULL);
+
   g_object_set_data(G_OBJECT(fixed_btn), "body-view", mwin->pte);
   g_signal_connect(fixed_btn, "toggled", G_CALLBACK(on_fixed_toggled), NULL);
+
+  g_object_set_data(G_OBJECT(blah_btn), "messH", messH);
+  g_object_set_data(G_OBJECT(blah_btn), "hdr-box", hdr_box);
+  g_signal_connect(blah_btn, "toggled", G_CALLBACK(on_blahblah_toggled), NULL);
 
   /* ── Layout: toolbar + header + body ── */
   GtkWidget *vbox = gtk_box_new(GTK_ORIENTATION_VERTICAL, 0);
@@ -1493,15 +1690,21 @@ GtkWidget *CreateMailboxPanel(TOCType *toc) {
   gtk_paned_set_start_child(GTK_PANED(vpaned), scroll1);
   gtk_paned_set_resize_start_child(GTK_PANED(vpaned), TRUE);
 
-  /* --- Message preview --- */
-  GtkTextBuffer *prevBuf = gtk_text_buffer_new(NULL);
-  gtk_text_buffer_set_text(prevBuf, "Select a message to preview.", -1);
-  GtkWidget *preview = gtk_text_view_new_with_buffer(prevBuf);
-  gtk_text_view_set_editable(GTK_TEXT_VIEW(preview), FALSE);
-  gtk_text_view_set_wrap_mode(GTK_TEXT_VIEW(preview), GTK_WRAP_WORD_CHAR);
+  /* --- Message preview: header grid + body text --- */
+  GtkWidget *preview_box = gtk_box_new(GTK_ORIENTATION_VERTICAL, 0);
+  GtkWidget *preview_hdr = gtk_box_new(GTK_ORIENTATION_VERTICAL, 0);
+  gtk_widget_add_css_class(preview_hdr, "msg-header-box");
+  gtk_box_append(GTK_BOX(preview_box), preview_hdr);
+
+  GtkWidget *preview_body = geditctrl_new();
+  geditctrl_set_editable(preview_body, FALSE);
+  gtk_widget_set_vexpand(preview_body, TRUE);
+  gedit_document_insert_text(geditctrl_get_document(preview_body), 0,
+                             "Select a message to preview.");
+  gtk_box_append(GTK_BOX(preview_box), preview_body);
 
   GtkWidget *scroll2 = gtk_scrolled_window_new();
-  gtk_scrolled_window_set_child(GTK_SCROLLED_WINDOW(scroll2), preview);
+  gtk_scrolled_window_set_child(GTK_SCROLLED_WINDOW(scroll2), preview_box);
   gtk_widget_set_vexpand(scroll2, TRUE);
   gtk_paned_set_end_child(GTK_PANED(vpaned), scroll2);
   gtk_paned_set_resize_end_child(GTK_PANED(vpaned), TRUE);
@@ -1509,12 +1712,14 @@ GtkWidget *CreateMailboxPanel(TOCType *toc) {
   /* Store refs on vpaned for later use */
   g_object_set_data(G_OBJECT(vpaned), "toc", toc);
   g_object_set_data(G_OBJECT(vpaned), "tree-view", tree);
-  g_object_set_data(G_OBJECT(vpaned), "preview", preview);
+  g_object_set_data(G_OBJECT(vpaned), "preview", preview_box);
 
   /* Connect selection change to preview */
   MboxSelCtx *ctx = g_new0(MboxSelCtx, 1);
   ctx->toc = toc;
-  ctx->preview = preview;
+  ctx->preview = preview_box;
+  ctx->preview_hdr = preview_hdr;
+  ctx->preview_body = preview_body;
   GtkTreeSelection *sel = gtk_tree_view_get_selection(GTK_TREE_VIEW(tree));
   g_signal_connect_data(sel, "changed", G_CALLBACK(on_mbox_msg_selected),
                         ctx, (GClosureNotify)g_free, 0);

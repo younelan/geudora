@@ -8,7 +8,11 @@
 #include "toc.h"
 #include "threading.h"
 #include "StringDefs.h"
+#include "StrnDefs.h"
+#include "StringUtil.h"
+#include "Globals.h"
 #include <glib.h>
+#include <stdlib.h>
 
 /* Global send queue counter */
 int SendQueue = 0;
@@ -68,7 +72,32 @@ void SetSendQueue(void)
 
 void GetBoxLines(void)
 {
-    g_print("Getting box lines\n");
+    int count = BoxLinesLimit - 1; /* 12 columns */
+    unsigned char scratch[256];
+    long width;
+    int i;
+
+    if (!BoxWidths) {
+        /* Allocate Handle-style: pointer to pointer to array */
+        short *data = (short *)calloc(count, sizeof(short));
+        short **handle = (short **)malloc(sizeof(short *));
+        if (!data || !handle) {
+            free(data);
+            free(handle);
+            return;
+        }
+        *handle = data;
+        BoxWidths = handle;
+    }
+
+    for (i = 0; i < count; i++) {
+        if (*GetRString(scratch, BoxLinesStrn + i + 1)) {
+            width = atol((const char *)scratch);
+            (*BoxWidths)[i] = (short)width;
+        } else {
+            (*BoxWidths)[i] = 50; /* fallback default */
+        }
+    }
 }
 
 void SystemEudoraFolder(void)

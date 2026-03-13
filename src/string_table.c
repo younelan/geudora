@@ -1703,6 +1703,20 @@ static const StrEntry string_table[] = {
   {32697, "com.com"}, /* URL_NAUGHTY_EXCEPTIONS */
   {32698, "4"}, /* HTML_MIN_IMAGE_SIZE */
   {32699, "1x1"}, /* HTML_BAD_IMAGE_DIMENSIONS */
+
+  /* BoxLinesStrn (25700+n): default column widths for mailbox list */
+  {25701, "14"},   /* blStat - status icon */
+  {25702, "14"},   /* blPrior - priority icon */
+  {25703, "14"},   /* blAttach - attachment icon */
+  {25704, "50"},   /* blLabel - label */
+  {25705, "120"},  /* blFrom - sender */
+  {25706, "80"},   /* blDate - date */
+  {25707, "40"},   /* blSize - message size */
+  {25708, "50"},   /* blServer - server */
+  {25709, "80"},   /* blMailbox - mailbox name */
+  {25710, "250"},  /* blSubject - subject */
+  {25711, "14"},   /* blAnal - analysis */
+  {25712, "14"},   /* blJunk - junk score */
 };
 
 #define STRING_TABLE_SIZE 1689

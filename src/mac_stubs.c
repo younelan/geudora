@@ -45,7 +45,7 @@ struct BoxMapStruct **BoxMap = NULL;
 void BoxPreviewProfile() {}
 /* BoxSelectAfter — real implementation elsewhere */
 /* BoxSetSummarySelected — real implementation elsewhere */
-void *BoxWidths = NULL; /* short ** Handle */
+short **BoxWidths = NULL;
 short BugFlags = 0;
 /* BuildEnriched — real implementation elsewhere */
 void BuildHTML() {}

@@ -7,6 +7,7 @@
 #include "../gEditCtrl/gedit-document.h"
 #include "../gEditCtrl/geditctrl.h"
 #include "comp.h"
+#include "ends.h"
 #include "gtk_icons.h"
 #include "gtk_mailbox.h"
 #include "gtk_menus.h"
@@ -2347,6 +2348,9 @@ static void activate(GtkApplication *app, gpointer user_data) {
 
   /* Initialize preferences system */
   prefs_init(NULL); /* Uses default ~/.config directory */
+
+  /* Initialize column widths from string table resources */
+  GetBoxLines();
 
   /* Initialize personalities (mail accounts) from prefs */
   InitPersonalities();

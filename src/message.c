@@ -78,7 +78,7 @@ int ReallyDoAnAlert(int templ, int which);
 
 short FindTOCSpot(TOCType * tocH, long serialNum);
 
-UPtr FindHeaderString(UPtr text, UPtr headerName, long *size, bool bodyToo);
+char *FindHeaderString(char *text, char *headerName, long *size, bool bodyToo);
 void BeautifyFrom(unsigned char *fromStr);
 PStr GrabAttribution(short attrId, MyWindowPtr win, PStr attribution);
 OSErr EnsureMessNewline(MessHandle messH);
@@ -142,15 +142,20 @@ void MakeMessTitle(unsigned char *title, TOCType * tocH, int sumNum,
   long zone;
 
   strcpy(from, (const char *)tocH->sums[sumNum].from);
-  if (useSummary)
-    *from = MIN(*from, (*BoxWidths)[blFrom - 1]);
+  if (useSummary) {
+    int maxW = (*BoxWidths)[blFrom - 1];
+    if ((int)strlen((char *)from) > maxW)
+      from[maxW] = '\0';
+  }
 
   if (useSummary) {
     if ((*BoxWidths)[blDate - 1] > 1) {
       ComputeLocalDate(tocH->sums + sumNum, (unsigned char *)datetime);
-      *datetime = MIN(*datetime, (*BoxWidths)[blDate - 1]);
+      int maxDW = (*BoxWidths)[blDate - 1];
+      if ((int)strlen((char *)datetime) > maxDW)
+        datetime[maxDW] = '\0';
     } else
-      *datetime = 0;
+      datetime[0] = '\0';
   } else {
     if ((secs = tocH->sums[sumNum].seconds)) {
       zone = PrefIsSet(PREF_LOCAL_DATE) ? ZoneSecs()
@@ -162,7 +167,7 @@ void MakeMessTitle(unsigned char *title, TOCType * tocH, int sumNum,
                      (unsigned char *)datetime, (unsigned char *)date,
                      (unsigned char *)time, (unsigned char *)zoneStr, "");
     } else
-      *datetime = 0;
+      datetime[0] = '\0';
   }
 
   GetMailboxName(tocH, sumNum, (unsigned char *)mailbox);
@@ -247,11 +252,12 @@ bool UseFlowOutExcerpt = false;
 
 /* Ported function declarations - replacing Mac types with standard C/GTK types
  */
-UHandle GetMessText(MessHandle messH);
+char *GetMessText(MessHandle messH);
 int MessErr;
 int FindAndCopyHeader(MessHandle origMH, MessHandle newMH, char *fromHead,
                       short toHead);
-void WeedHeaders(UHandle buffer, long *weeded, short toWeed, AccuPtr weeds);
+void WeedHeaders(char **buf, size_t *bufSize, long *weeded, short toWeed, AccuPtr weeds);
+long StripTrailingNewlines(char **buf, size_t *bufSize, long stop);
 MyWindowPtr OpenMessage(TOCType * tocH, short sumNum, GtkWidget *winWP,
                         MyWindowPtr win, bool showIt, bool preview);
 int RemoveSelf(MessHandle messH, short head, bool wantErrors);
@@ -267,7 +273,6 @@ int UniqueHeader(MessHandle messH, short head, bool wantErrors);
 int FindMessageByMID(unsigned long mid, TOCType * *tocH, short *sumNum);
 OSErr TOCFindMessByMID(uLong mid, TOCType * tocH, long *sumNum);
 int WipeMessage(TOCType * tocH, short sumNum);
-long StripTrailingNewlines(Handle buffer, long stop);
 int MessageWarnings(TOCType * tocH, short sumNum, bool toTrash, bool nuke,
                     bool *queuedWarning, bool *unsentWarning,
                     bool *unreadWarning, bool *busyWarning);
@@ -354,8 +359,8 @@ MyWindowPtr DoReplyMessage(MyWindowPtr win, bool all, bool self, bool quote,
 
 unsigned char *PeteSelectedString(void *res, GtkWidget *pte);
 unsigned char *GetRealname(unsigned char *addr);
-int TextFindAndCopyHeader(unsigned char *body, long size, MessHandle newMH,
-                          unsigned char *fromHead, short toHead, short label);
+int TextFindAndCopyHeader(char *body, long size, MessHandle newMH,
+                          char *fromHead, short toHead, short label);
 OSErr SpoolIndAttachment(MessHandle messH, short i);
 void SumInfoCpy(MSumPtr newSum, MSumPtr oldSum);
 void Preview(TOCType * tocH, short sumNum);
@@ -409,7 +414,7 @@ MyWindowPtr OpenMessage(TOCType * tocH, short sumNum, GtkWidget *winWP,
   MessHandle messH;
   char *text = NULL;
   short ezOpenSum;
-  int err;
+  int err = 0;
   long size;
   long partial = GetRLong(PETE_NIBBLE) * 1024;
   bool useLizzie = false;
@@ -427,6 +432,7 @@ MyWindowPtr OpenMessage(TOCType * tocH, short sumNum, GtkWidget *winWP,
     if (!win)
       return NULL;
     win->window = gtk_window_new();
+    gtk_window_set_default_size(GTK_WINDOW(win->window), 600, 400);
     win->pte = NULL;
   }
   if (!win) {
@@ -457,7 +463,7 @@ MyWindowPtr OpenMessage(TOCType * tocH, short sumNum, GtkWidget *winWP,
     // threading is off.  Download message now
     if (PrefIsSet(PREF_THREADING_OFF) || !ThreadsAvailable()) {
       if (EnsureMsgDownloaded(tocH, sumNum, true))
-        text = (char *)GetMessText(messH);
+        text = GetMessText(messH);
     } else {
       char scratch[256];
       bool reallyGetIt = !preview || (!Offline && AutoCheckOK());
@@ -481,7 +487,9 @@ MyWindowPtr OpenMessage(TOCType * tocH, short sumNum, GtkWidget *winWP,
       disableButtons = true;
     }
   } else
-    text = (char *)GetMessText(messH);
+  {
+    text = GetMessText(messH);
+  }
   useLizzie = false;
 
   // Create gEditCtrl widget instead of Pete
@@ -503,30 +511,87 @@ MyWindowPtr OpenMessage(TOCType * tocH, short sumNum, GtkWidget *winWP,
     // Initialize gEditCtrl document instead of Pete stack
     geditDocument *doc = geditctrl_get_document(TheBody);
 
+    /* Ensure text is valid UTF-8 — try charset from message headers,
+     * then common encodings, then lossy fallback */
+    if (!g_utf8_validate(text, -1, NULL)) {
+      static const char *encodings[] = {
+        "WINDOWS-1252", "ISO-8859-1", "MACINTOSH", "ISO-8859-15", NULL
+      };
+      char *utf8_text = NULL;
+      for (int ei = 0; encodings[ei] && !utf8_text; ei++) {
+        utf8_text = g_convert(text, -1, "UTF-8", encodings[ei],
+                              NULL, NULL, NULL);
+      }
+      if (utf8_text) {
+        g_free(text);
+        text = utf8_text;
+      }
+      /* Last resort: replace invalid bytes */
+      if (!g_utf8_validate(text, -1, NULL)) {
+        char *clean = g_utf8_make_valid(text, -1);
+        g_free(text);
+        text = clean;
+      }
+    }
+
+    /* Auto-detect HTML if flags aren't set — look for <html or <body tag
+     * in the first 4K of the body */
+    {
+      long bodyOff = SumOf(messH)->bodyOffset - messH->weeded;
+      if (bodyOff < 0) bodyOff = 0;
+      const char *body = text + bodyOff;
+      if (!MessOptIsSet(messH, OPT_HTML)) {
+        /* Quick scan for HTML indicators */
+        const char *scan = body;
+        size_t scanLen = strlen(scan);
+        if (scanLen > 4096) scanLen = 4096;
+        for (size_t si = 0; si < scanLen - 5; si++) {
+          if (scan[si] == '<' &&
+              (g_ascii_strncasecmp(scan + si, "<html", 5) == 0 ||
+               g_ascii_strncasecmp(scan + si, "<body", 5) == 0 ||
+               g_ascii_strncasecmp(scan + si, "<!doc", 5) == 0)) {
+            SetMessOpt(messH, OPT_HTML);
+            break;
+          }
+        }
+      }
+    }
+
     // Calculate text size and handle partial loading
+    bool isHTML = !MessFlagIsSet(messH, FLAG_SHOW_ALL) &&
+                  (MessFlagIsSet(messH, FLAG_RICH)
+                   || MessOptIsSet(messH, OPT_HTML)
+                   || MessOptIsSet(messH, OPT_FLOW)
+                   || MessOptIsSet(messH, OPT_CHARSET));
+
     if (!showIt || MessIsRich(messH) || MessOptIsSet(messH, OPT_CHARSET))
       partial = 0;
     size = strlen(text);
     if (!partial || size < partial) {
-      // stick in the text
-      if (!MessFlagIsSet(messH, FLAG_SHOW_ALL) &&
-          (MessFlagIsSet(messH, FLAG_RICH)
-           || MessOptIsSet(messH, OPT_HTML)
-           || MessOptIsSet(messH, OPT_FLOW) ||
-           MessOptIsSet(messH, OPT_CHARSET))) {
-        // Insert rich text using gEditCtrl
-        gedit_document_insert_markup(doc, 0, text);
-
+      if (isHTML) {
+        /* For HTML messages, pass the body portion through markup parser.
+         * Headers (before bodyOffset) are plain text. */
+        long bodyOff = SumOf(messH)->bodyOffset - messH->weeded;
+        if (bodyOff < 0) bodyOff = 0;
+        if (bodyOff > 0 && bodyOff < size) {
+          /* Insert headers as plain text */
+          char *hdr = g_strndup(text, bodyOff);
+          gedit_document_insert_text(doc, 0, hdr);
+          g_free(hdr);
+          /* Insert body as markup */
+          gedit_document_insert_markup(doc, -1, text + bodyOff);
+        } else {
+          gedit_document_insert_markup(doc, 0, text);
+        }
         g_free(text);
       } else {
         // Insert plain text
         gedit_document_insert_text(doc, 0, text);
+        g_free(text);
       }
 
       if (!err) {
-        text = NULL; // so we don't dispose of it
-        // Trim trailing returns using gEditCtrl
-        /* gedit_document_trim_trailing_newlines(doc); */
+        text = NULL;
       }
     } else {
       // Insert partial text
@@ -541,12 +606,26 @@ MyWindowPtr OpenMessage(TOCType * tocH, short sumNum, GtkWidget *winWP,
       WarnUser(PETE_ERR, err);
   } else {
     char title[256];
-
-    /* title = MakeMessTitle(tocH, sumNum); -- returns void now */
+    title[0] = '\0';
     MakeMessTitle((unsigned char *)title, tocH, sumNum, true);
 
+    /* Ensure title is valid UTF-8 for GTK */
+    if (title[0] && !g_utf8_validate(title, -1, NULL)) {
+      char *utf8_title = g_convert(title, -1, "UTF-8", "WINDOWS-1252",
+                                   NULL, NULL, NULL);
+      if (utf8_title) {
+        g_strlcpy(title, utf8_title, sizeof(title));
+        g_free(utf8_title);
+      } else {
+        char *clean = g_utf8_make_valid(title, -1);
+        g_strlcpy(title, clean, sizeof(title));
+        g_free(clean);
+      }
+    }
+    if (!title[0])
+      g_strlcpy(title, "Message", sizeof(title));
+
     gtk_window_set_title(GTK_WINDOW(winWP), title);
-    g_free(title);
     win->menu = MessMenu;
     win->gonnaShow = MessGonnaShow;
     win->position_new = (int (*)(bool, struct MyWindow *))MessagePosition;
@@ -620,8 +699,8 @@ MyWindowPtr OpenMessage(TOCType * tocH, short sumNum, GtkWidget *winWP,
     win->isDirty = false;
     CloseMyWindow(winWP);
     win = NULL;
-    if (text)
-      ZapHandle(text);
+    g_free(text);
+    text = NULL;
   }
 
   return (win);
@@ -740,15 +819,13 @@ OSErr CacheMessage(TOCType * tocH, short sumNum) {
 /**********************************************************************
  * GetMessText - put the text of a message
  **********************************************************************/
-UHandle GetMessText(MessHandle messH) {
+char *GetMessText(MessHandle messH) {
   MyWindowPtr win = messH->win;
-  TOCType * tocH = messH->tocH;
+  TOCType *tocH = messH->tocH;
   int sumNum = messH->sumNum;
-  UHandle buffer = NULL;
+  char *buf = NULL;
+  size_t bufSize = 0;
   long weeded;
-  short tableId;
-  Handle table;
-  Handle cache = NULL;
   Accumulator weeds;
 
   Zero(weeds);
@@ -756,6 +833,7 @@ UHandle GetMessText(MessHandle messH) {
   /*
    * grab cached text, if any
    */
+  Handle cache = NULL;
   if (tocH->sums[sumNum].cache && *tocH->sums[sumNum].cache) {
     cache = tocH->sums[sumNum].cache;
   } else
@@ -764,14 +842,12 @@ UHandle GetMessText(MessHandle messH) {
   /*
    * allocate buffer
    */
-  size_t buffer_size = GetMessageLength(tocH, sumNum);
-  unsigned char *buffer_data = g_malloc(buffer_size);
-  buffer = (UHandle)g_malloc(sizeof(unsigned char *));
-  *buffer = buffer_data;
-  if (buffer == NULL) {
+  bufSize = GetMessageLength(tocH, sumNum);
+  buf = (char *)g_malloc(bufSize + 1);
+  if (!buf) {
     if (!cache) {
       WarnUser(NO_MESS_BUF, MemError());
-      return (NULL);
+      return NULL;
     }
   }
 
@@ -779,62 +855,93 @@ UHandle GetMessText(MessHandle messH) {
    * read it
    */
   if (cache) {
-    if (buffer) {
-      memmove(*buffer, *cache, GetHandleSize(buffer));
+    if (buf) {
+      size_t cacheSize = GetHandleSize(cache);
+      if (cacheSize > bufSize) cacheSize = bufSize;
+      memmove(buf, *cache, cacheSize);
+      bufSize = cacheSize;
     } else {
-      buffer = (UHandle)cache;
-      cache = NULL;
+      /* use cache directly — take ownership */
+      bufSize = GetHandleSize(cache);
+      buf = (char *)g_malloc(bufSize + 1);
+      if (buf) memmove(buf, *cache, bufSize);
+      ZapHandle(cache);
       tocH->sums[sumNum].cache = NULL;
     }
   } else {
-    if ((MessErr = ReadMessage(tocH, sumNum, *buffer)))
+    if ((MessErr = ReadMessage(tocH, sumNum, (UPtr)buf)))
       goto failure;
 
-    size_t cache_size = GetMessageLength(tocH, sumNum);
-    unsigned char *cache_data = g_malloc(cache_size);
-    cache = (Handle)g_malloc(sizeof(unsigned char *));
-    *(unsigned char **)cache = cache_data;
-    if (cache) {
-      memmove(*(unsigned char **)cache, *buffer, GetMessageLength(tocH, sumNum));
-      tocH->sums[sumNum].cache = cache;
+    /* create cache copy */
+    size_t cacheSize = bufSize;
+    unsigned char *cacheData = (unsigned char *)g_malloc(cacheSize);
+    Handle newCache = (Handle)g_malloc(sizeof(unsigned char *));
+    if (cacheData && newCache) {
+      *(unsigned char **)newCache = cacheData;
+      memmove(cacheData, buf, cacheSize);
+      tocH->sums[sumNum].cache = newCache;
+    } else {
+      g_free(cacheData);
+      g_free(newCache);
     }
   }
+  buf[bufSize] = '\0';
 
   /*
    * set hash, if we haven't already
    */
   if (tocH->sums[sumNum].uidHash == kNeverHashed)
-    Rehash(tocH, sumNum, *buffer);
+    Rehash(tocH, sumNum, (UPtr)buf);
+
+  /*
+   * detect content-type before weeding removes the header
+   * handles both \r\n (RFC 2822) and \n line endings
+   */
+  if (!MessOptIsSet(messH, OPT_HTML)) {
+    const char *ct = strcasestr(buf, "\nContent-Type:");
+    if (!ct && g_ascii_strncasecmp(buf, "Content-Type:", 13) == 0)
+      ct = buf;
+    if (ct) {
+      const char *val = ct + (ct == buf ? 13 : 14);
+      char ctbuf[256];
+      int ci = 0;
+      while (*val && ci < 255) {
+        /* end of header: newline not followed by continuation whitespace */
+        if (*val == '\r' || *val == '\n') {
+          const char *next = val;
+          if (*next == '\r') next++;
+          if (*next == '\n') next++;
+          if (*next != ' ' && *next != '\t') break;
+        }
+        ctbuf[ci++] = *val++;
+      }
+      ctbuf[ci] = '\0';
+      if (strcasestr(ctbuf, "text/html"))
+        SetMessOpt(messH, OPT_HTML);
+    }
+  }
 
   /*
    * weed headers?
    */
   if (!(SumOf(messH)->flags & FLAG_SHOW_ALL)) {
-    WeedHeaders(buffer, &weeded, BadHeadStrn, &weeds);
+    WeedHeaders(&buf, &bufSize, &weeded, BadHeadStrn, &weeds);
     messH->weeded = weeded;
-    StripTrailingNewlines((Handle)buffer,
+    StripTrailingNewlines(&buf, &bufSize,
                           SumOf(messH)->bodyOffset - weeded + 1);
   } else
     messH->weeded = 0;
-  WeedHeaders(buffer, &weeded, FROM_STRN, NULL);
+  WeedHeaders(&buf, &bufSize, &weeded, FROM_STRN, NULL);
   messH->weeded += weeded;
   AccuTrim(&weeds);
   messH->extras = weeds;
 
-  /*
-   * Character translation tables are not supported in the GTK port.
-   * The original Mac version used 'taBL' resources for charset conversion.
-   * Modern email uses UTF-8; charset handling is done at the IMAP/POP layer.
-   */
-  (void)tableId;
-
   win->ro = !MessOptIsSet(messH, OPT_WRITE);
-  return (buffer);
+  return buf;
 
 failure:
-  if (buffer)
-    ZapHandle(buffer);
-  return (NULL);
+  g_free(buf);
+  return NULL;
 }
 
 /**********************************************************************
@@ -1779,18 +1886,18 @@ OSErr WipeMessage(TOCType * tocH, short sumNum) {
 int MessageError(void) { return (MessErr); }
 
 /**********************************************************************
- * StripTrailingNewlines - strip the newlines off the end of a text block
+ * StripTrailingNewlines - strip trailing newlines from a text buffer
  **********************************************************************/
-long StripTrailingNewlines(Handle buffer, long stop) {
-  long size = GetHandleSize(buffer);
-  Ptr spot = *buffer + size;
-  long newSize;
+long StripTrailingNewlines(char **buf, size_t *bufSize, long stop) {
+  long size = (long)*bufSize;
+  char *spot = *buf + size;
 
-  while (spot[-1] == '\015' && spot > (char *)*buffer + stop)
+  while (spot > *buf + stop && (spot[-1] == '\n' || spot[-1] == '\r'))
     spot--;
 
-  newSize = spot - (char *)*buffer;
-  SetHandleSize(buffer, newSize);
+  long newSize = spot - *buf;
+  *bufSize = newSize;
+  (*buf)[newSize] = '\0';
   return (size - newSize);
 }
 
@@ -1820,48 +1927,59 @@ static const char *kFromHeaders[] = {
   NULL
 };
 
-void WeedHeaders(UHandle buffer, long *weeded, short toWeed, AccuPtr weeds) {
-  long size;
-
-  /* Select the appropriate header list based on the resource ID */
+void WeedHeaders(char **buf, size_t *bufSize, long *weeded, short toWeed, AccuPtr weeds) {
   const char **badList;
   if (toWeed == FROM_STRN)
     badList = kFromHeaders;
   else
     badList = kBadHeaders;
 
-  /* Count entries */
   int badN = 0;
   while (badList[badN]) badN++;
   if (badN == 0) return;
 
-  UPtr spot;  // char we're examining
-  UPtr done;  // just past end of good chars that have been copied
-  UPtr end;   // end of the whole shebang
-  UPtr found; // beginning of text we found
+  /* Helper: is this a line break? (\r\n, \r, or \n) */
+  #define IS_EOL(p) ((p) < end && (*(p) == '\n' || *(p) == '\r'))
+  /* Advance past one line break (handles \r\n, \r, \n) */
+  #define SKIP_EOL(p) do { if (*(p)=='\r') { (p)++; if ((p)<end && *(p)=='\n') (p)++; } else if (*(p)=='\n') (p)++; } while(0)
 
-  done = spot = *buffer;
-  end = spot + GetHandleSize_(buffer);
+  unsigned char *spot, *done, *end, *found;
 
-  // while there are chars left
+  done = spot = (unsigned char *)*buf;
+  end = spot + *bufSize;
+
   while (spot < end) {
-    if (*spot == '\015')
-      break; // two returns in a row are the end of the headers
+    /* blank line = end of headers */
+    if (IS_EOL(spot)) {
+      unsigned char *peek = spot;
+      SKIP_EOL(peek);
+      if (peek <= end && (peek == end || IS_EOL(peek)))
+        break; /* two consecutive line breaks */
+      /* single EOL at start of line followed by non-continuation */
+      break;
+    }
 
-    // search for the header name in the bad list
     int bad;
     bool matched = false;
     for (bad = 0; bad < badN; bad++) {
       size_t hlen = strlen(badList[bad]);
       if ((size_t)(end - spot) >= hlen &&
           g_ascii_strncasecmp((const char *)spot, badList[bad], hlen) == 0) {
-        // found it! skip the header (including continuation lines)
         found = spot;
-        while (spot < end)
-          if (*spot++ == '\015')
-            if (*spot != ' ' && *spot != '\t')
+        /* skip this header and any continuation lines */
+        while (spot < end) {
+          if (*spot == '\r' || *spot == '\n') {
+            unsigned char *after = spot;
+            SKIP_EOL(after);
+            if (after >= end || (*after != ' ' && *after != '\t')) {
+              spot = after;
               break;
-        // save weeded header if requested
+            }
+            spot = after; /* continuation line, keep going */
+          } else {
+            spot++;
+          }
+        }
         if (weeds)
           AccuAddPtr(weeds, found, spot - found);
         matched = true;
@@ -1871,20 +1989,33 @@ void WeedHeaders(UHandle buffer, long *weeded, short toWeed, AccuPtr weeds) {
     if (matched)
       continue;
 
-    // copy the current header (it's not in the bad list)
-    while (spot < end)
-      if ((*done++ = *spot++) == '\015')
-        if (*spot != ' ' && *spot != '\t')
+    /* keep this header — copy it through */
+    while (spot < end) {
+      if (*spot == '\r' || *spot == '\n') {
+        /* copy the line ending */
+        if (*spot == '\r') { *done++ = *spot++; if (spot < end && *spot == '\n') *done++ = *spot++; }
+        else *done++ = *spot++;
+        /* check for continuation */
+        if (spot >= end || (*spot != ' ' && *spot != '\t'))
           break;
+      } else {
+        *done++ = *spot++;
+      }
+    }
   }
 
-  // copy body (everything after headers)
+  /* copy everything after headers (blank line + body) */
   while (spot < end)
     *done++ = *spot++;
-  size = done - *buffer;
+
+  #undef IS_EOL
+  #undef SKIP_EOL
+
+  long newSize = done - (unsigned char *)*buf;
   if (weeded)
-    *weeded = end - done;
-  SetHandleBig_(buffer, size);
+    *weeded = (long)*bufSize - newSize;
+  *bufSize = newSize;
+  (*buf)[newSize] = '\0';
 }
 
 /************************************************************************
@@ -2588,7 +2719,7 @@ MyWindowPtr DoSalvageMessageLo(MyWindowPtr win, bool forXfer, bool forIMAP) {
       GetRString(received, RECEIVED_HEAD);
       TrimWhite((unsigned char *)received);
       oldSpot = NULL;
-      while ((spot = FindHeaderString(spot, (UPtr)received, &size, true))) {
+      while ((spot = (unsigned char *)FindHeaderString((char *)spot, received, &size, true))) {
         oldSpot = spot;
         spot += size;
         size = end - spot;
@@ -2822,7 +2953,7 @@ UHandle MessVisibleText(MessHandle messH) {
  ************************************************************************/
 MyWindowPtr ReopenMessage(MyWindowPtr win) {
   WindowPtr winWP = GetMyWindowWindowPtr(win);
-  UHandle text;
+  char *text;
   MessHandle messH = Win2MessH(win);
   OSErr err = noErr;
 
@@ -2846,16 +2977,16 @@ MyWindowPtr ReopenMessage(MyWindowPtr win) {
            || MessOptIsSet(messH, OPT_HTML)
            || MessOptIsSet(messH, OPT_FLOW) ||
            MessOptIsSet(messH, OPT_CHARSET))) {
-        err =
-            InsertRichLo(text, 0, -1, -1, true, true, TheBody, NULL, messH, 0);
-
-        if (MessOptIsSet(messH, OPT_DELSP)) /* Was logic using it? */
-          ZapHandle(text);
-      } else
-        err = PETEInsertPara(PETE, TheBody, kPETELastPara, NULL, text, NULL);
+        geditDocument *doc = geditctrl_get_document(TheBody);
+        gedit_document_insert_markup(doc, 0, text);
+      } else {
+        geditDocument *doc = geditctrl_get_document(TheBody);
+        gedit_document_insert_text(doc, 0, text);
+      }
 
       if (!err) {
         PeteSmallParas(TheBody);
+        g_free(text);
         text = NULL;
         // align headers if need be
         // if (!PrefIsSet(PREF_DONT_ALIGN_HEADERS)) AlignHeaders(messH);
@@ -2893,7 +3024,8 @@ MyWindowPtr ReopenMessage(MyWindowPtr win) {
     PeteSetURLRescan(TheBody, 0);
 
     // kill text if still here
-    ZapHandle(text);
+    g_free(text);
+    text = NULL;
 
     if (err) {
       WarnUser(DOC_DAMAGED_ERR, err);
@@ -2915,22 +3047,22 @@ MyWindowPtr ReopenMessage(MyWindowPtr win) {
 /************************************************************************
  * FindFrom - find a (nicely formatted) From address
  ************************************************************************/
-void FindFrom(UPtr who, GtkWidget *pte) {
-  UPtr found;
-  unsigned char header[32];
+void FindFrom(unsigned char *who, GtkWidget *pte) {
+  char *found;
+  char header[32];
   long len;
-  Handle text;
 
-  text = (Handle)gedit_document_get_text(geditctrl_get_document(pte));
-  len = text ? (long)strlen((char *)text) : 0;
-  GetRString(header, FROM_HEAD + HEADER_STRN);
-  if (found = FindHeaderString(*text, header, &len, false)) {
+  char *text = gedit_document_get_text(geditctrl_get_document(pte));
+  len = text ? (long)strlen(text) : 0;
+  GetRString((unsigned char *)header, FROM_HEAD + HEADER_STRN);
+  if ((found = FindHeaderString(text, header, &len, false))) {
     long copyLen = MIN(62, len);
     memcpy(who, found, copyLen);
     who[copyLen] = 0;
     BeautifyFrom(who);
   } else
     *who = 0;
+  g_free(text);
 }
 
 /************************************************************************
@@ -3007,35 +3139,66 @@ static inline TOCType * Win2TOC(void *win) { return NULL; }
 
 /************************************************************************
  * FindHeaderString - pick the given header out of a message, by name
- *  Pointer returned is to
+ *  Returns pointer to header value within text, sets *size to value length.
+ *  Handles \r\n, \r, and \n line endings (RFC 2822 + legacy formats).
+ *  Supports RFC 2822 header continuation (folded headers with leading whitespace).
  ************************************************************************/
-UPtr FindHeaderString(UPtr text, UPtr headerName, long *size, bool bodyToo) {
-  UPtr spot, end;
-  char header[MAX_HEADER];
-  short mLen = MIN(MAX_HEADER - 2, (short)strlen((const char *)headerName));
+char *FindHeaderString(char *text, char *headerName, long *size, bool bodyToo) {
+  char *end = text + *size;
+  char *lineStart = text;
+  long nameLen = strlen(headerName);
 
-  for (end = text + *size; text < end; text = spot + 1) {
-    for (spot = text; spot < end; spot++)
-      if (*spot == '\015' && (spot == end - 1 || !IsWhite(spot[1])))
-        break;
-    if (spot == text && !bodyToo)
+  /* Skip leading blank lines — mbox offsets can include trailing newlines
+   * from the previous message */
+  while (lineStart < end && (*lineStart == '\r' || *lineStart == '\n'))
+    lineStart++;
+
+  while (lineStart < end) {
+    /* Find end of this logical line (skip continuation lines with leading whitespace) */
+    char *lineEnd = lineStart;
+    for (;;) {
+      /* Find end of current physical line */
+      while (lineEnd < end && *lineEnd != '\r' && *lineEnd != '\n')
+        lineEnd++;
+      /* Skip the line ending */
+      char *nextLine = lineEnd;
+      if (nextLine < end && *nextLine == '\r') nextLine++;
+      if (nextLine < end && *nextLine == '\n') nextLine++;
+      /* Check for continuation (next line starts with whitespace) */
+      if (nextLine < end && IsWhite(*nextLine)) {
+        lineEnd = nextLine; /* include continuation in this logical line */
+        continue;
+      }
       break;
-    {
-      long hLen = MIN(mLen, end - text);
-      memcpy(header, text, hLen);
-      header[hLen] = 0;
     }
-    if (strncasecmp(header, (const char *)headerName, strlen((const char *)headerName)) == 0) {
-        text += strlen((const char *)headerName);
-      while (IsWhite(*text))
-        text++;
-      for (spot--; IsWhite(*spot); spot--)
-        ;
-      *size = MAX(0, spot - text + 1);
-      return (text);
+
+    /* Empty line = end of headers */
+    if (lineEnd == lineStart && !bodyToo)
+      break;
+
+    /* Check for header name match (case-insensitive).
+     * headerName includes the colon, e.g. "To:", "From:" */
+    if ((lineEnd - lineStart) >= nameLen &&
+        strncasecmp(lineStart, headerName, nameLen) == 0) {
+      /* Found it — extract value after "Header:" */
+      char *val = lineStart + nameLen;
+      while (val < lineEnd && IsWhite(*val))
+        val++;
+      /* Trim trailing whitespace */
+      char *valEnd = lineEnd - 1;
+      while (valEnd >= val && (IsWhite(*valEnd) || *valEnd == '\r' || *valEnd == '\n'))
+        valEnd--;
+      *size = MAX(0, valEnd - val + 1);
+      return val;
     }
+
+    /* Advance past line ending */
+    char *nextLine = lineEnd;
+    if (nextLine < end && *nextLine == '\r') nextLine++;
+    if (nextLine < end && *nextLine == '\n') nextLine++;
+    lineStart = nextLine;
   }
-  return (NULL);
+  return NULL;
 }
 /************************************************************************
  * DoReplyMessage - craft a reply to a message
@@ -4003,18 +4166,16 @@ OSErr DoReplyClosed(TOCType * tocH, short sumNum, bool all, bool self,
  ************************************************************************/
 int FindAndCopyHeader(MessHandle origMH, MessHandle newMH, char *fromHead,
                       short toHead) {
-  UPtr body;
   long size;
   int result;
-  gchar *rawText =
+  char *text =
       gedit_document_get_text(geditctrl_get_document(origMH->bodyPTE));
-  if (!rawText)
+  if (!text)
     return 0;
-  body = (UPtr)rawText;
-  size = strlen(rawText);
-  result = TextFindAndCopyHeader(body, size, newMH, fromHead, toHead, 0);
-  g_free(rawText);
-  return (result);
+  size = strlen(text);
+  result = TextFindAndCopyHeader(text, size, newMH, fromHead, toHead, 0);
+  g_free(text);
+  return result;
 }
 
 /************************************************************************
@@ -4065,11 +4226,11 @@ OSErr CopyNewsgroups(MessHandle origMH, MessHandle newMH) {
  * TextFindAndCopyHeader - pick the given header out of a text block, and
  * copy it to a composition message
  ************************************************************************/
-int TextFindAndCopyHeader(UPtr body, long size, MessHandle newMH, UPtr fromHead,
+int TextFindAndCopyHeader(char *body, long size, MessHandle newMH, char *fromHead,
                           short toHead, short label) {
   MyWindowPtr newWin = newMH->win;
-  UPtr bodyEnd = body + size;
-  UPtr spot;
+  char *bodyEnd = body + size;
+  char *spot;
   bool first = true;
   HeadSpec hs;
   long labStart;
@@ -4435,9 +4596,9 @@ void RehashLo(TOCType * tocH, short sumNum, UHandle text, bool soft) {
   long size = GetHandleSize_(text);
   uLong hash;
 
-  spot = *text;
+  spot = (unsigned char *)(*text);
   GetRString(scratch, HEADER_STRN + MSGID_HEAD);
-  if (spot = FindHeaderString(spot, scratch, &size, false))
+  if ((spot = (unsigned char *)FindHeaderString((char *)spot, (char *)scratch, &size, false)))
     hash = Hash(spot);
   else
     hash = kNeverHashed;
