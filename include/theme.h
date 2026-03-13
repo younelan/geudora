@@ -37,4 +37,11 @@ GtkWidget *theme_get_root(void);
 /* Apply current theme colors to a gEditCtrl widget */
 void theme_apply_to_editor(GtkWidget *editor_ctrl);
 
+/* Create a themed GtkHeaderBar and set it as the window's titlebar.
+ * Returns the headerbar widget (e.g. to add buttons to it). */
+GtkWidget *theme_setup_headerbar(GtkWidget *window, const char *title);
+
+/* Update the headerbar title (also sets gtk_window_set_title for accessibility) */
+void theme_update_headerbar_title(GtkWidget *window, const char *title);
+
 #endif /* GEUDORA_THEME_H */

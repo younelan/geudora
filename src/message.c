@@ -629,7 +629,7 @@ MyWindowPtr OpenMessage(TOCType * tocH, short sumNum, GtkWidget *winWP,
     if (!title[0])
       g_strlcpy(title, "Message", sizeof(title));
 
-    gtk_window_set_title(GTK_WINDOW(winWP), title);
+    theme_setup_headerbar(winWP, title);
     win->menu = MessMenu;
     win->gonnaShow = MessGonnaShow;
     win->position_new = (int (*)(bool, struct MyWindow *))MessagePosition;

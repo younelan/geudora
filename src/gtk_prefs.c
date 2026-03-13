@@ -613,6 +613,22 @@ void prefs_set_bool(const char *group, const char *key, gboolean value)
     g_key_file_set_boolean(prefs_state.keyfile, group, key, value);
 }
 
+/* Flush in-memory preferences to disk */
+void prefs_flush(void)
+{
+    if (!prefs_state.keyfile || !prefs_state.config_file) return;
+    GError *error = NULL;
+    gsize length;
+    gchar *data = g_key_file_to_data(prefs_state.keyfile, &length, &error);
+    if (!data) {
+        if (error) g_error_free(error);
+        return;
+    }
+    g_file_set_contents(prefs_state.config_file, data, length, &error);
+    if (error) g_error_free(error);
+    g_free(data);
+}
+
 /* Cleanup preferences system */
 void prefs_cleanup(void)
 {

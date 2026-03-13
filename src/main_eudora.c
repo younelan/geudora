@@ -609,7 +609,7 @@ static void on_message_activated(GtkColumnView *col_view, guint position,
 
   GtkWidget *win = gtk_window_new();
   gchar *title = g_strdup_printf("%s — %s", sum->from, sum->subj);
-  gtk_window_set_title(GTK_WINDOW(win), title);
+  theme_setup_headerbar(win, title);
   g_free(title);
   gtk_window_set_default_size(GTK_WINDOW(win), 700, 550);
 
@@ -2340,8 +2340,8 @@ static void activate(GtkApplication *app, gpointer user_data) {
   (void)user_data;
 
   app_state.window = gtk_application_window_new(app);
-  gtk_window_set_title(GTK_WINDOW(app_state.window), "gEudora - Email Client");
   gtk_window_set_default_size(GTK_WINDOW(app_state.window), 1200, 800);
+  theme_setup_headerbar(app_state.window, "gEudora");
 
   /* Initialize icon system */
   init_icon_system("./resources");

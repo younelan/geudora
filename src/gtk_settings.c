@@ -7,6 +7,7 @@
 #include "gtk_prefs.h"
 #include "settings_pages.h"
 #include "settings_common.h"
+#include "theme.h"
 #include <stdlib.h>
 #include <string.h>
 
@@ -344,7 +345,7 @@ SettingsDialog* create_settings_dialog(GtkWindow *parent, AppSettings *settings)
     dialog->settings = settings ? g_memdup2(settings, sizeof(AppSettings)) : g_new0(AppSettings, 1);
 
     dialog->dialog = gtk_window_new();
-    gtk_window_set_title(GTK_WINDOW(dialog->dialog), "gEudora Settings");
+    theme_setup_headerbar(dialog->dialog, "gEudora Settings");
     gtk_window_set_modal(GTK_WINDOW(dialog->dialog), TRUE);
     gtk_window_set_transient_for(GTK_WINDOW(dialog->dialog), parent);
     gtk_window_set_default_size(GTK_WINDOW(dialog->dialog), 780, 600);

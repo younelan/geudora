@@ -636,7 +636,7 @@ static void on_comp_save_clicked(GtkButton *btn, gpointer ud) {
       const char *title = gtk_window_get_title(GTK_WINDOW(win->window));
       if (title && !g_str_has_suffix(title, " [Saved]")) {
         char *newTitle = g_strdup_printf("%s [Saved]", title);
-        gtk_window_set_title(GTK_WINDOW(win->window), newTitle);
+        theme_update_headerbar_title(win->window, newTitle);
         g_free(newTitle);
       }
     }
@@ -1266,7 +1266,7 @@ MyWindowPtr OpenComp(TOCType * tocH, int sumNum, GtkWidget *winWP,
   if (IsColorWin(winWP))
     win->label = GetSumColor(messH->tocH, messH->sumNum);
 
-  gtk_window_set_title(GTK_WINDOW(winWP), title);
+  theme_setup_headerbar(winWP, title);
   gtk_window_set_default_size(GTK_WINDOW(winWP), 640, 520);
   AttachSelect(messH);
 

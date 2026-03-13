@@ -63,6 +63,9 @@ void prefs_set_int(const char *group, const char *key, gint value);
 /* Set boolean preference */
 void prefs_set_bool(const char *group, const char *key, gboolean value);
 
+/* Flush in-memory preferences to disk (INI file) */
+void prefs_flush(void);
+
 /* Cleanup preferences system */
 void prefs_cleanup(void);
 

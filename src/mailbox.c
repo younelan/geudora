@@ -813,7 +813,7 @@ void InitMailboxWin(MyWindowPtr win, TOCType * toc, bool showIt) {
   /* Set window title from mailbox name */
   const char *title = toc->mailbox.spec.name;
   if (title && *title)
-    gtk_window_set_title(GTK_WINDOW(winWP), title);
+    theme_setup_headerbar(winWP, title);
 
   /* Build the mailbox window content:
      ┌────────────────────────────┐

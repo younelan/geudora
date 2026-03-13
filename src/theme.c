@@ -764,8 +764,9 @@ void theme_apply(GeudoraTheme theme) {
   gtk_css_provider_load_from_string(theme_provider, css);
   g_free(css);
 
-  /* Persist to prefs */
+  /* Persist to prefs and flush to disk */
   prefs_set_int(PREFS_GROUP_THEME, PREFS_KEY_THEME, (int)theme);
+  prefs_flush();
 
   /* Set GTK dark preference for Dark/Nord/Monokai */
   GtkSettings *settings = gtk_settings_get_default();
@@ -808,4 +809,32 @@ void theme_apply_to_editor(GtkWidget *editor_ctrl) {
   caret = text; /* caret same as text color */
   if (!parse_color(p->accent, &sel_bg)) sel_bg = (GdkRGBA){0.3, 0.4, 0.6, 1};
   geditctrl_set_theme_colors(editor_ctrl, &bg, &text, &caret, &sel_bg);
+}
+
+GtkWidget *theme_setup_headerbar(GtkWidget *window, const char *title) {
+  GtkWidget *hb = gtk_header_bar_new();
+  if (title) {
+    GtkWidget *label = gtk_label_new(title);
+    gtk_widget_add_css_class(label, "title");
+    PangoAttrList *attrs = pango_attr_list_new();
+    pango_attr_list_insert(attrs, pango_attr_weight_new(PANGO_WEIGHT_BOLD));
+    gtk_label_set_attributes(GTK_LABEL(label), attrs);
+    pango_attr_list_unref(attrs);
+    gtk_header_bar_set_title_widget(GTK_HEADER_BAR(hb), label);
+  }
+  gtk_window_set_titlebar(GTK_WINDOW(window), hb);
+  return hb;
+}
+
+void theme_update_headerbar_title(GtkWidget *window, const char *title) {
+  if (!window || !GTK_IS_WINDOW(window)) return;
+  GtkWidget *hb = gtk_window_get_titlebar(GTK_WINDOW(window));
+  if (!hb || !GTK_IS_HEADER_BAR(hb)) {
+    gtk_window_set_title(GTK_WINDOW(window), title);
+    return;
+  }
+  GtkWidget *tw = gtk_header_bar_get_title_widget(GTK_HEADER_BAR(hb));
+  if (tw && GTK_IS_LABEL(tw))
+    gtk_label_set_text(GTK_LABEL(tw), title);
+  gtk_window_set_title(GTK_WINDOW(window), title);
 }
