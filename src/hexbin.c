@@ -26,6 +26,7 @@ DAMAGE. */
 #include "progress.h"
 #include "mailbox.h"
 #include "imapmailboxes.h"
+#include "threading.h"
 
 #define FILE_NUM 17
 /* Copyright (c) 1990-1992 by the University of Illinois Board of Trustees */
@@ -34,8 +35,6 @@ DAMAGE. */
  * much of this code is patterned after xbin by Dave Johnson, Brown University
  * Some is lifted straight from xbin.  Our thanks to Dave & Brown.
  ************************************************************************/
-
-/* #pragma segment HexBin - Mac-specific pragma removed */
 
 /* Portable definitions */
 #define smSystemScript 0  // Mac Script Manager constant - use 0 for default/Roman script
@@ -173,7 +172,6 @@ Byte HexBinTable[256] = {
 				FAIL, FAIL, FAIL, FAIL, FAIL, FAIL, FAIL, FAIL,
 };
 	
-/* #pragma segment POP - Mac-specific pragma removed */
 
 
 /************************************************************************
@@ -254,10 +252,10 @@ void EndHexBin(void)
 {
 	if (HBG)
 	{
-		if (Spec.vRefNum && !CommandPeriod) {WarnUser(BINHEX_SHORT,0);BadBinHex=True;}
+		if (Spec.path[0] && !CommandPeriod) {WarnUser(BINHEX_SHORT,0);BadBinHex=True;}
 		AbortHexBin(False);
 		ZapHandle(HBG);
-		HBG = nil;
+		HBG = NULL;
 	}
 	return;
 }
@@ -278,8 +276,6 @@ void BeginHexBin(HeaderDHandle hdh)
 		Hdh = hdh;
 	}
 }
-/* #pragma segment HexBin - Mac-specific pragma removed */
-
 /************************************************************************
  * HexBinInputChar - read a char from the binhex data, decode it, and
  * let HexBinDataChar do (most of) the rest.
@@ -536,13 +532,13 @@ void AbortHexBin(bool error)
 {
 	if (Buffer) {ZapHandle(Buffer); Buffer=0;}
 	if (RefN) {MyFSClose(RefN); RefN=0;}
-	if (Spec.vRefNum)
+	if (Spec.path[0])
 	{
 		LDRef(HBG);
 		FSpDelete(&Spec);
 		ASSERT(0);
 		UL(HBG);
-		Spec.vRefNum = 0;
+		Spec.path[0] = '\0';
 	}
 	State = HexDone;
 	BadBinHex = BadBinHex || error;
@@ -564,7 +560,7 @@ void OpenDataFork(void)
 	if (err)
 	{
 		FileSystemError(BINHEX_CREATE,Name,err);
-		Spec.vRefNum = 0;
+		Spec.path[0] = '\0';
 		AbortHexBin(True);
 	}
 	else if ((err=FSpGetFInfo(&Spec,&info)))
@@ -575,7 +571,7 @@ void OpenDataFork(void)
 	else
 	{
 		info.fdFlags = Flags;
-		SafeInfo(&info,nil);
+		SafeInfo(&info,NULL);
 		if ((err=FSpSetFInfo(&Spec,&info)))
 		{
 			FileSystemError(BINHEX_OPEN,Name,err);
@@ -605,7 +601,7 @@ void SafeInfo(FInfo *info, FXInfo *fxInfo)
 		info->fdFlags &= ~fOnDesk;
 		info->fdFlags &= ~fInvisible;
 		info->fdFlags &= ~fInited;
-		if (TypeIsOnListWhereAndIndex(info->fdType,(short)EXECUTABLE_TYPE_LIST,nil,&index))
+		if (TypeIsOnListWhereAndIndex(info->fdType,(short)EXECUTABLE_TYPE_LIST,NULL,&index))
 		{
 			info->fdType = index ? (kFakeAppType&0xffffff00)|('0'+index) : kFakeAppType;
 			info->fdCreator = CREATOR;
@@ -676,7 +672,7 @@ int ForkRoll(void)
 		FSSpec spec = Spec;
 		GotOne = True;
 		PCopy((unsigned char *)fileName,(unsigned char *)Name);
-		if ((err=RecordAttachment(spec.path,HBG ? (*HBG)->hdh : nil)))
+		if ((err=RecordAttachment(spec.path,HBG ? (*HBG)->hdh : NULL)))
 		{
 			AbortHexBin(True);
 			return(HexDone);
@@ -685,7 +681,7 @@ int ForkRoll(void)
 		// Make sure to copy the new spec back
 		Spec = spec;
 		ZapHandle(Buffer);
-		Spec.vRefNum = 0;
+		Spec.path[0] = '\0';
 		return(Excess);
 	}
 }
@@ -732,10 +728,10 @@ bool AutoWantTheFileLo(FSSpecPtr specPtr,bool ohYesYouDo,bool relatedPart, bool 
 		GetIMAPAttachFolder(&attFSpec);
 	else {
 		GetCurrentAttFolderSpec(&attFSpec);
-		if ( attFSpec.vRefNum == 0 || attFSpec.parID == 0 )
+		if (!attFSpec.path[0])
 			CurrentAttFolderSpec = attFSpec = AttFolderSpec;
 	}
-	ASSERT ( attFSpec.vRefNum != 0 && attFSpec.parID != 0 );
+	ASSERT(attFSpec.path[0]);
 
 	/*
 	 * Darn AppleLink and NULL in filenames
@@ -746,8 +742,7 @@ bool AutoWantTheFileLo(FSSpecPtr specPtr,bool ohYesYouDo,bool relatedPart, bool 
 	 * make sure we don't overwrite anything.
 	 * add a number to the end of the file until we don't find the filename
 	 */
-	specPtr->vRefNum = attFSpec.vRefNum;
-	specPtr->parID = attFSpec.parID;
+	g_strlcpy(specPtr->path, attFSpec.path, sizeof(specPtr->path));
 	
 	if (UniqueSpec(specPtr,31)) return(False);
 	
@@ -794,7 +789,7 @@ void ResetHexBin(void)
 	OSpot = 0;
 	BSpot = 0;
 	RefN = 0;
-	Spec.vRefNum = 0;
+	Spec.path[0] = '\0';
 	*Name = 0;
 	Crc = 0;
 	LastData = 0;

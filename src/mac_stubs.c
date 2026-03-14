@@ -5,14 +5,12 @@
 #include "schizo.h"
 #include "gtk_prefs.h"
 
-long ActiveTicks = 0;
+/* ActiveTicks — defined in globals.c */
 int AddInlineSig(void* messH) {
   return 0;
 }
 /* AddSpecToList — real implementation elsewhere */
-int AddTLMIME(void* emsMIME, short what, unsigned char *name, unsigned char *value) {
-  return 0;
-}
+/* AddTLMIME — real implementation in trans.c */
 void AddXfUndo(void* tocH, void* trashTOC, int unused) {
 }
 void AdjustSpecialMenuItem() {}
@@ -20,7 +18,7 @@ short AliasRefCount = 0;
 struct AliasDStruct **Aliases = NULL;
 long AnyTOCDirty = 0;
 void AppendMenu() {}
-FSSpec AttFolderSpec = {0};
+/* AttFolderSpec — defined in globals.c */
 /* AttIsSelected — real implementation elsewhere */
 /* AttLine2Spec — real implementation elsewhere */
 /* AttachOptNumber — macro in compact.h */
@@ -32,9 +30,7 @@ void AuditPersDelete(uint32_t persId) {
 }
 void AuditPersRename(uint32_t oldId, uint32_t newHash) {
 }
-bool AutoCheckOK() {
-  return false;
-}
+/* AutoCheckOK — real implementation in address.c */
 /* BeenThereDoneThat — real implementation elsewhere */
 void BeginPGP(void* pgpc) {
 }
@@ -55,7 +51,7 @@ void CacheRecentNickname(unsigned char *name) {
 }
 void Cell1Rect() {}
 /* CheckAddNotifyControls — real implementation elsewhere */
-bool CheckNow = false; /* global variable, not a function */
+/* CheckNow — defined in globals.c */
 Byte CheckOnIdle = 0;     /* global variable, not a function */
 /* CheckThreadError — real implementation elsewhere */
 /* CheckThreadRunning — real implementation elsewhere */
@@ -94,62 +90,28 @@ void ConvertExcerpt() {}
 bool ConvertPGP(short refN, void* buf, long *size, void* lineType, long estSize, void* pgpc) {
   return false;
 }
-Byte CrLf[3] = {0};
-void CurTrans() {}
+/* CrLf — defined in globals.c */
+/* CurTrans — real implementation via thread-local in threading.h */
 void CurrentAttFolderSpec() {}
 void CyclePendulum() {
 }
 void DarkenColor() {}
 void DefPosition() {}
-void DisposeTLMIME(void* emsMIME) {
-}
+/* DisposeTLMIME — real implementation in trans.c */
 /* DoComposeNew — ported to comp.c */
-bool DontTranslate = false; /* global variable, not a function */
+/* DontTranslate — defined in globals.c */
 void DotToNum() {}
 void DragIsInteresting() {}
 void DrawString() {}
 void DrawThemeListBoxFrame() {}
-void* ESSLSetupVector(void* theTrans) {
-  return NULL;
-}
-void* ESSLStartSSL(void* stream) {
-  return NULL;
-}
-int ETLBuildAddrList(void **textIn, void **moreHeaders, void* hdh, void* addrList, short context) {
-  return 0;
-}
-int ETLCanTranslate(void* translators, short context, void* emsMIME, void* errorStr, long *errCode, void* addrList, void* hdh) {
-  return 0;
-}
-int ETLCountTranslatorsLo(short context, void* forMode) {
-  return 0;
-}
-void ETLDisposeAddrList(void* addrList) {
-}
-int ETLGetPluginFolderSpec(void* spec, short nameId) {
-  return 0;
-}
-long ETLID(void* tl, short index) {
-  return 0;
-}
-int ETLInterpretFile(short context, void* source, short resultRefN, void* resultAcc, void* addrList, bool *dontSave) {
-  return 0;
-}
-int ETLListAllTranslatorsLo(void* translators, short context, void* forMode) {
-  return 0;
-}
-int ETLMarkJunk(void* thePlugin, void* transInfo, void* junkInfo, void* message, void* junkScore, void* status) {
-  return 0;
-}
-int ETLScoreJunk(void* thePlugin, void* transInfo, void* junkInfo, void* message, void* junkScore, void* status) {
-  return 0;
-}
+/* ESSLSetupVector and ESSLStartSSL now in ssl.c */
+/* ETL functions — all in trans.c */
 void EndMovableModal() {}
 void EraseRect() {}
 /* ExportHTMLSum — real implementation elsewhere */
 /* EzOpenFind — real implementation elsewhere */
 /* FAflk* functions implemented in filtwin.c */
-short FakeTabs = 0;
+/* FakeTabs — defined in globals.c */
 /* Fcc — real implementation elsewhere */
 void FigureZoom() {}
 /* FilterFlaggedMessages — real implementation elsewhere */
@@ -166,9 +128,7 @@ short FindFolder(short vRef, uint32_t type, bool create, int *foundVRef, long *f
 }
 /* FindListView — real implementation elsewhere */
 /* FindTOCSpot — real implementation in buildtoc.c */
-int FlattenTLMIME(void* emsMIME, void* flat) {
-  return 0;
-}
+/* FlattenTLMIME — real implementation in trans.c */
 /* ForceSend — now in globals.c */
 void FrameRect() {}
 /* Fwd — real implementation elsewhere */
@@ -178,9 +138,7 @@ void* GetAMessage(void* tocH, short sumNum, void *u1, void *u2, bool b1) {
 short GetControlValue(void* cntl) {
   return 0;
 }
-void* GetCurrentPayMode() {
-  return NULL;
-}
+/* GetCurrentPayMode — in trans.c */
 void GetDIText() {}
 void GetDItemState() {}
 void GetDialogWindow() {}
@@ -205,14 +163,12 @@ void GetPrefString() {}
 int GetRHeaderAnywhere(void* messH, short header, char **text) {
   return 0;
 }
-void GetRealname() {}
+/* GetRealname — real implementation in address.c */
 void GetResInfo(void **res, short *id, unsigned int *type, unsigned char *name) {
 }
 void GetResName() {}
 void *GetResource(uint32_t type, short id) { return NULL; }
-void* GetReturnAddr(void* addr, bool wantDefault) {
-  return NULL;
-}
+/* GetReturnAddr — real implementation in address.c */
 OSErr GetSMTPInfo(unsigned char *host) {
   if (!host) return -1;
   gchar *server = prefs_get_string(PREFS_GROUP_SENDING_MAIL, "smtp_server", "");
@@ -226,9 +182,7 @@ OSErr GetSMTPInfo(unsigned char *host) {
 short GetSumColor(TOCType *tocH, short sumNum) {
   return 0;
 }
-void* GetTrashTOC() {
-  return NULL;
-}
+/* GetTrashTOC — real implementation in address.c */
 void GetUUPCMail() {}
 void GetWindowPort() {}
 /* GetWindowPrivateData — real inline in legacy_shim.h */
@@ -237,7 +191,7 @@ bool GrowZoning = false;
 void HRename() {}
 void HTMLPostamble() {}
 void HTMLPreamble() {}
-void *HTMLSignature = NULL; /* void ** Handle */
+/* HTMLSignature — defined in globals.c */
 int HandleHeadGetIdText(char *textIn, short id, char **text) {
   return 0;
 }
@@ -268,14 +222,12 @@ void IsAdInPlaylist() {}
 bool IsAllLWSPMess(void* messH) {
   return false;
 }
-void IsFCCAddr() {}
+/* IsFCCAddr — real implementation in address.c */
 bool IsIMAPMessageProcessed(void* tocH, short sumNum) {
   return false;
 }
-bool IsMe(char *address) {
-  return false;
-}
-void IsNewsgroupAddr() {}
+/* IsMe — real implementation in address.c */
+/* IsNewsgroupAddr — real implementation in address.c */
 void IsQueuedState() {}
 /* IsWindowVisible — real inline in mailbox.h */
 void LVActivate() {}
@@ -291,11 +243,11 @@ void LVMaxSize() {}
 void LVNewWithDetails() {}
 void LVSelectAll() {}
 void LVSize() {}
-uint32_t LastCheckTime = 0;
+/* LastCheckTime — defined in globals.c */
 long LastContigSpace = 0;
 long LastTotalSpace = 0;
 void LeftRimWidth() {}
-short LogRefN = 0; /* global variable, not a function */
+/* LogRefN — defined in globals.c */
 long LogTicks = 0;
 bool LooseTrans = false;
 void MBTickle() {}
@@ -304,7 +256,7 @@ EventRecord MainEvent = {0};
 short MatchAlias(FSSpecPtr spec, long flags, ...) {
   return 0;
 }
-bool MemCanFail = false; /* global variable, not a function */
+/* MemCanFail — defined in globals.c */
 long MemLastFailed = 0;
 int Menu2Label(short menu) {
   return 0;
@@ -347,24 +299,22 @@ int MyFSpDirCreate(void* spec, void* scriptTag, long *createdDirID) {
   return 0;
 }
 void MyGetWTitle() {}
-void MyHostname() {}
+unsigned char MyHostname[128] = {0};
 void MyNMRec() {}
 /* MySelectWindow - real impl in floatingwin.c */
 void MySetThemeWindowBackground() {}
 void MyWinHasSelection() {}
 /* MyWindowDidResize - real impl in mywindow.c */
-short NeedToFilterIMAP = 0; /* global variable, not a function */
-short NeedToFilterIn = 0; /* global variable, not a function */
-void NeedToFilterOut() {}
-void NeedToNotify() {}
+short NeedToFilterIMAP = 0;
+/* NeedToFilterIn — defined in globals.c */
+/* NeedToFilterOut — defined in globals.c */
+/* NeedToNotify — defined in globals.c */
 bool NewError = false; /* global variable, not a function */
 void NewHandleClear() {}
 void NewIconButton() {}
-void NewLine() {}
+/* NewLine is now a proper C string global defined in globals.c */
 /* NewPrior — real implementation elsewhere */
-int NewTLMIME(void* emsMIME) {
-  return 0;
-}
+/* NewTLMIME — real implementation in trans.c */
 void NicknameWatcherFocusChange(void* pte) {
 }
 void NoAdsRec() {}
@@ -372,14 +322,14 @@ void NoDominant() {}
 void NoSLGet1IndResource() {}
 void NoSLGet1Resource() {}
 void NoSLGetMHandle() {}
-bool NoSaves = false; /* global variable, not a function */
+/* NoSaves — defined in globals.c */
 void NukeXfUndo() {
 }
 void OFwd() {}
-void OTTCPTrans() {}
+/* OTTCPTrans is now a proper TransVector defined in tcp.c */
 void OffsetWindow() {}
 void OnBatteriesX() {}
-bool OpenAddrErrs = false; /* global variable, not a function */
+/* OpenAddrErrs — defined in globals.c */
 void OpenOtherURLPtr() {}
 void P1() {}
 void P2() {}
@@ -412,9 +362,7 @@ void* ReReadPGPClearText(void* stream, short refN, void* buf, long bSize, void* 
   return NULL;
 }
 /* ReadSum — real implementation in buildtoc.c */
-int RecordTLID(void* spec, void* id) {
-  return 0;
-}
+/* RecordTLID — in trans.c */
 /* RelLine2Spec — real implementation elsewhere */
 void* RemSpoolFolder(long uidHash) {
   return NULL;
@@ -460,7 +408,9 @@ void SetSumColor(TOCType *tocH, short sumNum, short color) {
 void SetSumFlag(void* tocH, short sumNum, long flag) {
 }
 void SetThemeBackground() {}
-void SettingsRefN() {}
+/* SettingsRefN — fallback global for files that don't include threading.h.
+   In threaded code it's a macro: CurThreadGlobals->tSettingsRefN */
+short SettingsRefN;
 void ShowBoxSizes(void* win) {
 }
 /* ShowMessageSeparator — real implementation elsewhere */
@@ -471,7 +421,7 @@ bool SigStyled = false; /* global variable, not a function */
 int SigValidate(short sigId) {
   return 0;
 }
-void Slash() {}
+/* Slash — defined as unsigned char Slash[3] in globals.c */
 void SortedDescending() {}
 void StartMovableModal() {}
 
@@ -479,7 +429,7 @@ void* gIMAPConnectionPool = NULL;
 int gMaxBoxLevels = 0;
 bool gNeedRemind = false;
 void* gRegFiles = NULL;
-bool gTaskProgressInitied = false;
+/* gTaskProgressInitied — defined in globals.c */
 int nagState = 0;
 int g16bitSubMenuIDs = 0;
 /* gActiveConnections — real implementation elsewhere */
@@ -512,20 +462,20 @@ bool UserHasValidPaidModeRegcode(void) { return false; }
 bool WNE(int e, void* m, int t) { return false; }
 void* Win2TOC(void* w) { return NULL; }
 void WrapWrong(void) {}
-void YesStr(void) {}
+/* YesStr — defined in globals.c */
 /* eSignature — now in globals.c */
 int flavorTypeText = 0;
 
 
 /* CurPers is a macro in threading.h = CurThreadGlobals->tCurPers */
-short InBG = 0;
-bool StartingUp(void) { return false; }
-int SuckAddresses(void ***addr, void **text, bool b1, bool b2, bool b3, void *p) { return 0; }
+/* InBG — defined in globals.c */
+/* StartingUp — defined as bool in globals.c */
+/* SuckAddresses — real implementation in address.c */
 void SuckHeaderText(void) {}
-int SuckPtrAddresses(void ***addr, void *text, long size, bool b1, bool b2, bool b3, void *p) { return 0; }
+/* SuckPtrAddresses — real implementation in address.c */
 bool SumFlagIsSet(void* tocH, short sumNum, long flag) { return false; }
 bool TOCIsDirty(void) { return false; }
-void TaskDontAutoClose(void) {}
+/* TaskDontAutoClose — defined in globals.c */
 
 
 bool ExpandAliasesLow(void **h1, void *h2, int i, bool b1, void *p1, int i2) { return true; }
@@ -544,10 +494,7 @@ void RefreshSigButton(void *win) {}
 void RemoveInlineSig(void *messH) {}
 void EnableTxtFmtBarIfOK(void *win) {}
 
-/* Translator/plugin system — needs real port eventually */
-long ETLIconToID(void *tl, short context, short index) { return 0; }
-void AddTranslatorsFromPtr(void *messH, unsigned char *text, long len) {}
-void WriteTranslators(void *messH) {}
+/* Translator/plugin system — all in trans.c */
 
 /* Content analysis (moodwatch) — not needed in GTK port */
 bool AnalWarning(void *messH) { return false; }
@@ -606,11 +553,7 @@ int GetPartsFolder(void *spec) {
   return 0;
 }
 
-/* Return address — needs real port from prefs */
-unsigned char *GetReturnAddrC(unsigned char *addr) {
-  if (addr) addr[0] = 0;
-  return addr;
-}
+/* GetReturnAddrC — real implementation in address.c */
 
 /* FSSpec folder check — real GLib implementation */
 bool FSpIsItAFolder(void *spec) {

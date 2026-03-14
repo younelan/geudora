@@ -19,6 +19,7 @@ DAMAGE. */
 #ifndef GLOBALS_H
 #define GLOBALS_H
 
+#include <stdatomic.h>
 #include <stdbool.h>
 #include <stdint.h>
 #include "mailbox.h"
@@ -318,8 +319,8 @@ extern short NeedToNotify;
 extern short NeedToFilterIMAP;
 extern bool NoXfer;
 extern bool SendImmediately;
-extern bool CheckThreadRunning;
-extern bool SendThreadRunning;
+extern atomic_bool CheckThreadRunning;
+extern atomic_bool SendThreadRunning;
 extern threadDataHandle gThreadData;
 extern short IMAPCheckThreadRunning;
 extern short gNewMessages;

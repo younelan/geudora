@@ -67,7 +67,7 @@ char *NewMessageId(char *id);
 long BodyOffset(char *text);
 
 /* Address and identity functions - ported to standard C strings */
-bool IsMe(char *address);
+bool IsMe(unsigned char *address);
 int WriteTranslators(short refN, void *translators);
 int AddTranslatorsFromPtr(MessHandle messH, char *text, long len);
 

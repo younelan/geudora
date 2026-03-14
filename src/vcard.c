@@ -638,20 +638,19 @@ static OSErr VCardAccuAddURL (AccuPtr a, Handle notes, short propertyLocation, s
 static OSErr VCardAccuAddOtherEmail (AccuPtr a, Handle notes)
 
 {
-	BinAddrHandle addresses;
+	char **addresses = NULL;
 	Str255				scratch;
 	Handle				value;
-	Ptr						addrPtr;
 	OSErr					theError;
 
 	theError = noErr;
 	if (value = GetTaggedFieldValueInNotes (notes, GetRString (scratch, ABReservedTagsStrn + abTagOtherEmail))) {
 		if (!SuckAddresses (&addresses, value, false, true, false, nil)) {
 			// Create an 'EMAIL' line for each address we suck from the other email field
-			for (addrPtr = LDRef (addresses); !theError && *addrPtr; addrPtr += *addrPtr + 2)
-				theError = VCardAccuAddAVPairStr (a, vcEmail, addrPtr);
+			for (int i = 0; !theError && addresses[i]; i++)
+				theError = VCardAccuAddAVPairStr (a, vcEmail, (Ptr)addresses[i]);
 		}
-		ZapHandle (addresses);
+		g_strfreev (addresses); addresses = NULL;
 		ZapHandle (value);
 	}
 	return (theError);
@@ -1918,7 +1917,7 @@ static short FindXDashString (XDashStringHandle xdash, PStr keyword)
 				found = true;
 			else {
 				++index;
-				spot += (*spot + 2);
+				spot += strlen((char *)spot) + 1;
 			}
 		}
 		UL (xdash);

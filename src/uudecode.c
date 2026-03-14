@@ -17,6 +17,9 @@ NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE OF THIS SOFTWARE, EVE
 DAMAGE. */
 
 #include "uudecode.h"
+#include "threading.h"
+#include <sys/stat.h>
+#include <sys/time.h>
 #define FILE_NUM 46
 /* Copyright (c) 1990-1992 by the University of Illinois Board of Trustees */
 /* Major modifications Copyright (c)1991-1992, Apple Computer Inc. */
@@ -26,8 +29,6 @@ DAMAGE. */
  * Major modifications (c)1991-1992, Apple Computer Inc.
  * released to public domain.
  ************************************************************************/
-
-#pragma segment Abomination
 
 #define SINGLE_MAGIC 0x00051600
 #define DOUBLE_MAGIC 0x00051607
@@ -41,15 +42,15 @@ DAMAGE. */
 
 typedef struct
 {
-	uLong type;
-	uLong offset;
-	uLong length;
+	unsigned long type;
+	unsigned long offset;
+	unsigned long length;
 } Map, *MapPtr;
 
 typedef struct
 {
-	uLong magic;
-	uLong version;
+	unsigned long magic;
+	unsigned long version;
 	char homefs[16];
 	uShort mapCount;
 	Map maps[9];
@@ -82,7 +83,7 @@ struct UUGlobals_
 	bool isText;	/* is this text data? */
 	bool wasCR;	/* was the last char a CR? */
 	bool hasDates;
-	uLong dates[4];
+	unsigned long dates[4];
 	HeaderDHandle hdh;
 };
 
@@ -141,13 +142,12 @@ bool JustDataWanna(MIMEMapPtr hintMM);
 short SaveJustData(UPtr encoded,long size);
 PStr GetLongName(PStr longName,FSSpecPtr spec);
 
-#pragma segment POP
 /************************************************************************
  * ConvertUUSingle - the UUencoded AppleSingle converter
  ************************************************************************/
 bool ConvertUUSingle(short refN,UPtr buf,long *size,POPLineType lineType,long estSize,MIMEMapPtr hintMM,HeaderDHandle hdh)
 {
-#pragma unused(estSize)
+(void)estSize;
 	long offset;
 	
 	if (!UUG)
@@ -241,12 +241,12 @@ bool ConvertSingle(short refN,UPtr buf,long size)
 	/*
 	 * if we're not decoding anymore, kill the globals
 	 */
-	if (State==AbDone) SaveAbomination(nil,0);
+	if (State==AbDone) SaveAbomination(NULL,0);
 	
 	/*
 	 * We're uudecoding unless we're not
 	 */
-	return(UUG!=nil);
+	return(UUG!=NULL);
 }
 
 /************************************************************************
@@ -285,9 +285,9 @@ bool IsAbLine(UPtr text, long size, HeaderDHandle hdh)
 
 bool BeginAbomination( PStr name, HeaderDHandle hdh)
 {
-	if (UUG==nil)
+	if (UUG==NULL)
 	{
-		if ((UUG=NewZH(UUGlobals))==nil) return( false );
+		if ((UUG=NewZH(UUGlobals))==NULL) return( false );
 		ClearAbomination();
 		Hdh = hdh;
 		// watch out for long filenames here!
@@ -313,9 +313,9 @@ short SaveAbomination(UPtr text, long size)
 				if (State!=AbDone && State!=AbExcess) BadBinHex = True;
 			}
 			if (AbClose()) BadBinHex = True;
-			if (Spec.vRefNum && CommandPeriod)
+			if (Spec.path[0] && CommandPeriod)
 				{FSpDelete(&LDRef(UUG)->spec);ASSERT(0);}
-			else if (Spec.vRefNum && HasDates)
+			else if (Spec.path[0] && HasDates)
 				AbSetDates();
 			if (Buffer) ZapHandle(Buffer);
 			ZapHandle(UUG);
@@ -344,7 +344,6 @@ short ClearAbomination(void)
 	return(AbDone);
 }
 
-#pragma segment Abomination
 #define UU(c) (((c)-' ')&077)
 /************************************************************************
  * UULine - handle a line of uuencoded stuff
@@ -468,7 +467,7 @@ bool JustDataWanna(MIMEMapPtr hintMM)
 			FSpGetFInfo(&spec,&info);
 			info.fdType = mm.type;
 			info.fdCreator = mm.creator;
-			SafeInfo(&info,nil);
+			SafeInfo(&info,NULL);
 			FSpSetFInfo(&spec,&info);
 			err = 0;
 		}
@@ -509,7 +508,7 @@ short SaveJustData(UPtr encoded,long size)
 		if (BSpot + binSize > BSize) err = AbWriteBuffer();
 		if (!err)
 		{
-			BMD(decoded,*Buffer+BSpot,binSize);
+			memmove(*Buffer+BSpot,decoded,binSize);
 			BSpot += binSize;
 		}
 	}
@@ -782,7 +781,7 @@ bool AbNameStuff(uShort byte)
 					if (!err && *Name>27)
 					{
 						PSCopy(name,Name);	// copy to temp var to avoid memory movement...
-						MakeUniqueLongFileName(spec.vRefNum,spec.parID,name,kTextEncodingUnknown,sizeof(name)-1);
+						/* MakeUniqueLongFileName removed — no-op on POSIX */
 						err = FSpSetLongName(&spec,kTextEncodingUnknown,name,&spec);
 						PSCopy(Name,name);  // and copy back...
 					}
@@ -818,7 +817,7 @@ bool AbNameStuff(uShort byte)
 			// the name differs from temp name
 			// We're just going to use the long filename routine here,
 			// since it will also work for short filenames
-			MakeUniqueLongFileName(spec.vRefNum,spec.parID,name,kTextEncodingUnknown,sizeof(name)-1);
+			/* MakeUniqueLongFileName removed — no-op on POSIX */
 			err = FSpSetLongName(&spec,kTextEncodingUnknown,name,&spec);
 			if (!err) 
 			{
@@ -909,17 +908,24 @@ bool AbSaveFDates(uShort byte)
 OSErr AbSetDates(void)
 {
 	FSSpec spec = Spec;
-	CInfoPBRec hfi;
+	struct stat st;
 	OSErr err = noErr;
-	uLong tooEarly = (uLong)GetRLong(TOO_EARLY_FILE);
-	
-	if (!(err = HGetCatInfo(spec.vRefNum,spec.parID,spec.name,&hfi)))
+	unsigned long tooEarly = (unsigned long)GetRLong(TOO_EARLY_FILE);
+	const char *filePath = spec.path[0] ? spec.path : spec.name;
+
+	if (stat(filePath, &st) == 0)
 	{
-		hfi.hFileInfo.ioFlCrDat = Dates[0] > tooEarly ? Dates[0] : LocalDateTime();
-		hfi.hFileInfo.ioFlMdDat = Dates[1] > tooEarly ? Dates[1] : LocalDateTime();
-		hfi.hFileInfo.ioFlBkDat = Dates[2] > tooEarly ? Dates[2] : LocalDateTime();
-		err = HSetCatInfo(spec.vRefNum,spec.parID,spec.name,&hfi);
+		unsigned long modDate = Dates[1] > tooEarly ? Dates[1] : LocalDateTime();
+		struct timeval times[2];
+		times[0].tv_sec = st.st_atime;  /* preserve access time */
+		times[0].tv_usec = 0;
+		times[1].tv_sec = modDate;       /* set modification time */
+		times[1].tv_usec = 0;
+		if (utimes(filePath, times) != 0)
+			err = ioErr;
 	}
+	else
+		err = fnfErr;
 	return err;
 }
 
@@ -1040,7 +1046,6 @@ bool AbNextState( void )
 				return( true );
 }
 
-#pragma segment SendAppleFile
 /************************************************************************
  * SendSingle - send a file in AppleSingle format
  ************************************************************************/
@@ -1187,7 +1192,7 @@ OSErr SendSingle(TransStream stream,FSSpecPtr spec,bool dataToo,AttMapPtr amp)
 	/*
 	 * WOW!  All done!
 	 */
-	err = BufferSend(stream,B64Encoder,nil,0,False);
+	err = BufferSend(stream,B64Encoder,NULL,0,False);
 
 done:
 	DontTranslate = False;
@@ -1211,7 +1216,7 @@ OSErr SendDouble(TransStream stream,FSSpecPtr spec,long flags,short tableID, Att
 	/*
 	 * build the internal boundary
 	 */
-	BuildBoundary(nil,boundary,(UPtr)"D");
+	BuildBoundary(NULL,boundary,(UPtr)"D");
 	
 	/*
 	 * send the multipart header
@@ -1310,7 +1315,7 @@ OSErr SendDataFork(TransStream stream,FSSpecPtr spec,long flags,short tableID,At
 		{FileSystemError(BINHEX_OPEN,spec->name,err); goto done;}
 	
 	err = SendFromOpenFile(stream,amp->isText&&!amp->isPostScript ? QPEncoder : B64Encoder,refN,fileSize);
-	if (!err) BufferSend(stream,amp->isText&&!amp->isPostScript ? QPEncoder : B64Encoder,nil,0,False);
+	if (!err) BufferSend(stream,amp->isText&&!amp->isPostScript ? QPEncoder : B64Encoder,NULL,0,False);
 
 done:
 	BufferSendRelease(stream);
@@ -1324,7 +1329,7 @@ done:
  ************************************************************************/
 OSErr SendFromOpenFile(TransStream stream,DecoderFunc *encoder,short refN,long size)
 {
-	Ptr buffer = nil;
+	Ptr buffer = NULL;
 	long bSize;
 	long count;
 	short err=noErr;
@@ -1484,7 +1489,7 @@ OSErr SendUU(TransStream stream, FSSpecPtr spec, AttMapPtr amp)
 	 * send file
 	 */
 	err = SendFromOpenFile(stream,UUEncoder,refN,fileSize);
-	if (!err) err = BufferSend(stream,UUEncoder,nil,0,False);
+	if (!err) err = BufferSend(stream,UUEncoder,NULL,0,False);
 	if (!err) err = SendPString(stream,NewLine);
 
 done:
@@ -1515,7 +1520,7 @@ void UUFileName(PStr uuName,PStr inShortName)
 	len = firstDot-(UPtr)shortName;
 	len = MIN(len,8);
 
-	BMD(shortName,uuName,len);
+	memmove(uuName,shortName,len);
 	uuName[len] = 0;
 
 	if (lastDot<(UPtr)shortName+strlen((const char*)shortName))
@@ -1526,7 +1531,7 @@ void UUFileName(PStr uuName,PStr inShortName)
 		{
 			short baseLen = strlen((const char*)uuName);
 			uuName[baseLen] = '.';
-			BMD(lastDot+1,uuName+baseLen+1,extLen);
+			memmove(uuName+baseLen+1,lastDot+1,extLen);
 			uuName[baseLen+1+extLen] = 0;
 		}
 	}
@@ -1537,7 +1542,7 @@ void UUFileName(PStr uuName,PStr inShortName)
  ************************************************************************/
 bool ReallyIsText(FSSpecPtr spec)
 {
-	Handle taste=nil;
+	Handle taste=NULL;
 	long controls = 0;
 	long size;
 	UPtr spot,end;

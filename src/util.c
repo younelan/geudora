@@ -46,6 +46,7 @@ EUDORA_RGBColor *DarkenColor(EUDORA_RGBColor *color, short percent);
 #include "gtk_prefs.h"
 
 #include <ctype.h>
+#include <time.h>
 #define FILE_NUM 41
 /* Copyright (c) 1990-1992 by the University of Illinois Board of Trustees */
 /**********************************************************************
@@ -72,7 +73,7 @@ char BitTable[] = {0x1, 0x2, 0x4, 0x8, 0x10, 0x20, 0x40, 0x80};
 bool PasswordFilter(void *dgPtr, void *event, short *item);
 void CopyPassword(UPtr password);
 int ResetPassword(void);
-UHandle PwChars = nil;
+UHandle PwChars = NULL;
 void NukeMenuItem(MenuHandle mh, short item);
 void CompactTempZone(void);
 short FindMenuByName(UPtr name);
@@ -155,13 +156,13 @@ void AddPResource(UPtr theData, int theLength, long theType, int theID,
    * allocate the handle
    */
   aHandle = NuHandle((long)theLength);
-  if (aHandle == nil)
+  if (aHandle == NULL)
     return;
 
   /*
    * copy the data
    */
-  BMD(theData, *aHandle, (long)theLength);
+  memmove(*aHandle, theData, (long)theLength);
 
   /*
    * add it
@@ -291,6 +292,11 @@ int GetPassword(PStr personality, PStr userName, PStr serverName, UPtr word,
   gtk_window_set_modal(GTK_WINDOW(dlg), TRUE);
   gtk_window_set_default_size(GTK_WINDOW(dlg), 380, -1);
   gtk_window_set_resizable(GTK_WINDOW(dlg), FALSE);
+  /* Set transient parent — required on macOS for modal dialogs */
+  extern GtkWidget *get_main_window(void);
+  GtkWidget *parent = get_main_window();
+  if (parent)
+    gtk_window_set_transient_for(GTK_WINDOW(dlg), GTK_WINDOW(parent));
 
   GtkWidget *vbox = gtk_box_new(GTK_ORIENTATION_VERTICAL, 8);
   gtk_widget_set_margin_start(vbox, 20);
@@ -349,20 +355,19 @@ int GetPassword(PStr personality, PStr userName, PStr serverName, UPtr word,
   g_main_loop_run(data.loop);
   g_main_loop_unref(data.loop);
 
-  /* If OK, persist the save_password preference and optionally save the password */
+  /* Read widget state BEFORE destroying the dialog */
+  gboolean want_save = gtk_check_button_get_active(GTK_CHECK_BUTTON(save_check));
+  gtk_window_destroy(GTK_WINDOW(dlg));
+
+  /* Persist the save_password preference */
   if (data.result == PASSWORD_OK) {
-    gboolean want_save = gtk_check_button_get_active(GTK_CHECK_BUTTON(save_check));
     prefs_set_bool(PREFS_GROUP_CHECKING_MAIL, "save_password", want_save);
     if (want_save && word[0]) {
-      /* Save password to INI so it persists across sessions */
       prefs_set_string(PREFS_GROUP_CHECKING_MAIL, "saved_password", (const char *)word);
     } else if (!want_save) {
-      /* Clear any previously saved password */
       prefs_set_string(PREFS_GROUP_CHECKING_MAIL, "saved_password", "");
     }
   }
-
-  gtk_window_destroy(GTK_WINDOW(dlg));
 
   return data.result;
 }
@@ -428,7 +433,7 @@ void MySetItem(MenuHandle menu, short item, PStr itemStr) {}
 PStr MyGetItem(MenuHandle menu, short item, PStr name) {
   GetMenuItemText(menu, item, name);
   if (*name && !name[1]) {
-    BMD(name + 2, name + 1, name[0] - 1);
+    memmove(name + 1, name + 2, name[0] - 1);
     name[0]--;
   }
   return (name);
@@ -472,13 +477,13 @@ static bool OnBatteries9(void) { return false; }
 extern bool OnBatteriesX(void);
 
 bool OnBatteries(void) {
-  static uLong ticks = 0;
+  static gint64 ticks = 0;
   static bool val;
 
   //	Don't check too often
-  if (TickCount() - ticks < 60)
+  if (g_get_monotonic_time() - ticks < 1000000)
     return val;
-  ticks = TickCount();
+  ticks = g_get_monotonic_time();
 
   return val = HaveOSX() ? OnBatteriesX() : OnBatteries9();
 }
@@ -521,9 +526,9 @@ PStr WeekDay(PStr string, long secs) {
 /************************************************************************
  * GMTDateTime - return the current seconds
  ************************************************************************/
-uLong GMTDateTime(void) { return 0; }
+unsigned long GMTDateTime(void) { return (unsigned long)time(NULL); }
 
-uLong LocalDateTime(void) { return 0; }
+unsigned long LocalDateTime(void) { return (unsigned long)time(NULL); }
 
 PStr LocalDateTimeShortStr(PStr s) {
   *s = 0;
@@ -554,7 +559,7 @@ bool MyDragHas(void *drag, short item, OSType type) { return false; }
 
 OSErr MyGetDragItemData(void *drag, short item, OSType type, Handle *data) {
   if (data)
-    *data = nil;
+    *data = NULL;
   return noErr;
 }
 
@@ -820,12 +825,12 @@ void ButtonFit(ControlHandle button) {
  **********************************************************************/
 PStr GetRString(PStr theString, short theIndex) {
   SCPtr start, end;
-  uLong ticks = TickCount();
-  uLong oldest = ticks;
+  gint64 ticks = g_get_monotonic_time();
+  gint64 oldest = ticks;
   short oldSpot;
   long n;
   unsigned char sizeStr[64];
-  uLong curPersId = CurThreadGlobals ? (CurPers ? CurPers->persId : 0) : 0;
+  unsigned long curPersId = CurThreadGlobals ? (CurPers ? CurPers->persId : 0) : 0;
   bool dontReadCache = NoDominant || !StringCache || NoProxify;
   bool dontWriteCache =
       NoDominant || NoProxify || GrowZoning || (EjectBuckaroo && !StringCache);
@@ -866,7 +871,7 @@ PStr GetRString(PStr theString, short theIndex) {
    * create cache
    */
   if (!StringCache && !dontWriteCache) {
-    GetRStringLo(sizeStr, STRING_CACHE, nil);
+    GetRStringLo(sizeStr, STRING_CACHE, NULL);
     StringToNum(sizeStr, &n);
     StringCache = (SCHandle)NuHandleClear(n * sizeof(StringCacheEntry));
     oldSpot = 0;
@@ -923,7 +928,17 @@ PStr GetRStringLo(PStr theString, int theIndex, PersHandle forPers) {
  * FindSTRNIndex - find a string in a resource id
  ************************************************************************/
 short FindSTRNIndex(short resId, PStr string) {
-  /* GTK Port: Strings stored differently */
+  /* Search string table entries resId+1, resId+2, ... for a match.
+     Returns the enum index (1-based) if found, 0 if not. */
+  extern const char *string_table_lookup(uint16_t id);
+  unsigned char buf[256];
+  for (short i = 1; i < 100; i++) {
+    const char *s = string_table_lookup((uint16_t)(resId + i));
+    if (!s || !s[0])
+      continue;  /* skip empty/missing entries but keep searching */
+    if (strcasecmp((const char *)string, s) == 0)
+      return i;
+  }
   return 0;
 }
 
@@ -973,7 +988,7 @@ RGBColor *GetRTextColor(RGBColor *color, int index) {
 RGBColor *GetRColor(RGBColor *color, int index) {
   /* GTK Port: Colors stored differently */
   Zero(*color);
-  return (nil);
+  return (NULL);
 }
 
 /**********************************************************************
@@ -991,7 +1006,7 @@ long GetRLong(int index) {
   unsigned char scratch[256];
   long aLong;
 
-  if (GetRString(scratch, index) == nil)
+  if (GetRString(scratch, index) == NULL)
     return (0L);
   else {
     StringToNum(scratch, &aLong);
@@ -1010,7 +1025,7 @@ OSType GetROSType(int index) {
   char *dst;
   long i;
 
-  if (GetRString(scratch, index) == nil)
+  if (GetRString(scratch, index) == NULL)
     return ((OSType)0);
   len = strlen((const char *)scratch);
   if (len > 4)
@@ -1124,7 +1139,7 @@ OSErr HandleLinebreaks(Handle text, long ***breaks, short inWidth) {
   long cum = 0;
   OSErr err;
 
-  if ((*breaks = (long **)NuHTempBetter(0)) == nil)
+  if ((*breaks = (long **)NuHTempBetter(0)) == NULL)
     return (MemError());
   if (!text || !(len = GetHandleSize(text)))
     return (noErr);
@@ -1212,7 +1227,7 @@ OSErr StackPush(void *what, StackHandle stack) {
       if (MemError())
         return (MemError());
     }
-    BMD(what, StackSpot(stack, (*stack)->elCount), (*stack)->elSize);
+    memmove(StackSpot(stack, (*stack)->elCount), what, (*stack)->elSize);
     (*stack)->elCount++;
     return (noErr);
   }
@@ -1234,9 +1249,9 @@ OSErr StackQueue(void *what, StackHandle stack) {
       if (MemError())
         return (MemError());
     }
-    BMD(StackSpot(stack, 0), StackSpot(stack, 1),
+    memmove(StackSpot(stack, 1), StackSpot(stack, 0),
         (*stack)->elCount * (*stack)->elSize);
-    BMD(what, StackSpot(stack, 0), (*stack)->elSize);
+    memmove(StackSpot(stack, 0), what, (*stack)->elSize);
     (*stack)->elCount++;
     return (noErr);
   }
@@ -1250,7 +1265,7 @@ OSErr StackPop(void *into, StackHandle stack) {
     return (fnfErr);
   (*stack)->elCount--;
   if (into)
-    BMD(StackSpot(stack, (*stack)->elCount), into, (*stack)->elSize);
+    memmove(into, StackSpot(stack, (*stack)->elCount), (*stack)->elSize);
   return (noErr);
 }
 
@@ -1261,7 +1276,7 @@ OSErr StackTop(void *into, StackHandle stack) {
   if (!stack || !(*stack)->elCount)
     return (fnfErr);
   if (into)
-    BMD(StackSpot(stack, (*stack)->elCount - 1), into, (*stack)->elSize);
+    memmove(into, StackSpot(stack, (*stack)->elCount - 1), (*stack)->elSize);
   return (noErr);
 }
 
@@ -1272,7 +1287,7 @@ OSErr StackItem(void *into, short item, StackHandle stack) {
   if (!stack || !(*stack)->elCount || item >= (*stack)->elCount)
     return (fnfErr);
   if (into)
-    BMD(StackSpot(stack, item), into, (*stack)->elSize);
+    memmove(into, StackSpot(stack, item), (*stack)->elSize);
   return (noErr);
 }
 
@@ -1340,13 +1355,13 @@ OSErr AAAddItem(AAHandle aa, bool replace, PStr key, UPtr data) {
     if (MemError())
       return (MemError());
     if (spot && spot <= count) /* move old data */
-      BMD(AAKeySpot(aa, spot), AAKeySpot(aa, spot) + AAElemSize(aa),
+      memmove(AAKeySpot(aa, spot) + AAElemSize(aa), AAKeySpot(aa, spot),
           AAElemSize(aa) * (count - spot + 1));
   }
-  BMD(data, AADataSpot(aa, spot), (*aa)->dataSize);
+  memmove(AADataSpot(aa, spot), data, (*aa)->dataSize);
   PCopy(lwrKey, key);
   MyLowerStr(lwrKey);
-  BMD(lwrKey, AAKeySpot(aa, spot), (*aa)->keySize);
+  memmove(AAKeySpot(aa, spot), lwrKey, (*aa)->keySize);
   return (noErr);
 }
 
@@ -1369,7 +1384,7 @@ OSErr AADeleteKey(AAHandle aa, PStr key) {
   if (spot > 0) {
     short count = AACountItems(aa);
     if (spot < count)
-      BMD(AAKeySpot(aa, spot + 1), AAKeySpot(aa, spot),
+      memmove(AAKeySpot(aa, spot), AAKeySpot(aa, spot + 1),
           AAElemSize(aa) * (count - spot));
     SetHandleBig_(aa, GetHandleSize_(aa) - AAElemSize(aa));
     return (noErr);
@@ -1383,7 +1398,7 @@ OSErr AADeleteKey(AAHandle aa, PStr key) {
 OSErr AAFetchData(AAHandle aa, PStr key, UPtr data) {
   short spot = AAFindKey(aa, key);
   if (spot > 0) {
-    BMD(AADataSpot(aa, spot), data, (*aa)->dataSize);
+    memmove(data, AADataSpot(aa, spot), (*aa)->dataSize);
     return (noErr);
   }
   return (1); /* not found */
@@ -1402,7 +1417,7 @@ OSErr AAFetchResData(AAHandle aa, short keyId, UPtr data) {
  * AAFetchIndData - fetch data from an assoc array, by index
  ************************************************************************/
 OSErr AAFetchIndData(AAHandle aa, short index, UPtr data) {
-  BMD(AADataSpot(aa, index), data, (*aa)->dataSize);
+  memmove(data, AADataSpot(aa, index), (*aa)->dataSize);
   return (noErr);
 }
 
@@ -1410,7 +1425,7 @@ OSErr AAFetchIndData(AAHandle aa, short index, UPtr data) {
  * AAFetchIndKey - fetch key from an assoc array, by index
  ************************************************************************/
 OSErr AAFetchIndKey(AAHandle aa, short index, PStr key) {
-  BMD(AAKeySpot(aa, index), key, (*aa)->keySize);
+  memmove(key, AAKeySpot(aa, index), (*aa)->keySize);
   return (noErr);
 }
 
@@ -1548,7 +1563,7 @@ OSErr AccuAddChar(AccuPtr a, Byte c) { return (AccuAddPtr(a, &c, 1)); }
 /**********************************************************************
  *
  **********************************************************************/
-OSErr AccuAddLong(AccuPtr a, uLong longVal) {
+OSErr AccuAddLong(AccuPtr a, unsigned long longVal) {
   return (AccuAddPtr(a, &longVal, sizeof(longVal)));
 }
 
@@ -1615,7 +1630,7 @@ OSErr AccuAddPtr(AccuPtr a, void *bytes, long len) {
     if (MemError())
       return (a->err = MemError());
   }
-  BMD(bytes, *a->data + a->offset, len);
+  memmove(*a->data + a->offset, bytes, len);
   a->offset += len;
   return (noErr);
 }
@@ -1649,7 +1664,7 @@ OSErr AccuAddSortedLong(AccuPtr a, long addVal) {
       newSpot++;
 
       // move everything above us to make room
-      BMD(newSpot, newSpot + 1, sizeof(addVal) * (spot - newSpot));
+      memmove(newSpot + 1, newSpot, sizeof(addVal) * (spot - newSpot));
 
       // and put us into place
       *newSpot = addVal;
@@ -1728,7 +1743,7 @@ OSErr AccuAddHandle(AccuPtr a, Handle data) {
     if (MemError())
       return (a->err = MemError());
   }
-  BMD(*data, *a->data + a->offset, len);
+  memmove(*a->data + a->offset, *data, len);
   a->offset += len;
   return (noErr);
 }
@@ -1763,7 +1778,7 @@ OSErr AccuAddFromHandle(AccuPtr a, Handle data, long offset, long len) {
     if (MemError())
       return (a->err = MemError());
   }
-  BMD(*data + offset, *a->data + a->offset, len);
+  memmove(*a->data + a->offset, *data + offset, len);
   a->offset += len;
   return (noErr);
 }
@@ -1791,19 +1806,19 @@ long AccuFindPtr(AccuPtr a, UPtr stuff, short len) {
 /************************************************************************
  * AccuFindLong - find a long in an accumulator; returns an index
  ************************************************************************/
-long AccuFindLong(AccuPtr a, uLong theLong) {
-  uLong *spot;
-  uLong *end;
+long AccuFindLong(AccuPtr a, unsigned long theLong) {
+  unsigned long *spot;
+  unsigned long *end;
 
   if (!a->data)
     return -1;
 
-  spot = (uLong *)*a->data;
-  end = (uLong *)spot + (a->offset - sizeof(uLong)) / sizeof(uLong);
+  spot = (unsigned long *)*a->data;
+  end = (unsigned long *)spot + (a->offset - sizeof(unsigned long)) / sizeof(unsigned long);
 
   for (; spot <= end; spot++)
     if (*spot == theLong)
-      return spot - (uLong *)*a->data;
+      return spot - (unsigned long *)*a->data;
 
   return -1;
 }
@@ -1829,7 +1844,7 @@ short DecodeB64Accu(AccuPtr a, bool isText) {
 
   if (!result) {
     a->offset = len;
-    BMD(*data, *a->data, len);
+    memmove(*a->data, *data, len);
   }
 
   ZapHandle(data);
@@ -1869,8 +1884,8 @@ OSErr AccuInsertPtr(AccuPtr a, UPtr bytes, long len, long offset) {
     if (MemError())
       return (a->err = MemError());
   }
-  BMD(*a->data + offset, *a->data + offset + len, a->offset - offset);
-  BMD(bytes, *a->data + offset, len);
+  memmove(*a->data + offset + len, *a->data + offset, a->offset - offset);
+  memmove(*a->data + offset, bytes, len);
   a->offset += len;
   return (noErr);
 }
@@ -1962,7 +1977,7 @@ bool MyOSEventAvail(short mask, void *event) {
  * SafeToAllocate - is it safe to allocate this much memory?
  ************************************************************************/
 bool SafeToAllocate(long size) {
-  static uLong allocated;
+  static unsigned long allocated;
 
   if (size > 4 K || allocated + 50 K > LastContigSpace) {
     allocated = 0;
@@ -1998,7 +2013,7 @@ void *NuDHTempBetter(void *data, long size) {
 
   h = NuHTempBetter(size);
   if (h)
-    BMD(data, *h, size);
+    memmove(*h, data, size);
   return (h);
 }
 
@@ -2012,7 +2027,7 @@ void *NuDHTempOK(void *data, long size) {
 
   h = NuHTempOK(size);
   if (h)
-    BMD(data, *h, size);
+    memmove(*h, data, size);
   return (h);
 }
 
@@ -2113,12 +2128,12 @@ bool GetTableID(PStr name, short *tid) {
  ************************************************************************/
 bool EventPending(void) {
   EventRecord event;
-  static uLong ticks;
+  static gint64 ticks;
 
-  if (TickCount() - ticks <= 8)
+  if (g_get_monotonic_time() - ticks <= 133333)
     return (False);
   else {
-    ticks = TickCount();
+    ticks = g_get_monotonic_time();
     return (OSEventAvail(mUpMask | mDownMask | keyDownMask | updateMask |
                              activMask | osMask,
                          &event));

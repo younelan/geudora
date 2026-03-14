@@ -35,6 +35,7 @@ ADVISED OF THE POSSIBILITY OF SUCH DAMAGE. */
 #include "toc.h"
 #include "emoticon.h"
 #include "util.h"
+#include "threading.h"
 #include <gdk/gdk.h>
 #include <gtk/gtk.h>
 #include <stdbool.h>
@@ -2083,13 +2084,17 @@ bool CompSend(MessHandle messH) {
   extern int WriteTOC(TOCType *tocH);
   WriteTOC(tocH);
 
+  g_print("CompSend: queued sum %d, persId=%u, tocH=%p count=%d\n",
+          sumNum, tocH->sums[sumNum].persId, (void*)tocH, tocH->count);
+
   /* Close the compose window */
   if (win->window)
     gtk_window_close(GTK_WINDOW(win->window));
 
-  /* TODO: actual SMTP send via MySendMessage/TransmitMessageHi
-     from sendmail.c — requires full porting of the SMTP pipeline.
-     For now, message is saved and queued in Out. */
+  /* Trigger immediate mail transfer for queued messages */
+  extern short XferMail(bool check, bool send, bool manual, bool scripted,
+                        bool thread, short modifiers);
+  XferMail(false, true, true, false, true, 0);
 
   return true;
 }

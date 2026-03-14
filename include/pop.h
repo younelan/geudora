@@ -96,9 +96,7 @@ int POPCmdError(short cmd, unsigned char *args, unsigned char *message);
 int EndPOP(TransStream stream);
 int StartPOP(TransStream stream, unsigned char *serverName, long port);
 void AttachNoteLo(const char *path, const char *theMessage);
-#ifdef BATCH_DELIVERY_ON
 TOCType * RenameInTemp(TOCType * tocH);
-#endif
 
 /*
  * POPD manipulation stuff

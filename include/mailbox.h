@@ -174,8 +174,12 @@ typedef struct FSSpec {
 } FSSpec, *FSSpecPtr;
 #endif
 
-/* VDId: Volume/Directory ID pair — used for folder references */
-typedef struct { short vRef; long dirId; } VDId, *VDIdPtr, **VDIdHandle;
+/* VDId: Folder reference — path is the authoritative field on POSIX */
+typedef struct {
+  short vRef;      /* deprecated — use path instead */
+  long dirId;      /* deprecated — use path instead */
+  char path[1024]; /* POSIX path to folder */
+} VDId, *VDIdPtr, **VDIdHandle;
 
 /* CSpec: Counted file specification for tracking file references */
 typedef struct CountedSpecStruct {
@@ -543,7 +547,10 @@ short PBGetCatInfo(CInfoPBPtr pb, bool async);
 short PBHGetVInfo(HParmBlkPtr pb, bool async);
 short FindFolder(short vRef, uint32_t type, bool create, int *foundVRef,
                  long *foundDirID);
-short FSMakeFSSpec(short vRef, long dirID, const char *name, FSSpecPtr spec);
+/* Path-based spec construction (replaces FSMakeFSSpec/SimpleMakeFSSpec) */
+short spec_for(const char *dir, const char *name, FSSpecPtr spec);
+void spec_make(const char *dir, const char *name, FSSpecPtr spec);
+const char *spec_parent(FSSpecPtr spec, char *buf, size_t bufsz);
 short FSpCreateResFile(FSSpecPtr spec, uint32_t creator, uint32_t type,
                        uint32_t script);
 int FSpCreate(FSSpecPtr spec, uint32_t creator, uint32_t fileType,
@@ -653,9 +660,13 @@ bool HaveOSX(void);
 Handle NewIOBHandle(long min, long max);
 
 typedef struct {
-  short vRef;
-  long dirId;
+  short vRef;      /* deprecated — use path instead */
+  long dirId;      /* deprecated — use path instead */
+  char path[1024]; /* POSIX path to root folder */
 } RootSpec;
+
+/* Mail directory */
+const char *get_eudora_mail_dir(void);
 
 /* Globals */
 extern RootSpec Root;

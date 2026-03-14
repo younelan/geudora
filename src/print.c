@@ -49,6 +49,7 @@ ADVISED OF THE POSSIBILITY OF SUCH DAMAGE. */
 #include "message.h"
 #include "legacy_shim.h"
 #include "imapdownload.h"
+#include "threading.h"
 #include <gtk/gtk.h>
 #include <pango/pangocairo.h>
 #include <string.h>
@@ -187,12 +188,12 @@ static char *GetSelectedTextFromPTE(GtkWidget *pte)
  ************************************************************************/
 static char *CollectReturnAddr(void)
 {
-    /* GetReturnAddr returns the user's configured return address.
-       For the GTK port, pull from preferences/account settings. */
-    extern char *GetReturnAddrC(void);
-    char *addr = GetReturnAddrC();
-    if (addr && *addr)
-        return g_strdup(addr);
+    /* GetReturnAddr returns the user's configured return address. */
+    extern unsigned char *GetReturnAddr(unsigned char *addr, bool comments);
+    unsigned char buf[256];
+    GetReturnAddr(buf, false);
+    if (buf[0])
+        return g_strdup((char *)buf);
     return g_strdup("");
 }
 

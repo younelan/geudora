@@ -10,15 +10,16 @@
 #include "mailxfer.h"
 #include "gtk_prefs.h"
 #include "toc.h"
-#include "mailbox.h"  /* QUEUED state */
+#include "mailbox.h"  /* QUEUED state, SaveMessageSum */
+#include "schizo.h"   /* PersHandle */
+#include "StringDefs.h" /* OUT */
+#include "threading.h" /* CurPers */
+#include "util.h"     /* GMTDateTime, ZoneSecs */
 #include <string.h>
 #include <stdio.h>
+#include <sys/stat.h>
 #include <time.h>
 #include <gdk-pixbuf/gdk-pixbuf.h>
-
-extern const char *prefs_get_mailboxes_path(void);
-extern TOCType *CheckTOC(FSSpecPtr spec);
-extern int WriteTOC(TOCType *toc);
 
 /* Priority levels matching original Eudora */
 enum {
@@ -245,24 +246,9 @@ static void on_header_changed(GtkEditable *editable, gpointer user_data)
     if (data) data->dirty = TRUE;
 }
 
-/* Queue button clicked */
-static void on_queue_clicked(GtkWidget *widget, gpointer user_data)
-{
-    (void)widget;
-    ComposeWindowData *data = (ComposeWindowData *)user_data;
-    if (!data) return;
-    g_print("Queueing message...\n");
-    data->dirty = FALSE;
-    gtk_window_close(GTK_WINDOW(data->window));
-}
-
-/* Send button clicked */
-static void on_send_clicked(GtkWidget *widget, gpointer user_data)
-{
-    (void)widget;
-    ComposeWindowData *data = (ComposeWindowData *)user_data;
-    if (!data) return;
-
+/* Save the composed message to the Out mailbox with QUEUED state.
+ * Returns TRUE on success. */
+static gboolean save_composed_message(ComposeWindowData *data) {
     const char *to = gtk_editable_get_text(GTK_EDITABLE(data->to_entry));
     const char *cc = gtk_editable_get_text(GTK_EDITABLE(data->cc_entry));
     const char *bcc = gtk_editable_get_text(GTK_EDITABLE(data->bcc_entry));
@@ -272,7 +258,7 @@ static void on_send_clicked(GtkWidget *widget, gpointer user_data)
         GtkAlertDialog *dialog = gtk_alert_dialog_new("Please enter a recipient");
         gtk_alert_dialog_show(dialog, GTK_WINDOW(data->window));
         g_object_unref(dialog);
-        return;
+        return FALSE;
     }
 
     /* Get sender information from prefs */
@@ -293,51 +279,122 @@ static void on_send_clicked(GtkWidget *widget, gpointer user_data)
     gchar *date_str = g_date_time_format(now, "%a, %d %b %Y %H:%M:%S %z");
 
     GString *msg = g_string_new(NULL);
-    g_string_append_printf(msg, "To: %s\n", to);
-    if (cc && *cc) g_string_append_printf(msg, "Cc: %s\n", cc);
-    if (bcc && *bcc) g_string_append_printf(msg, "Bcc: %s\n", bcc);
-    g_string_append_printf(msg, "From: %s\n", from_email);
-    g_string_append_printf(msg, "Subject: %s\n", subject);
-    g_string_append_printf(msg, "Date: %s\n", date_str);
-    g_string_append_printf(msg, "X-Priority: %d\n", data->priority);
+    g_string_append_printf(msg, "To: %s\r\n", to);
+    if (cc && *cc) g_string_append_printf(msg, "Cc: %s\r\n", cc);
+    if (bcc && *bcc) g_string_append_printf(msg, "Bcc: %s\r\n", bcc);
+    g_string_append_printf(msg, "From: %s\r\n", from_email);
+    g_string_append_printf(msg, "Subject: %s\r\n", subject);
+    g_string_append_printf(msg, "Date: %s\r\n", date_str);
+    g_string_append_printf(msg, "X-Priority: %d\r\n", data->priority);
     if (data->return_receipt)
-        g_string_append(msg, "Disposition-Notification-To: \n");
+        g_string_append(msg, "Disposition-Notification-To: \r\n");
     if (data->qp_encoding)
-        g_string_append(msg, "Content-Transfer-Encoding: quoted-printable\n");
-    g_string_append_printf(msg, "Status: Q\n");
-    g_string_append_printf(msg, "X-Mailer: gEudora\n");
-    g_string_append_printf(msg, "\n%s", body);
+        g_string_append(msg, "Content-Transfer-Encoding: quoted-printable\r\n");
+    g_string_append_printf(msg, "Status: Q\r\n");
+    g_string_append_printf(msg, "X-Mailer: gEudora\r\n");
+    g_string_append_printf(msg, "\r\n%s", body);
 
-    /* Save to Out mailbox and update TOC with QUEUED state */
-    gchar *out_path = gtk_mailbox_get_path("Out");
-    gtk_mailbox_add_message(out_path, msg->str);
-
-    /* Rebuild TOC to pick up the new message, then set state to QUEUED */
-    {
-      FSSpec outSpec;
-      memset(&outSpec, 0, sizeof(outSpec));
-      snprintf(outSpec.path, sizeof(outSpec.path), "%s", out_path);
-      strncpy(outSpec.name, "Out", sizeof(outSpec.name) - 1);
-
-      /* Force TOC rebuild to pick up new message */
-      TOCType *outToc = CheckTOC(&outSpec);
-      if (outToc && outToc->count > 0) {
-        /* Set the last (newly added) message to QUEUED */
-        outToc->sums[outToc->count - 1].state = QUEUED;
-        WriteTOC(outToc);
-        g_print("Message queued (state=%d) in Out, total %d messages\n",
-                QUEUED, outToc->count);
-      }
+    /* Get the live Out TOC (the one in TOCList) */
+    TOCType *outToc = GetRealOutTOC();
+    if (!outToc) {
+        g_warning("save_composed_message: cannot get Out TOC");
+        g_free(body);
+        g_date_time_unref(now);
+        g_free(date_str);
+        g_string_free(msg, TRUE);
+        return FALSE;
     }
-    g_free(out_path);
 
-    /* Trigger mail transfer */
-    XferMail(false, true, true, false, true, 0);
+    /* Append message to Out mailbox file, recording offset and length */
+    struct stat st;
+    long msgOffset = 0;
+    if (stat(outToc->path, &st) == 0)
+        msgOffset = (long)st.st_size;
+
+    FILE *f = fopen(outToc->path, "ab");
+    if (!f) {
+        g_warning("save_composed_message: cannot open %s", outToc->path);
+        g_free(body);
+        g_date_time_unref(now);
+        g_free(date_str);
+        g_string_free(msg, TRUE);
+        return FALSE;
+    }
+    fprintf(f, "From sender@example.com %ld\n", (long)time(NULL));
+    long headerStart = ftell(f);
+    fputs(msg->str, f);
+    if (msg->str[msg->len - 1] != '\n')
+        fputc('\n', f);
+    long msgEnd = ftell(f);
+    fclose(f);
+
+    /* Build a summary for the new message */
+    MSumType sum;
+    memset(&sum, 0, sizeof(sum));
+    sum.offset = headerStart;
+    sum.length = (long)(msgEnd - headerStart);
+    sum.state = QUEUED;
+    sum.seconds = GMTDateTime();
+    sum.origZone = ZoneSecs() / 60;
+    sum.persId = CurPers ? CurPers->persId : 0;
+    sum.priority = data->priority;
+    g_strlcpy(sum.subj, subject, sizeof(sum.subj));
+    g_strlcpy(sum.from, from_email, sizeof(sum.from));
+
+    /* Find body offset (relative to sum.offset) */
+    const char *bodyStart = strstr(msg->str, "\r\n\r\n");
+    if (bodyStart)
+        sum.bodyOffset = (int)(bodyStart - msg->str + 4);
+    else
+        sum.bodyOffset = (int)msg->len;
+
+    g_print("save_composed_message: offset=%ld len=%ld persId=%u state=%d\n",
+            sum.offset, sum.length, sum.persId, sum.state);
+
+    /* Add to the live Out TOC */
+    if (!SaveMessageSum(&sum, &outToc)) {
+        g_warning("save_composed_message: SaveMessageSum failed");
+        g_free(body);
+        g_date_time_unref(now);
+        g_free(date_str);
+        g_string_free(msg, TRUE);
+        return FALSE;
+    }
+    WriteTOC(outToc);
 
     g_free(body);
     g_date_time_unref(now);
     g_free(date_str);
     g_string_free(msg, TRUE);
+    return TRUE;
+}
+
+/* Queue button clicked — saves message to Out with QUEUED state */
+static void on_queue_clicked(GtkWidget *widget, gpointer user_data)
+{
+    (void)widget;
+    ComposeWindowData *data = (ComposeWindowData *)user_data;
+    if (!data) return;
+
+    if (!save_composed_message(data))
+        return;
+
+    data->dirty = FALSE;
+    gtk_window_close(GTK_WINDOW(data->window));
+}
+
+/* Send button clicked — saves message and triggers immediate send */
+static void on_send_clicked(GtkWidget *widget, gpointer user_data)
+{
+    (void)widget;
+    ComposeWindowData *data = (ComposeWindowData *)user_data;
+    if (!data) return;
+
+    if (!save_composed_message(data))
+        return;
+
+    /* Trigger immediate mail transfer */
+    XferMail(false, true, true, false, true, 0);
 
     data->dirty = FALSE;
     gtk_window_close(GTK_WINDOW(data->window));

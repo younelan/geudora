@@ -201,31 +201,32 @@ bool HaveAllKeys(MessHandle messH)
  ************************************************************************/
 bool HaveKeysFrom(Handle text,PStr missing,bool fromPrivate)
 {
-	UHandle addresses=nil;
-	UHandle rawAddresses=nil;
-	UPtr address;
+	char **addresses=nil;
+	char **rawAddresses=nil;
 	bool have = True;
 
 	*missing = 0;
 	if (!SuckAddresses(&rawAddresses,text,True,True,True,nil))
 	{
-		if (**rawAddresses)
+		if (rawAddresses && rawAddresses[0] && rawAddresses[0][0])
 		{
 			ExpandAliases(&addresses,rawAddresses,0,False);
-			ZapHandle(rawAddresses);
+			g_strfreev(rawAddresses); rawAddresses = NULL;
 			if (!addresses) return(False);
-			for (address=LDRef(addresses); *address; address += *address + 2)
+			for (int i = 0; addresses[i]; i++)
 			{
-				if (!HaveKeyFor(address,fromPrivate))
+				if (!HaveKeyFor((UPtr)addresses[i],fromPrivate))
 				{
-					PCopy(missing,address);
+					g_strlcpy((char *)missing, addresses[i], 256);
 					break;
 				}
 			}
-			ZapHandle(addresses);
+			g_strfreev(addresses); addresses = NULL;
 		}
 		else
-			ZapHandle(rawAddresses);
+		{
+			g_strfreev(rawAddresses); rawAddresses = NULL;
+		}
 	}
 	return(*missing==0);
 }
@@ -384,20 +385,18 @@ OSErr PGPFetchResult(AppleEvent *reply, FSSpecPtr spec)
 /**********************************************************************
  * BuildAddressList - build an AE list of addresses
  **********************************************************************/
-OSErr BuildAddressList(Handle addresses,AEDescList *list)
+OSErr BuildAddressList(char **addresses,AEDescList *list)
 {
 	OSErr err;
-	UPtr spot;
 	Str255 shortAddr;
-	
+
 	if (!(err = AECreateList(nil,0,False,list)))
 	{
-		for (spot=LDRef(addresses);*spot;spot += *spot+2)
+		for (int i = 0; addresses[i]; i++)
 		{
-			ShortAddr(shortAddr,spot);
-			if (err = AEPutPtr(list,0,typeChar,shortAddr+1,*shortAddr)) break;
+			ShortAddr(shortAddr,(UPtr)addresses[i]);
+			if (err = AEPutPtr(list,0,typeChar,shortAddr,strlen((char *)shortAddr))) break;
 		}
-		UL(addresses);
 	}
 	if (err) WarnUser(AE_TROUBLE,err);
 	return(err);

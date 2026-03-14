@@ -96,7 +96,7 @@ static short GetMailboxType(FSSpecPtr spec);
 void CleanseTOC(TOCType * tocH);
 static OSErr InsaneTOC(TOCType * tocH);
 TOCType * ReadTOC(FSSpecPtr spec);
-static short GetTOCK(TOCType * tocH, uLong *usedK, uLong *totalK);
+static short GetTOCK(TOCType * tocH, unsigned long *usedK, unsigned long *totalK);
 static bool TOCUnread(TOCType * tocH);
 static void FixBoxUnread(TOCType * tocH);
 static TOCType * FixErrantTOC(FSSpecPtr spec, TOCType * tocH, short why);
@@ -115,7 +115,7 @@ bool IsIMAPMailboxFileLo(FSSpecPtr spec, MailboxNodeHandle *node);
 void RemoveUTF8FromSum(MSumPtr sum);
 void JunkTOCCleanse(TOCType * tocH);
 /* DBNoteUIDHash is inline in legacy_shim.h */
-uLong GMTDateTime(void);
+unsigned long GMTDateTime(void);
 long GetRLong(int index);
 MenuHandle GetMHandle(short menuId);
 TOCType * RebuildTOC(const char *path, TOCType * oldTocH, bool resource,
@@ -383,7 +383,7 @@ TOCType * CheckTOC(FSSpecPtr spec) {
   if (!spec || !spec->path[0])
     return NULL;
 
-  uLong box, res, file;
+  unsigned long box, res, file;
   OSErr err = TOCDates(spec, &box, &res, &file);
   if (err && err != fnfErr)
     return NULL;
@@ -457,7 +457,7 @@ TOCType * ReadTOC(FSSpecPtr spec) {
       return FixErrantTOC(spec, tocH, insane);
 
     /* Update sizes */
-    uLong usedK, totalK;
+    unsigned long usedK, totalK;
     GetTOCK(tocH, &usedK, &totalK);
     tocH->usedK = (long)usedK;
     tocH->totalK = (long)totalK;
@@ -477,12 +477,12 @@ TOCType * ReadTOC(FSSpecPtr spec) {
  * TOCDates - get the dates off a mailbox
  * Ported from Mac: AFSpGetMod/PeekRTOC → stat(). Resource fork date = 0
  ************************************************************************/
-OSErr TOCDates(FSSpecPtr spec, uLong *box, uLong *res, uLong *file) {
+OSErr TOCDates(FSSpecPtr spec, unsigned long *box, unsigned long *res, unsigned long *file) {
   struct stat st;
 
   /* Mailbox modification time */
   if (stat(spec->path, &st) == 0)
-    *box = (uLong)st.st_mtime;
+    *box = (unsigned long)st.st_mtime;
   else
     *box = 0;
 
@@ -490,7 +490,7 @@ OSErr TOCDates(FSSpecPtr spec, uLong *box, uLong *res, uLong *file) {
   char tocPath[PATH_MAX];
   toc_file_path(spec->path, tocPath, sizeof(tocPath));
   if (stat(tocPath, &st) == 0)
-    *file = (uLong)st.st_mtime;
+    *file = (unsigned long)st.st_mtime;
   else
     *file = 0;
 
@@ -631,7 +631,7 @@ int WriteTOC(TOCType * tocH) {
     size = (long)st.st_size;
 
   tocH->boxSize = size + 1; /* +1 signals we know it's ok */
-  tocH->writeDate = (uLong)time(NULL);
+  tocH->writeDate = (unsigned long)time(NULL);
   tocH->unreadBase = tocH->count;
 
   char tocPath[PATH_MAX];
@@ -717,7 +717,7 @@ static void FixBoxUnread(TOCType * tocH) {
   bool unread = TOCUnread(tocH);
   short myMenu, myItem;
   FSSpec spec;
-  uLong total, used;
+  unsigned long total, used;
 
   tocH->unread = unread;
   tocH->unreadBase = tocH->count;
@@ -735,7 +735,7 @@ static void FixBoxUnread(TOCType * tocH) {
   }
 
   GetTOCK(tocH, &used, &total);
-  if ((uLong)tocH->usedK != used || (uLong)tocH->totalK != total) {
+  if ((unsigned long)tocH->usedK != used || (unsigned long)tocH->totalK != total) {
     tocH->usedK = (long)used;
     tocH->totalK = (long)total;
     tocH->updateBoxSizes = true;
@@ -757,13 +757,13 @@ static bool TOCUnread(TOCType * tocH) {
   }
 
   /* Date-based unread limit */
-  uLong minDate = GetRLong(UNREAD_LIMIT) * 24 * 3600;
+  unsigned long minDate = GetRLong(UNREAD_LIMIT) * 24 * 3600;
   if (minDate)
     minDate = GMTDateTime() - minDate;
 
   for (int i = 0; i < tocH->count; i++) {
     if (tocH->sums[i].state == UNREAD &&
-        (!minDate || (uLong)tocH->sums[i].seconds > minDate)) {
+        (!minDate || (unsigned long)tocH->sums[i].seconds > minDate)) {
       return true;
     }
   }
@@ -776,7 +776,7 @@ static bool TOCUnread(TOCType * tocH) {
  ************************************************************************/
 short TOCUnreadCount(TOCType * tocH, bool recentOnly) {
   short count = 0;
-  uLong minDate = 0;
+  unsigned long minDate = 0;
   if (!tocH)
     return 0;
 
@@ -789,7 +789,7 @@ short TOCUnreadCount(TOCType * tocH, bool recentOnly) {
   if (recentOnly && minDate) {
     for (int i = tocH->count - 1; i >= 0; i--)
       if (tocH->sums[i].state == UNREAD &&
-          (uLong)tocH->sums[i].seconds > minDate)
+          (unsigned long)tocH->sums[i].seconds > minDate)
         count++;
   } else {
     for (int i = tocH->count - 1; i >= 0; i--)
@@ -940,7 +940,7 @@ OSErr PeekTOC(FSSpecPtr spec, TOCType *tocPart) {
   }
 
   /* Check dates */
-  uLong box, file, res;
+  unsigned long box, file, res;
   OSErr err = TOCDates(spec, &box, &res, &file);
   if (err)
     return err;
@@ -1128,7 +1128,7 @@ static TOCType * FixErrantTOC(FSSpecPtr spec, TOCType * tocH, short why) {
  * GetTOCK - grab the K counts for a mailbox
  * Ported from Mac: AFSpGetHFileInfo → stat()
  ************************************************************************/
-static short GetTOCK(TOCType * tocH, uLong *usedK, uLong *totalK) {
+static short GetTOCK(TOCType * tocH, unsigned long *usedK, unsigned long *totalK) {
   if (!tocH) {
     *usedK = *totalK = 0;
     return -1;
@@ -1139,11 +1139,11 @@ static short GetTOCK(TOCType * tocH, uLong *usedK, uLong *totalK) {
     if (tocH->sums[i].offset >= 0)
       used += tocH->sums[i].length;
   }
-  *usedK = (uLong)(used / 1024);
+  *usedK = (unsigned long)(used / 1024);
 
   struct stat st;
   if (stat(tocH->path, &st) == 0)
-    *totalK = (uLong)(st.st_size / 1024);
+    *totalK = (unsigned long)(st.st_size / 1024);
   else
     *totalK = 0;
 

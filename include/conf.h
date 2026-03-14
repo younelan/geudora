@@ -166,7 +166,7 @@ DAMAGE. */
 // THREADING_ON is now defined in Makefile
 #define TASK_PROGRESS_ON
 #define MULTI_THREADING_ON	
-#define BATCH_DELIVERY_ON
+/* BATCH_DELIVERY_ON — removed, batch delivery is always enabled */
 #define CONTEXT_SEARCH
 #define URL_PROTECTION
 

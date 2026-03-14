@@ -36,7 +36,6 @@ DAMAGE. */
  * Some is lifted straight from xbin.  Our thanks to Dave & Brown.
  ************************************************************************/
 
-/* #pragma segment BinHex - Mac-specific pragma removed */
 
 /************************************************************************
  * Declarations for private routines
@@ -78,8 +77,8 @@ Byte LineLength;
 int SendBinHex(TransStream stream, FSSpecPtr spec, AttMapPtr amp)
 {
 	short refN=0;
-	UHandle dataBuffer=nil;
-	UHandle codedBuffer=nil;
+	UHandle dataBuffer=NULL;
+	UHandle codedBuffer=NULL;
 	short dataSize;
 	short codedSize;
 	short codedSpot;
@@ -109,8 +108,8 @@ int SendBinHex(TransStream stream, FSSpecPtr spec, AttMapPtr amp)
 	if ((err=MIMEFileHeader(stream,amp,MIME_BINHEX2,AFSpGetMod(spec)))) goto done;
 	if ((err=SendPString(stream,NewLine))) goto done;
 	GetRString(scratch,BINHEX_OUT);
-	if ((err=SendTrans(stream,scratch+1,*scratch,NewLine+1,*NewLine,nil))) goto done;
-	if ((err=SendTrans(stream,NewLine+1,*NewLine,":",1,nil))) goto done;
+	if ((err=SendTrans(stream,scratch,strlen((const char *)scratch),NewLine,strlen((const char *)NewLine),NULL))) goto done;
+	if ((err=SendTrans(stream,NewLine,strlen((const char *)NewLine),":",1,NULL))) goto done;
 		
 	/*
 	 * send the file information
@@ -135,7 +134,7 @@ int SendBinHex(TransStream stream, FSSpecPtr spec, AttMapPtr amp)
 		CODESHORT(tempCrc);
 		CalcCrc = 0;
 	}
-	if ((err=SendTrans(stream,LDRef(codedBuffer),codedSpot,nil))) goto done;
+	if ((err=SendTrans(stream,LDRef(codedBuffer),codedSpot,NULL))) goto done;
 	codedSpot = 0;
 	UL(codedBuffer);
 	
@@ -162,8 +161,8 @@ int SendBinHex(TransStream stream, FSSpecPtr spec, AttMapPtr amp)
 	 */
 	if (State86) CODE(0);
 	(*codedBuffer)[codedSpot++] = ':';
-	for (err=0;err<*NewLine;) (*codedBuffer)[codedSpot++] = NewLine[++err]; 
-	err=SendTrans(stream,LDRef(codedBuffer),codedSpot,nil);
+	{ size_t _nli; for (_nli=0;_nli<strlen((const char *)NewLine);_nli++) (*codedBuffer)[codedSpot++] = NewLine[_nli]; }
+	err=SendTrans(stream,LDRef(codedBuffer),codedSpot,NULL);
 	
 	
 done:
@@ -224,12 +223,12 @@ int BinHexFork(TransStream stream,short refN, UHandle dataBuffer,short dataSize,
 			errWas = err;
 			for (spot = *dataBuffer; spot<*dataBuffer+dataEnd; spot++)
 				CODE(*spot);
-			err=SendTrans(stream,LDRef(codedBuffer),codedSpot,nil);
+			err=SendTrans(stream,LDRef(codedBuffer),codedSpot,NULL);
 			UL(codedBuffer);
 			codedSpot = 0;
 			if (!err) err = errWas;
 			if (dataEnd > 0)
-				ByteProgress(nil,-dataEnd,0);
+				ByteProgress(NULL,-dataEnd,0);
 		}
 		UL(dataBuffer);
 		if (err && err!=eofErr && !CommandPeriod)
@@ -247,7 +246,7 @@ int BinHexFork(TransStream stream,short refN, UHandle dataBuffer,short dataSize,
 			CODESHORT(tempCrc);
 			CalcCrc = 0;
 		}
-		err=SendTrans(stream,LDRef(codedBuffer),codedSpot,nil);
+		err=SendTrans(stream,LDRef(codedBuffer),codedSpot,NULL);
 		UL(codedBuffer);
 	}
 	
@@ -264,7 +263,7 @@ short EncodeDataChar(Byte c, UPtr toSpot)
 	UPtr nSpot;
 #define ADDNEWLINE() do { 																			\
 	LineLength = 0; 																							\
-	for (nSpot=NewLine+1;nSpot<=NewLine+*NewLine;nSpot++) 				\
+	for (nSpot=NewLine;*nSpot;nSpot++) 				\
 		*toSpot++ = *nSpot; 																				\
 	} while (0)
 

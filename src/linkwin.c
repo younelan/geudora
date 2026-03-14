@@ -26,6 +26,7 @@ ADVISED OF THE POSSIBILITY OF SUCH DAMAGE. */
 #include "linkwin.h"
 #include "MyRes.h"
 #include "features.h"
+#include "threading.h"
 #include "linkmng.h"
 #include "mailbox.h"
 #include "message.h"
@@ -69,7 +70,7 @@ typedef Point Cell;
 static inline void LGetCell(void *p, short *len, Cell c, void *lst) {}
 #define BACK_COLOR 1
 #define LINK_HISTORY_UI_FLAGS 0
-static inline void SetPrefLong(int a, long b) {}
+/* SetPrefLong: real implementation in gtk_dialogs.c, declared in gtk_dialogs.h */
 static inline int PeteCursorList(void *list, void *mouse) { return 0; }
 #define ModalFilterUPP void *
 /* SAVE_PORT/REST_PORT are no-ops in mydefs.h (GTK port) */

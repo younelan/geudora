@@ -216,12 +216,9 @@ long CountAliasExpansion(NickHandle aliases, long offset);
   (256 * (unsigned)(*(void ***)(a))[___nba(a, o)] +                            \
    (unsigned)(*(void ***)(a))[___nba(a, o) + 1])
 
-#define ContainsMultipleAddresses(aHandle)                                     \
-  ((aHandle)                                                                   \
-       ? ((GetHandleSize(aHandle) > 2) && *(*(aHandle) + **(aHandle) + 2)      \
-              ? true                                                           \
-              : false)                                                         \
-       : false)
+/* BinAddrHandle is now char** (NULL-terminated array). Multiple = has [0] and [1] */
+#define ContainsMultipleAddresses(addrs)                                       \
+  ((addrs) && (addrs)[0] && (addrs)[1] ? true : false)
 
 bool SaveIndNickFile(short which, bool saveChangeBits);
 int URLStringToSpec(StringHandle urlString, FSSpec *spec);
@@ -303,8 +300,8 @@ short FindAddressBookType(AddressBookType type);
 int WhiteListAddr(TextAddrHandle addr);
 int WhiteListTS(TOCType * tocH, short sumNum);
 
-BinAddrHandle UniqBinAddr(BinAddrHandle addresses);
-BinAddrHandle SortBinAddr(BinAddrHandle addresses);
+char **UniqBinAddr(char **addresses);
+char **SortBinAddr(char **addresses);
 
 #ifdef VCARD
 bool AnyPersonalNicknames(void);

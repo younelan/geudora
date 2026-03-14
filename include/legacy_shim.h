@@ -265,10 +265,7 @@ void ComputeLocalDate(void *sum, unsigned char *dateStr);
 
 /* TimeString: real implementation in util.c, declared in util.h */
 
-static inline void ShortAddr(unsigned char *src, unsigned char *dst) {
-  if (src != dst)
-    PCopy_SHIM(dst, src);
-}
+/* ShortAddr: real implementation in address.c */
 
 /*
 static inline unsigned char *CompCurAddr(void *win, unsigned char *addr) {
@@ -301,15 +298,11 @@ static inline void HNoPurge(void *h) {}
  * Stubbing them here causes conflicting declarations. Do not define them
  * in this shim; let the canonical headers be authoritative. */
 
-static inline uint32_t Hash(unsigned char *pStr) {
-  uint32_t hash = 0;
-  if (!pStr)
-    return 0;
-  int len = pStr[0];
-  for (int i = 1; i <= len; i++)
-    hash = (hash << 5) - hash + pStr[i];
-  return hash;
-}
+/* Hash() is defined in message.h as:
+ *   #define Hash(s) HashWithSeed(s, 1)
+ *   #define HashWithSeed(s, seed) HashWithSeedLo(s, strlen(s), seed)
+ * Do NOT redefine it here — use the real C-string-compatible version.
+ */
 
 /* GetMailboxName implemented in mailbox.c */
 

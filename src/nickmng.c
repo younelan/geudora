@@ -32,6 +32,7 @@ ADVISED OF THE POSSIBILITY OF SUCH DAMAGE. */
 #include "sort.h"
 #include "util.h"
 #include "imapdownload.h"
+#include "threading.h"
 #include <gtk/gtk.h>
 #define FILE_NUM 2
 
@@ -147,7 +148,7 @@ void **CreateSimpleNotes(unsigned char *name, unsigned char *addr) {
 bool NickWinIsOpen(void) { return false; /* stub */ }
 void ABTickleHardEnoughToMakeYouPuke(void) { /* stub */ }
 int AddAddressHashUniq(void *hash, void *acc) { return 0; /* stub */ }
-int CountAddresses(void **h, int unused) { return 0; /* stub */ }
+/* CountAddresses: real implementation in address.c */
 /* DupHandle is implemented in imapmailboxes.c */
 #define featureMultipleNicknameFiles 1
 #define TAG_MAP_TYPE 'TGMP'
@@ -188,26 +189,17 @@ struct HeadSpec {
 // Note: PtrPlusHand is already defined in fileutil.c and returns Handle (void
 // **) The macro PtrPlusHand_ wraps it. No need to redefine here.
 
-// Helper for ContainsMultipleAddresses macro - checks if handle contains
-// multiple addresses
-static inline bool ContainsMultipleAddressesHelper(void **aHandle) {
-  if (!aHandle || !*aHandle)
+// Helper for ContainsMultipleAddresses - checks if char** array has multiple addresses
+static inline bool ContainsMultipleAddressesHelper(char **addrs) {
+  if (!addrs || !addrs[0])
     return false;
-  long size = GetHandleSize(aHandle);
-  if (size <= 2)
-    return false;
-  unsigned char *data = (unsigned char *)*aHandle;
-  unsigned char firstLen = data[0];
-  if (firstLen + 2 < size) {
-    return data[firstLen + 2] != 0;
-  }
-  return false;
+  return addrs[1] != NULL;
 }
 
 // Redefine the macro to use our helper
 #undef ContainsMultipleAddresses
-#define ContainsMultipleAddresses(aHandle)                                     \
-  ContainsMultipleAddressesHelper(aHandle)
+#define ContainsMultipleAddresses(addrs)                                       \
+  ContainsMultipleAddressesHelper(addrs)
 
 // Mac type compatibility
 typedef long Size;
@@ -343,7 +335,7 @@ long NickMatchFoundLo(NickStructHandle theNicknames, long theNicknamesLen,
  *  sure they're all in memory
  ************************************************************************/
 OSErr ReadNicknames(short which) {
-  BinAddrHandle shortAddress;
+  char **shortAddress;
   FSSpec spec;
   OSErr err = noErr;
   Str255 line;
@@ -532,14 +524,13 @@ OSErr ReadNicknames(short which) {
                 // As a last check... see if the address is already present in a
                 // nickname file
                 if (!SuckPtrAddresses(
-                        &shortAddress, LDRef(lineAcc.data) + count + 1,
+                        &shortAddress, (char *)(*lineAcc.data) + count + 1,
                         lineAcc.offset - count - 1, false, true, false, nil))
-                  nickInfo.hashAddress = NickHashString(LDRef(shortAddress));
+                  nickInfo.hashAddress = NickHashString(shortAddress[0]);
 
                 nickInfo.group = ContainsMultipleAddresses(shortAddress);
-                UL(lineAcc.data);
 
-                ZapHandle(shortAddress);
+                g_strfreev(shortAddress); shortAddress = NULL;
               }
               if (doingNote) // Command is note
               {
@@ -778,7 +769,7 @@ long NickAddressMatchFound(NickStructHandle theNicknames, long hashAddress,
                            PStr theAddress, short which)
 
 {
-  BinAddrHandle addresses;
+  char **addresses;
   NickStruct *theStruct, *endStruct;
   Handle theAddresses;
   Str255 tempStr, tempAddress;
@@ -811,16 +802,19 @@ long NickAddressMatchFound(NickStructHandle theNicknames, long hashAddress,
     if ((*theNicknames)[i].hashAddress == hashAddress &&
         !(*theNicknames)[i].deleted)
       if (theAddresses = GetNicknameData(which, i, true, true)) {
-        SuckPtrAddresses(&addresses, LDRef(theAddresses),
+        addresses = nil;
+        SuckPtrAddresses(&addresses, (char *)LDRef(theAddresses),
                          GetHandleSize(theAddresses), False, False, False, nil);
         UL(theAddresses);
-        if (addresses) {
-          PCopy(tempStr, *addresses);
+        if (addresses && addresses[0]) {
+          g_strlcpy((char *)tempStr + 1, addresses[0], sizeof(tempStr) - 1);
+          tempStr[0] = strlen((char *)tempStr + 1);
           *tempStr = RemoveChar(' ', tempStr + 1, *tempStr);
-          ZapHandle(addresses);
+          g_strfreev(addresses); addresses = NULL;
           if (StringSame(tempAddress, tempStr))
             return (i);
         }
+        g_strfreev(addresses);
       }
 
   return (-1);
@@ -1377,7 +1371,7 @@ long NickHashHandle(Handle h)
 long NickHashRawAddresses(Handle addresses, bool *group)
 
 {
-  BinAddrHandle shortAddress;
+  char **shortAddress;
   long hashValue;
 
   hashValue = -1;
@@ -1387,12 +1381,12 @@ long NickHashRawAddresses(Handle addresses, bool *group)
     shortAddress = nil;
     // As a last check... see if the address is already present in a nickname
     // file
-    if (!SuckPtrAddresses(&shortAddress, LDRef(addresses),
+    if (!SuckPtrAddresses(&shortAddress, (char *)LDRef(addresses),
                           GetHandleSize(addresses), false, false, false, nil))
-      hashValue = NickHashString(LDRef(shortAddress));
+      hashValue = NickHashString(shortAddress[0]);
     UL(addresses);
     *group = ContainsMultipleAddresses(shortAddress);
-    ZapHandle(shortAddress);
+    g_strfreev(shortAddress); shortAddress = NULL;
   }
   return (hashValue);
 }
@@ -1968,45 +1962,47 @@ void RemoveNamedNickname(short which, UPtr name) {
  * NickUniq - uniquify a nicknames list
  ************************************************************************/
 OSErr NickUniq(TextAddrHandle addresses, PStr sep, bool wantErrors) {
-  TextAddrHandle cmntOrig = nil, unOrig = nil, cmntNew = nil, unNew = nil;
+  char **cmntOrig = nil, **unOrig = nil;
+  TextAddrHandle cmntNew = nil, unNew = nil;
   short err = noErr;
-  UPtr spot;
   UPtr newSpot;
   UPtr end;
   long size;
   bool group, groupWas = False;
+  int ci;
 
-  err = SuckAddresses(&cmntOrig, addresses, True, wantErrors, False, nil);
+  err = SuckAddresses(&cmntOrig, (char **)addresses, True, wantErrors, False, nil);
   cmntNew = NuHTempOK(0);
   unNew = NuHTempOK(0);
 
   if (!err && cmntNew && unNew && cmntOrig) {
-    for (spot = LDRef(cmntOrig); *spot && !err; spot += *spot + 2) {
-      err = SuckPtrAddresses(&unOrig, spot + 1, *spot, False, wantErrors, False,
+    for (ci = 0; cmntOrig[ci] && !err; ci++) {
+      err = SuckPtrAddresses(&unOrig, cmntOrig[ci], strlen(cmntOrig[ci]), False, wantErrors, False,
                              nil);
-      if (!err && unOrig && *unOrig) {
-        // Cast to unsigned char ** for pointer arithmetic
-        unsigned char **unOrigUC = (unsigned char **)unOrig;
-        unsigned char *unOrigData = *unOrigUC;
+      if (!err && unOrig && unOrig[0]) {
+        char *unOrigData = unOrig[0];
         if (unOrigData && unOrigData[0]) {
-          group = unOrigData[unOrigData[0]] == ':';
+          size_t unOrigLen = strlen(unOrigData);
+          group = unOrigLen > 0 && unOrigData[unOrigLen - 1] == ':';
           for (newSpot = LDRef(unNew), end = newSpot + GetHandleSize_(unNew);
-               newSpot < end && *newSpot; newSpot += *newSpot + 2)
-            if (StringSame(newSpot, (unsigned char *)*unOrig))
+               newSpot < end && *newSpot; newSpot += strlen((char *)newSpot) + 1)
+            if (g_ascii_strcasecmp((char *)newSpot, unOrigData) == 0)
               break;
           UL(unNew);
           if (newSpot >= end || !*newSpot) {
             /* did NOT find it */
+            size_t sepLen = strlen((char *)sep);
             if (!groupWas && GetHandleSize_(cmntNew))
-              PtrPlusHand_(sep + 1, cmntNew, *sep);
-            if (!PtrPlusHand_(spot + 1, cmntNew, *spot))
+              PtrPlusHand_(sep, cmntNew, sepLen);
+            size_t spotLen = strlen(cmntOrig[ci]);
+            if (!PtrPlusHand_(cmntOrig[ci], cmntNew, spotLen + 1))
               break;
-            if (!PtrPlusHand_(*unOrigUC, unNew, unOrigData[0] + 2))
+            if (!PtrPlusHand_(unOrigData, unNew, unOrigLen + 1))
               break;
           }
           groupWas = group;
         }
-        ZapHandle(unOrig);
+        g_strfreev(unOrig); unOrig = NULL;
       }
     }
   }
@@ -2022,8 +2018,8 @@ OSErr NickUniq(TextAddrHandle addresses, PStr sep, bool wantErrors) {
   if (err < 0 && wantErrors)
     WarnUser(MEM_ERR, err);
 
-  ZapHandle(cmntOrig);
-  ZapHandle(unOrig);
+  g_strfreev(cmntOrig);
+  g_strfreev(unOrig);
   ZapHandle(cmntNew);
   ZapHandle(unNew);
   return (err);
@@ -2427,7 +2423,7 @@ void MakeCompNick(MyWindowPtr win)
  * MakeNickFromSelection - make a nickname from the selected addresses
  **********************************************************************/
 void MakeNickFromSelection(MyWindowPtr win) {
-  Handle list = nil;
+  char **list = nil;
   Handle text;
   Handle textCopy;
   long selStart, selEnd;
@@ -2453,14 +2449,13 @@ void MakeNickFromSelection(MyWindowPtr win) {
       Tr(textCopy, "\015", ",");
 
       HLock(textCopy);
-      if (!SuckPtrAddresses(&list, *textCopy + selStart, selEnd - selStart,
+      if (!SuckPtrAddresses(&list, (char *)*textCopy + selStart, selEnd - selStart,
                             True, True, False, nil)) {
-        unsigned char **listUC = (unsigned char **)list;
-        if (!list || !*list || !listUC || !*listUC || (*listUC)[0] == 0)
+        if (!list || !list[0] || !list[0][0])
           WarnUser(NO_ADDRESSES, 0);
         else
-          NewNick(list, 0);
-        ZapHandle(list);
+          NewNick((void **)list, 0);
+        g_strfreev(list); list = NULL;
       }
       HUnlock(textCopy);
     }
@@ -2473,7 +2468,7 @@ void MakeNickFromSelection(MyWindowPtr win) {
  ************************************************************************/
 int GatherCompAddresses(MyWindowPtr win, char *addrList) {
   Handle biglist = (Handle)addrList;
-  Handle littlelist;
+  char **littlelist = nil;
   MessHandle messH;
   static short heads[] = {TO_HEAD, CC_HEAD, BCC_HEAD};
   int err = 0;
@@ -2489,18 +2484,20 @@ int GatherCompAddresses(MyWindowPtr win, char *addrList) {
     if (CompHeadFind(messH, heads[h], &hs)) {
       if (err = CompHeadGetText(TheBody, &hs, &text))
         break;
-      err = SuckAddresses(&littlelist, (void **)text, True, True, False, nil);
-      if (littlelist) {
-        unsigned char **littlelistUC = (unsigned char **)littlelist;
-        if (littlelistUC && *littlelistUC && (*littlelistUC)[0]) {
-          long size = GetHandleSize_(biglist);
-          if (size)
-            SetHandleBig_(biglist, size - 1); /* strip final terminator */
-          if ((err = HandAndHand(littlelist, biglist)))
+      err = SuckAddresses(&littlelist, (char **)text, True, True, False, nil);
+      if (littlelist && littlelist[0] && littlelist[0][0]) {
+        // Append each address string to the biglist Handle
+        for (int i = 0; littlelist[i]; i++) {
+          size_t slen = strlen(littlelist[i]);
+          if (PtrPlusHand_(littlelist[i], biglist, slen + 1)) {
+            err = MemError();
             break;
+          }
         }
-        ZapHandle(littlelist);
+        g_strfreev(littlelist); littlelist = NULL;
         ZapHandle(text);
+      } else {
+        g_strfreev(littlelist); littlelist = NULL;
       }
     }
   }
@@ -3522,7 +3519,7 @@ OSErr URLStringToSpec(StringHandle urlString, FSSpec *spec)
            (unsigned char *)":");
       FixURLPtr(query, &queryLen);
       MakePPtr(fullPath, (unsigned char *)query, queryLen);
-      theError = FSMakeFSSpec(0, 0, fullPath, spec);
+      theError = spec_for(NULL, fullPath, spec);
       break;
     }
   UL(urlString);
@@ -3648,7 +3645,7 @@ void ReadNickFileList(FSSpec *pSpec, AddressBookType type, bool reread) {
     if (hfi.hFileInfo.ioFlFndrInfo.fdType == 'TEXT' ||
         hfi.hFileInfo.ioFlFndrInfo.fdCreator == CREATOR) {
       multipleNickFiles = true;
-      SimpleMakeFSSpec(pSpec->vRefNum, pSpec->parID, name, &ad.spec);
+      spec_make(pSpec->path, name, &ad.spec);
       if (!CanWrite(&ad.spec, &ad.ro)) {
         ad.ro = !ad.ro; /* opposite sense! */
         if (!PtrPlusHand_((unsigned char *)&ad, Aliases, sizeof(ad)))
@@ -3728,28 +3725,25 @@ OSErr BuildAddressHashes(short which) {
  * AddHandleToAddressHashes - add addresses from a handle to a hash accumulator
  ************************************************************************/
 OSErr AddHandleToAddressHashes(TextAddrHandle sourceHandle, AccuPtr a) {
-  BinAddrHandle rawHandle = nil;
-  BinAddrHandle expandedHandle = nil;
+  char **rawHandle = nil;
+  char **expandedHandle = nil;
   Str255 oneAddr;
-  long spot, size;
   uLong hash;
   OSErr err = noErr;
 
   if (sourceHandle)
-    if (!SuckAddresses(&rawHandle, sourceHandle, false, false, true, nil))
-      if (!ExpandAliases(&expandedHandle, rawHandle, 0, false)) {
-        size = GetHandleSize(expandedHandle) - 1;
-        for (spot = 0; !err && spot < size;
-             spot += *((unsigned char *)*expandedHandle + spot) + 2) {
-          PCopy(oneAddr, (unsigned char *)*expandedHandle + spot);
+    if (!SuckAddresses(&rawHandle, (char **)sourceHandle, false, false, true, nil))
+      if (!ExpandAliases((void **)&expandedHandle, (void *)rawHandle, 0, false)) {
+        for (int i = 0; expandedHandle[i] && !err; i++) {
+          g_strlcpy((char *)oneAddr, expandedHandle[i], sizeof(oneAddr));
           MyLowerStr(oneAddr);
           hash = Hash(oneAddr);
           err = AccuAddPtr(a, &hash, sizeof(hash));
         }
       }
 
-  ZapHandle(expandedHandle);
-  ZapHandle(rawHandle);
+  g_strfreev(expandedHandle);
+  g_strfreev(rawHandle);
   return err;
 }
 
@@ -4053,7 +4047,7 @@ OSErr NickBackup(FSSpecPtr spec) {
 
   if ((err = SubFolderSpec(SPOOL_FOLDER, &spoolSpec)) == noErr) {
     GetTime(&dtr);
-    FSMakeFSSpec(spoolSpec.vRefNum, spoolSpec.parID,
+    spec_for(spoolSpec.path,
                  ComposeString(name, (const unsigned char *)"%p.%d.%d.%d.%d", spec->name, dtr.day,
                                dtr.hour, dtr.minute, dtr.second),
                  &spoolSpec);
@@ -4311,7 +4305,7 @@ OSErr WhiteListAddr(TextAddrHandle addr) {
   Str63 nick;
   Str255 first, last;
   short which = 0;
-  BinAddrHandle binAddr, justAddr;
+  char **binAddr = nil, **justAddr = nil;
   OSErr err = fnfErr;
 
   // is it there already?
@@ -4332,23 +4326,23 @@ OSErr WhiteListAddr(TextAddrHandle addr) {
     which = FindAddressBookType(eudoraAddressBook);
 
   // reformat the address
-  if (!SuckAddresses(&binAddr, addr, true, false, false, nil)) {
+  if (!SuckAddresses(&binAddr, (char **)addr, true, false, false, nil)) {
     // get a nickname suggestion
     NickSuggest(nick, scratch);
     if (*nick)
-      if (!SuckAddresses(&justAddr, addr, false, false, false, nil)) {
+      if (!SuckAddresses(&justAddr, (char **)addr, false, false, false, nil)) {
         // fancy names are good
         ParseFirstLast(scratch, first, last);
 
         // finally add the darn thing
-        if (0 <= NewNickLow(which, nick, justAddr,
+        if (0 <= NewNickLow(which, nick, (void **)justAddr,
                             CreateSimpleNotes(scratch, (unsigned char *)""), 0))
           ABTickleHardEnoughToMakeYouPuke();
 
         // the rest is gravy...
-        ZapHandle(justAddr);
+        g_strfreev(justAddr); justAddr = NULL;
       }
-    ZapHandle(binAddr);
+    g_strfreev(binAddr); binAddr = NULL;
   }
 
   return err;
@@ -4357,52 +4351,40 @@ OSErr WhiteListAddr(TextAddrHandle addr) {
 #endif
 
 /************************************************************************
- * UniqBinAddr - make a BinAddrHandle contain only one of each address
+ * UniqBinAddr - make a char** contain only one of each address
  ************************************************************************/
-BinAddrHandle UniqBinAddr(BinAddrHandle addresses) {
-  Accumulator hashAcc, addrAcc;
-  Str255 addr;
-  long offset = 0;
-  long len = GetHandleSize(addresses);
-  unsigned char *addrData = (unsigned char *)*addresses;
+char **UniqBinAddr(char **addresses) {
+  Accumulator hashAcc;
+  int i, outCount = 0;
+
+  if (!addresses || !addresses[0])
+    return addresses;
 
   Zero(hashAcc);
-  Zero(addrAcc);
 
-  // loop through all the addresses in the bin addr list
-  for (offset = 0; offset < len - 1; offset += addrData[offset] + 2) {
-    // copy to a string
-    PCopy(addr, *addresses + offset);
+  // Count how many we have
+  int total = 0;
+  for (i = 0; addresses[i]; i++) total++;
 
-    ASSERT(*addr); // shouldn't happen...
+  // Build new unique list
+  char **result = (char **)g_malloc0((total + 1) * sizeof(char *));
+  if (!result) return addresses;
+
+  for (i = 0; addresses[i]; i++) {
+    ASSERT(addresses[i][0]); // shouldn't happen...
 
     // add hash to list of hashes if not there already
-    if (AddAddressHashUniq(addr, &hashAcc)) {
+    if (AddAddressHashUniq(addresses[i], &hashAcc)) {
       // wasn't there already, add to output list
-      PTerminate(addr);
-      AccuAddPtr(&addrAcc, addr, *addr + 2);
+      result[outCount++] = g_strdup(addresses[i]);
     }
   }
+  result[outCount] = NULL;
 
-  // terminating BinAddrHandle nil
-  AccuAddChar(&addrAcc, 0);
-
-  // copy into original handle
-  SetHandleBig(addresses, addrAcc.offset);
-  if (!MemError())
-    BMD(*addrAcc.data, *addresses, addrAcc.offset);
+  // Replace original
+  g_strfreev(addresses);
 
   // cleanup
-  do {
-    void **_azh = (addrAcc).data;
-    if (_azh) {
-      if (*_azh)
-        free(*_azh);
-      free(_azh);
-    }
-    (addrAcc).data = NULL;
-    (addrAcc).offset = (addrAcc).size = 0;
-  } while (0);
   do {
     void **_azh = (hashAcc).data;
     if (_azh) {
@@ -4414,49 +4396,44 @@ BinAddrHandle UniqBinAddr(BinAddrHandle addresses) {
     (hashAcc).offset = (hashAcc).size = 0;
   } while (0);
 
-  return addresses;
+  return result;
 }
 
 /************************************************************************
- * SortBinAddr - make a BinAddrHandle be in order
+ * SortBinAddr - sort a char** address array in order
  ************************************************************************/
-BinAddrHandle SortBinAddr(BinAddrHandle addresses) {
-  short count = CountAddresses(addresses, 0);
-  short i;
-  Handle addressVector = NuHandle(count * sizeof(UPtr));
-  BinAddrHandle newAddresses = DupHandle(addresses);
-  UPtr spot;
-  UPtr *vSpot;
+char **SortBinAddr(char **addresses) {
+  int count = CountAddresses(addresses, 0);
+  int i;
 
-  // fill in a vector of pointers to each address
-  if (addressVector && newAddresses) {
-    vSpot = (UPtr *)*addressVector;
+  if (!addresses || count <= 1)
+    return addresses;
 
-    for (spot = LDRef(addresses); *spot; spot += *spot + 2)
-      *vSpot++ = spot;
+  // Build a vector of pointers for sorting
+  UPtr *addressVector = (UPtr *)g_malloc(count * sizeof(UPtr));
+  if (!addressVector)
+    return addresses;
 
-    ASSERT(((long *)*addressVector)[count - 1]);
+  for (i = 0; i < count; i++)
+    addressVector[i] = (UPtr)addresses[i];
 
-    // now sort the vector
-    QuickSort(LDRef(addressVector), sizeof(UPtr), 0, count - 1,
-              (void *)SortAddrNameCompare, (void *)PtrSwap);
+  // now sort the vector
+  QuickSort(addressVector, sizeof(UPtr), 0, count - 1,
+            (void *)SortAddrNameCompare, (void *)PtrSwap);
 
-    // copy the list...
-    spot = *newAddresses;
-    vSpot = (UPtr *)*addressVector;
-    for (i = 0; i < count; i++) {
-      BMD(*vSpot, spot, **vSpot + 2);
-      spot += **vSpot + 2;
-      vSpot++;
-    }
+  // rebuild the addresses array with sorted order
+  char **sorted = (char **)g_malloc0((count + 1) * sizeof(char *));
+  if (sorted) {
+    for (i = 0; i < count; i++)
+      sorted[i] = g_strdup((char *)addressVector[i]);
+    sorted[count] = NULL;
 
-    // Shoot it home
-    BMD(*newAddresses, *addresses, GetHandleSize(addresses));
+    // Replace original
+    g_strfreev(addresses);
+    addresses = sorted;
   }
 
-  // cleanup
-  ZapHandle(newAddresses);
-  ZapHandle(addressVector);
+  g_free(addressVector);
 
   return addresses;
 }

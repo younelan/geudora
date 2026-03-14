@@ -43,7 +43,7 @@ char *GetMyVolName(short refNum, char *name);
 int BlessedDirID(long *sysDirIDPtr);
 short BlessedVRef(void);
 int IndexVRef(short index, short *vRef);
-int MakeResFile(const char *name, int vRef, long dirId, long creator,
+int MakeResFile(const char *name, const char *dir, long creator,
                 long type);
 // void ZapHandle(Handle h);
 int ExchangeAndDel(FSSpecPtr tmpSpec, FSSpecPtr spec);
@@ -79,8 +79,8 @@ short SpinOnLo(volatile int *rtnCodeAddr, long maxTicks, bool allowCancel,
 bool IsItAFolder(short vRef, long inDirId, const char *name);
 bool HFIIsFolder(CInfoPBRec *hfi);
 bool HFIIsFolderOrAlias(CInfoPBRec *hfi);
-void FolderSizeHi(short vRef, long dirID, uint32_t *cumSize);
-void FolderSize(short vRef, long dirID, CInfoPBRec *hfi, uint32_t *cumSize);
+void FolderSizeHi(const char *dir, uint32_t *cumSize);
+void FolderSize(const char *dir, CInfoPBRec *hfi, uint32_t *cumSize);
 #ifdef DEBUG
 #define FSpDirCreate MyFSpDirCreate
 #define DirCreate MyDirCreate
@@ -154,9 +154,9 @@ OSErr TweakFileType(FSSpecPtr spec, OSType type, OSType creator);
 OSErr HuntNewline(short refN, long aroundSpot, long *newline, bool *realNl);
 OSErr Snarf(FSSpecPtr spec, Handle *hp, long limit);
 OSErr SnarfRoman(FSSpecPtr spec, Handle *hp, long limit);
-short MyResolveAlias(short *vRef, long *dirId, char *name, bool *wasAlias);
+short MyResolveAlias(const char *dir, char *name, bool *wasAlias);
 #define FSpMyResolve(s, wasAlias)                                              \
-  MyResolveAlias(&(s)->vRefNum, &(s)->parID, (s)->name, wasAlias)
+  MyResolveAlias((s)->path, (s)->name, wasAlias)
 void PromptGetFile(FileFilterProcPtr filter, DlgHookYDProcPtr hook,
                    long hookData, short numTypes, SFTypeList tl,
                    StandardFileReply *reply, char *prompt);
@@ -175,7 +175,7 @@ short SetEOF(short refNum, long logEOF);
 short GetFPos(short refNum, long *filePos);
 short SetFPos(short refNum, short posMode, long posOff);
 short NCWrite(short refN, long *count, unsigned char *buf);
-void SimpleMakeFSSpec(short vRef, long dirId, char *name, FSSpecPtr spec);
+/* SimpleMakeFSSpec removed — use spec_make(dir, name, spec) instead */
 short HGetCatInfo(short vRef, long inDirId, const char *name, CInfoPBRec *hfi);
 short HSetCatInfo(short vRef, long inDirId, const char *name, CInfoPBRec *hfi);
 short AFSpGetCatInfo(FSSpecPtr spec, FSSpecPtr newSpec, CInfoPBRec *hfi);
@@ -259,7 +259,7 @@ OSErr MyFSpDelete(FSSpecPtr);
 #define kStuffFolderBit 0x1
 OSErr FindMyFile(FSSpecPtr spec, long whereToLook, short fileName);
 
-void MakeUniqueUntitledSpec(short vRefNum, long dirID, short strResID,
+void MakeUniqueUntitledSpec(const char *dir, short strResID,
                             FSSpec *spec);
 OSErr MisplaceItem(FSSpec *spec);
 OSErr FSpGetLongName(FSSpec *spec, TextEncoding destEncoding, char *longName);

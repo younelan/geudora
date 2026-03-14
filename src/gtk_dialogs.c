@@ -7,6 +7,7 @@
 #include "Globals.h"
 #include "task_types.h"
 #include "taskProgress.h"
+#include "threading.h"
 #include <gtk/gtk.h>
 #include <stdarg.h>
 #include <string.h>
@@ -153,6 +154,14 @@ long GetPrefLong(short prefId) {
   switch (prefId) {
     case PREF_INTERVAL:
       return (long)prefs_get_int(PREFS_GROUP_CHECKING_MAIL, "check_interval", 5);
+    case PREF_POP_MODE:
+      /* Default to UIDL mode (3) — modern POP3 servers all support UIDL.
+         The old LAST/STATUS modes mark already-accessed messages as read,
+         which prevents fetching on servers where another client accessed them. */
+      {
+        long val = g_key_file_get_integer(prefs_keyfile, "preferences", "pref_69", NULL);
+        return val ? val : 3; /* popRUIDL = 3 */
+      }
     default:
       break;
   }

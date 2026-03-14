@@ -42,9 +42,6 @@ ADVISED OF THE POSSIBILITY OF SUCH DAMAGE. */
    of any running or stopped thread
         - Out-Context switch procs must be manually called from the thread
    termination proc
-
-        -- SEE END OF FILE FOR DESIGN OVERVIEW --
-        -- SEE END OF FILE FOR BUG LIST --
 */
 
 #define FILE_NUM 90
@@ -52,6 +49,7 @@ ADVISED OF THE POSSIBILITY OF SUCH DAMAGE. */
 
 #include <errno.h>
 #include <pthread.h>
+#include <stdatomic.h>
 #include <stdbool.h>
 #include <stdio.h>
 #include <string.h>
@@ -73,11 +71,6 @@ ADVISED OF THE POSSIBILITY OF SUCH DAMAGE. */
 
 #define THREAD_STACK_SIZE 0 // Let pthread use default stack size
 
-// Mac OS cursor stubs
-#define watchCursor 0
-#define SetMyCursor(c)                                                         \
-  do {                                                                         \
-  } while (0)
 #ifndef MINI_MASK
 #define MINI_MASK 0
 #endif
@@ -86,7 +79,7 @@ ADVISED OF THE POSSIBILITY OF SUCH DAMAGE. */
 extern bool IsQueued(TOCType * tocH, short sumNum);
 extern long ApproxMessageSize(MessHandle messH);
 extern void SetState(TOCType * tocH, short sumNum, short state);
-extern void WriteTOC(TOCType * tocH);
+extern int WriteTOC(TOCType * tocH);
 
 // Ensure threadTooManyReqsErr is defined (Mac specific error code)
 #ifndef threadTooManyReqsErr
@@ -115,10 +108,18 @@ typedef struct prefChange_ {
   uLong persId;
 } prefChangeRec, *prefChangePtr;
 
-int gNumBackgroundThreads = 0;
+static atomic_int gNumBackgroundThreads = 0;
 static pthread_t gMainThreadID = 0;
-static short gCriticalSection = 0;
-static pthread_mutex_t gCriticalMutex = PTHREAD_MUTEX_INITIALIZER;
+static atomic_int gCriticalSection = 0;
+static pthread_mutex_t gCriticalMutex;
+static pthread_once_t gCriticalMutexOnce = PTHREAD_ONCE_INIT;
+static void init_critical_mutex(void) {
+  pthread_mutexattr_t attr;
+  pthread_mutexattr_init(&attr);
+  pthread_mutexattr_settype(&attr, PTHREAD_MUTEX_RECURSIVE);
+  pthread_mutex_init(&gCriticalMutex, &attr);
+  pthread_mutexattr_destroy(&attr);
+}
 
 // Thread-local storage for globals
 threadGlobalsRec ThreadGlobals;
@@ -213,7 +214,10 @@ static OSErr InitThreadGlobals(threadGlobalsPtr *newThreadGlobals) {
     return -108;
   (*newThreadGlobals)->tSettingsRefN = -1;
   (*newThreadGlobals)->tResRefN = -1;
-  (*newThreadGlobals)->tCurTrans = CurTrans;
+  /* Bypass _Thread_local macro — use memcpy from ThreadGlobals directly.
+     Struct copies through _Thread_local pointers miscompile on ARM64 macOS. */
+  memcpy(&(*newThreadGlobals)->tCurTrans, &ThreadGlobals.tCurTrans,
+         sizeof(TransVector));
   return (noErr);
 }
 
@@ -230,38 +234,50 @@ static OSErr CopyOutToTemp(void) {
   PersHandle pers;
 
   MyThreadBeginCritical();
-  SetMyCursor(watchCursor);
   tocH = GetRealOutTOC();
   tempTocH = GetTempOutTOC();
 
   TotalQueuedSize = 0;
+  g_print("CopyOutToTemp: tocH=%p tempTocH=%p\n", (void*)tocH, (void*)tempTocH);
   if (tocH && tempTocH) {
+    g_print("CopyOutToTemp: real count=%d gmtSecs=%lu\n", tocH->count, gmtSecs);
     // only copy messages ready to be sent now
     for (ii = 0; ii < tocH->count; ii++) {
+      g_print("CopyOutToTemp: msg %d state=%d messH=%p persId=%ld seconds=%lu\n",
+              ii, tocH->sums[ii].state, (void*)tocH->sums[ii].messH,
+              tocH->sums[ii].persId, tocH->sums[ii].seconds);
       if (!tocH->sums[ii].messH && IsQueued(tocH, ii)) {
         pers = FindPersById(tocH->sums[ii].persId);
+        g_print("CopyOutToTemp: msg %d IsQueued=YES pers=%p sendMeNow=%d\n",
+                ii, (void*)pers, pers ? pers->sendMeNow : -1);
         ASSERT(pers);
         if (pers && pers->sendMeNow &&
             tocH->sums[ii].seconds <= gmtSecs) {
           /*
            * handle open, dirty windows
            */
-          if ((messH = SaveB4Send(tocH, ii)) != NULL) {
-            MiniEvents(); // in case we're hogging time
-            TotalQueuedSize += (ApproxMessageSize(messH) * 1024);
+          {
+            /* SaveB4Send opens the message to get a messH.
+               On the GTK port OpenComp creates a visible window which
+               is wrong for background sending.  We only need messH
+               for ApproxMessageSize, so skip if not already open. */
+            messH = (MessHandle)tocH->sums[ii].messH;
+            MiniEvents();
             state = tocH->sums[ii].state;
-            err = MoveMessageLo(tocH, ii, &tempTocH->mailbox.spec, true,
-                                true, true);
+            /* Copy message directly to temp TOC — bypass MoveMessageLo
+               which re-looks up the TOC via TOCBySpec and fails */
+            err = AppendMessage(tocH, ii, &tempTocH, true, true, false);
+            g_print("CopyOutToTemp: msg %d AppendMessage err=%d tempCount=%d\n",
+                    ii, err, tempTocH->count);
             if (err)
               break;
             SetState(tocH, ii, BUSY_SENDING);
             SetState(tempTocH, tempTocH->count - 1, state);
-            if (messH->win)
-              CloseMyWindow(GetMyWindowWindowPtr(messH->win));
           }
         }
       }
     }
+    g_print("CopyOutToTemp: done, tempTocH->count=%d\n", tempTocH->count);
     BoxFClose(tempTocH, true);
     WriteTOC(tempTocH);
   }
@@ -325,12 +341,11 @@ static OSErr NewXferMail(threadDataHandle *tData, bool check, bool send,
     threadData->xferMailParams.check = check;
     threadData->xferMailParams.manual = manual;
     threadData->xferMailParams.scripted = scripted;
-    BlockMoveData(&flags, &threadData->xferMailParams.flags,
-                  sizeof(threadData->xferMailParams.flags));
+    memcpy(&threadData->xferMailParams.flags, &flags,
+           sizeof(threadData->xferMailParams.flags));
     threadData->imapInfo.command = UndefinedTask;
     if (imapInfo)
-      BlockMoveData(imapInfo, &(threadData->imapInfo),
-                    sizeof(IMAPTransferRec));
+      memcpy(&threadData->imapInfo, imapInfo, sizeof(IMAPTransferRec));
   }
   if (!theError)
     theError = CopySettingsForThread(
@@ -443,10 +458,6 @@ OSErr SetupXferMailThread(bool check, bool send, bool manual, bool scripted,
     }
   }
 #ifdef TASK_PROGRESS_ON
-#ifndef BATCH_DELIVERY_ON
-  if (!err && check && checkData && TaskProgressWindow && NeedToFilterIn)
-    RemoveFilterTask();
-#endif
 #endif
   if (err != userCanceledErr) {
     if (check && !checkData)
@@ -538,15 +549,23 @@ void CleanRealOutTOC(void) {
   int ii;
   short sum;
 
-  if (!(tocH && tempTocH))
+  g_print("CleanRealOutTOC: tocH=%p tempTocH=%p\n", (void*)tocH, (void*)tempTocH);
+  if (!(tocH && tempTocH)) {
+    g_print("CleanRealOutTOC: NULL toc, skipping\n");
     return;
+  }
 
+  g_print("CleanRealOutTOC: real count=%d temp count=%d\n", tocH->count, tempTocH->count);
   for (ii = tocH->count - 1; ii >= 0; ii--) {
+    g_print("CleanRealOutTOC: msg %d state=%d hash=%u\n", ii, tocH->sums[ii].state, tocH->sums[ii].uidHash);
     if (tocH->sums[ii].state == BUSY_SENDING) {
       sum = FindSumByHash(tempTocH, tocH->sums[ii].uidHash);
+      g_print("CleanRealOutTOC: BUSY_SENDING -> found in temp at %d, new state=%d\n",
+              sum, (sum != -1) ? tempTocH->sums[sum].state : SENDABLE);
       SetState(tocH, ii, (sum != -1) ? tempTocH->sums[sum].state : SENDABLE);
     }
   }
+  fflush(stdout);
 }
 
 /************************************************************************
@@ -580,9 +599,12 @@ void KillThreads(void) {
        threadDataIndex = threadDataIndex->next)
     SetThreadGlobalCommandPeriod(threadDataIndex->threadID, true);
 
-  // Wait for threads to finish
-  while (GetNumBackgroundThreads())
-    sched_yield();
+  // Wait for each thread to finish
+  for (threadDataIndex = gThreadData; threadDataIndex;
+       threadDataIndex = threadDataIndex->next) {
+    if (threadDataIndex->threadID)
+      pthread_join(threadDataIndex->threadID, NULL);
+  }
 }
 
 /************************************************************************
@@ -608,20 +630,13 @@ void *XferMailThread(void *threadParameter) {
 #ifdef DEBUG
   threadData->startTime = TickCount();
 #endif
-  BlockMoveData(&threadData->xferMailParams, &xferMailParams,
-                sizeof(xferMailParams));
-  BlockMoveData(&threadData->imapInfo, &imapInfo, sizeof(IMAPTransferRec));
+  memcpy(&xferMailParams, &threadData->xferMailParams, sizeof(xferMailParams));
+  memcpy(&imapInfo, &threadData->imapInfo, sizeof(IMAPTransferRec));
 #ifdef DEBUG_THREAD
   MyDebuggerNewThread(threadData->threadContext.threadID);
 #endif
   if (!theError) {
-#ifndef BATCH_DELIVERY_ON
-    if (xferMailParams.manual) {
-      short idleCount = GetRLong(MODAL_IDLE_SECS) * 60;
-      if (!NeedToFilterIn && !NeedToFilterOut)
-        ActiveTicks = (ActiveTicks > idleCount) ? (ActiveTicks - idleCount) : 0;
-    }
-#endif
+    /* batch delivery is always on — idle tick adjustment not needed */
     theError = XferMailRun(xferMailParams.check, xferMailParams.send,
                            xferMailParams.manual, xferMailParams.scripted,
                            xferMailParams.flags, &imapInfo);
@@ -648,7 +663,7 @@ void *XferMailThread(void *threadParameter) {
  * threadSwitchProcIn - switch intra-thread globals in
  ************************************************************************/
 void ThreadSwitchProcIn(pthread_t threadBeingSwitched, void *switchProcParam) {
-#pragma unused(threadBeingSwitched)
+  (void)threadBeingSwitched;
   threadDataHandle threadData;
   threadContextDataPtr threadContext;
 
@@ -677,7 +692,7 @@ void ThreadSwitchProcIn(pthread_t threadBeingSwitched, void *switchProcParam) {
  *main-thread globals in
  ************************************************************************/
 void ThreadSwitchProcOut(pthread_t threadBeingSwitched, void *switchProcParam) {
-#pragma unused(threadBeingSwitched)
+  (void)threadBeingSwitched;
   threadDataHandle threadData = nil;
   threadContextDataPtr threadContext = nil;
 
@@ -810,7 +825,6 @@ static OSErr CopySettingsForThread(short sourceRefN, PersHandle sourcePerslist,
   (void)sourceRefN; /* resource file ref not used on Linux */
 
   MyThreadBeginCritical();
-  SetMyCursor(watchCursor);
 
   /* Clone the personality linked list */
   for (oldPers = sourcePerslist; oldPers && !theError;
@@ -860,7 +874,7 @@ static OSErr DeleteSettingsForThread(short *settingsRefN) {
 /************************************************************************
  * getNumBackgroundThreads - return number of background threads
  ************************************************************************/
-int GetNumBackgroundThreads(void) { return (int)(gNumBackgroundThreads); }
+int GetNumBackgroundThreads(void) { return atomic_load(&gNumBackgroundThreads); }
 /************************************************************************
  * PushThreadPrefChange -
  ************************************************************************/
@@ -888,12 +902,12 @@ OSErr PushThreadPrefChange(short pref) {
 /************************************************************************
  * incrementNumBackgroundThreads - increase number of background threads
  ************************************************************************/
-void IncrementNumBackgroundThreads(void) { gNumBackgroundThreads++; }
+void IncrementNumBackgroundThreads(void) { atomic_fetch_add(&gNumBackgroundThreads, 1); }
 
 /************************************************************************
  * decrementNumBackgroundThreads - decrease number of background threads
  ************************************************************************/
-void DecrementNumBackgroundThreads(void) { gNumBackgroundThreads--; }
+void DecrementNumBackgroundThreads(void) { atomic_fetch_sub(&gNumBackgroundThreads, 1); }
 
 /************************************************************************
  * threadsAvailable - are threads supported?
@@ -946,16 +960,18 @@ short GetMainGlobalSettingsRefN(void) { return (ThreadGlobals.tSettingsRefN); }
  * MyBeginCritical - with pthreads, use a real mutex
  ************************************************************************/
 void MyThreadBeginCritical(void) {
+  pthread_once(&gCriticalMutexOnce, init_critical_mutex);
   pthread_mutex_lock(&gCriticalMutex);
-  ++gCriticalSection;
+  atomic_fetch_add(&gCriticalSection, 1);
 }
 
 /************************************************************************
  * MyEndCritical -
  ************************************************************************/
 void MyThreadEndCritical(void) {
-  if (--gCriticalSection < 0)
-    gCriticalSection = 0;
+  int prev = atomic_fetch_sub(&gCriticalSection, 1);
+  if (prev <= 0)
+    atomic_store(&gCriticalSection, 0);
   pthread_mutex_unlock(&gCriticalMutex);
 }
 
@@ -966,7 +982,7 @@ void MyYieldToAnyThread(void) {
 #ifdef DEBUG
   CheckSelectedGlobals();
 #endif
-  if (ThreadsAvailable() && !gCriticalSection) {
+  if (ThreadsAvailable() && !atomic_load(&gCriticalSection)) {
     sched_yield();
     ThreadYieldTicks = TickCount();
   }
@@ -1062,21 +1078,12 @@ void ThreadTermination(pthread_t threadTerminated, void *terminationProcParam) {
 #ifdef TASK_PROGRESS_ON
     if (TaskProgressWindow &&
         GetWindowKind(TaskProgressWindowWP) == TASKS_WIN) {
-#ifdef BATCH_DELIVERY_ON
       if (!GetNumBackgroundThreads() && !TaskDontAutoClose &&
           PrefIsSet(PREF_TASK_PROGRESS_AUTO) && !NewError) {
         CloseMyWindow(TaskProgressWindowWP);
       } else {
         InvalContent(TaskProgressWindow);
       }
-#else
-      if (!GetNumBackgroundThreads() && !TaskDontAutoClose &&
-          PrefIsSet(PREF_TASK_PROGRESS_AUTO) && !NeedToFilterIn && !NewError) {
-        CloseMyWindow(TaskProgressWindowWP);
-      } else {
-        InvalContent(TaskProgressWindow);
-      }
-#endif
     }
 #endif
   }
@@ -1113,332 +1120,3 @@ void CheckSelectedGlobals() {
 
 /* RemoveTaskErrors is implemented in taskProgress.c */
 
-/*
------------------------------------------------------------------------------------------------------------------------
-                                                                                                                                                                                                                        DESIGN
------------------------------------------------------------------------------------------------------------------------
-
-Here's my plan for implementing phase 1 of threads. Comments are welcome.
-
-I am using the Thread Manager to implement this stuff. All of the thread changes
-are #ifdefed so we can switch off threading for debugging. The Checkmail thread
-is mostly written.
-
-Here's a breakdown of the changes:
-
-General Threading
-
-Can we thread?
-        - during initialization, see if this OS supports threads. Warn and run
-single-threaded if we can't.
-
-Make Progress Dialog thread-safe and modeless
-        - don't disable menus anymore (but do disable checkmail and sendmail)
-        - attach thread context data structure to the myWindowPtr structure. The
-thread context data structure contains two copies of certain global variables.
-One copy is global to the main thread, and the other is global to the background
-thread. Examples of some of these thread-sensitive variables are: ProgWindow,
-CommandPeriod, and StringCache. These globals are switched in and out by the
-thread context switch procs, which are automatically called by the Thread
-Manager.
-        - Replace Swinging Pendulum and Spinning Beach Ball with Arrow cursor
-        - Yield to other threads from Progress() function
-        - replace progreessButton () and progressKey () callbacks with
-thread-aware versions
-
-Make network code thread-safe
-        I'm not sure how much work is involved here or if it's even necessary
-for phase 1. For now I've just disabled the Ph and Finger buttons when a
-checkmail or sendmail thread is in progress.
-
-Cooperation
-        CHANGED -- Yield once from main event loop, which is in the main thread.
-Background threads will also yield from the Progress() function. We need to be
-extra cautious about "locking up" the main thread by not yielding enough from
-background threads. We're now yielding from WNE. The tcp code calls this when
-it's waiting to connect. Previously, not yielding from this code locked the UI.
-        Another big change is, we're not sleeping when a background thread is
-running. We were giving up too much time to other apps when the thread was
-running.
-
-Segmentation
-        For now, I've disabled unloadSegs () and unloadUneeded () while a thread
-is running. Unloading segments that are in use by another thread is not a
-healthy thing to do! It sounds like we will be doing away with segmentation so
-these functions will not need to be made thread-safe?
-
-
-Check Mail Thread
------------------
-from main thread...
-        - create thread (allocate and initialize data and install procptrs:
-thread entry point, context switch functions, thread termination function)
-        - continue cycling through event loop (and call thread-aware progress
-callbacks when cancel button hit or command-. hit)
-
-from check mail thread...
-        - copy settings, stringcache, and personality data (since user could
-change these while the thread is running)
-        - open thread-safe, modeless progress dialog
-        - run modified xfermail()
-                download messages to temporary In mailbox
-                make progress modal
-                run filters on temp mailbox
-                transfer unfiltered messages to In mailbox
-        - close progress dialog
-        - clean up (dispose of memory)
-
-Send Mail Thread 1 (implemented)
-------------------
-from main thread...
-        - create thread (allocate and initialize data and install procptrs:
-thread entry point, context switch functions, thread termination function)
-        - copy queued messages in Out mailbox to temporary Out mailbox
-        - set state of messages in out box to BUSY_SENDING (they're locked and
-unmodifiable)
-        - continue cycling through event loop (and call thread-aware progress
-callbacks when cancel button hit or command-. hit)
-
-from send mail thread...
-        - copy settings, stringcache, and personality data (since user could
-change these while the thread is running)
-        - open thread-safe, modeless progress dialog
-        - run modified xfermail()
-                run emsapi plug-ins (shouldn't be a problem unless plug-in calls
-YieldToAnyThread ()) expand nicknames parse headers (to, from, fcc...) upload
-messages from the temporary Out mailbox mark state of summary (i.e. SENT)
-
-        make progress modal
-        - for each message in out box marked as BUSY_SENDING
-                set state of summary (i.e. SENT or QUEUED)
-                expand nicknames
-                fcc
-                filter
-                delete summary if pref set
-                delete summary in temp out box
-        - close progress dialog
-        - clean up (dispose of memory)
-
-
-Send Mail Thread 2 (future implementation)
-------------------
-from main thread...
-        - create thread (allocate and initialize data and install procptrs:
-thread entry point, context switch functions, thread termination function)
-        + spool queued messages in out box (expand nicknames, encode
-attachments, run EMSAPI q4transmission plug-ins) with name = uidHash
-        - set state of messages in out box to BUSY_SENDING (they're locked and
-unmodifiable)
-        - continue cycling through event loop (and call thread-aware progress
-callbacks when cancel button hit or command-. hit)
-
-from send mail thread...
-        - copy settings, stringcache, and personality data (since user could
-change these while the thread is running)
-        - open thread-safe, modeless progress dialog
-        - run modified xfermail()
-        +	upload messages from spool directory
-
-                make progress modal
-        - for each locked summary entry
-                set state of summary (i.e. SENT or QUEUED)
-                fcc
-                filter
-                delete summary if pref set
-                delete spool file
-        - close progress dialog
-        - clean up (dispose of memory)
-
------------------------------------------------------------------------------------------------------------------------
-                                                                                                                                                                                                                                BUGS
------------------------------------------------------------------------------------------------------------------------
-
-        To do:
-
-        - don't bring up filter progress window unless process takes more than 3
-seconds
-        - allow filtering during thread
-        - test for weak imports in threads available
-        - send queued messages after send thread finishes (watch for ppp hanging
-up between xfers)
-        - thread should have own toclist and messlist
-
-        Known bugs:
-
-        - unloadUneeded () and unloadSegs() disabled when thread started
-        - changing pop accounts while checking mail - pw should become invalid
-        - some sent messages are still editable
-
-        Non-reproducible bugs:
-        - editing � (busy sending) messages (chris pepper)
-        - can't edit contents of mess from aborted send
-        - possible race condition when sending
-
-        Fixed bugs:
-
-        - background check mail reporting error -38 when downloading mail
-3/19/97
-        - messages aren't written to temp toc
-3/20/97
-        - check mail is checking all personalities
-3/20/97
-        - quitting while check mail thread running causes crash
-4/97
-        - not all messages transfered from temp.in to in mailbox
-4/11/97
-        - send mail unsupported -- started support
-4/15/97
-        - auto-check needs to be threaded. it's interfering with threaded check.
-4/15/97
-        - repeating check mail when auto-checking
-4/18/97
-        - fix warning verbiage when TM not supported and run single-threaded.
-4/29/97
-        - out.temp mailbox can't be rebuilt on startup/NickMatchFound  (steve)
-4/30/97
-        - temp toc is grafted in-- should be hidden
-5/1/97
-        - messages sent multiple times when left in out temp
-5/2/97
-        - location of progress window not saved
-5/2/97
-        - FCC and filter not working yet for outgoing messages
-5/2/97
-        - not sending queued messages when quitting/ trash "out of date" warning
-sometimes causes crash		5/5/97
-        - modal dialogs crashing
-5/6/97
-        - font changing/port problem/ PopGWorld assertion failing (steve)
-5/6/97
-        - "You have new mail" dialog box crash (john)
-5/6/97
-        - get password not hiding text
-5/6/97
-        - popd lmos data not copied to original settings fork
-5/6/97
-        - when progress window becomes modal, it should change appearance.
-5/6/97
-        - option-cmd-W cmd-M cmd-1 (not processing keyboard commands besides
-cancel) 	5/9/97
-        - gworld stack - thread now maintains it's own
-5/9/97
-        - filtering mail while check mail running
-5/13/97
-        - closing progress window crash
-5/13/97
-        - should wait for idle time before modeless dlog turns modal
-5/13/97
-        - settings dialog turns modeless when check mail brings in box to front
-5/13/97
-        - personality fields (for the main thread) (e.g. passwords) aren't
-updated	5/14/97
-        - logging
-5/14/97
-        - timed queued messages not being sent
-5/15/97
-        - "Send Queued Messages" deactive when check mail without sending and
-there's a queued mesg		5/15/97
-        - 68k version crashes while in threads (but not when program locked--
-suspect it's segmentation fault)	5/16/97
-        - open in.temp instead of in for incoming filter with any header (pete)
-5/21/97
-        - open message filter for incoming opens and closes mesg
-5/21/97
-        - filter reply with on incoming messages creates mesg but doesn't send
-(steve)	5/22/97
-        - do something so steve doesn't get scared of "waiting for idle"
-progress dlog 	5/22/97 (remove progress bar, resource for idle time, change
-stop to go)
-        - deleting message from toc by hitting delete causes slow update when
-waiting for idle time	5/22/97
-        - deleting message from toc by hitting delete changes cursor to beach
-ball		5/22/97
-        - hang when progress dialogs disabled (andrew starr)
-5/22/97
-        - SetPref needs to be thread-aware (steve)
-5/23/97
-        - mesgs with bad addresses not editable when brought up, then crashing
-5/23/97
-        - should automatically rebuild temp in/out mailboxes instead of asking
-user	5/23/97
-        - SetupXferMail () needs to handle errors better
-5/27/97
-        - don't need to wait for idle time when progress frontmost
-5/27/97
-        - keeps downloading message that was partially downloaded then fetched
-(josh)			5/28/97
-        - cleaning up after checking mail too long (pete)
-5/28/97
-        - filter to set server options to delete- doesn't work (pete)
-5/29/97
-        - need to fix out.temp automatically when corrupt
-5/30/97
-        - progress dialog flickers on and off during checkmail with send
-5/30/97
-        - progress dialog waits twice
-5/30/97
-        - buildtoc.c line 27 (not checking for nil toc)
-6/10/97
-        - after progress window sleeps, sometimes outgoing filters don't work
-6/11/97
-        - passwords not preserved for session
-6/12/97
-        - repeatedly checking mail
-6/12/97
-        - typing is slower when waiting for idle time
-6/16/97
-        - use global structs in globals.c
-6/16/97
-        - unsent messages are filtered anyway
-6/19/97
-        - don't need to wait for idle time when starting background check mail
-6/19/97
-        - clicking stop button sometimes doesn't cancel thread
-6/20/97 by John B
-        - hitting "allow all connections" and "work offline" not working
-6/24/97
-        - closing all windows causes crash (was closing progwindow and message
-6/24/97 and toc which were being used by thread)
-        - memory leak size = 26600
-6/26/97
-        - globals causing heap corruption/crash
-6/26/97
-        - ThreadsAvailable failing for 68k
-6/26/97
-        - ASSERT(CurResFile()==SettingsRefN) failing (usually when app is in
-background and check mail starts)	6/27/97 Always happens when check mail,
-and bring up In mailbox from menu -- flushtocs (), mightswitch ()?
-        - close all messages causes crash -- in.temp getting closed
-        - not filtering "old" messages in temp boxes
-        - increase stack size for thread when too small
-        - crash recovery - need to mark messages as sent?
-        - slow typing
-        - downloading messages still really slow-- don't yield as much when
-!active, look into NEEDYIELD, profiler
-        - don't use reserve memory for thread creation
-        - move filtering to main thread
-        - don't download duplicate messages in in.temp
-        - SMTP error messages open in front of Filtering dialog
-        - update status of outgoing immediately
-9/4/97
-        - redo filter temp out toc
-9/4/97
-        - don't allow user to change status
-        - don't read filters when sending messages
-        - improve error handling for incoming/outgoing messages, MDN header, toc
-flags
-        - implement transport status window
-        - send immediately doesn't work
-        - network code isn't multi-threaded; only one connection at a time
-        - about box, settings shouldn't stall background thread
-        - link error in 68k version
-        - set skipped flag for encoding errors
-        - unqueue edited messages
-        - uucp unsupported
-        - hitting cancel when copying settings file crashes?
-
-        Phase 2:
-
-        - need to spool outgoing files instead of xfering to temp out mbox
-
-*/

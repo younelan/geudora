@@ -60,7 +60,8 @@ typedef enum {
 
 typedef struct {
   State822Enum state;
-  unsigned char token[256];  /* tokens over 255 characters will be shot */
+  unsigned char token[256];  /* null-terminated C string */
+  short tokenLen;            /* current length of token */
   unsigned char buffer[256]; /* input buffer line */
   unsigned char *spot;       /* spot we're currently processing */
   unsigned char *end;        /* time to die */

@@ -5,6 +5,7 @@
  * the globals actually referenced by the ported code.
  */
 
+#include <stdatomic.h>
 #include <stdbool.h>
 #include <stdint.h>
 #include <string.h>
@@ -22,6 +23,9 @@ int FontLead;
 int FontDescent;
 int FontAscent;
 bool FontIsFixed;
+
+/* ---- Network newline (CRLF for SMTP/POP) ---- */
+unsigned char NewLine[4] = "\r\n";
 
 /* ---- Application state ---- */
 bool Done;           /* set to true when we're done */
@@ -87,7 +91,7 @@ short NeedToFilterOut;
 short NeedToNotify;
 bool gSkipIMAPBoxes;
 long ThreadYieldTicks;
-bool CheckThreadRunning = false;
+atomic_bool CheckThreadRunning = false;
 int CheckThreadError = 0;
 int SendThreadError = 0;
 
@@ -119,7 +123,7 @@ short IMAPCheckThreadRunning;
 short gNewMessages;
 bool NoXfer;
 bool SendImmediately;
-bool SendThreadRunning;
+atomic_bool SendThreadRunning;
 bool NoNewMailMe;
 bool gStayConnected;
 bool HesOK;

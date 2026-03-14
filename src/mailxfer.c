@@ -92,6 +92,7 @@ extern void SelectBoxRange(TOCType *toc, short a, short b, bool c, short d,
 extern void ScrollIt(WindowPtr w, short a, long b);
 extern bool SortedDescending(TOCType *toc);
 extern void ShowMyWindowBehind(WindowPtr a, WindowPtr b);
+extern void eudora_open_mailbox_by_name(const char *name);
 extern MyWindowPtr FindText(FSSpecPtr spec);
 extern void MySelectWindow(WindowPtr w);
 extern MyWindowPtr OpenText(FSSpecPtr spec, void *a, void *b, void *c, bool d,
@@ -101,7 +102,7 @@ extern void OpenTasksWinBehind(void *win);
 
 /* TOC / message operations */
 extern void SetState(TOCType *toc, int sum, int state);
-extern bool WriteTOC(TOCType *toc);
+extern int WriteTOC(TOCType *toc);
 extern void DeleteMessage(TOCType *toc, int sum, bool nuke);
 extern void RedoTOC(TOCType *toc);
 extern int MoveMessageLo(TOCType *tocH, int sumNum, FSSpecPtr dest, bool copy,
@@ -182,8 +183,10 @@ bool IsQueued(TOCType *toc, int sum) {
 }
 
 long GetSMTPPort(void) {
-  long p = prefs_get_int(PREFS_GROUP_SENDING_MAIL, "smtp_port", 587);
-  return p ? p : 587;
+  bool submission = prefs_get_bool(PREFS_GROUP_SENDING_MAIL, "use_submission_port", FALSE);
+  long defaultPort = submission ? 587 : 25;
+  long p = prefs_get_int(PREFS_GROUP_SENDING_MAIL, "smtp_port", defaultPort);
+  return p ? p : defaultPort;
 }
 
 int GetSMTPInfoLo(unsigned char *server, long *port) {
@@ -306,15 +309,21 @@ short XferMail(bool check, bool send, bool manual, bool scripted, bool thread,
   // clear the subfolder cache; as good a place as any
   SubFolderSpec(0, NULL);
 
-  if ((err = XferMailSetup(&check, &send, manual, scripted, &flags, modifiers)))
+  if ((err = XferMailSetup(&check, &send, manual, scripted, &flags, modifiers))) {
+    g_print("XferMail: XferMailSetup returned err=%d\n", err);
     return err;
+  }
+  g_print("XferMail: after setup check=%d send=%d SendQueue=%d\n", check, send, SendQueue);
 
   // no need in spawning send thread if none of the queued messages belong to
   // a personality marked for sending whenever sends are done
-  for (pers = PersList; pers; pers = pers->next)
+  for (pers = PersList; pers; pers = pers->next) {
+    g_print("XferMail: pers=%p sendQueue=%ld sendMeNow=%d\n", (void*)pers, pers->sendQueue, pers->sendMeNow);
     if (pers->sendQueue && pers->sendMeNow)
       persSend = true;
+  }
   if (!SendQueue || !persSend) {
+    g_print("XferMail: send disabled: SendQueue=%d persSend=%d\n", SendQueue, persSend);
     send = false;
     SendImmediately = false;
   }
@@ -347,11 +356,15 @@ short XferMail(bool check, bool send, bool manual, bool scripted, bool thread,
     }
   }
 
+  g_print("XferMail: about to run/thread check=%d send=%d threading_off=%d threads_avail=%d thread=%d\n",
+          check, send, PrefIsSet(PREF_THREADING_OFF), ThreadsAvailable(), thread);
+  fflush(stdout);
   if (PrefIsSet(PREF_THREADING_OFF) || !OKToThread(check, send, manual, scripted) ||
       !ThreadsAvailable() || !thread)
     err = XferMailRun(check, send, manual, scripted, flags, NULL);
   else
     err = SetupXferMailThread(check, send, manual, scripted, flags, NULL);
+  fflush(stdout);
   if (send)
     SetSendQueue();        // redo sendqueue if need be
   SendImmediately = false; // clear this for next time around
@@ -359,6 +372,7 @@ short XferMail(bool check, bool send, bool manual, bool scripted, bool thread,
   if (check && IsAdwareMode())
     AdCheckingMail();
 
+  fflush(stdout);
   return (err);
 }
 
@@ -416,6 +430,9 @@ short XferMailSetup(bool *check, bool *send, bool manual, bool scripted,
           CurPers->doMeNow = CurPers->checkMeNow = true;
       }
 
+      g_print("XferMailSetup: pers=%p sendQueue=%ld send=%d noSend=%d checkMeNow=%d sendMeNow=%d doMeNow=%d popPref='%s'\n",
+              (void*)CurPers, CurPers->sendQueue, *send, PrefIsSet(PREF_PERS_NO_SEND),
+              CurPers->checkMeNow, CurPers->sendMeNow, CurPers->doMeNow, (char*)pass);
       if (*send && CurPers->sendQueue && !PrefIsSet(PREF_PERS_NO_SEND))
         CurPers->doMeNow = CurPers->sendMeNow = true;
       assert(CurPers == pers);
@@ -431,7 +448,9 @@ short XferMailSetup(bool *check, bool *send, bool manual, bool scripted,
   *check = flags.check || flags.servFetch || flags.servDel || flags.nuke ||
            flags.nukeHard || flags.stub;
 
+  g_print("XferMailSetup: final send=%d check=%d\n", *send, *check);
   if (!*send && !*check) {
+    g_print("XferMailSetup: both false, returning userCancelled\n");
     CurPers = oldCur;
     return (userCancelled);
   }
@@ -618,9 +637,13 @@ short XferMailRun(bool check, bool send, bool manual, bool scripted, XferFlags f
 
     gStayConnected = true; // Tell the dial code to keep the connection up
                            // until further notice.
+    g_print("XferMailRun: PersList=%p check=%d send=%d inThread=%d\n",
+            (void*)PersList, check, send, InAThread());
     for (pers = PersList; pers && !gPPPConnectFailed && !CommandPeriod;
          pers = pers->next) {
       CurPers = pers;
+      g_print("XferMailRun: pers=%p checkMeNow=%d sendMeNow=%d pw='%.4s...'\n",
+              (void*)pers, pers->checkMeNow, pers->sendMeNow, (char*)pers->password);
 
       // only display the new mail alert if a pop personality is being checked
       if (CurPers->checkMeNow && !PrefIsSet(PREF_IS_IMAP))
@@ -645,6 +668,11 @@ short XferMailRun(bool check, bool send, bool manual, bool scripted, XferFlags f
       // aren't any other check threads going.
       if (popChecked && !IMAPCheckThreadRunning && !gNewMessages)
         NoNewMailMe = gotSome == 0;
+
+    /* NeedToFilterIn was already incremented by POP thread (pop.c).
+       The idle scheduler will pick up delivery TOCs, filter, and notify. */
+    if (!dialErr && flags.check && (manual || gotSome > 0))
+      NeedToNotify = true;
   } else
   {
     /*
@@ -679,6 +707,9 @@ short XferMailLo(bool check, bool send, bool manual, XferFlags flags,
   TransStream mailStream = 0;
   bool willCheck = false, willSend = false;
 
+  g_print("XferMailLo: check=%d send=%d pers=%p checkMeNow=%d sendMeNow=%d\n",
+          check, send, (void*)CurPers, CurPers->checkMeNow, CurPers->sendMeNow);
+
   if (PrefIsSet(PREF_THREADING_OFF))
     PhKill();
 
@@ -687,18 +718,23 @@ short XferMailLo(bool check, bool send, bool manual, XferFlags flags,
    */
   if (send && !CurPers->sendQueue)
     send = false;
+  g_print("XferMailLo: [1] after sendQueue check, send=%d\n", send);
   /*
    * Set which task we're about to do in case we need to report it if we're
    * low on memory
    */
   SetCurrentTaskKind((check && !(CurPers->popSecure && send)) ? CheckingTask
                                                                  : SendingTask);
+  g_print("XferMailLo: [2] after SetCurrentTaskKind\n");
   FlushTOCs(true, true); /* flush unnecessary TOC's */
+  g_print("XferMailLo: [3] after FlushTOCs\n");
   if (MonitorGrow(true) || CommandPeriod)
     goto done;
+  g_print("XferMailLo: [4] after MonitorGrow\n");
   if (check)
     HesOK = true; // force re-fetch of hesiod info
   GetPOPInfo(popUser, popHost);
+  g_print("XferMailLo: [5] after GetPOPInfo user='%s' host='%s'\n", popUser, popHost);
   HesOK = false;
 
   /*
@@ -710,19 +746,22 @@ short XferMailLo(bool check, bool send, bool manual, XferFlags flags,
   if (!send && !check)
     goto done; /* nothing to do */
 
+  g_print("XferMailLo: [6] before CountResources\n");
   if (CountResources(NOTIFY_TYPE))
     NotifyHelpers(0, eWillConnect, NULL);
 
+  g_print("XferMailLo: [7] before POPHostLimit\n");
   if (check && (anyErr = POPHostLimit()))
     goto done;
 
-
+  g_print("XferMailLo: [8] before NewTransStream\n");
   /*
    *	Set up our TransStream
    */
   if ((anyErr = NewTransStream(&mailStream)))
     goto done;
 
+  g_print("XferMailLo: [9] before OpenProgress\n");
   /*
    * Doing network stuff; alerts should timeout
    */
@@ -731,6 +770,7 @@ short XferMailLo(bool check, bool send, bool manual, XferFlags flags,
    * Do we need to dial the phone?
    */
   OpenProgress();
+  g_print("XferMailLo: [10] after OpenProgress\n");
 
   /*
    * Now, do the mail transfers
@@ -746,6 +786,7 @@ short XferMailLo(bool check, bool send, bool manual, XferFlags flags,
      * check for mail, if need be
      */
     willCheck = !CommandPeriod && check && (!UseCTB || !err);
+    g_print("XferMailLo: [11] willCheck=%d willSend=pending check=%d send=%d\n", willCheck, check, send);
 
     /*
      * Set task we're about to do in case we need to report it if we're low on
@@ -784,7 +825,9 @@ short XferMailLo(bool check, bool send, bool manual, XferFlags flags,
         AuditCheckStart(++gCheckSessionID, CurPers->persId, !manual);
         StartStreamAudit(mailStream, kAuditBytesReceived);
 
+        g_print("XferMailLo: [11b] calling CheckForMail\n"); fflush(stdout);
         err = CheckForMail(mailStream, &gotSome, &flags) || err;
+        g_print("XferMailLo: [11c] CheckForMail returned err=%d gotSome=%d\n", err, gotSome); fflush(stdout);
 
         StopStreamAudit(mailStream);
         AuditCheckDone(gCheckSessionID, gotSome,
@@ -802,6 +845,7 @@ short XferMailLo(bool check, bool send, bool manual, XferFlags flags,
      */
     willSend =
         !CommandPeriod && send && (!UseCTB || !err) && !gPPPConnectFailed;
+    g_print("XferMailLo: [12] willSend=%d\n", willSend);
     /*
      * Set task we're about to do in case we need to report it if we're low on
      * memory
@@ -811,8 +855,11 @@ short XferMailLo(bool check, bool send, bool manual, XferFlags flags,
     if (MonitorGrow(true))
       return (0);
 
-    if (willSend)
+    if (willSend) {
+      g_print("XferMailLo: [13] calling SendTheQueue\n");
       err = SendTheQueue(mailStream, flags) || err;
+      g_print("XferMailLo: [14] SendTheQueue returned err=%d\n", err);
+    }
   }
 
   anyErr = err || CommandPeriod;
@@ -1131,16 +1178,20 @@ short SendTheQueue(TransStream stream, XferFlags flags) {
   char s[256];
   PersHandle relayPers = NULL;
 
+  g_print("SendTheQueue: [A] entering, inThread=%d\n", inThread);
   if (inThread) {
     SetCurrentTaskKind(SendingTask);
     RemoveTaskErrors(SendingTask, CurPers->persId);
   }
+  g_print("SendTheQueue: [B] after RemoveTaskErrors\n");
   if (PersCount() == 1)
     GetRString(s, SENDING_MAIL);
   else {
     ComposeRString(s, PERS_SENDING_MAIL, (unsigned char *)CurPers->name);
   }
+  g_print("SendTheQueue: [B2] calling ProgressMessage s='%s'\n", s);
   ProgressMessage(kpTitle, s);
+  g_print("SendTheQueue: [C] after ProgressMessage\n");
   /*
    * clear this stupid error condition
    */
@@ -1159,6 +1210,7 @@ short SendTheQueue(TransStream stream, XferFlags flags) {
 
   port = GetSMTPPort();
   GetSMTPInfoLo(server, &port);
+  g_print("SendTheQueue: [D] server='%s' port=%ld\n", server, port);
 
   ComposeLogR(LOG_SEND, NULL, START_SEND_LOG, server, port);
   AuditSendStart(++sessionID, CurPers->persId, flags.isAuto);
@@ -1167,7 +1219,9 @@ short SendTheQueue(TransStream stream, XferFlags flags) {
   if (!UUPCOut && !UUPCIn && PrefIsSet(PREF_POP_SEND)) {
     /* POP-before-SMTP auth path removed (was ESSL-only) */
   }
+  g_print("SendTheQueue: [E] calling StartSMTP\n");
   err = StartSMTP(stream, server, port);
+  g_print("SendTheQueue: [F] StartSMTP returned err=%d\n", err);
 
   // if using a relay personality, kill it now
   if (relayPers) {
@@ -1618,12 +1672,7 @@ void NotifyNewMailLo(short gotSome, bool noXfer, TOCType * tocH,
         NotifyHelpers(gotSome, eMailArrive, NULL);
 
         if (OpenIn && !PrefIsSet(PREF_NO_OPEN_IN)) {
-          WindowPtr tocWinWP = GetMyWindowWindowPtr(tocH->win);
-          ShowBoxAt(tocH, tocH->previewPTE ? -1 : FumLub(tocH),
-                    OpenBehindMePlease());
-          if (PrefIsSet(PREF_ZOOM_OPEN))
-            ReZoomMyWindow(tocWinWP);
-          UpdateMyWindow(tocWinWP);
+          eudora_open_mailbox_by_name("In");
         }
       }
     }

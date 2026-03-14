@@ -48,7 +48,6 @@ DAMAGE. */
 #define FILE_NUM 53
 /* Copyright (c) 1993 by QUALCOMM Incorporated */
 
-// #pragma segment MIME /* Mac-specific pragma removed */
 
 /* External variables from other modules */
 extern bool UUPCIn;   // UUPC input mode flag (defined in mailxfer.c)
@@ -176,8 +175,9 @@ static short gDecode[] =
 		if (nl && (bpl)==68)																			\
 		{																													\
 			int m_nl;																								\
-			for (m_nl=0;m_nl<*(nl);)																\
-				*(b64)++ = (nl)[++m_nl];															\
+			int m_nlLen = (int)strlen((const char *)(nl));					\
+			for (m_nl=0;m_nl<m_nlLen;m_nl++)												\
+				*(b64)++ = (nl)[m_nl];																\
 			(bpl) = 0;																							\
 		}																													\
 		(bpl) += 4;																								\
@@ -190,7 +190,7 @@ static short gDecode[] =
 
 /************************************************************************
  * Encode64 - convert binary data to base64
- *  bin -> the binary data (or nil to close encoder)
+ *  bin -> the binary data (or NULL to close encoder)
  *	len -> the length of the binary data
  *  sixFour -> pointer to buffer for the base64 data
  *  newLine -> newline character(s) to use
@@ -220,7 +220,7 @@ long Encode64(UPtr bin,long len,UPtr sixFour,PStr newLine,Enc64Ptr e64)
 				/*
 				 * we can encode some bytes
 				 */
-				BMD(bin,e64->partial+e64->partialCount,needMore);
+				memmove(e64->partial+e64->partialCount,bin,needMore);
 				len -= needMore;
 				bin += needMore;
 				EncodeThree64(e64->partial,sixFourSpot,bpl,newLine);
@@ -248,7 +248,7 @@ long Encode64(UPtr bin,long len,UPtr sixFour,PStr newLine,Enc64Ptr e64)
 		len = len%3;
 		if (len)
 		{
-			BMD(binSpot,e64->partial+e64->partialCount,len);
+			memmove(e64->partial+e64->partialCount,binSpot,len);
 			e64->partialCount += len;
 		}
 	}
@@ -292,7 +292,7 @@ long Encode64(UPtr bin,long len,UPtr sixFour,PStr newLine,Enc64Ptr e64)
 
 /************************************************************************
  * Decode64 - convert base64 data to binary
- *  sixFour -> the base64 data (or nil to close decoder)
+ *  sixFour -> the base64 data (or NULL to close decoder)
  *  sixFourLen -> the length of the base64 data
  *  bin -> pointer to buffer to hold binary data
  *  binLen <- length of binary data
@@ -426,8 +426,9 @@ long EncodeQP(UPtr bin,long len,UPtr qp,PStr newLine,long *bplp)
 	bpl = *bplp;	/* in inner loop; want local copy */
 
 #define QPNL		do {														\
-			BMD(newLine+1,qpSpot,*newLine);			\
-			qpSpot += *newLine;												\
+			{ size_t _qpnl = strlen((const char *)newLine);	\
+			memmove(qpSpot,newLine,_qpnl);					\
+			qpSpot += _qpnl; }											\
 			bpl = 0;} while (0)
 	
 #define ROOMFOR(x)															\
@@ -449,7 +450,7 @@ long EncodeQP(UPtr bin,long len,UPtr qp,PStr newLine,long *bplp)
 		/*
 		 * handle newlines
 		 */
-		if (c==NewLine[1])
+		if (c==NewLine[strlen((const char *)NewLine)-1])
 		{
 			QPNL;
 		}
@@ -643,7 +644,7 @@ BoundaryType HuntBoundary(TransStream stream,short refN,MIMESHandle msh,UPtr buf
 /************************************************************************
  * NewMIMES - instantiate a MIME descriptor for a header
  *  - returns handle to descriptor
- *  - nil if error
+ *  - NULL if error
  *  - kMIMEBoring if message isn't MIME or it doesn't matter if it's MIME
  *	- can be forced to return MIME header
  ************************************************************************/
@@ -653,7 +654,7 @@ MIMESHandle NewMIMES(TransStream stream,HeaderDHandle hdh,bool forceMIME,short c
 	Str127 scratch;
 	OSErr err=noErr;
 	MIMEMap mm;
-	TLMHandle translators=nil;
+	TLMHandle translators=NULL;
 	
 	/*
 	 * maybe we don't have to worry about this
@@ -663,14 +664,14 @@ MIMESHandle NewMIMES(TransStream stream,HeaderDHandle hdh,bool forceMIME,short c
 	if (!*(*(*hdh)->tlMIME)->mimeType)
 	{
 		// fix up some fake headers
-		AddTLMIME((*hdh)->tlMIME,TLMIME_TYPE,GetRString(scratch,MIME_TEXT),nil);
+		AddTLMIME((*hdh)->tlMIME,TLMIME_TYPE,GetRString(scratch,MIME_TEXT),NULL);
 		PSCopy((unsigned char *)(*hdh)->contentType, (unsigned char *)scratch);
-		AddTLMIME((*hdh)->tlMIME,TLMIME_SUBTYPE,GetRString(scratch,MIME_PLAIN),nil);
+		AddTLMIME((*hdh)->tlMIME,TLMIME_SUBTYPE,GetRString(scratch,MIME_PLAIN),NULL);
 		PSCopy((unsigned char *)(*hdh)->contentSubType, (unsigned char *)scratch);
 	}
 		
 	msh = NewZHTB(MIMEState);
-	if (!msh) {WarnUser(MEM_ERR,MemError()); return(nil);}
+	if (!msh) {WarnUser(MEM_ERR,MemError()); return(NULL);}
 	msh->hdh = hdh;
 	msh->context = context;
 	
@@ -701,7 +702,7 @@ MIMESHandle NewMIMES(TransStream stream,HeaderDHandle hdh,bool forceMIME,short c
 #ifdef ETL
 	if (!(ETLListAllTranslators(&translators,context)))
 	{
-		err = ETLCanTranslate(translators,EMSF_ON_ARRIVAL,(*hdh)->tlMIME,nil,nil,nil,hdh);
+		err = ETLCanTranslate(translators,EMSF_ON_ARRIVAL,(*hdh)->tlMIME,NULL,NULL,NULL,hdh);
 	}
 	else
 #endif
@@ -753,7 +754,7 @@ done:
 	if (err)
 	{
 		DisposeMIMES(msh);
-		msh = nil;
+		msh = NULL;
 	}
 	
 	return(msh);
@@ -786,12 +787,13 @@ BoundaryType IsBoundaryLine(POPLineType lt, UPtr buf, long len, PStr boundary)
 	
 	if (lt==plComplete)
 	{
+		size_t bLen = strlen((const char *)boundary);
 		bEnd = buf + len - 1;
-		lDiff = len - *boundary;
+		lDiff = len - bLen;
 		if (lDiff == 1 && *bEnd == '\015' ||
 				lDiff == 3 && *bEnd == '\015' && bEnd[-1] == '-' && bEnd[-2] == '-')
 		{
-			if (!strncmp(boundary+1,buf,*boundary)) return(lDiff==1 ? btInnerBoundary : btOuterBoundary);
+			if (!strncmp((const char *)boundary,(const char *)buf,bLen)) return(lDiff==1 ? btInnerBoundary : btOuterBoundary);
 		}
 	}
 	return(btNotBoundary);
@@ -807,7 +809,7 @@ DecoderFunc *FindMIMEDecoder(PStr encoding,bool *isExtern,bool load)
 	/* Built-in decoders only — no external resource-based decoders on GTK */
 	if (EqualStrRes(encoding,MIME_BASE64)) return(B64Decoder);
 	if (EqualStrRes(encoding,MIME_QP)) return(QPDecoder);
-	return(nil);
+	return(NULL);
 }
 
 /************************************************************************
@@ -874,7 +876,7 @@ OSErr B64Decoder(CallType callType,DecoderPBPtr pb)
 				break;
 			
 			case kDecodeDone:
-				err = Decode64(nil,0,pb->output,&pb->outlen,(Dec64Ptr)pb->refCon,pb->text);
+				err = Decode64(NULL,0,pb->output,&pb->outlen,(Dec64Ptr)pb->refCon,pb->text);
 				break;
 			
 			case kDecodeDispose:
@@ -914,11 +916,11 @@ OSErr B64Encoder(CallType callType,DecoderPBPtr pb)
 				break;
 			
 			case kDecodeDone:
-				pb->outlen = Encode64(nil,0,pb->output,pb->noLineBreaks?nil:NewLine,(Enc64Ptr)pb->refCon);
+				pb->outlen = Encode64(NULL,0,pb->output,pb->noLineBreaks?NULL:NewLine,(Enc64Ptr)pb->refCon);
 				if (!pb->noLineBreaks && ((Enc64Ptr)pb->refCon)->bytesOnLine)
 				{
-					BMD(NewLine+1,pb->output+pb->outlen,*NewLine);
-					pb->outlen += *NewLine;
+					{ size_t _nll = strlen((const char *)NewLine); memmove(pb->output+pb->outlen,NewLine,_nll);
+					pb->outlen += _nll; }
 				}
 				break;
 			
@@ -932,7 +934,7 @@ OSErr B64Encoder(CallType callType,DecoderPBPtr pb)
 			
 			case kDecodeData:
 				if (pb->inlen)
-					pb->outlen = Encode64(pb->input,pb->inlen,pb->output,pb->noLineBreaks?nil:NewLine,(Enc64Ptr)pb->refCon);
+					pb->outlen = Encode64(pb->input,pb->inlen,pb->output,pb->noLineBreaks?NULL:NewLine,(Enc64Ptr)pb->refCon);
 				else
 					pb->outlen = 0;
 				break;
@@ -961,7 +963,7 @@ OSErr QPDecoder(CallType callType,DecoderPBPtr pb)
 				break;
 			
 			case kDecodeDone:
-				err = DecodeQP(nil,0,pb->output,&pb->outlen,(DecQPPtr)pb->refCon);
+				err = DecodeQP(NULL,0,pb->output,&pb->outlen,(DecQPPtr)pb->refCon);
 				break;
 			
 			case kDecodeDispose:
@@ -996,8 +998,8 @@ OSErr QPEncoder(CallType callType,DecoderPBPtr pb)
 				break;
 			
 			case kDecodeDone:
-				BMD(NewLine+1,pb->output,*NewLine);
-				pb->outlen = *NewLine;
+				{ size_t _nll = strlen((const char *)NewLine); memmove(pb->output,NewLine,_nll);
+				pb->outlen = _nll; }
 				break;
 				
 			case kDecodeDispose:
@@ -1033,9 +1035,9 @@ OSErr UUEncoder(CallType callType,DecoderPBPtr pb)
 				uush = (UUStateHandle)pb->refCon;
 				if ((*uush)->leftBytes) pb->outlen = EncodeUULine(LDRef(uush)->buffer,(*uush)->leftBytes,pb->output,NewLine);
 				pb->output[pb->outlen++] = '`';
-				BMD(NewLine+1,pb->output+pb->outlen,*NewLine); pb->outlen+=*NewLine;
-				BMD("end",pb->output+pb->outlen,3); pb->outlen+=3;
-				BMD(NewLine+1,pb->output+pb->outlen,*NewLine); pb->outlen+=*NewLine;
+				{ size_t _nll = strlen((const char *)NewLine); memmove(pb->output+pb->outlen,NewLine,_nll); pb->outlen+=_nll; }
+				memmove(pb->output+pb->outlen,"end",3); pb->outlen+=3;
+				{ size_t _nll = strlen((const char *)NewLine); memmove(pb->output+pb->outlen,NewLine,_nll); pb->outlen+=_nll; }
 				(*uush)->leftBytes = 0;
 				break;
 				
@@ -1114,7 +1116,7 @@ long EncodeUU(UPtr input,long inlen,UPtr output,PStr newline,UUStateHandle uush,
 	if ((*uush)->leftBytes)
 	{
 		fragment = MIN(inlen,45-(*uush)->leftBytes);
-		BMD(input,(*uush)->buffer+(*uush)->leftBytes,fragment);
+		memmove((*uush)->buffer+(*uush)->leftBytes,input,fragment);
 		(*uush)->leftBytes += fragment;
 		input += fragment;
 		inlen -= fragment;
@@ -1143,7 +1145,7 @@ long EncodeUU(UPtr input,long inlen,UPtr output,PStr newline,UUStateHandle uush,
 		/*
 		 * save leftovers
 		 */
-		BMD(input,(*uush)->buffer,inlen);
+		memmove((*uush)->buffer,input,inlen);
 		(*uush)->leftBytes = inlen;
 	}
 	else
@@ -1175,7 +1177,7 @@ long EncodeUU(UPtr input,long inlen,UPtr output,PStr newline,UUStateHandle uush,
 		/*
 		 * save leftovers
 		 */
-		BMD(lineBuffer,(*uush)->buffer,lineSpot-lineBuffer);
+		memmove((*uush)->buffer,lineBuffer,lineSpot-lineBuffer);
 		(*uush)->leftBytes = lineSpot-lineBuffer;
 	}
 	return(outlen);
@@ -1209,10 +1211,11 @@ short EncodeUULine(unsigned char *input,short inLen,unsigned char *output,PStr n
 		 */
 		for(;inLen>0;inLen-=3,input+=3)
 			EncodeThreeUU(input,output,bpl,newline);
-		BMD(newline+1,output,*newline);
-		output += *newline;
-		
-		outLen += 1+*newline;
+		{ size_t _nll = strlen((const char *)newline);
+		memmove(output,newline,_nll);
+		output += _nll;
+
+		outLen += 1+_nll; }
 	}
 	
 	return(outLen);
@@ -1268,12 +1271,12 @@ short FindMIMECharsetLo(PStr charset,bool *found)
  ************************************************************************/
 BoundaryType ReadMulti(TransStream stream,short refN,MIMESHandle mimeSList,char *buf,long bSize,LineReader *lr)
 {
-#pragma unused(lr)
+(void)lr;
 	long size;
 	BoundaryType boundaryType;
 	MIMESHandle msh;
-	HeaderDHandle innerHDH=nil;
-	MIMESHandle innerMSH=nil;
+	HeaderDHandle innerHDH=NULL;
+	MIMESHandle innerMSH=NULL;
 	HeaderDHandle hdh;
 	short err=noErr;
 	long offset;
@@ -1297,7 +1300,7 @@ BoundaryType ReadMulti(TransStream stream,short refN,MIMESHandle mimeSList,char 
 	
 	LL_Last(mimeSList,msh);
 	hdh = msh->hdh;
-	ReadPOPLine(stream,nil,0,nil);
+	ReadPOPLine(stream,NULL,0,NULL);
 	
 	/*
 	 * digest processing
@@ -1344,7 +1347,7 @@ BoundaryType ReadMulti(TransStream stream,short refN,MIMESHandle mimeSList,char 
 		StackPush(&CurrentAttFolderSpec,AttFolderStack);
 		
 		// are we enclosed by an x-folder?
-		if (StrIsItemFromRes(LDRef(msh->hdh)->contentSubType,X_FOLDER_ITEMS,nil))
+		if (StrIsItemFromRes(LDRef(msh->hdh)->contentSubType,X_FOLDER_ITEMS,NULL))
 		{
 			// yes.  Grab its name
 			ExtractHDHFilename(pMSH,msh->hdh,0,&spec.name);
@@ -1362,9 +1365,10 @@ BoundaryType ReadMulti(TransStream stream,short refN,MIMESHandle mimeSList,char 
 				// record it
 				RecordAttachment(spec.path,msh->hdh);
 
-				// Zero the name in the spec, since we want the folder itself
+				// Set CurrentAttFolderSpec to the new directory path
 				*CurrentAttFolderSpec.name = 0;
-				CurrentAttFolderSpec.parID = newDirID;
+				// parID replaced: directory identity is now in spec.path
+				snprintf((char *)CurrentAttFolderSpec.path, sizeof(CurrentAttFolderSpec.path), "%s", spec.path);
 			}
 		}
 		UL(msh->hdh);
@@ -1436,7 +1440,7 @@ BoundaryType ReadMulti(TransStream stream,short refN,MIMESHandle mimeSList,char 
 				break;
 			}
 			
-			MHTMLStuff(areDouble?pMSH->hdh:hdh,areDouble?hdh:nil,innerHDH);
+			MHTMLStuff(areDouble?pMSH->hdh:hdh,areDouble?hdh:NULL,innerHDH);
 			
 			/*
 			 * extract MIME info
@@ -1527,11 +1531,11 @@ BoundaryType ReadMulti(TransStream stream,short refN,MIMESHandle mimeSList,char 
 					if (!SingleSpec) SingleSpec = NewH(FSSpec);
 					if (SingleSpec) **(FSSpec**)SingleSpec = tmpLastAtt;
 				} else {
-					SingleSpec = nil;
+					SingleSpec = NULL;
 				}
 			}
 			else
-				SingleSpec = nil;
+				SingleSpec = NULL;
 			UL(hdh);
 			
 			/*
@@ -1566,12 +1570,12 @@ BoundaryType ReadMulti(TransStream stream,short refN,MIMESHandle mimeSList,char 
 			}
 					
 			wasApplefile = EqualStrRes((unsigned char *)LDRef(innerHDH)->contentSubType,MIME_APPLEFILE);
-			if (!wasApplefile) SingleSpec = nil;
+			if (!wasApplefile) SingleSpec = NULL;
 /*PrintMIMEList("\pReadMulti2",mimeSList);*/
 			LL_Remove(mimeSList,innerMSH,(MIMESHandle));
 			ZapHeaderDesc(innerHDH);
 			ZapMIMES(innerMSH);
-			SingleSpec = nil;
+			SingleSpec = NULL;
 		}
 	}
 	
@@ -1617,15 +1621,15 @@ done:
 void MHTMLStuff(HeaderDHandle outerHDH, HeaderDHandle doubleHDH, HeaderDHandle hdh)
 {
 	Str255 val, val2;
-	uLong hash, hash2;
-	UHandle valH=nil;
+	unsigned long hash, hash2;
+	char **valAddrs=NULL;
 	if (!doubleHDH) doubleHDH = hdh;
-	
+
 	if (!AAFetchResData((*doubleHDH)->funFields,InterestHeadStrn+hContentId,val))
-	if (!SuckPtrAddresses(&valH,val+1,*val,False,False,False,nil))
+	if (!SuckPtrAddresses(&valAddrs,(char *)(val+1),*val,False,False,False,NULL))
 	{
-		PCopy(val,*valH);
-		ZapHandle(valH);
+		g_strlcpy((char *)val, valAddrs[0], 256);
+		g_strfreev(valAddrs); valAddrs = NULL;
 		MyLowerStr(val);
 		hash = HashWithSeed(val,(*outerHDH)->mhtmlID);
 		(*hdh)->cidHash = hash;
@@ -1681,7 +1685,7 @@ bool SetupDigest(MIMESHandle msh,HeaderDHandle hdh,short *refPtr)
 	/*
 	 * fish out the filename
 	 */
-	ExtractHDHFilename(msh,hdh,nil,spec.name);
+	ExtractHDHFilename(msh,hdh,NULL,spec.name);
 	*spec.name = MIN(*spec.name,24);
 	if (!AutoWantTheFile(&spec,False,(*hdh)->relatedPart)) return(False);
 
@@ -1713,7 +1717,7 @@ bool FinishDigest(short refN,short origRefN)
 	
 	GetFileByRef(refN,&spec);
 	MyFSClose(refN);
-	err = RecordAttachment(spec.path,nil);
+	err = RecordAttachment(spec.path,NULL);
 	WriteAttachNote(origRefN);
 	PopProgress(False);
 	return err == noErr;
@@ -1747,7 +1751,7 @@ BoundaryType ReadExternal(TransStream stream,short refN,MIMESHandle mimeSList,ch
  ************************************************************************/
 BoundaryType ReadMailServer(TransStream stream,short refN,MIMESHandle mimeSList,char *buf,long bSize,LineReader *lr)
 {
-#pragma unused(lr)
+(void)lr;
 	BoundaryType boundaryType;
 	MIMESHandle msh;
 	HeaderDHandle hdh;
@@ -1807,7 +1811,7 @@ BoundaryType ReadMailServer(TransStream stream,short refN,MIMESHandle mimeSList,
 	/*
 	 * now, read the message
 	 */
-	ReadPOPLine(stream,nil,0,nil);
+	ReadPOPLine(stream,NULL,0,NULL);
 	for (lineType=(*lr)(stream,buf,bSize,&size);
 			 lineType!=plError && lineType!=plEndOfMessage;
 			 lineType=(*lr)(stream,buf,bSize,&size))
@@ -1904,7 +1908,7 @@ BoundaryType ReadAnonFTP(TransStream stream,short refN,MIMESHandle mimeSList,cha
 	HeaderDHandle hdh;
 	short err=noErr;
 	Str127 site, name, mode, directory;
-	MessHandle messH = nil;
+	MessHandle messH = NULL;
 	bool body = False;
 	short attachRefN=0;
 	Str255 command;
@@ -1973,8 +1977,8 @@ BoundaryType ReadText(TransStream stream,short refN,MIMESHandle mimeSList,char *
 	long size;
 	short err=0;
 	bool decode;
-	Handle xlate=nil;
-	MIMEMapPtr mmp=nil;
+	Handle xlate=NULL;
+	MIMEMapPtr mmp=NULL;
 #ifdef OLDPGP
 	PGPContext pgp;
 #endif
@@ -1985,7 +1989,7 @@ BoundaryType ReadText(TransStream stream,short refN,MIMESHandle mimeSList,char *
 	long whiteCount = 0;
 	long offsetWhenDone;
 	
-	ReadPOPLine(stream,nil,0,nil);	
+	ReadPOPLine(stream,NULL,0,NULL);	
 	LL_Last(mimeSList,msh);
 	attach = !NoAttachments && !(*msh->hdh)->isPartial;
 #ifndef SAVE_MIME
@@ -2167,7 +2171,7 @@ BoundaryType ReadText(TransStream stream,short refN,MIMESHandle mimeSList,char *
 	if (attach)
 	{
 		EndHexBin();
-		SaveAbomination(nil,0);
+		SaveAbomination(NULL,0);
 #ifdef OLDPGP
 		EndPGP(&pgp);
 #endif
@@ -2213,7 +2217,7 @@ BoundaryType ReadText(TransStream stream,short refN,MIMESHandle mimeSList,char *
 	 */
   if (err) FileSystemError(WRITE_MBOX,"",err);
 // progress is now cumulative
-//	if (msh==mimeSList && !UUPCIn) Progress(100,NoChange,nil,nil,nil);
+//	if (msh==mimeSList && !UUPCIn) Progress(100,NoChange,NULL,NULL,NULL);
 /*PrintMIMEList("\pReadText",mimeSList);*/
 	return(err ? btError : boundaryType);
 }
@@ -2262,7 +2266,7 @@ BoundaryType ReadNothing(TransStream stream,short refN,MIMESHandle mimeSList,cha
 	PGPContext pgp;
 #endif
 	
-	ReadPOPLine(stream,nil,0,nil);	
+	ReadPOPLine(stream,NULL,0,NULL);	
 	LL_Last(mimeSList,msh);
 
 		
@@ -2293,7 +2297,7 @@ BoundaryType ReadNothing(TransStream stream,short refN,MIMESHandle mimeSList,cha
 			break;
 	}
 	if (lineType==plError) boundaryType=btError;
-	if (msh==mimeSList && !UUPCIn) Progress(100,NoChange,nil,nil,nil);
+	if (msh==mimeSList && !UUPCIn) Progress(100,NoChange,NULL,NULL,NULL);
 /*PrintMIMEList("\pReadText",mimeSList);*/
 	return(err ? btError : boundaryType);
 }
@@ -2429,7 +2433,7 @@ BoundaryType ReadPGP(TransStream stream,short refN,MIMESHandle mimeSList,char *b
 		 */
 		if (!err)
 		{
-			err = RecordAttachment(spec.path,nil);
+			err = RecordAttachment(spec.path,NULL);
 			WriteAttachNote(refN);
 		}
 		else
@@ -2449,7 +2453,7 @@ BoundaryType ReadPGP(TransStream stream,short refN,MIMESHandle mimeSList,char *b
 	 * report error (if any)
 	 */
   if (err) FileSystemError(WRITE_MBOX,"",err);
-	if (msh==mimeSList && !UUPCIn) Progress(100,NoChange,nil,nil,nil);
+	if (msh==mimeSList && !UUPCIn) Progress(100,NoChange,NULL,NULL,NULL);
 /*PrintMIMEList("\pReadText",mimeSList);*/
 	return(err ? btError : boundaryType);
 }
@@ -2517,7 +2521,7 @@ BoundaryType ReadSingle(TransStream stream,short refN,MIMESHandle mimeSList,char
 	bool decode;
 	short i;
 	
-	ReadPOPLine(stream,nil,0,nil);	
+	ReadPOPLine(stream,NULL,0,NULL);	
 	LL_Last(mimeSList,msh);
 
 	/*
@@ -2529,7 +2533,7 @@ BoundaryType ReadSingle(TransStream stream,short refN,MIMESHandle mimeSList,char
 	/*
 	 * initialize the decoder
 	 */
-	decode = nil!=msh->decoder;
+	decode = NULL!=msh->decoder;
 	if (decode && (*msh->decoder)(kDecodeInit,&pb))
 		return(btError);
 	else pb.output = pb.input = buf;
@@ -2596,7 +2600,7 @@ BoundaryType ReadSingle(TransStream stream,short refN,MIMESHandle mimeSList,char
 	/*
 	 * close converters
 	 */
-	SaveAbomination(nil,0);
+	SaveAbomination(NULL,0);
 	
 #ifndef SAVE_MIME
 	/*
@@ -2611,7 +2615,7 @@ BoundaryType ReadSingle(TransStream stream,short refN,MIMESHandle mimeSList,char
 	 */
 	WriteAttachNote(refN);
 	
-	if (!UUPCIn && msh==mimeSList) Progress(100,NoChange,nil,nil,nil);
+	if (!UUPCIn && msh==mimeSList) Progress(100,NoChange,NULL,NULL,NULL);
 	return(boundaryType);
 }
 
@@ -2632,7 +2636,7 @@ void GenMIMEMap(MIMEMapHandle *mmhp, OSType resType)
 		 */
 		if (*mmhp) {ZapHandle(*mmhp);}
 		*mmhp = NuHandle(0);
-		if (*mmhp==nil) return;
+		if (*mmhp==NULL) return;
 		
 		/*
 		 * look through all the resources
@@ -2649,10 +2653,10 @@ void GenMIMEMap(MIMEMapHandle *mmhp, OSType resType)
 				PCopy(mm.mimetype,spot); spot += *spot+1;
 				PCopy(mm.subtype,spot); spot += *spot+1;
 				PCopy(mm.suffix,spot); spot += *spot+1;
-				BMD(spot,&mm.creator,4); spot += 4;
-				BMD(spot,&mm.type,4); spot += 4;
-				BMD(spot,&mm.flags,4); spot += 4;
-				BMD(spot,&mm.specialId,4); spot+=4;
+				memmove(&mm.creator,spot,4); spot += 4;
+				memmove(&mm.type,spot,4); spot += 4;
+				memmove(&mm.flags,spot,4); spot += 4;
+				memmove(&mm.specialId,spot,4); spot+=4;
 				spot += 12;	/* 16 unused bytes at the end */
 				
 				/*
@@ -2702,7 +2706,7 @@ bool FindMIMEMapPtr(PStr type, PStr subType,PStr name,MIMEMapPtr mmp)
 	MIMEMapPtr end;
 	Str31 suffix;
 	UPtr dot;
-	MIMEMapPtr maybe, best=nil;
+	MIMEMapPtr maybe, best=NULL;
 	bool result;
 		
 	GenMIMEMap((MIMEMapHandle*)&MMIn,INCOME_MIME_MAP);
@@ -2759,15 +2763,15 @@ bool FindMIMEMapPtr(PStr type, PStr subType,PStr name,MIMEMapPtr mmp)
 	/*
 	 * copy in the new values
 	 */
-	if ((result = (best!=nil))) *mmp = *best;
+	if ((result = (best!=NULL))) *mmp = *best;
 	else if (HaveTheDiseaseCalledOSX())
 		;
 	else
 	{
 		GetRString(suffix,DEFAULT_CREATOR);
-		BMD(suffix,&mmp->creator,4);
+		memmove(&mmp->creator,suffix,4);
 		GetRString(suffix,DEFAULT_TYPE);
-		BMD(suffix,&mmp->type,4);
+		memmove(&mmp->type,suffix,4);
 	}
 	if (MMIn) {UL(MMIn);HPurge((Handle)MMIn);}
 	
@@ -2780,7 +2784,7 @@ bool FindMIMEMapPtr(PStr type, PStr subType,PStr name,MIMEMapPtr mmp)
 		Str15 scratch;
 		GetPref(scratch,PREF_CREATOR);
 		if (strlen((const char *)scratch)!=4) GetRString(scratch,TEXT_CREATOR);
-		BMD(scratch,&mmp->creator,4);
+		memmove(&mmp->creator,scratch,4);
 	}
 	return(result);
 }
@@ -2810,7 +2814,7 @@ BoundaryType ReadGeneric(TransStream stream,short refN,MIMESHandle mimeSList,cha
 	bool imapStub = false;
 	Str255 scratch;
 	
-	spec.vRefNum = spec.parID = 0;
+	memset(&spec, 0, sizeof(spec));
 
 	/*
 	 * grab descriptors for our message
@@ -2855,7 +2859,7 @@ BoundaryType ReadGeneric(TransStream stream,short refN,MIMESHandle mimeSList,cha
 	imapStub = StringSame(GetRString(scratch, IMAP_STUB_ENCODING), (*hdh)->contentEnco);	
 	if (SingleSpec || AutoWantTheFileLo(&spec,False,(*hdh)->relatedPart,imapStub)/*|| WantTheFile(&spec)*/)
 	{
-		ASSERT ( SingleSpec || ( spec.vRefNum != 0 && spec.parID != 0 ));
+		ASSERT ( SingleSpec || spec.path[0] );
 		if (SingleSpec) {
 			spec = *((FSSpecPtr)SingleSpec);
 		}
@@ -2892,7 +2896,7 @@ BoundaryType ReadGeneric(TransStream stream,short refN,MIMESHandle mimeSList,cha
 #endif
 		WriteAttachNote(refN);
 		
-		decode = nil!=msh->decoder;
+		decode = NULL!=msh->decoder;
 		if (decode && (*msh->decoder)(kDecodeInit,&pb))
 		{
 			BadBinHex = True;
@@ -2962,13 +2966,10 @@ done:
 		MyFSClose(attachRefN);
 		if (err)
 			{FSpDelete(&spec);ASSERT(0);}
-		else
-		{
-			FlushVol(nil,spec.vRefNum);
-		}
+		/* FlushVol removed - no-op on POSIX */
 		PopProgress(False);
 	}
-	if (!UUPCIn && msh==mimeSList) Progress(100,NoChange,nil,nil,nil);
+	if (!UUPCIn && msh==mimeSList) Progress(100,NoChange,NULL,NULL,NULL);
   if (xlate) HPurge(xlate);
 
 	return(err ? btError : boundaryType);
@@ -3004,8 +3005,8 @@ BoundaryType ReadTLNow(TransStream stream,short refN,MIMESHandle mimeSList,char 
 		emsHeaderData addrList;
 		OSErr	err;
 			
-		ETLBuildAddrList(nil,nil,mimeSList->hdh,&addrList,EMSF_ON_ARRIVAL);
-		err = ETLInterpretFile(EMSF_ON_ARRIVAL,&spec,refN,nil,&addrList,&dontSave);
+		ETLBuildAddrList(NULL,NULL,mimeSList->hdh,&addrList,EMSF_ON_ARRIVAL);
+		err = ETLInterpretFile(EMSF_ON_ARRIVAL,&spec,refN,NULL,&addrList,&dontSave);
 		ETLDisposeAddrList(&addrList);
 
 		if (!err)
@@ -3082,7 +3083,7 @@ BoundaryType ReadExternalMulti(TransStream stream,short refN,MIMESHandle mimeSLi
 	/*
 	 * extract filename
 	 */
-	ExtractHDHFilename(msh,msh->hdh,(mm.flags&mmApplySuffix)?mm.suffix:nil,spec.name);
+	ExtractHDHFilename(msh,msh->hdh,(mm.flags&mmApplySuffix)?mm.suffix:NULL,spec.name);
 
 	/*
 	 * read the object into a file
@@ -3134,7 +3135,7 @@ BoundaryType ReadTL(TransStream stream,short refN,MIMESHandle mimeSList,char *bu
 	/*
 	 * extract filename
 	 */
-	ExtractHDHFilename(msh,hdh,nil,spec->name);
+	ExtractHDHFilename(msh,hdh,NULL,spec->name);
 		
 	/*
 	 * does the user wish to convert it?
@@ -3206,7 +3207,7 @@ done:
 		PopProgress(False);
 		if (err) {FSpDelete(spec);ASSERT(0);}
 	}
-	if (!UUPCIn && msh==mimeSList) Progress(100,NoChange,nil,nil,nil);
+	if (!UUPCIn && msh==mimeSList) Progress(100,NoChange,NULL,NULL,NULL);
 
 	return(err ? btError : boundaryType);
 }
@@ -3281,7 +3282,7 @@ void ExtractHDHFilename(MIMESHandle msh,HeaderDHandle hdh,PStr suffix,PStr name)
  ************************************************************************/
 void FigureMIMEFromApple(OSType creator, OSType type,PStr name,PStr mimeType,PStr mimeSub,PStr mimeSuffix, long *flags, OSType *specialId)
 {
-	MIMEMapPtr end, maybe, best=nil;
+	MIMEMapPtr end, maybe, best=NULL;
 	Str31 suffix;
 	UPtr dot;
 	

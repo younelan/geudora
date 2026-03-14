@@ -44,6 +44,7 @@ OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE. */
 #include "gtk_dialogs.h" /* SetPref, AlertStr, ResetAlertStage */
 #include "log.h"         /* ComposeLogS, LOG_PROTO, LOG_TRANS, etc. */
 #include "mydefs.h"      /* NumToString, commandTimeout */
+#include "threading.h"
 #define FILE_NUM 37
 
 #include <arpa/inet.h>
@@ -64,6 +65,8 @@ OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE. */
 
 /* ─── Globals ────────────────────────────────────────────────────────────────
  */
+
+#define RECV_BUFFER_SIZE 4096
 
 bool gUseOT = true; /* always true – kept for callers that guard on it */
 bool OTinitialized = true;
@@ -231,14 +234,8 @@ OSErr OTTCPConnectTrans(TransStream stream, unsigned char *serverName,
   stream->Opening = true;
   stream->BeSilent = (unsigned char)silently;
 
-  /* Convert Pascal string → C string */
-  {
-    int len = *serverName < (int)sizeof(hostName) - 1
-                  ? *serverName
-                  : (int)sizeof(hostName) - 1;
-    memcpy(hostName, serverName + 1, (size_t)len);
-    hostName[len] = '\0';
-  }
+  /* serverName is already a C string (from GetPOPInfo/GetSMTPInfoLo) */
+  g_strlcpy(hostName, (const char *)serverName, sizeof(hostName));
   snprintf(portStr, sizeof(portStr), "%ld", port);
 
   /* Progress feedback */
@@ -339,6 +336,10 @@ OSErr OTTCPConnectTrans(TransStream stream, unsigned char *serverName,
 
   stream->sockfd = sockfd;
   stream->RcvSpot = -1;
+  /* Allocate receive buffer for NetRecvLine if not already present */
+  if (!stream->RcvBuffer) {
+    stream->RcvBuffer = (unsigned char *)malloc(RECV_BUFFER_SIZE);
+  }
   gActiveConnections++;
 
   {
@@ -1060,6 +1061,86 @@ void TcpFastFlush(bool destroy) {
   KillDeadMyTStreams(destroy);
   flushing = false;
 }
+
+/* ─── NetRecvLine — line-buffered receive using RcvBuffer
+ * Reads from the network via RecvTrans, buffers data, and returns
+ * one line at a time (terminated by \r from \n in the stream).
+ * Ported from Mac ph.c, adapted for direct pointer (no Handle).
+ * ──────────────────────────────────────────────────────────────── */
+
+OSErr NetRecvLine(TransStream stream, UPtr line, long *size) {
+  long bSize = *size;
+  UPtr anchor, end;
+  unsigned char c;
+
+  if (!stream->RcvBuffer)
+    return (CommandPeriod ? userCancelled : memFullErr);
+
+  *size = 0;
+  anchor = line;
+  end = line + bSize - 1;
+
+  while (anchor < end) {
+    if (stream->RcvSpot >= 0) {
+      /* There are buffered chars — scan for newline */
+      UPtr rPtr = stream->RcvBuffer + stream->RcvSpot;
+      for (c = *rPtr++; anchor < end; c = *rPtr++) {
+        if (c && c != '\015') {
+          *anchor++ = c;
+          if (c == '\012') {
+            anchor[-1] = '\015'; /* normalize LF → CR */
+            break;
+          }
+        }
+      }
+      if (c != '\012')
+        rPtr--; /* back up — didn't find newline */
+      stream->RcvSpot = (int)(rPtr - stream->RcvBuffer);
+      if (stream->RcvSpot > stream->RcvSize)
+        anchor--; /* newline was sentinel */
+      if (stream->RcvSpot >= stream->RcvSize)
+        stream->RcvSpot = -1; /* buffer exhausted */
+      if ((anchor > line && anchor[-1] == '\015') || anchor >= end) {
+        *size = anchor - line;
+        *anchor = 0;
+        return noErr;
+      }
+    } else {
+      /* Need more data from network */
+      long count = RECV_BUFFER_SIZE - 1;
+      int err = OTTCPRecvTrans(stream, stream->RcvBuffer, &count);
+      if (count > 0) {
+        stream->RcvBuffer[count] = '\012'; /* sentinel */
+        stream->RcvSize = (int)count;
+        stream->RcvSpot = 0;
+      }
+      if (err) {
+        *size = anchor - line;
+        line[*size] = 0;
+        return err;
+      }
+    }
+  }
+  *size = anchor - line;
+  *anchor = 0;
+  return noErr;
+}
+
+/* ─── OTTCPTrans — TransVector for POSIX TCP transport
+ * Order: vConnectTrans, vSendTrans, vRecvTrans, vDisTrans, vDestroyTrans,
+ *        vTransError, vSilenceTrans, vSendWDS, vWhoAmI, vRecvLine,
+ *        vAsyncSendTrans
+ * ──────────────────────────────────────────────────────────────── */
+
+TransVector OTTCPTrans = {
+    (int (*)(TransStream, unsigned char *, long, int, unsigned long))OTTCPConnectTrans,
+    (int (*)(TransStream, unsigned char *, long, ...))OTTCPSendTrans,
+    OTTCPRecvTrans,
+    OTTCPDisTrans,     OTTCPDestroyTrans, OTTCPTransError,
+    (void (*)(TransStream, int))OTTCPSilenceTrans,
+    NULL,              OTTCPWhoAmI,
+    NetRecvLine,       NULL
+};
 
 /* ─── GetTCPTrans
  * ────────────────────────────────────────────────────────────── */

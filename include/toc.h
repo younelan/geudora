@@ -118,7 +118,7 @@ typedef struct TOCType {
   /* Preview and interaction tracking */
   long previewID;     /* Preview pane ID */
   void *previewPTE;   /* Preview text editor (stub) */
-  long lastSameTicks; /* Last same tick count */
+  gint64 lastSameTicks; /* Last same monotonic time (microseconds) */
   long mouseTicks;    /* Mouse tick count */
   struct {
     short h, v;
@@ -287,5 +287,7 @@ OSErr TOCDates(FSSpecPtr spec, uLong *box, uLong *res, uLong *file);
 void CopySum(MSumPtr from, MSumPtr to, short idx);
 
 short TOCUnreadCount(TOCType *tocH, bool recentOnly);
+int WriteTOC(TOCType *tocH);
+TOCType *CheckTOC(FSSpecPtr spec);
 
 #endif /* TOC_H */

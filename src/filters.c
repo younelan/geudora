@@ -725,5 +725,5 @@ int ScriptMoveMessage(const char *fromMailbox, long index,
 	TOCType *toTocH = TOCByPath(toMailbox);
 	if (!toTocH) return -1;
 
-	return AppendMessage(fromTocH, (int)index, toTocH, copy, false, false);
+	return AppendMessage(fromTocH, (int)index, &toTocH, copy, false, false);
 }

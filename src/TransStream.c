@@ -200,6 +200,11 @@ int ConnectTrans(TransStream stream, unsigned char *serverName, long port, int s
 	stream->Opening = 0;
 	stream->DontWait = 0;
 	stream->streamErr = 0;
+	stream->RcvSpot = -1;
+	/* Allocate receive buffer for NetRecvLine if not already present */
+	if (!stream->RcvBuffer) {
+		stream->RcvBuffer = (unsigned char *)malloc(4096);
+	}
 
 	return 0;
 }

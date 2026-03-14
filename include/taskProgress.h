@@ -20,12 +20,12 @@ struct taskErrData_ {
 /* Create the embeddable task progress widget for wazoo tab */
 GtkWidget *create_task_progress_widget(void);
 
-OSErr AddFilterTask(void);
+int AddFilterTask(void);
 void RemoveFilterTask(void);
-OSErr AddProgressTask(threadDataHandle threadData);
+int AddProgressTask(threadDataHandle threadData);
 void RemoveProgressTask(threadDataHandle threadData);
-OSErr AddTaskErrorsS(const char *error, const char *explanation,
-                     TaskKindEnum taskKind, long persId);
+int AddTaskErrorsS(const char *error, const char *explanation,
+                   TaskKindEnum taskKind, long persId);
 void RemoveTaskErrors(TaskKindEnum taskKind, long persId);
 void UpdateTaskProgress(int percent, int remaining);
 void UpdateTaskMessage(const char *title, const char *subtitle, const char *message);
@@ -36,5 +36,6 @@ void OpenTasksWinBehind(void *behind);
 void OpenTasksWinErrors(void);
 void InitPrbl(ProgressBlock **prbl, short vert, ControlHandle *stopButton);
 void TaskProgressRefresh(void);
+int TPAddHelpButton(taskErrHandle taskErrs);
 
 #endif

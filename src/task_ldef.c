@@ -7,7 +7,7 @@
 /* Helper structure to store cell data in GObject row */
 typedef struct {
   drawCellType draw;
-  Handle data;
+  void *data;
 } TaskCellData;
 
 static void task_cell_data_free(TaskCellData *tcd) { g_free(tcd); }
@@ -28,8 +28,8 @@ static void task_cell_draw(GtkDrawingArea *drawing_area, cairo_t *cr, int width,
 }
 
 /* Add an entry to the GtkListBox */
-OSErr AddListItemEntry(short where, drawCellType draw, Handle data,
-                       ListHandle lHandle) {
+int AddListItemEntry(short where, drawCellType draw, void *data,
+                     ListHandle lHandle) {
   if (!GTK_IS_LIST_BOX(lHandle))
     return -1;
 
@@ -59,7 +59,7 @@ OSErr AddListItemEntry(short where, drawCellType draw, Handle data,
 }
 
 /* Remove an entry matching data pointer */
-void RemoveListItemEntry(Handle data, ListHandle lHandle) {
+void RemoveListItemEntry(void *data, ListHandle lHandle) {
   if (!GTK_IS_LIST_BOX(lHandle))
     return;
 

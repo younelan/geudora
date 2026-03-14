@@ -213,10 +213,15 @@ unsigned char *CurAddrSel(MyWindowPtr win, unsigned char *addr);
 void QuoteLines(GtkWidget *pte, long from, long to, short pfid, long *qEnd);
 char *HandleHeadGetPStr(char *text, short head, char *pStr);
 
-int SuckAddresses(void ***addr, void **text, bool b1, bool b2, bool b3,
+int SuckAddresses(char ***addr, char **text, bool b1, bool b2, bool b3,
                   void *p);
-int SuckPtrAddresses(void ***addr, void *text, long size, bool b1, bool b2,
+int SuckPtrAddresses(char ***addr, const char *text, long size, bool b1, bool b2,
                      bool b3, void *p);
+char *ShortAddr(char *shortAddr, const char *longAddr);
+short CountAddresses(char **addresses, short atLeast);
+bool IsMe(unsigned char *address);
+unsigned char *GetReturnAddr(unsigned char *addr, bool comments);
+unsigned char *GetRealname(unsigned char *name);
 void SetSumFlag(TOCType * tocH, short sumNum, long flag);
 bool SumFlagIsSet(TOCType * tocH, short sumNum, long flag);
 
@@ -228,7 +233,7 @@ uLong HashWithSeedLo(unsigned char *s, uLong n, uLong seed);
 
 OSErr TOCFindMessByMID(uLong mid, TOCType * tocH, long *sumNum);
 
-int AppendMessage(TOCType * fromTocH, int fromN, TOCType * toTocH, bool copy,
+int AppendMessage(TOCType * fromTocH, int fromN, TOCType ** toTocHP, bool copy,
                   bool toTemp, bool isIMAPtoPopTransfer);
 MyWindowPtr GetAMessage(TOCType * tocH, short sumNum, void *u1, void *u2,
                         bool b1);

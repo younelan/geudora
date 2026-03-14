@@ -584,8 +584,7 @@ MailboxNodeHandle FetchNewMessages(TOCType * tocToSync, bool fetchFlags,
       if (err == noErr) {
         Zero(flags);
         Zero(imapInfo);
-        SimpleMakeFSSpec(mailboxSpec.vRefNum, mailboxSpec.parID,
-                         mailboxSpec.name, &(imapInfo.targetSpec));
+        spec_make(mailboxSpec.path, mailboxSpec.name, &(imapInfo.targetSpec));
         imapInfo.command = IMAPResyncTask;
 
         err = SetupXferMailThread(false, false, true, false, flags, &imapInfo);
@@ -2828,7 +2827,7 @@ short OpenMessDestFile(MailboxNodeHandle mailboxInfo, unsigned long uid,
   // spool folder.
   if ((err = SubFolderSpec(SPOOL_FOLDER, &spool)) == noErr) {
     // locate the spool file
-    err = FSMakeFSSpec(spool.vRefNum, spool.parID, tempName, spoolSpec);
+    err = spec_for(spool.path, tempName, spoolSpec);
     if (err == fnfErr) {
       // not found in spool folder.  Create the
       // file.
@@ -2970,8 +2969,7 @@ bool IMAPMessagesWaiting(TOCType * tocH, FSSpecPtr spoolSpec) {
           if (IsSpooledMessageFile(name, mailboxInfo)) {
             short ref = -1;
 
-            SimpleMakeFSSpec(spoolFolder.vRefNum, spoolFolder.parID, name,
-                             spoolSpec);
+            spec_make(spoolFolder.path, name, spoolSpec);
 
             // is the file open?  That is, is
             // it still being written?
@@ -3849,7 +3847,7 @@ OSErr IMAPTransferMessagesFromSearchWindow(TOCType * fromTocH, TOCType * toTocH,
                   }
 
                   err =
-                      AppendMessage(realTocH, sum, toTocH, copy, false, false);
+                      AppendMessage(realTocH, sum, &toTocH, copy, false, false);
                 }
               }
 
@@ -5101,8 +5099,7 @@ OSErr AppendSpoolFile(IMAPStreamPtr imapStream, IMAPAppendPtr spoolData) {
   msFile.buffer = NuPtr((1024 * 1024) + 4);
   if (msFile.buffer) {
     msFile.bufferSize = (1024 * 1024);
-    SimpleMakeFSSpec(spoolData->spoolSpec.vRefNum, spoolData->spoolSpec.parID,
-                     spoolData->spoolSpec.name, &(msFile.spoolSpec));
+    spec_make(spoolData->spoolSpec.path, spoolData->spoolSpec.name, &(msFile.spoolSpec));
     msFile.bytesRead = 0;
 
     // Get the total size of the message to be
@@ -7158,8 +7155,7 @@ unsigned long DoDownloadIMAPAttachments(FSSpecHandle attachments,
 
             // put the attachment into a new
             // file
-            SimpleMakeFSSpec(stubSpec.vRefNum, stubSpec.parID, stubSpec.name,
-                             &attachSpool);
+            spec_make(stubSpec.path, stubSpec.name, &attachSpool);
             if (UniqueSpec(&attachSpool, 31))
               continue;
 
@@ -7885,7 +7881,7 @@ OSErr IMAPRecvLine(TransStream stream, UPtr buffer, long *size) {
 short NewScratchFile(FSSpecPtr where, FSSpecPtr scratchFile) {
   short ref = -1;
 
-  SimpleMakeFSSpec(where->vRefNum, where->parID, where->name, scratchFile);
+  spec_make(where->path, where->name, scratchFile);
   if (UniqueSpec(scratchFile, 31) == noErr) {
     {
       int _fd = open(scratchFile->path, O_CREAT | O_RDWR | O_TRUNC, 0644);
@@ -11258,7 +11254,7 @@ OSErr IMAPTransferLocalCache(TOCType * fromTocH, MSumPtr pOrigSum,
 
         // copy the cached message to the new
         // location
-        err = AppendMessage(fromTocH, origSumNum, toTocH, true, false, false);
+        err = AppendMessage(fromTocH, origSumNum, &toTocH, true, false, false);
         if (err == noErr) {
           pNewSum = &toTocH->sums[(toTocH->count) - 1];
 
@@ -11924,8 +11920,7 @@ short OpenFlagsFile(void) {
 
   // create (or open) the spool file in the
   // Eudora folder.
-  err = FSMakeFSSpec(Root.vRef, Root.dirId, (unsigned char *)flagFileName,
-                     &flagsSpec);
+  err = spec_for(Root.path, (const char *)flagFileName, &flagsSpec);
   if (err == fnfErr) {
     // not found in root folder.  Create the
     // file.

@@ -48,6 +48,7 @@ ADVISED OF THE POSSIBILITY OF SUCH DAMAGE. */
 #include "gtk_menus.h"
 #include "boxact.h"
 #include "imapmailboxes.h" /* For IsIMAPCacheFolder */
+#include "threading.h"
 int AddMesgError(TOCType * tocH, short sum, unsigned char *errorStr,
                  int errorCode);
 #include "message.h"  /* For MyWindow struct */
@@ -1865,6 +1866,7 @@ bool SaveMessageSum(void *vsum, TOCType **tocH) {
 
   /* Grow the TOC to hold one more summary */
   size_t newSize = sizeof(TOCType) + MAX(0, toc->count) * sizeof(MSumType);
+  TOCType *oldPtr = toc;
   TOCType *grown = (TOCType *)g_realloc(toc, newSize);
   if (!grown) {
     WarnUser(SAVE_SUM_ERR, memFullErr);
@@ -1872,6 +1874,17 @@ bool SaveMessageSum(void *vsum, TOCType **tocH) {
   }
   *tocH = grown;
   toc = grown;
+
+  /* If realloc moved the block, update TOCList so other code finds it */
+  if (grown != oldPtr) {
+    if (TOCList == oldPtr) {
+      TOCList = grown;
+    } else {
+      for (TOCType *t = TOCList; t; t = t->next) {
+        if (t->next == oldPtr) { t->next = grown; break; }
+      }
+    }
+  }
 
   toc->needRedo = toc->count;
   toc->resort = kResortWhenever;
@@ -1905,7 +1918,6 @@ bool IsSpool(FSSpecPtr spec) {
           SameVRef(spec->vRefNum, folderSpec.vRefNum));
 }
 
-#ifdef BATCH_DELIVERY_ON
 /************************************************************************
  * IsDelivery - is a spec in the Delivery Folder?
  ************************************************************************/
@@ -1918,7 +1930,6 @@ bool IsDelivery(FSSpecPtr spec) {
   return (spec->parID == folderSpec.parID &&
           SameVRef(spec->vRefNum, folderSpec.vRefNum));
 }
-#endif
 
 /**********************************************************************
  * Spec2Menu - find the menu params for a given FSSpec
@@ -2060,15 +2071,17 @@ int Path2Box(char *path, FSSpecPtr box) {
   int err = fnfErr;
   UPtr spot;
   Str31 name;
+  char curdir[1024];
 
   box->vRefNum = MailRoot.vRef;
   box->parID = MailRoot.dirId;
+  g_strlcpy(curdir, MailRoot.path, sizeof(curdir));
   spot = (unsigned char *)path + 2;
 
   while (PToken((unsigned char *)path, (unsigned char *)name, &spot,
                 (unsigned char *)":")) {
     // does the file exist?
-    if ((err = FSMakeFSSpec(box->vRefNum, box->parID, (char *)name, box)))
+    if ((err = spec_for(curdir, (const char *)name, box)))
       break;
 
     // if it's an alias, resolve
@@ -2080,18 +2093,20 @@ int Path2Box(char *path, FSSpecPtr box) {
 
     // get the folder's spec
     box->parID = SpecDirId(box);
+    g_strlcpy(curdir, box->path, sizeof(curdir));
   }
 
   // look through the IMAP folder if we haven't found this box yet.
   if (err == fnfErr) {
     box->vRefNum = IMAPMailRoot.vRef;
     box->parID = IMAPMailRoot.dirId;
+    g_strlcpy(curdir, IMAPMailRoot.path, sizeof(curdir));
     spot = (unsigned char *)path + 2;
 
     while (PToken((unsigned char *)path, (unsigned char *)name, &spot,
                   (unsigned char *)":")) {
       // does the file exist?
-      if ((err = FSMakeFSSpec(box->vRefNum, box->parID, (char *)name, box)))
+      if ((err = spec_for(curdir, (const char *)name, box)))
         break;
 
       // if it's an alias, resolve
@@ -2103,6 +2118,7 @@ int Path2Box(char *path, FSSpecPtr box) {
 
       // get the folder's spec
       box->parID = SpecDirId(box);
+      g_strlcpy(curdir, box->path, sizeof(curdir));
     }
   }
 
@@ -2560,14 +2576,7 @@ void RemoveBox(short function, UPtr name, short level) {
 
 // ...
 short GetMBDirName(short vRef, long dirId, UPtr name) {
-  /* CInfoPBRec hfi; REMOVED */
-  int sysVRef;
-  long sysDirId;
-  Str255 sTemp;
   int err;
-  FSSpec spec; /* Restored */
-  // FSSpec spec; // This was removed as part of the change, as it's not in the
-  // new decls Str63 sTemp; // This was changed to Str255 sTemp and moved up
 
   // If we're at the mail root, pretend we're one up
   if (vRef == MailRoot.vRef && dirId == MailRoot.dirId) {
@@ -2578,15 +2587,8 @@ short GetMBDirName(short vRef, long dirId, UPtr name) {
   if (err = GetDirName(nil, vRef, dirId, name)) //	Name of Mail Folder
     return err;
 
-  //	If the standard Eudora Folder is in use (ie, named FOLDER_NAME and in
-  //	the system folder) show FILE_ALIAS_EUDORA_FOLDER at the top
-  //	level of the mailboxes window.
-  FindFolder(kOnSystemDisk, kSystemFolderType, False, &sysVRef, &sysDirId);
-  if (vRef == sysVRef &&
-      !FSMakeFSSpec(sysVRef, sysDirId, GetRString(sTemp, FOLDER_NAME),
-                    &spec) && //	Spec for standard Eudora folder
-      dirId == SpecDirId(&spec))
-    GetRString(name, FILE_ALIAS_EUDORA_FOLDER);
+  //	Mac-only: detect system Eudora folder to show FILE_ALIAS_EUDORA_FOLDER.
+  //	FindFolder is a no-op stub on POSIX, so this check is skipped.
 
   return noErr;
 }
@@ -2672,7 +2674,8 @@ int RenameMailbox(FSSpecPtr spec, UPtr newName, bool folder) {
     PCat(newTOCName, suffix);
 
     //	Check for existence of old .TOC file
-    if (!FSMakeFSSpec(spec->vRefNum, spec->parID, oldTOCName, &tocSpec)) {
+    { char pdir[1024]; spec_parent(spec, pdir, sizeof(pdir));
+    if (!spec_for(pdir, (const char *)oldTOCName, &tocSpec)) {
       if (*newTOCName > 31) {
         //	TOC file name too long
         TooLong(newName);
@@ -2689,6 +2692,7 @@ int RenameMailbox(FSSpecPtr spec, UPtr newName, bool folder) {
         //	Restore mailbox name since we couldn't rename TOC file
         (void)HRename(spec->vRefNum, spec->parID, newName, spec->name);
     }
+    } /* end pdir scope */
   }
 
   return (err);
@@ -3401,7 +3405,7 @@ int BoxSpecByNameInMenu(MenuHandle mh, FSSpecPtr spec, unsigned char *name) {
 
   if (item = FindBoxByNameIn1Menu(mh, name)) {
     Menu2VD(mh, &spec->vRefNum, &spec->parID);
-    SimpleMakeFSSpec(spec->vRefNum, spec->parID, name, spec);
+    spec_make(MailRoot.path, (const char *)name, spec);
     return (noErr);
   }
 

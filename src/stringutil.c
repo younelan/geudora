@@ -33,10 +33,10 @@ ADVISED OF THE POSSIBILITY OF SUCH DAMAGE. */
 #include "sendmail.h"
 #include "tcp.h"
 #include "util.h"
+#include "threading.h"
 #include <pango/pango.h>
 #include <stdint.h>
 #include <stdlib.h>
-#pragma segment StringUtil
 unsigned char IsWordChar[256] = {0};
 #define PluralStrn 1000
 #define SQUARE_LEFT 1001
@@ -61,7 +61,7 @@ void NumToDot(unsigned long n, PStr s) {
 
 /* GetRString is declared in mailbox.h and implemented elsewhere */
 
-PStr FormatString(unsigned int arg, PStr string, short format, short digits);
+PStr FormatString(uintptr_t arg, PStr string, short format, short digits);
 bool PPtrMatchLWSPSpot(PStr look, Ptr text, uint32_t textLen, UPtr *matchEnd);
 
 /************************************************************************
@@ -171,7 +171,7 @@ OSErr ComposeRTrans(TransStream stream, int format, ...) {
   va_start(args, format);
   (void)VaComposeRString(into, format, args);
   va_end(args);
-  return SendTrans(stream, into, strlen((const char *)into), nil);
+  return SendTrans(stream, into, strlen((const char *)into), NULL);
 }
 OSErr AccuComposeR(AccuPtr a, int format, ...) {
   unsigned char into[256];
@@ -213,7 +213,7 @@ UPtr VaComposeStringDouble(UPtr into, int maxInto, UPtr format, va_list args,
   long n;
   bool suppress;
   unsigned char buffers[MAX_SUBS][256];
-  long arg;
+  uintptr_t arg;
   short which;
   long resId;
   UPtr formatEnd;
@@ -231,7 +231,7 @@ top:
       if (*formatP == lowerOmega)
         CStrCatC(into, maxInto, *formatP);
       else {
-        arg = va_arg(args, unsigned int);
+        arg = va_arg(args, uintptr_t);
         FormatString(arg, buffers[which++], *formatP, 0);
       }
     } else if (*formatP != '%')
@@ -262,7 +262,7 @@ top:
             digits = *formatP - '0';
             formatP++;
           }
-          arg = va_arg(args, unsigned int);
+          arg = va_arg(args, uintptr_t);
           if (suppress)
             argString[0] = '\0';
           else
@@ -280,7 +280,7 @@ top:
     into = into2;
     format = format2;
     maxInto = maxInto2;
-    into2 = format2 = nil;
+    into2 = format2 = NULL;
     maxInto2 = 0;
     goto top;
   }
@@ -446,7 +446,7 @@ void FixNewlines(UPtr string, long *count) {
 /**********************************************************************
  *
  **********************************************************************/
-PStr FormatString(unsigned int arg, PStr string, short format, short digits) {
+PStr FormatString(uintptr_t arg, PStr string, short format, short digits) {
   short n;
   struct hostInfo hi;
 
@@ -672,7 +672,7 @@ UPtr IndexPtr(UPtr string, long stringLen, char c) {
   for (spot = string; spot < string + stringLen; spot++)
     if (*spot == (unsigned char)c)
       return (spot);
-  return (nil);
+  return (NULL);
 }
 
 /************************************************************************
@@ -801,7 +801,7 @@ UPtr PPtrFindSub(PStr sub, UPtr string, long len) {
       return (string); /* return start of match */
     string++;
   }
-  return (nil);
+  return (NULL);
 }
 
 /************************************************************************
@@ -912,7 +912,7 @@ PStr PToken(PStr string, PStr token, UPtr *spotP, UPtr delims) {
 
   token[0] = '\0';
   if (*spotP >= end)
-    return (nil);
+    return (NULL);
   for (spot = *spotP; spot < end; spot++)
     if (!strchr((const char *)delims, (unsigned char)*spot))
       *tSpot++ = *spot;
@@ -1190,7 +1190,7 @@ UPtr Tokenize(UPtr string, int size, UPtr *start, UPtr *end, UPtr delims) {
     ;
   *stop = (unsigned char)safe;
   if (string == stop)
-    return (nil);
+    return (NULL);
   *start = string;
   *end = stop;
   return (string);

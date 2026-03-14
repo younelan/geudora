@@ -706,7 +706,7 @@ OSErr LoadStats(void) {
       (*gStatData)->currentTime =
           LocalDateTime(); // in case we can't get any saved stats
 
-  FSMakeFSSpec(Root.vRef, Root.dirId, GetRString(s, STATISTICS_FILE), &spec);
+  spec_for(Root.path, (const char *)GetRString(s, STATISTICS_FILE), &spec);
   err = Snarf(&spec, &hStatXML, 0);
   if (!err) {
     ParseStatFile(hStatXML);
@@ -828,7 +828,7 @@ OSErr SaveStats(bool force) {
   UL(gStatData);
 
   // save out to file
-  FSMakeFSSpec(Root.vRef, Root.dirId,
+  spec_for(Root.path,
                (const char *)GetRString((unsigned char *)s, STATISTICS_FILE),
                &spec);
   err = Blat(&spec, a.data, false);
@@ -846,7 +846,7 @@ void ResetStatistics(void) {
   Str255 s;
 
   ShutdownStats();
-  FSMakeFSSpec(Root.vRef, Root.dirId, GetRString(s, STATISTICS_FILE), &spec);
+  spec_for(Root.path, (const char *)GetRString(s, STATISTICS_FILE), &spec);
   FSpTrash(&spec);
   InitStats();
 }

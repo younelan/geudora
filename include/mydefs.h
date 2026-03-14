@@ -573,10 +573,10 @@ typedef TransStreamStruct *TransStream;
 #endif
 typedef POPLineType LineReader(TransStream stream, unsigned char *buf,
                                long bSize, long *len);
-typedef void **TextAddrHandle;
-typedef unsigned char *TextAddrPtr;
-typedef void **BinAddrHandle;
-typedef unsigned char *BinAddrPtr;
+typedef char **TextAddrHandle;  /* C string handle for address text */
+typedef const char *TextAddrPtr;
+typedef char **BinAddrHandle;   /* NULL-terminated char** array — free with g_strfreev() */
+typedef char *BinAddrPtr;
 typedef void **NickHandle;
 typedef unsigned char *NickPtr;
 typedef void **TabFieldHandle;

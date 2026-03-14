@@ -90,14 +90,10 @@ void ShowBoxAt(TOCType * tocH, short selectMe, WindowPtr behindWin);
 short FumLub(TOCType * tocH);
 void FilterXferMessages(void);
 void ResetCheckTime(bool force);
-#ifdef BATCH_DELIVERY_ON
 void NotifyNewMail(short gotSome, bool noXfer, TOCType * tocH,
                    FilterPB *fpbDelivery);
 void NotifyNewMailLo(short gotSome, bool noXfer, TOCType * tocH,
                      FilterPB *fpbDelivery, bool OpenIn);
-#else
-void NotifyNewMail(short gotSome, bool noXfer, TOCType * tocH);
-#endif
 OSErr DoFcc(TOCType * tocH, short sumNum, CSpecHandle list);
 void CompAttDel(MessHandle messH);
 WindowPtr OpenBehindMePlease(void);

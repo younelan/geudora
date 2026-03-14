@@ -8,6 +8,7 @@
 #include "../gEditCtrl/geditctrl.h"
 #include "comp.h"
 #include "ends.h"
+#include "idle_scheduler.h"
 #include "gtk_icons.h"
 #include "gtk_mailbox.h"
 #include "gtk_menus.h"
@@ -53,6 +54,11 @@ OSErr cacheFault = -23042; /* From MachOPreComp.pch */
 OSErr userCancelled = -29999;
 
 static AppState app_state = {0};
+
+/* Accessor for the main window (used by modal dialogs in other files) */
+GtkWidget *get_main_window(void) {
+  return app_state.window;
+}
 
 /* Forward declarations */
 static GtkWidget *create_message_list(void);
@@ -1845,6 +1851,18 @@ static void open_mailbox_tab(const char *name, const char *path) {
   app_state.current_mailbox_path = g_strdup(path);
 }
 
+/* Public entry point: open the named mailbox as a tab.
+ * Called from NotifyNewMailLo and other non-UI code that needs to show
+ * a mailbox without going through the legacy GtkWindow path. */
+void eudora_open_mailbox_by_name(const char *name) {
+  if (!name) return;
+  gchar *path = gtk_mailbox_get_path(name);
+  if (path) {
+    open_mailbox_tab(name, path);
+    g_free(path);
+  }
+}
+
 /* ── Welcome dashboard ── */
 
 /* Welcome CSS is now provided by theme.c */
@@ -2352,8 +2370,31 @@ static void activate(GtkApplication *app, gpointer user_data) {
   /* Initialize column widths from string table resources */
   GetBoxLines();
 
+  /* Initialize threading — must happen early so InAThread() works */
+  MyInitThreads();
+
   /* Initialize personalities (mail accounts) from prefs */
   InitPersonalities();
+
+  /* Initialize TCP transport vector so RecvLine/SendTrans etc. work.
+     Use intermediate variable — direct assignment to _Thread_local member
+     from struct-returning function miscompiles on ARM64 macOS. */
+  {
+    extern TransVector GetTCPTrans(void);
+    extern threadGlobalsRec ThreadGlobals;
+    TransVector tcp = GetTCPTrans();
+    /* Write directly to ThreadGlobals — bypass TLS macro entirely.
+       Struct copies through _Thread_local pointers miscompile on ARM64 macOS. */
+    memcpy(&ThreadGlobals.tCurTrans, &tcp, sizeof(TransVector));
+  }
+
+  /* Initialize Root and MailRoot paths from prefs/defaults */
+  {
+    const char *mail_dir = get_eudora_mail_dir();
+    g_strlcpy(Root.path, mail_dir, sizeof(Root.path));
+    extern VDId MailRoot;
+    g_strlcpy(MailRoot.path, mail_dir, sizeof(MailRoot.path));
+  }
 
   /* Load settings from disk */
   app_state.settings = prefs_load();
@@ -2564,6 +2605,11 @@ static void activate(GtkApplication *app, gpointer user_data) {
 
   /* Mailboxes are now integrated in the sidebar — no separate mailbox
      window needed on startup. */
+
+  /* Start the centralized idle scheduler — handles filtering incoming
+     mail from delivery folders, outgoing mail processing, notifications,
+     and future auto-check timers. Replaces Mac's FilterXferMessages(). */
+  IdleSchedulerStart();
 }
 
 int main(int argc, char **argv) {

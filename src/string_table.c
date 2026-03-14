@@ -14,6 +14,190 @@ static const StrEntry string_table[] = {
   {1604, "Cc:"},          /* CC_HEAD */
   {1605, "Bcc:"},         /* BCC_HEAD */
   {1606, "Attachments:"}, /* ATTACH_HEAD */
+  /* ESMTP extension keywords (EsmtpStrn=29700 + esmtpXxx enum) */
+  {29701, "8BITMIME"},    /* esmtp8BMIME=1 */
+  {29702, "SIZE"},         /* esmtpSize=2 */
+  {29703, "AUTH"},         /* esmtpAmd5=3 (legacy AUTH-MD5) */
+  {29704, "PIPELINING"},  /* esmtpPipeline=4 */
+  {29705, "AUTH"},         /* esmtpAuth=5 */
+  {29706, ""},             /* esmtpdead1=6 */
+  {29707, ""},             /* esmtpdead2=7 */
+  {29708, ""},             /* esmtpdead3=8 */
+  {29709, "STARTTLS"},    /* esmtpStartTLS=9 */
+  /* SMTP commands (SMTP_STRN=2800 + smtpXxx enum) */
+  {2801, "HELO "},       /* smtpHelo=1 */
+  {2802, "MAIL FROM:"},  /* smtpMail=2 */
+  {2803, "RCPT TO:"},    /* smtpRcpt=3 */
+  {2804, "DATA"},         /* smtpData=4 */
+  {2805, "RSET"},         /* smtpRset=5 */
+  {2806, "SEND"},         /* smtpSend=6 */
+  {2807, "SOML"},         /* smtpSoml=7 */
+  {2808, "SAML"},         /* smtpSaml=8 */
+  {2809, "VRFY "},        /* smtpVrfy=9 */
+  {2810, "EXPN "},        /* smtpExpn=10 */
+  {2811, "HELP"},         /* smtpHelp=11 */
+  {2812, "NOOP"},         /* smtpNoop=12 */
+  {2813, "QUIT"},         /* smtpQuit=13 */
+  {2814, "TURN"},         /* smtpTurn=14 */
+  {2815, "EHLO "},        /* smtpEhlo=15 */
+  {2816, "AUTH "},         /* smtpAuth=16 */
+  {2817, "STARTTLS"},     /* smtpStarttls=17 */
+  /* POP commands (POPCmdsStrn=3000 + kpc* enum) */
+  {3001, "USER "},   /* kpcUser */
+  {3002, "PASS "},   /* kpcPass */
+  {3003, "STAT"},    /* kpcStat */
+  {3004, "RETR "},   /* kpcRetr */
+  {3005, "DELE "},   /* kpcDele */
+  {3006, "QUIT"},    /* kpcQuit */
+  {3007, "TOP "},    /* kpcTop */
+  {3008, "LIST "},   /* kpcList */
+  {3009, "APOP "},   /* kpcApop */
+  {3010, "LAST"},    /* kpcLast */
+  {3011, "XTND XMIT"},  /* kpcXmit */
+  {3012, "XLST "},   /* kpcXlst */
+  {3013, "UIDL"},    /* kpcUidl */
+  {3014, "CAPA"},    /* kpcCapa */
+  {3015, "STLS"},    /* kpcStls */
+  {3016, "AUTH "},   /* kpcAuth */
+
+  /* POP CAPA capability names (POPCapaStrn=18800 + pcapa* enum) */
+  {18801, "TOP"},          /* pcapaTop=1 */
+  {18802, "PIPELINING"},   /* pcapaPipelining=2 */
+  {18803, "USER"},         /* pcapaUser=3 */
+  {18804, "EXPIRE"},       /* pcapaExpire=4 */
+  {18805, "UIDL"},         /* pcapaUIDL=5 */
+  {18806, "X-MANGLE"},     /* pcapaMangle=6 */
+  {18807, "X-MANGLE"},     /* pcapaXMangle=7 */
+  {18808, "STLS"},         /* pcapaSTLS=8 */
+  {18809, "SASL"},         /* pcapaSASL=9 */
+  {18810, "AUTH-RESP-CODE"}, /* pcapaAuthRespCode=10 */
+
+  /* SASL mechanism names (SASLStrn=23300 + sasl* enum) */
+  {23301, "GSSAPI"},       /* saslGSSAPI=1 */
+  {23302, "CRAM-MD5"},     /* saslCramMD5=2 */
+  {23303, "PLAIN"},        /* saslPlain=3 */
+  {23304, "LOGIN"},        /* saslLogin=4 */
+  {23305, "KERBEROS_V4"},  /* saslKerbIV=5 */
+
+  /* GSSAPI error messages (GSSAPIErrorsStrn=23400) */
+  {23401, "GSSAPI authentication failed"},         /* kGSSAPIFailure */
+  {23402, "Unknown GSSAPI failure"},                /* kGSSAPIUnknownFailure */
+  {23403, "GSSAPI status"},                         /* kGSSAPIStatus */
+  {23404, "GSSAPI credentials have expired"},       /* kGSSAPICredExpiredError */
+  {23405, "No GSSAPI credentials available"},       /* kGSSAPINoCredError */
+
+  /* IMAP operation status messages (IMAPOperationsStrn=19100) */
+  {19101, ""},                      /* kIMAPUndefined */
+  {19102, "Resynchronizing"},       /* kIMAPResync */
+  {19103, "Fetching messages"},     /* kIMAPFetch */
+  {19104, "Deleting messages"},     /* kIMAPDelete */
+  {19105, "Undeleting messages"},   /* kIMAPUndelete */
+  {19106, "Transferring messages"}, /* kIMAPTransfer */
+  {19107, "Expunging mailbox"},     /* kIMAPExpunge */
+  {19108, "Listing mailboxes"},     /* kIMAPList */
+  {19109, "Locating trash"},        /* kIMAPTrashLocate */
+  {19110, "Creating mailbox"},      /* kIMAPCreateMailbox */
+  {19111, "Deleting mailbox"},      /* kIMAPDeleteMailbox */
+  {19112, "Renaming mailbox"},      /* kIMAPRenameMailbox */
+  {19113, "Moving mailbox"},        /* kIMAPMoveMailbox */
+  {19114, "Fetching attachment"},    /* kIMAPFetchAttachment */
+  {19115, "Searching"},             /* kIMAPSearching */
+  {19116, "Updating local cache"},  /* kIMAPUpdateLocal */
+  {19117, "Emptying trash"},        /* kIMAPEmptyTrash */
+  {19118, "Queuing flag change"},   /* kIMAPQueueFlagChange */
+  {19119, "Complete resync"},       /* kIMAPCompleteResync */
+  {19120, "Locating junk"},         /* kIMAPJunkLocate */
+
+  /* IMAP error messages (IMAPErrorsStrn=19200) */
+  {19201, "Out of memory"},                          /* kIMAPMemErr */
+  {19202, "No IMAP server specified"},               /* kIMAPNoServerErr */
+  {19203, "Could not create mail stream"},            /* kIMAPNoMailstreamErr */
+  {19204, "No IMAP account configured"},              /* kIMAPNoAccountErr */
+  {19205, "No mailbox specified"},                    /* kIMAPNoMailboxErr */
+  {19206, "Could not select mailbox"},                /* kIMAPSelectMailboxErr */
+  {19207, "Invalid mailbox name"},                    /* kIMAPMailboxNameInvalid */
+  {19208, "Could not create stream"},                 /* kIMAPCreateStreamErr */
+  {19209, "Mail stream is locked"},                   /* kIMAPStreamIsLockedErr */
+  {19210, "Could not create mailbox"},                /* kIMAPCreateMailboxErr */
+  {19211, "Could not delete mailbox"},                /* kIMAPDeleteMailboxErr */
+  {19212, "Could not rename mailbox"},                /* kIMAPRenameMailboxErr */
+  {19213, "Could not move mailbox"},                  /* kIMAPMoveMailboxErr */
+  {19214, "Not connected to server"},                 /* kIMAPNotConnectedErr */
+  {19215, "No messages"},                             /* kIMAPNoMessagesErr */
+  {19216, "Could not delete message"},                /* kIMAPDeleteMessage */
+  {19217, "Could not undelete message"},              /* kIMAPUndeleteMessage */
+  {19218, "Could not copy message"},                  /* kIMAPCopyErr */
+  {19219, "Not an IMAP personality"},                 /* kIMAPNotIMAPPersErr */
+  {19220, "Not an IMAP mailbox"},                     /* kIMAPNotIMAPMailboxErr */
+  {19221, "Could not list mailboxes"},                /* kIMAPListErr */
+  {19222, "Mailbox list in use"},                     /* kIMAPListInUseErr */
+  {19223, "Could not locate trash mailbox"},          /* kIMAPTrashLocateErr */
+  {19224, "Stub file error"},                         /* kIMAPStubFileErr */
+  {19225, "Temp file already exists"},                /* kIMAPTempFileExistErr */
+  {19226, "Could not fetch attachment"},              /* kIMAPAttachmentFetchErr */
+  {19227, "Could not decode attachment"},             /* kIMAPAttachmentDecodeErr */
+  {19228, "Could not search mailbox"},                /* kIMAPSearchMailboxErr */
+  {19229, "Mailbox has changed"},                     /* kIMAPMailboxChangedErr */
+  {19230, "Mailbox is read-only"},                    /* kIMAPMailboxReadOnly */
+  {19231, "Expunging mailbox"},                       /* kIMAPExpungeMailbox */
+  {19232, "Could not locate junk mailbox"},           /* kIMAPJunkLocateErr */
+  {19233, "Partial fetch error"},                     /* kIMAPPartialFetchErr */
+
+  /* Protocol type names (ProtocolStrn=26300) */
+  {26301, "finger"},       /* proFinger */
+  {26302, "ph"},           /* proPh */
+  {26303, "mailto"},       /* proMail */
+  {26304, "ph"},           /* proPh2 */
+  {26305, "file"},         /* proFile */
+  {26306, "cid"},          /* proCID */
+  {26307, "ldap"},         /* proLDAP */
+  {26308, "x-eudora-comp-file"}, /* proCompFile */
+  {26309, "x-eudora-setting"},   /* proSetting */
+  {26310, "x-eudora-pict-res"},  /* proPictRes */
+  {26311, "x-eudora-pict-hdl"},  /* proPictHandle */
+  {26312, "x-eudora-jump"},      /* proXEudoraJump */
+
+  /* MIME attribute names (AttributeStrn=24800) */
+  {24801, "name"},         /* aName */
+  {24802, "charset"},      /* aCharSet */
+  {24803, "boundary"},     /* aBoundary */
+  {24804, "x-mac-type"},   /* aMacType */
+  {24805, "x-mac-creator"},/* aMacCreator */
+  {24806, "filename"},     /* aFilename */
+  {24807, "x-mr-type"},    /* aMRType */
+  {24808, "access-type"},  /* aAccessType */
+  {24809, "server"},       /* aServer */
+  {24810, "subject"},      /* aSubject */
+  {24811, "mode"},         /* aMode */
+  {24812, "directory"},    /* aDirectory */
+  {24813, "site"},         /* aSite */
+  {24814, "format"},       /* aFormat */
+  {24815, "modification-date"}, /* aModDate */
+  {24816, "creation-date"},     /* aCreateDate */
+  {24817, "x-start"},     /* aStart */
+  {24818, "type"},         /* aType */
+  {24819, "types"},        /* aTypes */
+  {24820, "x-reg-file"},   /* aRegFile */
+  {24821, "delsp"},        /* aDelSP */
+  {24822, "size"},         /* aSize */
+
+  /* Server menu labels (ServerMenuStrnStrn=19400) */
+  {19401, "Nothing"},                   /* ksvmNone */
+  {19402, "Fetch message to mailbox"},  /* ksvmFetch */
+  {19403, "Delete from server"},        /* ksvmDelete */
+  {19404, "Fetch then delete"},         /* ksvmBoth */
+  {19405, ""},                          /* ksvmLimit */
+  {19406, "Fetch message"},             /* kisvmFetchMessage */
+  {19407, "Fetch attachments"},         /* kisvmFetchAttachments */
+  {19408, "Delete from server"},        /* kisvmDelete */
+  {19409, "Remove from cache"},         /* kisvmRemoveCache */
+  {19410, ""},                          /* kisvmLimit */
+  {19411, "Fetch message"},             /* kimsvmFetchMessage */
+  {19412, "Fetch attachments"},         /* kimsvmFetchAttachments */
+  {19413, "Delete from server"},        /* kimsvmDelete */
+  {19414, "Remove from cache"},         /* kimsvmRemoveCache */
+  {19415, ""},                          /* kimsvmLimit */
+
   {4501, ".pdf"}, /* PDF_QUOTE_EXTENSION_UNQUOTE */
   {4502, "Error while filtering for %p:"}, /* ERR_PERS_FILTERING */
   {4503, "Filtering messages for %p."}, /* IMAP_FILTERING_MESSAGES */
@@ -1719,15 +1903,13 @@ static const StrEntry string_table[] = {
   {25712, "14"},   /* blJunk - junk score */
 };
 
-#define STRING_TABLE_SIZE 1689
+#define STRING_TABLE_SIZE 1871
 
 const char *string_table_lookup(uint16_t id) {
-  int lo = 0, hi = STRING_TABLE_SIZE - 1;
-  while (lo <= hi) {
-    int mid = (lo + hi) / 2;
-    if (string_table[mid].id == id) return string_table[mid].str;
-    else if (string_table[mid].id < id) lo = mid + 1;
-    else hi = mid - 1;
+  /* Linear scan — table is not sorted by ID */
+  for (int i = 0; i < STRING_TABLE_SIZE; i++) {
+    if (string_table[i].id == id)
+      return string_table[i].str;
   }
   return NULL;
 }

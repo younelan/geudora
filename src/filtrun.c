@@ -40,6 +40,7 @@ DAMAGE. */
 #include "fileutil.h"
 #include "junk.h"
 #include "util.h"
+#include "threading.h"
 #include <string.h>
 #include <strings.h>
 #include <stdlib.h>
@@ -101,7 +102,7 @@ extern bool IsKnownWindowMyWindow(void *winWP);
 extern short GetWindowKind(void *winWP);
 
 /* Forward declarations for internal functions */
-static bool DoesIntersectNick(UHandle nickAddresses, UHandle nickExpanded, UPtr spot, long len);
+static bool DoesIntersectNick(char **nickAddresses, UHandle nickExpanded, UPtr spot, long len);
 static bool DoesIntersectNickFile(const char *file, UPtr spot, long len);
 static bool TermDateMatch(MTPtr mt, TOCType *tocH, short sumNum);
 static bool TermJunkMatch(MTPtr mt, TOCType *tocH, short sumNum);
@@ -191,7 +192,7 @@ static void Filter1Postprocess(FilterKeywordEnum fType, FilterPBPtr fpb)
 		{
 			unsigned char inName[256];
 			GetRString(inName, IN);
-			SimpleMakeFSSpec(MailRoot.vRef, MailRoot.dirId, (char *)inName, &spec);
+			spec_make(MailRoot.path, (char *)inName, &spec);
 		}
 	}
 
@@ -250,9 +251,9 @@ void FilterPostprocess(FilterKeywordEnum fType, FilterPBPtr fpb)
 	short i;
 	void *behindWP = NULL;
 
-	ZapHandle(fpb->ccAddresses);
-	ZapHandle(fpb->bccAddresses);
-	ZapHandle(fpb->toAddresses);
+	if (fpb->ccAddresses) { g_strfreev(fpb->ccAddresses); fpb->ccAddresses = NULL; }
+	if (fpb->bccAddresses) { g_strfreev(fpb->bccAddresses); fpb->bccAddresses = NULL; }
+	if (fpb->toAddresses) { g_strfreev(fpb->toAddresses); fpb->toAddresses = NULL; }
 
 	/* first, we make the filter report */
 	if (fpb->report && GetHandleSize_((Handle)fpb->report))
@@ -343,9 +344,9 @@ int InitFPB(FilterPBPtr fpb, bool zapAddrs, bool listsToo)
 
 	if (zapAddrs)
 	{
-		ZapHandle(fpb->toAddresses);
-		ZapHandle(fpb->ccAddresses);
-		ZapHandle(fpb->bccAddresses);
+		if (fpb->toAddresses) { g_strfreev(fpb->toAddresses); fpb->toAddresses = NULL; }
+		if (fpb->ccAddresses) { g_strfreev(fpb->ccAddresses); fpb->ccAddresses = NULL; }
+		if (fpb->bccAddresses) { g_strfreev(fpb->bccAddresses); fpb->bccAddresses = NULL; }
 	}
 
 	memset(fpb, 0, sizeof(*fpb));
@@ -1200,7 +1201,7 @@ static bool TermMatch(MTPtr mt, TOCType *tocH, short sumNum, FilterPBPtr fpb)
 							case CC_HEAD: addrs = fpb->ccAddresses; break;
 							case TO_HEAD: addrs = fpb->toAddresses; break;
 							case BCC_HEAD: addrs = fpb->bccAddresses; break;
-							default: ZapHandle(addrs); break;
+							default: if (addrs) { g_strfreev(addrs); addrs = NULL; } break;
 						}
 						match = TermExpMatch(mt, spot, hEnd, &addrs);
 						if (addrs)
@@ -1209,7 +1210,7 @@ static bool TermMatch(MTPtr mt, TOCType *tocH, short sumNum, FilterPBPtr fpb)
 								case CC_HEAD: fpb->ccAddresses = addrs; break;
 								case TO_HEAD: fpb->toAddresses = addrs; break;
 								case BCC_HEAD: fpb->bccAddresses = addrs; break;
-								default: ZapHandle(addrs); break;
+								default: if (addrs) { g_strfreev(addrs); addrs = NULL; } break;
 							}
 					}
 				}
@@ -1265,8 +1266,8 @@ done:
  **********************************************************************/
 static bool TermExpMatch(MTPtr mt, UPtr spot, UPtr end, UHandle *cache)
 {
-	BinAddrHandle raw = NULL;
-	BinAddrHandle expanded = NULL;
+	char **raw = NULL;
+	UHandle expanded = NULL;
 	bool result = false;
 
 	if (cache)
@@ -1280,8 +1281,8 @@ static bool TermExpMatch(MTPtr mt, UPtr spot, UPtr end, UHandle *cache)
 	}
 
 	if (!expanded)
-		if (!SuckPtrAddresses(&raw, spot, end-spot, true, false, false, NULL))
-			if (!ExpandAliases(&expanded, raw, 0, true))
+		if (!SuckPtrAddresses(&raw, (const char *)spot, end-spot, true, false, false, NULL))
+			if (!ExpandAliases((void **)&expanded, (void *)raw, 0, true))
 				FlattenListWith(expanded, ',');
 
 	if (expanded)
@@ -1294,7 +1295,7 @@ static bool TermExpMatch(MTPtr mt, UPtr spot, UPtr end, UHandle *cache)
 		}
 	}
 
-	ZapHandle(raw);
+	g_strfreev(raw); raw = NULL;
 	ZapHandle(expanded);
 	return(result);
 }
@@ -1302,26 +1303,26 @@ static bool TermExpMatch(MTPtr mt, UPtr spot, UPtr end, UHandle *cache)
 /************************************************************************
  * DoesIntersectNick - does a string intersect a nickname?
  ************************************************************************/
-static bool DoesIntersectNick(UHandle nickAddresses, UHandle nickExpanded, UPtr spot, long len)
+static bool DoesIntersectNick(char **nickAddresses, UHandle nickExpanded, UPtr spot, long len)
 {
-	UHandle addresses = NULL;
+	char **addresses = NULL;
 	bool match = false;
-	UPtr nick, addr;
-	int err = SuckPtrAddresses(&addresses, spot, len, false, false, false, NULL);
+	UPtr nick;
+	int err = SuckPtrAddresses(&addresses, (const char *)spot, len, false, false, false, NULL);
 
 	if (err > 0 || err == paramErr) return false;
 	if (!(FGlobalErr = err))
 	{
-		for (addr = *addresses; *addr; addr += *addr + 2)
+		for (int i = 0; addresses[i]; i++)
 		{
-			for (nick = *nickAddresses; *nick; nick += *nick + 2)
-				if ((match = StringSame((const char *)nick, (const char *)addr))) goto done;
+			for (int j = 0; nickAddresses[j]; j++)
+				if ((match = StringSame(nickAddresses[j], addresses[i]))) goto done;
 			for (nick = *nickExpanded; *nick; nick += *nick + 2)
-				if ((match = StringSame((const char *)nick, (const char *)addr))) goto done;
+				if ((match = StringSame((const char *)nick, addresses[i]))) goto done;
 		}
 	}
 done:
-	ZapHandle(addresses);
+	g_strfreev(addresses); addresses = NULL;
 	return(match);
 }
 
@@ -1360,23 +1361,22 @@ static bool FromIntersectNickFileMatch(MTPtr mt, TOCType *tocH, short sumNum)
  ************************************************************************/
 static bool DoesIntersectNickFile(const char *file, UPtr spot, long len)
 {
-	UHandle addresses = NULL;
+	char **addresses = NULL;
 	bool match = false;
-	UPtr addr;
 	unsigned char *fileArg = NULL;
 	int err;
 
 	if (file && file[0] && !EqualStrRes((unsigned char *)file, ANY_ALIAS_FILE))
 		fileArg = (unsigned char *)file;
 
-	err = SuckPtrAddresses(&addresses, spot, len, false, false, false, NULL);
+	err = SuckPtrAddresses(&addresses, (const char *)spot, len, false, false, false, NULL);
 	if (err > 0 || err == paramErr) return false;
 	if (!(FGlobalErr = err))
 	{
-		for (addr = *addresses; *addr; addr += *addr + 2)
-			if ((match = AppearsInAliasFile(addr, fileArg))) break;
+		for (int i = 0; addresses[i]; i++)
+			if ((match = AppearsInAliasFile((unsigned char *)addresses[i], fileArg))) break;
 	}
-	ZapHandle(addresses);
+	g_strfreev(addresses); addresses = NULL;
 	return(match);
 }
 
@@ -1455,19 +1455,19 @@ static bool TermPtrMatch(MTPtr mt, UPtr spot, UPtr end)
 		case mbmIntersects:
 		{
 			/* cache nickname expansion */
-			if (!mt->nickExpanded || !*mt->nickExpanded || !mt->nickAddresses || !*mt->nickAddresses)
+			if (!mt->nickExpanded || !*mt->nickExpanded || !mt->nickAddresses)
 			{
 				ZapHandle(mt->nickExpanded);
-				ZapHandle(mt->nickAddresses);
-				if (!(FGlobalErr = SuckPtrAddresses(&mt->nickAddresses,
-						(UPtr)mt->value, valLen, false, false, false, NULL)))
+				if (mt->nickAddresses) { g_strfreev((char **)mt->nickAddresses); mt->nickAddresses = NULL; }
+				if (!(FGlobalErr = SuckPtrAddresses((char ***)&mt->nickAddresses,
+						(const char *)mt->value, valLen, false, false, false, NULL)))
 					FGlobalErr = ExpandAliases(&mt->nickExpanded, mt->nickAddresses, 0, false);
 			}
 
 			if (!mt->nickExpanded || !mt->nickAddresses)
 				return false;
 
-			match = DoesIntersectNick(mt->nickAddresses, mt->nickExpanded, spot, end-spot);
+			match = DoesIntersectNick((char **)mt->nickAddresses, mt->nickExpanded, spot, end-spot);
 		}
 			break;
 
@@ -1635,9 +1635,9 @@ bool FilterMatchHi(short f, TOCType *tocH, short sumNum)
 
 		match = FilterMatch(f, tocH, sumNum, &fpb);
 
-		ZapHandle(fpb.ccAddresses);
-		ZapHandle(fpb.bccAddresses);
-		ZapHandle(fpb.toAddresses);
+		if (fpb.ccAddresses) { g_strfreev(fpb.ccAddresses); fpb.ccAddresses = NULL; }
+		if (fpb.bccAddresses) { g_strfreev(fpb.bccAddresses); fpb.bccAddresses = NULL; }
+		if (fpb.toAddresses) { g_strfreev(fpb.toAddresses); fpb.toAddresses = NULL; }
 
 		if (tocH->sums[sumNum].cache && tocH->sums[sumNum].offset < 0)
 		{

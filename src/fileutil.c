@@ -249,16 +249,55 @@ void CtoPCpy(char *dst, const char *src) {
 #define pascal
 #endif
 
-short FSMakeFSSpec(short vRef, long dirID, const char *name, FSSpecPtr spec) {
-  if (!name || !spec)
+/* spec_for - build an FSSpec from a directory path and filename.
+ * Returns noErr if the resulting path exists, fnfErr if not. */
+short spec_for(const char *dir, const char *name, FSSpecPtr spec) {
+  if (!spec)
     return paramErr;
   memset(spec, 0, sizeof(FSSpec));
-  spec->vRefNum = vRef;
-  spec->parID = dirID;
-  strcpy(spec->name, name);
-  // Simple path construction (current dir relative)
-  snprintf(spec->path, sizeof(spec->path), "./%s", spec->name);
-  return noErr;
+  if (name && name[0])
+    g_strlcpy(spec->name, name, sizeof(spec->name));
+  if (!name || !name[0]) {
+    if (dir && dir[0])
+      g_strlcpy(spec->path, dir, sizeof(spec->path));
+  } else if (!dir || !dir[0] || name[0] == '/') {
+    g_strlcpy(spec->path, name, sizeof(spec->path));
+  } else {
+    snprintf(spec->path, sizeof(spec->path), "%s/%s", dir, name);
+  }
+  return access(spec->path, F_OK) == 0 ? noErr : fnfErr;
+}
+
+/* spec_make - like spec_for but doesn't hit the filesystem */
+void spec_make(const char *dir, const char *name, FSSpecPtr spec) {
+  if (!spec)
+    return;
+  memset(spec, 0, sizeof(FSSpec));
+  if (name && name[0])
+    g_strlcpy(spec->name, name, sizeof(spec->name));
+  if (!name || !name[0]) {
+    if (dir && dir[0])
+      g_strlcpy(spec->path, dir, sizeof(spec->path));
+  } else if (!dir || !dir[0] || name[0] == '/') {
+    g_strlcpy(spec->path, name, sizeof(spec->path));
+  } else {
+    snprintf(spec->path, sizeof(spec->path), "%s/%s", dir, name);
+  }
+}
+
+/* spec_parent - get the parent directory of a spec's path into buf */
+const char *spec_parent(FSSpecPtr spec, char *buf, size_t bufsz) {
+  if (spec->path[0]) {
+    g_strlcpy(buf, spec->path, bufsz);
+    char *slash = strrchr(buf, '/');
+    if (slash && slash != buf)
+      *slash = '\0';
+    else if (slash == buf)
+      buf[1] = '\0';
+    return buf;
+  }
+  buf[0] = '\0';
+  return buf;
 }
 short FSpCreateResFile(FSSpecPtr spec, uint32_t creator, uint32_t type,
                        uint32_t script) {
@@ -604,7 +643,7 @@ void GetQDGlobalsScreenBits(void *bits) {}
 Handle NewHandle(size_t size) {
   void **h = (void **)malloc(sizeof(void *));
   if (h) {
-    *h = malloc(size);
+    *h = malloc(size > 0 ? size : 1); /* malloc(0) is undefined; use 1 */
     if (!*h) {
       free(h);
       return NULL;
@@ -771,12 +810,12 @@ short BlessedVRef(void) {
 /**********************************************************************
  * MakeResFile - create a resource file in a given directory
  **********************************************************************/
-int MakeResFile(const char *name, int vRef, long dirId, long creator,
+int MakeResFile(const char *name, const char *dir, long creator,
                 long type) {
   int err;
   FSSpec spec;
 
-  FSMakeFSSpec(vRef, dirId, name, &spec);
+  spec_for(dir, name, &spec);
   FSpCreateResFile(&spec, creator, type, 0);
   err = ResError();
   // (jp) NetWare servers incorrectly report noMacDskErr when attempting to
@@ -1354,8 +1393,7 @@ OSErr ResolveAliasNoMount(FSSpecPtr alias, FSSpecPtr orig, bool *wasAlias) {
   /*
    * resolve the record
    */
-  FSMakeFSSpec(Root.vRef, Root.dirId, (unsigned char *)"",
-               &spec); /* Eudora Folder as base */
+  spec_for(Root.path, NULL, &spec); /* Eudora Folder as base */
   err = MatchAlias(&spec,
                    kARMSearch |             /* allow id search */
                        kARMSearchRelFirst | /* darn fileid's; denigrate */
@@ -1424,8 +1462,7 @@ OSErr FSpTrash(FSSpecPtr spec) {
   FSSpec exist, newExist;
 
   if (!((err = GetTrashSpec(spec->vRefNum, &trashSpec)))) {
-    if (!FSMakeFSSpec(trashSpec.vRefNum, trashSpec.parID,
-                      (unsigned char *)spec->name, &exist)) {
+    if (!spec_for(trashSpec.path, (const char *)spec->name, &exist)) {
       newExist = exist;
       UniqueSpec(&newExist, 31);
       FSpRename(&exist, (const unsigned char *)newExist.name);
@@ -1537,9 +1574,9 @@ OSErr TweakFileType(FSSpecPtr spec, OSType type, OSType creator) {
     if (type == 'APPL')
       info.fdFlags |= fHasBundle;
     if (!((err = FSpSetFInfo(spec, &info)))) {
-      if (!((err = FSMakeFSSpec(spec->vRefNum, spec->parID, (unsigned char *)"",
-                                &dirSpec))))
-        err = FSpTouch(&dirSpec);
+      { char pdir[1024]; spec_parent(spec, pdir, sizeof(pdir));
+      if (!((err = spec_for(pdir, NULL, &dirSpec))))
+        err = FSpTouch(&dirSpec); }
     }
   }
   return (err);
@@ -1653,14 +1690,14 @@ bool HFIIsFolderOrAlias(CInfoPBRec *hfi) {
 /************************************************************************
  * FolderSizeHi - how big is a folder?
  ************************************************************************/
-void FolderSizeHi(short vRef, long dirID, uint32_t *cumSize) {
+void FolderSizeHi(const char *dir, uint32_t *cumSize) {
   CInfoPBRec hfi;
   char name[256];
 
   hfi.hFileInfo.ioNamePtr = name;
   *cumSize = 0;
 
-  FolderSize(vRef, dirID, &hfi, cumSize);
+  FolderSize(dir, &hfi, cumSize);
 
   return;
 }
@@ -1672,7 +1709,7 @@ static bool FolderSizeCallback(DirIterateInfo *info) {
   uint32_t *cumSize = (uint32_t *)info->data;
   if (info->isDir) {
     uint32_t subSize = 0;
-    FolderSize(info->spec.vRefNum, 0, nil, &subSize);
+    FolderSize(info->spec.path, nil, &subSize);
     *cumSize += subSize;
   } else {
     *cumSize += info->size;
@@ -1680,9 +1717,9 @@ static bool FolderSizeCallback(DirIterateInfo *info) {
   return true;
 }
 
-void FolderSize(short vRef, long dirID, CInfoPBRec *hfi, uint32_t *cumSize) {
+void FolderSize(const char *dir, CInfoPBRec *hfi, uint32_t *cumSize) {
   FSSpec spec;
-  FSMakeFSSpec(vRef, dirID, (unsigned char *)"", &spec);
+  spec_for(dir, NULL, &spec);
   DirIterate(&spec, cumSize, FolderSizeCallback);
 }
 
@@ -2119,7 +2156,7 @@ short CopyFInfo(short vRef, long dirId, const char *name, short fromVRef,
 /************************************************************************
  * MyResolveAlias - resolve an alias
  ************************************************************************/
-short MyResolveAlias(short *vRef, long *dirId, char *name, bool *wasAlias) {
+short MyResolveAlias(const char *dir, char *name, bool *wasAlias) {
   FSSpec theSpec;
   bool folder;
   long haveAlias;
@@ -2129,12 +2166,10 @@ short MyResolveAlias(short *vRef, long *dirId, char *name, bool *wasAlias) {
   if (wasAlias)
     *wasAlias = false;
   if (!Gestalt(gestaltAliasMgrAttr, &haveAlias) && haveAlias & 0x1) {
-    if (!(err = FSMakeFSSpec(*vRef, *dirId, name, &theSpec)) &&
+    if (!(err = spec_for(dir, name, &theSpec)) &&
         !(err = ResolveAliasFile(&theSpec, true, &folder, &wasIt))) {
       if (wasIt) {
-        *vRef = theSpec.vRefNum;
-        *dirId = theSpec.parID;
-        g_strlcpy(name, theSpec.name, sizeof(name));
+        g_strlcpy(name, theSpec.name, sizeof(theSpec.name));
         if (wasAlias)
           *wasAlias = true;
       }
@@ -2338,7 +2373,7 @@ short GetFileByRef(short refN, FSSpecPtr specPtr) {
   fcb.ioNamePtr = name;
   if ((err = PBGetFCBInfo((FCBInfoPBPtr)&fcb, false)))
     return (err);
-  return (FSMakeFSSpec(fcb.ioFCBVRefNum, fcb.ioFCBParID, name, specPtr));
+  return (spec_for(NULL, name, specPtr));
 }
 
 /************************************************************************
@@ -2795,8 +2830,13 @@ OSErr SubFolderSpec(short nameId, FSSpecPtr spec) {
     }
 
   // not in cache.  Go look for it
-  if (!(err = FSMakeFSSpec(Root.vRef, Root.dirId, GetRString(string, nameId),
-                           spec))) {
+  err = spec_for(Root.path, (const char *)GetRString(string, nameId), spec);
+  if (err == fnfErr) {
+    /* Directory doesn't exist — create it */
+    g_mkdir_with_parents(spec->path, 0755);
+    err = spec_for(Root.path, (const char *)GetRString(string, nameId), spec);
+  }
+  if (!err) {
     /*
      * maybe the folder is an alias
      */
@@ -2875,9 +2915,10 @@ OSErr StuffFolderSpec(FSSpecPtr spec) {
   char name[256];
   OSErr err = GetFileByRef(AppResFile, &localSpec);
 
-  if (!err)
-    err = FSMakeFSSpec(localSpec.vRefNum, localSpec.parID,
-                       GetRString(name, STUFF_FOLDER), &localSpec);
+  if (!err) {
+    char pdir[1024]; spec_parent(&localSpec, pdir, sizeof(pdir));
+    err = spec_for(pdir, (const char *)GetRString(name, STUFF_FOLDER), &localSpec);
+  }
   if (!err) {
     IsAlias(&localSpec, &localSpec);
     spec->vRefNum = localSpec.vRefNum;
@@ -2978,7 +3019,7 @@ OSErr FSResolveFID(short vRef, long fid, FSSpecPtr spec) {
   err = PBResolveFileIDRefSync((HParmBlkPtr)&fidpb);
 
   if (!err)
-    err = FSMakeFSSpec(vRef, fidpb.fidParam.ioSrcDirID, name, spec);
+    err = spec_for(NULL, name, spec);
 
   return (err);
 }
@@ -3178,7 +3219,7 @@ OSErr NewTempSpec(short vRef, long dirId, char *name, FSSpecPtr spec) {
     PLCat(fName, n);
   }
 
-  err = FSMakeFSSpec(vRef, tempId, fName, spec);
+  spec_make(NULL, fName, spec);
   return (UniqueSpec(spec, 27));
 }
 
@@ -3295,7 +3336,7 @@ OSErr NewTempExtSpec(short vRef, char *name, short extId, FSSpecPtr spec) {
     PCatC(fName, '.');
     PCatR(fName, extId);
 
-  } while (!FSMakeFSSpec(vRef, dirId, fName, spec));
+  } while (!spec_for(NULL, fName, spec));
   if (err == fnfErr)
     err = noErr;
   return (err);
@@ -3311,13 +3352,14 @@ OSErr MakeAFinderAlias(FSSpecPtr originalSpec, FSSpecPtr aliasSpec) {
   FInfo origInfo, aliasInfo;
   short refN;
   short oldResF = CurResFile();
+  char pdir[1024];
 
-  err = FSMakeFSSpec(aliasSpec->vRefNum, aliasSpec->parID, "\x00", &spec);
+  spec_parent(aliasSpec, pdir, sizeof(pdir));
+  err = spec_for(pdir, NULL, &spec);
 
   if (!(err = NewAlias(&spec, originalSpec, &alias)) &&
       !(err = FSpGetFInfo(originalSpec, &origInfo))) {
-    err = FSMakeFSSpec(
-        aliasSpec->vRefNum, aliasSpec->parID,
+    err = spec_for(pdir,
         aliasSpec->name[0] ? aliasSpec->name : originalSpec->name, &localSpec);
 
     /*
@@ -3373,14 +3415,7 @@ done:
   return (err);
 }
 
-/************************************************************************
- * SimpeMakeFSSpec - make an FSSpec, but don't hit the filesystem
- ************************************************************************/
-void SimpleMakeFSSpec(short vRef, long dirId, char *name, FSSpecPtr spec) {
-  spec->vRefNum = vRef;
-  spec->parID = dirId;
-  PSCopy(spec->name, name);
-}
+/* SimpleMakeFSSpec - DEPRECATED, use spec_make() instead */
 
 /************************************************************************
  * FindMyFile - Like FindFile, only Eudora-related
@@ -3391,18 +3426,19 @@ OSErr FindMyFile(FSSpecPtr spec, long whereToLook, short fileName) {
   char nameStr[256];
 
   if (whereToLook & kStuffFolderBit) {
-    if (!(err = GetFileByRef(AppResFile, &mySpec)))
-      if (!(err = FSMakeFSSpec(mySpec.vRefNum, mySpec.parID,
-                               GetRString(nameStr, STUFF_FOLDER), &mySpec))) {
+    if (!(err = GetFileByRef(AppResFile, &mySpec))) {
+      char pdir[1024]; spec_parent(&mySpec, pdir, sizeof(pdir));
+      if (!(err = spec_for(pdir,
+                           (const char *)GetRString(nameStr, STUFF_FOLDER), &mySpec))) {
         IsAlias(&mySpec, &mySpec);
-        mySpec.parID = SpecDirId(&mySpec);
-        if (!(err = FSMakeFSSpec(mySpec.vRefNum, mySpec.parID,
-                                 GetRString(nameStr, fileName), &mySpec))) {
+        if (!(err = spec_for(mySpec.path,
+                             (const char *)GetRString(nameStr, fileName), &mySpec))) {
           IsAlias(&mySpec, &mySpec);
           *spec = mySpec;
           return noErr;
         }
       }
+    }
   }
 
   return err;
@@ -3467,7 +3503,7 @@ void MyCloseResFile(short refN) {
 /************************************************************************
  * MakeUniqueUntitledSpec - Make a unique "untitled" name in some folder
  ************************************************************************/
-void MakeUniqueUntitledSpec(short vRefNum, long dirID, short strResID,
+void MakeUniqueUntitledSpec(const char *dir, short strResID,
                             FSSpec *spec)
 
 {
@@ -3479,7 +3515,7 @@ void MakeUniqueUntitledSpec(short vRefNum, long dirID, short strResID,
   GetRString(name, strResID);
   suffix = 2;
   saveLen = *name;
-  while (!FSMakeFSSpec(vRefNum, dirID, name, spec)) {
+  while (!spec_for(dir, name, spec)) {
     //	No error means that the file/folder exists. Change the file name
     // by
     // adding a numeric suffix
@@ -3499,17 +3535,16 @@ OSErr MisplaceItem(FSSpec *spec)
 
   // Find the Misplaced Items folder
   if ((theError = SubFolderSpec(MISPLACED_FOLDER, &misplacedFolder))) {
-    SimpleMakeFSSpec(Root.vRef, Root.dirId,
-                     GetRString((char *)misplacedFolder.name, MISPLACED_FOLDER),
-                     &misplacedFolder);
+    spec_make(Root.path,
+              (const char *)GetRString((char *)misplacedFolder.name, MISPLACED_FOLDER),
+              &misplacedFolder);
     theError = FSpDirCreate(&misplacedFolder, 0, &dirID);
     if (!theError)
       misplacedFolder.parID = dirID;
   }
   if (!theError) {
     IsAlias(&misplacedFolder, &misplacedFolder);
-    if (!FSMakeFSSpec(misplacedFolder.vRefNum, misplacedFolder.parID,
-                      spec->name, &exist)) {
+    if (!spec_for(misplacedFolder.path, spec->name, &exist)) {
       newExist = exist;
       UniqueSpec(&newExist, 31);
       FSpRename(&exist, newExist.name);

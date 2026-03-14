@@ -1564,8 +1564,7 @@ Handle GetLHPreviewIcon(VLNodeID id) {
 
       // Find the icon preview file
       AdIdToName(adId, adGraphicName);
-      if (noErr == FSMakeFSSpec(gLinkHistoryFolder.vRefNum,
-                                gLinkHistoryFolder.parID, adGraphicName,
+      if (noErr == spec_for(gLinkHistoryFolder.path, adGraphicName,
                                 &adGraphicSpec)) {
         short iconRes, oldResFile = CurResFile();
 
@@ -2049,8 +2048,7 @@ OSErr CreateIconFromAdGraphic(AdId adId, FSSpecPtr adGraphic) {
   AdIdToName(adId, graphicName);
 
   // See if the graphic exists already;
-  if (FSMakeFSSpec(gLinkHistoryFolder.vRefNum, gLinkHistoryFolder.parID,
-                   graphicName, &adIconSpec) != noErr) {
+  if (spec_for(gLinkHistoryFolder.path, graphicName, &adIconSpec) != noErr) {
     // the icon does not yet exist.  Create it from the adGraphic file.
     err = IconFromAd(&adIconSpec, adGraphic);
   } else
@@ -2105,8 +2103,7 @@ OSErr DeleteAdGraphic(AdId adId) {
 
   // locate the ad file in the Link History Folder
   AdIdToName(adId, adGraphicName);
-  err = FSMakeFSSpec(gLinkHistoryFolder.vRefNum, gLinkHistoryFolder.parID,
-                     adGraphicName, &adGraphicSpec);
+  err = spec_for(gLinkHistoryFolder.path, adGraphicName, &adGraphicSpec);
   if (err == noErr) {
     // Delete the ad preview we've found.
     err = FSpDelete(&adGraphicSpec);

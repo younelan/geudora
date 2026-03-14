@@ -50,6 +50,7 @@ extern MenuHandle GetMHandle(short menuID);
 #include "StringDefs.h"
 #include "progress.h"
 #include "Globals.h"
+#include "threading.h"
 
 #ifndef ASSERT
 #define ASSERT assert
@@ -62,8 +63,7 @@ extern MenuHandle GetMHandle(short menuID);
 #define FLAG_KNOWS_ME (1L << 30) // Define locally if missing
 #endif
 
-// Missing Declarations
-uint32_t Hash(unsigned char *s);
+// Hash is now a macro in message.h: #define Hash(s) HashWithSeed(s, 1)
 /* HNoPurge/HPurge provided by legacy_shim.h as static inline */
 int HandleHeadGetIdText(void **text, int head, void ***h);
 
@@ -1661,15 +1661,14 @@ bool WhiteListByMID(TOCType * tocH, short sumNum) {
     void **references = NULL;
     HNoPurge(text);
     if (!HandleHeadGetIdText(text, HeaderStrn + REFERENCES_HEAD, &references)) {
-      BinAddrHandle addresses = NULL;
+      char **addresses = NULL;
       Tr(references, (unsigned char *)" \t\r\n", (unsigned char *)",,,,");
       if (!SuckAddresses(&addresses, references, false, false, false, NULL)) {
-        UPtr address;
         uint32_t *mids = (uint32_t *)OutgoingMIDList->data;
         guint midCount = OutgoingMIDList->len;
 
-        for (address = *addresses; *address; address += *address + 2) {
-          uint32_t h = Hash(address);
+        for (int i = 0; addresses[i]; i++) {
+          uint32_t h = Hash((UPtr)addresses[i]);
           bool found = false;
           for (guint mi = 0; mi < midCount; mi++) {
             if (mids[mi] == h) { found = true; break; }
@@ -1679,7 +1678,7 @@ bool WhiteListByMID(TOCType * tocH, short sumNum) {
             break;
           }
         }
-        ZapHandle(addresses);
+        g_strfreev(addresses); addresses = NULL;
       }
       ZapHandle(references);
     }

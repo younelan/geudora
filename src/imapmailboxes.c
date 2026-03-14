@@ -281,8 +281,8 @@ void CreateIMAPMailFolder(void) {
   bool isFolder, boolJunk;
 
   // create the IMAP Folder
-  err = FSMakeFSSpec(Root.vRef, Root.dirId,
-                     GetRString(folder, IMAP_MAIL_FOLDER_NAME), &spec);
+  err = spec_for(Root.path,
+                     (const char *)GetRString(folder, IMAP_MAIL_FOLDER_NAME), &spec);
   if (err == fnfErr)
     err = MyFSpDirCreate(&spec, 0, &junk);
 
@@ -487,7 +487,7 @@ OSErr CreateNewPersCaches(void) {
       PersNameToCacheName(CurPers, cacheName);
 
       err =
-          FSMakeFSSpec(IMAPMailRoot.vRef, IMAPMailRoot.dirId, cacheName, &spec);
+          spec_for(IMAPMailRoot.path, (const char *)cacheName, &spec);
       if (err == fnfErr) // it doesn't.
       {
         // create a cache folder for this personality
@@ -520,18 +520,17 @@ OSErr UpdateLocalCache(bool progress) {
   PersNameToCacheName(CurPers, cacheName);
 
   // see if the personality already has a cache
-  err = FSMakeFSSpec(IMAPMailRoot.vRef, IMAPMailRoot.dirId, cacheName, &spec);
+  err = spec_for(IMAPMailRoot.path, (const char *)cacheName, &spec);
   if (err == fnfErr) // create it if we need to
   {
     if (!CreateIMAPCacheMailbox(&spec, 1))
       err = noErr;
-  } else
-    spec.parID = SpecDirId(&spec);
+  }
 
   // see if the personality has an attachment folder.
   if (err == noErr) {
-    err = FSMakeFSSpec(spec.vRefNum, spec.parID,
-                       GetRString(name, IMAP_ATTACH_FOLDER), &itemSpec);
+    err = spec_for(spec.path,
+                       (const char *)GetRString(name, IMAP_ATTACH_FOLDER), &itemSpec);
     if (err == fnfErr) {
       err = FSpDirCreate(&itemSpec, 0, &junk);
     }
@@ -547,7 +546,7 @@ OSErr UpdateLocalCache(bool progress) {
   // make sure the first node in the mailboxtree points inside the cache folder
   // itself.
   LDRef(CurPers);
-  SimpleMakeFSSpec(spec.vRefNum, spec.parID, cacheName,
+  spec_make(spec.path, (const char *)cacheName,
                    &(CurPers->mailboxTree->mailboxSpec));
   UL(CurPers);
 
@@ -590,7 +589,7 @@ OSErr UpdateLocalCacheMailboxes(MailboxNodeHandle *tree, FSSpecPtr inSpec,
       UL(node);
 
       // create the folder if we have to
-      err = FSMakeFSSpec(inSpec->vRefNum, inSpec->parID, mName, &spec);
+      err = spec_for(inSpec->path, (const char *)mName, &spec);
 
       // display some periodic progress if we're going to create a new mailbox
       if (progress && err) {
@@ -643,7 +642,7 @@ OSErr UpdateLocalCacheMailboxes(MailboxNodeHandle *tree, FSSpecPtr inSpec,
         // then try again with a unique name
         if ((err = UniqueSpec(&spec, MAX_BOX_NAME)) == noErr) {
           PCopy(mName, spec.name);
-          err = FSMakeFSSpec(inSpec->vRefNum, inSpec->parID, mName, &spec);
+          err = spec_for(inSpec->path, (const char *)mName, &spec);
         }
       }
 
@@ -675,7 +674,7 @@ OSErr UpdateLocalCacheMailboxes(MailboxNodeHandle *tree, FSSpecPtr inSpec,
         //
 
         LDRef(node);
-        err = FSMakeFSSpec(spec.vRefNum, spec.parID, mName,
+        err = spec_for(spec.path, (const char *)mName,
                            &(node->mailboxSpec));
         if (err == fnfErr)
           if (!CreateIMAPCacheMailbox(&(node->mailboxSpec), 0))
@@ -782,7 +781,7 @@ OSErr CleanIMAPFolder(void) {
       }
     }
     if (!current) {
-      if ((err = FSMakeFSSpec(IMAPMailRoot.vRef, IMAPMailRoot.dirId, name,
+      if ((err = spec_for(IMAPMailRoot.path, (const char *)name,
                               &toDelete)) == noErr) {
         if ((err = RemoveIMAPCacheDir(toDelete)) == noErr)
           hfi.hFileInfo.ioFDirIndex--;
@@ -834,8 +833,8 @@ OSErr CleanCacheFolder(FSSpecPtr folderToClean, MailboxNodeHandle treeToClean) {
     if (!current && (hfi.hFileInfo.ioFlAttrib &
                      ioDirMask)) // this folder wasn't found to belong
     {
-      if ((err = FSMakeFSSpec(folderToClean->vRefNum, folderToClean->parID,
-                              name, &toDelete)) == noErr) {
+      if ((err = spec_for(folderToClean->path, (const char *)name,
+                              &toDelete)) == noErr) {
         if ((err = RemoveIMAPCacheDir(toDelete)) == noErr) {
           hfi.hFileInfo.ioFDirIndex--;
         }
@@ -864,7 +863,7 @@ OSErr RemoveIMAPCacheDir(FSSpec toDelete) {
     while (!DirIterate(toDelete.vRefNum, targetDir, &hfi) && err == noErr) {
       // Process subdirectories
       if (hfi.hFileInfo.ioFlAttrib & ioDirMask) {
-        SimpleMakeFSSpec(toDelete.vRefNum, targetDir, name, &child);
+        spec_make(toDelete.path, (const char *)name, &child);
         err = RemoveIMAPCacheDir(child);
         if (!err)
           hfi.hFileInfo.ioFDirIndex--; //	Don't skip next entry
@@ -1140,7 +1139,7 @@ MailboxNodeHandle RebuildPersIMAPMailboxTree(PersHandle pers) {
 
   // locate this personality's IMAP cache directory
   LDRef(tree);
-  err = FSMakeFSSpec(IMAPMailRoot.vRef, IMAPMailRoot.dirId, cacheName,
+  err = spec_for(IMAPMailRoot.path, (const char *)cacheName,
                      &tree->mailboxSpec);
   if (err == noErr) {
     // make sure the first node in the mailboxtree points inside the cache
@@ -1185,8 +1184,8 @@ OSErr RebuildIMAPMailboxTree(FSSpecPtr dir, PersHandle pers,
       {
         // it must be an imap mailbox.  Create an imap node from the file within
         // this folder
-        SimpleMakeFSSpec(dir->vRefNum, dir->parID, name, &mboxFolder);
-        FSMakeFSSpec(dir->vRefNum, SpecDirId(&mboxFolder), name, &mboxFile);
+        spec_make(dir->path, (const char *)name, &mboxFolder);
+        err = spec_for(mboxFolder.path, (const char *)name, &mboxFile);
         if (err == noErr) {
           // read in the mailbox info from the mailbox file
           node = g_malloc0(sizeof(MailboxNode));
@@ -1749,7 +1748,7 @@ bool IsIMAPCacheFolder(FSSpecPtr spec) {
       !HFIIsFolder(&cinfo))
     return 0;
 
-  SimpleMakeFSSpec(spec->vRefNum, cinfo.hFileInfo.ioDirID, spec->name,
+  spec_make(spec->path, (const char *)spec->name,
                    &internalMailboxFileSpec);
   LocateNodeBySpecInAllPersTrees(&internalMailboxFileSpec, &node, &pers);
 
@@ -2384,8 +2383,8 @@ bool IMAPRenameMailbox(FSSpecPtr cacheFolderSpec, UPtr name) {
     return (0);
 
   // figure out who this mailbox belongs to
-  SimpleMakeFSSpec(cacheFolderSpec->vRefNum, SpecDirId(cacheFolderSpec),
-                   cacheFolderSpec->name, &cacheFileSpec);
+  spec_make(cacheFolderSpec->path, (const char *)cacheFolderSpec->name,
+                   &cacheFileSpec);
   LocateNodeBySpecInAllPersTrees(&cacheFileSpec, &node, &pers);
 
   // figure out the new name of the mailbox
@@ -2510,9 +2509,11 @@ bool IMAPMoveMailbox(FSSpecPtr fromFolderSpec, FSSpecPtr toSpec,
     return (1);
 
   // we'll be dealing with the file inside the fromFolder
-  SimpleMakeFSSpec(fromFolderSpec->vRefNum, fromFolderSpec->parID,
-                   fromFolderSpec->name, &fromSpec);
-  fromSpec.parID = SpecDirId(&fromSpec);
+  {
+    char pdir[1024];
+    spec_parent(fromFolderSpec, pdir, sizeof(pdir));
+    spec_make(pdir, (const char *)fromFolderSpec->name, &fromSpec);
+  }
 
   // figure out who the mailboxes belong to
   LocateNodeBySpecInAllPersTrees(toSpec, &toNode, &toPers);
@@ -2773,7 +2774,7 @@ MailboxNodeHandle CreateSpecialMailbox(bool tryCreate, long mboxAtt) {
     if (inbox) {
       // try to create the special mailbox at the same level as the inbox
       PersNameToCacheName(CurPers, scratch);
-      err = FSMakeFSSpec(IMAPMailRoot.vRef, IMAPMailRoot.dirId,
+      err = spec_for(IMAPMailRoot.path,
                          (const char *)scratch, &specialSpec);
       if (err == noErr) {
         specialSpec.parID = SpecDirId(&specialSpec);
@@ -3189,10 +3190,10 @@ OSErr GetIMAPAttachFolder(FSSpecPtr attachSpec) {
   // Attachments folder in the IMAP cache directory
   GetAttFolderSpec(&attachFolderSpec);
   if (attachFolderSpec.vRefNum == IMAPMailRoot.vRef) {
-    if ((err = FSMakeFSSpec(IMAPMailRoot.vRef, IMAPMailRoot.dirId,
-                            (char *)cacheName, &spec)) == noErr) {
-      if ((err = FSMakeFSSpec(spec.vRefNum, SpecDirId(&spec),
-                              GetRString((char *)name, IMAP_ATTACH_FOLDER),
+    if ((err = spec_for(IMAPMailRoot.path,
+                            (const char *)cacheName, &spec)) == noErr) {
+      if ((err = spec_for(spec.path,
+                              (const char *)GetRString((char *)name, IMAP_ATTACH_FOLDER),
                               &spec)) == noErr) {
         attachSpec->vRefNum = spec.vRefNum;
         attachSpec->parID = SpecDirId(&spec);
@@ -3226,8 +3227,12 @@ OSErr EnsureIMAPCacheFolders(FSSpecPtr attach, FSSpecPtr imapAttach) {
   // create a folder inside the attach folder to enclose the personality caches
   //
 
-  err = FSMakeFSSpec(attach->vRefNum, attach->parID,
-                     GetRString((char *)name, IMAP_SAFE_ATTACH_FOLDER), &spec);
+  {
+    char pdir[1024];
+    spec_parent(attach, pdir, sizeof(pdir));
+    err = spec_for(pdir,
+                     (const char *)GetRString((char *)name, IMAP_SAFE_ATTACH_FOLDER), &spec);
+  }
   if (err == fnfErr) {
     // create a folder for all the personality caches
     err = MyFSpDirCreate(&spec, 0, &junk);
@@ -3246,7 +3251,7 @@ OSErr EnsureIMAPCacheFolders(FSSpecPtr attach, FSSpecPtr imapAttach) {
         // see if the personality already has a cache
         PersNameToCacheName(CurPers, cacheName);
 
-        err = FSMakeFSSpec(spec.vRefNum, SpecDirId(&spec), (char *)cacheName,
+        err = spec_for(spec.path, (const char *)cacheName,
                            &persSpec);
         if (err == fnfErr) // it doesn't.
         {
@@ -3256,8 +3261,8 @@ OSErr EnsureIMAPCacheFolders(FSSpecPtr attach, FSSpecPtr imapAttach) {
 
         if (err == noErr) {
           // create an IMAP Attachments folder inside this folder
-          err = FSMakeFSSpec(persSpec.vRefNum, SpecDirId(&persSpec),
-                             GetRString((char *)name, IMAP_ATTACH_FOLDER),
+          err = spec_for(persSpec.path,
+                             (const char *)GetRString((char *)name, IMAP_ATTACH_FOLDER),
                              &stubSpec);
           if (err == fnfErr)
             err = FSpDirCreate(&stubSpec, 0, &junk);

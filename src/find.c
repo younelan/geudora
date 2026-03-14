@@ -47,6 +47,7 @@ ADVISED OF THE POSSIBILITY OF SUCH DAMAGE. */
 #include "StringUtil.h"
 #include "legacy_shim.h"
 #include "searchwin.h"
+#include "threading.h"
 #include <gtk/gtk.h>
 #include <string.h>
 #include <strings.h>  /* strcasecmp, strncasecmp */

@@ -94,7 +94,7 @@ static void ensure_mailbox_file(const char *path) {
   }
 }
 
-static const char *get_eudora_mail_dir(void) {
+const char *get_eudora_mail_dir(void) {
   static char mail_dir[1024] = {0};
   if (!mail_dir[0]) {
     /* Use same directory as gtk_mailbox.c so both views show the same mailboxes */

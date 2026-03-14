@@ -29,6 +29,7 @@ ADVISED OF THE POSSIBILITY OF SUCH DAMAGE. */
 #include "buildtoc.h"
 #include "mime.h"
 #include "mydefs.h"
+#include "threading.h"
 #include "prefdefs.h"
 #include "progress.h"
 #include "toc.h"
@@ -282,6 +283,7 @@ unsigned char Class822[256] = {
  */
 #define State l822p->state
 #define Token l822p->token
+#define TokenLen l822p->tokenLen
 #define Buffer l822p->buffer
 #define Spot l822p->spot
 #define End l822p->end
@@ -316,7 +318,7 @@ Token822Enum Lex822(TransStream stream, L822SPtr l822p, AccuPtr fullHeaders) {
   Token822Enum returnToken = Continue822;
   State822Enum origState = State;
 
-#define ADD(c) Token[++*Token] = c
+#define ADD(c) do { Token[TokenLen++] = (c); Token[TokenLen] = '\0'; } while(0)
 #define NEXTCLASS(stream)                                                      \
   (Spot < End - 1 ? Class822[Spot[1]] : LexFill(stream, l822p, fullHeaders))
 
@@ -362,11 +364,13 @@ Token822Enum Lex822(TransStream stream, L822SPtr l822p, AccuPtr fullHeaders) {
     UhOh = charClass == CR822 && nextClass == DOT822;
 
     /* Do we need to clear the token buffer? */
-    if (ReinitToken)
-      *Token = InStructure = ReinitToken = 0;
+    if (ReinitToken) {
+      TokenLen = 0; Token[0] = '\0';
+      InStructure = ReinitToken = 0;
+    }
 
     /* are we going to overrun the token buffer? */
-    if (*Token > sizeof(Token) - 3) {
+    if (TokenLen > (short)sizeof(Token) - 3) {
       ReinitToken = 1;
       returnToken = State2Token[State];
       break;
@@ -420,7 +424,7 @@ Token822Enum Lex822(TransStream stream, L822SPtr l822p, AccuPtr fullHeaders) {
 
     /*********************************/
     case CollectComment:
-      if (Token[*Token] == '\\')
+      if (TokenLen > 0 && Token[TokenLen-1] == '\\')
         ADD(*Spot++);
       else
         switch (charClass) {
@@ -451,7 +455,7 @@ Token822Enum Lex822(TransStream stream, L822SPtr l822p, AccuPtr fullHeaders) {
 
     /*********************************/
     case CollectQText:
-      if (Token[*Token] == '\\')
+      if (TokenLen > 0 && Token[TokenLen-1] == '\\')
         ADD(*Spot++);
       else
         switch (charClass) {
@@ -483,7 +487,7 @@ Token822Enum Lex822(TransStream stream, L822SPtr l822p, AccuPtr fullHeaders) {
 
     /*********************************/
     case CollectDL:
-      if (Token[*Token] == '\\')
+      if (TokenLen > 0 && Token[TokenLen-1] == '\\')
         ADD(*Spot++);
       else
         switch (charClass) {
@@ -686,12 +690,10 @@ bool Fix1342(unsigned char *chars, long *len) {
     MakePStr(text, q[2] + 1, q[3] - q[2] - 1);
     if (!PrefIsSet(PREF_ALWAYS_CHARSET) &&
         Translate1342(text, charset, encoding)) {
+      long textLen = strlen((const char *)text);
       /* move new chars into place */
-      BMD(text + 1, equal, *text);
+      BMD(text, equal, textLen);
       /* check for stuff we should or should not remove */
-      // This newline stripping code just wasn't working correctly; pulled for
-      // 601. if (lastEqual[1]=='\015') lastEqual++; /* toast a trailing return
-      // */ else
       { /* if the next thing is an encoded word, toast intervening */
         for (nextEqual = lastEqual + 1; nextEqual < end; nextEqual++)
           if (nextEqual[0] == '=' && nextEqual[1] == '?') {
@@ -699,17 +701,14 @@ bool Fix1342(unsigned char *chars, long *len) {
             break;
           } else if (*nextEqual != ' ' && *nextEqual != '\t')
             break;
-        // This newline stripping code just wasn't working correctly; pulled for
-        // 601. else if (*nextEqual!=' ' && *nextEqual!='\t' &&
-        // *nextEqual!='\015') break;
       }
       /* move chars from after encoded text to after decoded text */
-      BMD(lastEqual + 1, equal + *text, end - lastEqual - 1);
+      BMD(lastEqual + 1, equal + textLen, end - lastEqual - 1);
       /* adjust end to account for deleted chars */
-      end -= lastEqual - equal + 1 - *text;
+      end -= lastEqual - equal + 1 - textLen;
       *len = end - chars;
       /* adjust lastEqual to point to last decoded char */
-      lastEqual = equal + *text - 1;
+      lastEqual = equal + textLen - 1;
 #ifdef NEVER
       if (*lastEqual == ' ' || *lastEqual == '\012')
         lastEqual++;
@@ -757,13 +756,19 @@ bool Translate1342(unsigned char *text, unsigned char *charset,
    * now, we transliterate
    */
   if (tableId != NO_TABLE)
-    TransLitRes(text + 1, *text, tableId);
+    TransLitRes(text, strlen((const char *)text), tableId);
 
   //
   // some bad people put commas in here -- protect ourselves
-  if (PIndex((PStr)text, ',') && *text < 253 && text[1] != '"') {
-    PInsertC((PStr)text, 256, '"', text + 1);
-    PCatC((PStr)text, (unsigned char)'"');
+  {
+    size_t tlen = strlen((const char *)text);
+    if (strchr((const char *)text, ',') && tlen < 253 && text[0] != '"') {
+      memmove(text + 1, text, tlen + 1);
+      text[0] = '"';
+      tlen++;
+      text[tlen] = '"';
+      text[tlen + 1] = '\0';
+    }
   }
 
   /*

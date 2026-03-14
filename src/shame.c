@@ -34,6 +34,7 @@ DAMAGE. */
 #include "fileutil.h"
 #include "task_types.h"
 #include "taskProgress.h"
+#include "threading.h"
 
 /* DlgFilterUPP: Mac modal-dialog filter; unused on GTK — defined here for
  * the few callers that still reference it via extern.                       */
@@ -114,7 +115,9 @@ OSErr MyStandardAlert(int inAlertType, const char *inError, const char *inExplan
  ************************************************************************/
 int WarnUser(short stringId, int err)
 {
-	g_warning("WarnUser: stringId=%d err=%d", (int)stringId, err);
+	char msg[256];
+	GetRString(msg, stringId);
+	g_warning("WarnUser: [%d] '%s' err=%d", (int)stringId, msg, err);
 	return err;
 }
 

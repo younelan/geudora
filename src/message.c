@@ -272,7 +272,7 @@ void PeteApplyStyles(GtkWidget *pte, void *styles);
 int CopyToOut(TOCType * fromTocH, short sumNum, TOCType * toTocH);
 int UniqueHeader(MessHandle messH, short head, bool wantErrors);
 int FindMessageByMID(unsigned long mid, TOCType * *tocH, short *sumNum);
-OSErr TOCFindMessByMID(uLong mid, TOCType * tocH, long *sumNum);
+OSErr TOCFindMessByMID(unsigned long mid, TOCType * tocH, long *sumNum);
 int WipeMessage(TOCType * tocH, short sumNum);
 int MessageWarnings(TOCType * tocH, short sumNum, bool toTrash, bool nuke,
                     bool *queuedWarning, bool *unsentWarning,
@@ -285,9 +285,9 @@ int SpoolAttachments(MessHandle messH);
 int CopyAttachments(MessHandle messH);
 TOCType * GetRealTOC(TOCType * tocH, short sumN, short *realSumNum);
 int ReadMessage(TOCType * tocH, int sumN, UPtr buffer);
-uLong GetMessageLength(TOCType * tocH, short sumNum);
+unsigned long GetMessageLength(TOCType * tocH, short sumNum);
 void FixSourceStatus(TOCType * tocH, short sumNum);
-int AppendMessage(TOCType * fromTocH, int fromN, TOCType * toTocH, bool copy,
+int AppendMessage(TOCType * fromTocH, int fromN, TOCType ** toTocHP, bool copy,
                   bool toTemp, bool isIMAPtoPopTransfer);
 void DeleteSum(TOCType * tocH, int sumNum);
 void Rehash(TOCType * tocH, int sumNum, UPtr buffer);
@@ -300,7 +300,7 @@ int ReplyReferences(MessHandle origMessH, MessHandle newMessH);
 void HTMLifyText(MyWindowPtr win, Handle text);
 
 /* Missing Prototypes */
-OSErr SubFolderSpec(short vRefNum, FSSpecPtr spec);
+OSErr SubFolderSpec(short nameId, FSSpecPtr spec);
 
 OSErr RemoveDir(FSSpecPtr spec);
 bool PrefIsSetOrNot(int pref, int modifiers, int mask);
@@ -755,7 +755,7 @@ OSErr EnsureMID(TOCType * tocH, short sumNum) {
 OSErr EnsureFromHash(TOCType * tocH, short sumNum) {
   OSErr err = noErr;
   unsigned char scratch[256], shortAddr[256];
-  uLong addrHash;
+  unsigned long addrHash;
 
   if (tocH->sums[sumNum].fromHash == kNeverHashed) {
     if (!(err = CacheMessage(tocH, sumNum))) {
@@ -1078,7 +1078,7 @@ int MoveMessageLo(TOCType * tocH, int sumNum, FSSpecPtr toSpec, bool copy,
       tocH && tocH->imapTOC && toTocH && !toTocH->imapTOC;
 
   MessErr =
-      AppendMessage(tocH, sumNum, toTocH, copy, toTemp, isIMAPtoPopTransfer);
+      AppendMessage(tocH, sumNum, &toTocH, copy, toTemp, isIMAPtoPopTransfer);
 
   if (MessErr)
     return (MessErr);
@@ -1126,8 +1126,9 @@ int MoveMessageLo(TOCType * tocH, int sumNum, FSSpecPtr toSpec, bool copy,
  * except that we might waste some space in the new mailbox.
  * Step 3 shouldn't ever fail.
  **********************************************************************/
-int AppendMessage(TOCType * fromTocH, int fromN, TOCType * toTocH, bool copy,
+int AppendMessage(TOCType * fromTocH, int fromN, TOCType ** toTocHP, bool copy,
                   bool toTemp, bool destHasAtt) {
+  TOCType *toTocH = *toTocHP;
   // UHandle buffer = NULL; // Unused variable removed
   MSumType sum;
   long eof;
@@ -1170,7 +1171,7 @@ int AppendMessage(TOCType * fromTocH, int fromN, TOCType * toTocH, bool copy,
    * is there space?
    */
   toSpec = GetMailboxSpec(toTocH, -1);
-  if ((MessErr = VolumeMargin(toSpec.vRefNum, fromTocH->sums[fromN].length)))
+  if ((MessErr = VolumeMargin(0, fromTocH->sums[fromN].length)))
     return (MessErr);
 
   /*
@@ -1270,11 +1271,28 @@ int AppendMessage(TOCType * fromTocH, int fromN, TOCType * toTocH, bool copy,
     }
 
     if (toTocH->count) {
-      MessErr = (PtrPlusHand_(&sum, toTocH, sizeof(sum)) != NULL) ? 0 : -1;
-      if (MessErr) {
+      /* Grow the TOC to hold one more summary */
+      size_t newSize = sizeof(TOCType) + toTocH->count * sizeof(MSumType);
+      TOCType *oldPtr = toTocH;
+      TOCType *grown = (TOCType *)g_realloc(toTocH, newSize);
+      if (!grown) {
         ZapHandle(sum.cache);
-        return (MessErr);
+        return (MessErr = memFullErr);
       }
+      /* Update TOCList if realloc moved the block */
+      if (grown != oldPtr) {
+        extern TOCType *TOCList;
+        if (TOCList == oldPtr) {
+          TOCList = grown;
+        } else {
+          for (TOCType *t = TOCList; t; t = t->next) {
+            if (t->next == oldPtr) { t->next = grown; break; }
+          }
+        }
+      }
+      toTocH = grown;
+      *toTocHP = grown;
+      toTocH->sums[toTocH->count] = sum;
     } else
       toTocH->sums[0] = sum;
     TOCSetDirty(toTocH, true);
@@ -1330,7 +1348,7 @@ int MoveSelectedMessagesLo(TOCType * tocH, FSSpecPtr toSpec, bool copy,
   long needRoom = 0;
   bool outWarning;
   long count;
-  uLong pTicks = TickCount();
+  gint64 pTicks = g_get_monotonic_time();
   Handle uidsH = NULL;
   OSErr err = noErr;
   TOCType * realTocH;
@@ -1468,9 +1486,9 @@ int MoveSelectedMessagesLo(TOCType * tocH, FSSpecPtr toSpec, bool copy,
         MiniEvents();
       if (EjectBuckaroo || CommandPeriod)
         break;
-      if (!(--count % 10) || TickCount() - pTicks > 30) {
+      if (!(--count % 10) || g_get_monotonic_time() - pTicks > 500000) {
         Progress(NoBar, count, NULL, NULL, NULL);
-        pTicks = TickCount();
+        pTicks = g_get_monotonic_time();
       }
 
       // if this is a virtual TOC, and the message has already been processed,
@@ -1492,7 +1510,7 @@ int MoveSelectedMessagesLo(TOCType * tocH, FSSpecPtr toSpec, bool copy,
       if (tocH->virtualTOC && realTocH->imapTOC)
         MessErr = noErr;
       else
-        MessErr = AppendMessage(realTocH, realSum, toTocH, copy, false, false);
+        MessErr = AppendMessage(realTocH, realSum, &toTocH, copy, false, false);
       if (MessErr) {
         if (MessErr != userCanceledErr)
           WarnUser(WRITE_MBOX, MessErr);
@@ -1668,15 +1686,15 @@ void FixSourceStatus(TOCType * tocH, short sumNum) {
   MessHandle messH = tocH->sums[sumNum].messH;
   TOCType * sourceTocH;
   short sourceNum;
-  uLong **midList;
+  unsigned long **midList;
   short i;
 
   if (tocH->which == OUT && messH && SumOf(messH)->state != SENT &&
       messH->aSourceMID.offset) {
-    midList = (uLong **)messH->aSourceMID.data;
+    midList = (unsigned long **)messH->aSourceMID.data;
     for (i = messH->aSourceMID.offset / (3 * sizeof(long)) - 1; i >= 0;
          i--) {
-      uLong sourceMID = (*midList)[i * 3];
+      unsigned long sourceMID = (*midList)[i * 3];
       short sourceOrigState = (*midList)[i * 3 + 1];
       short sourceNewState = (*midList)[i * 3 + 2];
       if (sourceMID && sourceMID != kNeverHashed &&
@@ -1700,7 +1718,7 @@ void FixSourceStatus(TOCType * tocH, short sumNum) {
  * FindMessageByMID - find a message by mid.  Works only on open toc's at the
  *moment
  **********************************************************************/
-OSErr FindMessageByMID(uLong mid, TOCType * *tocH, short *sumNum) {
+OSErr FindMessageByMID(unsigned long mid, TOCType * *tocH, short *sumNum) {
   TOCType * lTocH;
   long lsum;
 
@@ -1716,7 +1734,7 @@ OSErr FindMessageByMID(uLong mid, TOCType * *tocH, short *sumNum) {
 /**********************************************************************
  * TOCFindMessByMID - find a message in a toc by uid hash
  **********************************************************************/
-OSErr TOCFindMessByMID(uLong mid, TOCType * tocH, long *sumNum) {
+OSErr TOCFindMessByMID(unsigned long mid, TOCType * tocH, long *sumNum) {
   short lSumNum;
 
   for (lSumNum = tocH->count - 1; lSumNum >= 0; lSumNum--)
@@ -1730,7 +1748,7 @@ OSErr TOCFindMessByMID(uLong mid, TOCType * tocH, long *sumNum) {
 /**********************************************************************
  * TOCFindMessByMsgID - find a message in a toc by message id
  **********************************************************************/
-OSErr TOCFindMessByMsgID(uLong mid, TOCType * tocH, long *sumNum) {
+OSErr TOCFindMessByMsgID(unsigned long mid, TOCType * tocH, long *sumNum) {
   short lSumNum;
 
   for (lSumNum = tocH->count - 1; lSumNum >= 0; lSumNum--)
@@ -1746,7 +1764,7 @@ OSErr TOCFindMessByMsgID(uLong mid, TOCType * tocH, long *sumNum) {
  * FindAnAttachment - find an attachment from a line of text
  ************************************************************************/
 long FindAnAttachment(Handle text, long offset, FSSpecPtr spec, bool attach,
-                      uLong *cid, uLong *relURL, uLong *absURL) {
+                      unsigned long *cid, unsigned long *relURL, unsigned long *absURL) {
   UPtr spot, newLine, end;
   bool result = false;
   unsigned char line[256];
@@ -1853,8 +1871,7 @@ void DeleteMessageLo(TOCType * tocH, int sumNum, bool nuke) {
   bool wipe = PrefIsSet(PREF_WIPE) && (tocH->sums[sumNum].opts & OPT_WIPE);
 
   if (tocH->which != TRASH && !wipe && !nuke) {
-    trashSpec.vRefNum = MailRoot.vRef;
-    trashSpec.parID = MailRoot.dirId;
+    g_strlcpy(trashSpec.path, MailRoot.path, sizeof(trashSpec.path));
     GetRString(trashSpec.name, TRASH);
     MoveMessageLo(tocH, sumNum, &trashSpec, false, false, true);
   } else {
@@ -2043,7 +2060,7 @@ void Fix1MessServerArea(MyWindowPtr win) {
 
   if (GetWindowKind(winWP) == MESS_WIN && IsWindowVisible(winWP)) {
     messH = Win2MessH(win);
-    uLong uidHash = SumOf(messH)->uidHash;
+    unsigned long uidHash = SumOf(messH)->uidHash;
     OSType popdType;
     {
       PersHandle p = (PersHandle)MESS_TO_PPERS(messH);
@@ -2123,7 +2140,7 @@ OSErr RecordTransAttachments(const char *path) {
 /************************************************************************
  * CleanSpoolFolder - clean up the spool folder
  ************************************************************************/
-static uLong spoolAge;
+static unsigned long spoolAge;
 static bool CleanSpoolCallback(DirIterateInfo *info) {
   if (EventPending())
     return false; /* Stop iteration */
@@ -2138,7 +2155,7 @@ static bool CleanSpoolCallback(DirIterateInfo *info) {
   return true; /* Continue iteration */
 }
 
-OSErr CleanSpoolFolder(uLong age) {
+OSErr CleanSpoolFolder(unsigned long age) {
   FSSpec spec;
 
   if (SubFolderSpec(SPOOL_FOLDER, &spec))
@@ -2206,14 +2223,14 @@ void DoIterativeThingyLo(TOCType * tocH, int item, long modifiers,
   long count;
   long size;
   long gran;
-  uLong pTicks = TickCount();
+  gint64 pTicks = g_get_monotonic_time();
   bool nuke =
       item == MESSAGE_DELETE_ITEM &&
       (tocH->which == TRASH ||
        (optionKey | shiftKey) == (modifiers & (optionKey | shiftKey))) &&
       (!tocH->imapTOC || PrefIsSet(PREF_ALLOW_IMAP_NUKE));
   Boolean busy = false;
-  uLong oldEzOpenSerialNum = tocH->previewID ? tocH->ezOpenSerialNum : 0;
+  unsigned long oldEzOpenSerialNum = tocH->previewID ? tocH->ezOpenSerialNum : 0;
 
 
   if (item == MESSAGE_DELETE_ITEM && tocH->imapTOC && !nuke) {
@@ -2254,8 +2271,7 @@ void DoIterativeThingyLo(TOCType * tocH, int item, long modifiers,
   }
 
   if (item == MESSAGE_DELETE_ITEM && !nuke) {
-    trashSpec.vRefNum = MailRoot.vRef;
-    trashSpec.parID = MailRoot.dirId;
+    g_strlcpy(trashSpec.path, MailRoot.path, sizeof(trashSpec.path));
     GetRString(trashSpec.name, TRASH);
     MoveSelectedMessagesLo(tocH, &trashSpec, false, true, true, warnings);
     if (oldEzOpenSerialNum &&
@@ -2342,9 +2358,9 @@ void DoIterativeThingyLo(TOCType * tocH, int item, long modifiers,
         MiniEvents();
       if (CommandPeriod)
         break;
-      if (!(--count % gran) || TickCount() - pTicks > 30) {
+      if (!(--count % gran) || g_get_monotonic_time() - pTicks > 500000) {
         Progress(NoBar, count, NULL, NULL, title);
-        pTicks = TickCount();
+        pTicks = g_get_monotonic_time();
       }
       realTOC = GetRealTOC(tocH, sumNum, &realSum);
       if (nuke && realTOC == tocH)
@@ -2833,14 +2849,11 @@ OSErr UniqueHeader(MessHandle messH, short head, bool wantErrors) {
 OSErr RemoveSelf(MessHandle messH, short head, bool wantErrors) {
   unsigned char temp[256];
   EAL_VARS_DECL;
-  UHandle rawMyself = NULL, cookedMyself = NULL;
-  UHandle rawAddress = NULL, spewHandle = NULL;
-  unsigned char *myself_data = g_malloc(1);
-  UHandle myself = (UHandle)g_malloc(sizeof(unsigned char *));
-  *myself = myself_data;
-  long offset, meOffset;
+  char **rawMyself = NULL, **cookedMyself = NULL;
+  char **rawAddress = NULL, **spewHandle = NULL;
+  GString *myselfStr = g_string_new("");
   bool removed = false;
-  Handle text = NULL;
+  GString *text = NULL;
   Handle oldText = NULL;
   HeadSpec hs;
   bool group;
@@ -2850,56 +2863,62 @@ OSErr RemoveSelf(MessHandle messH, short head, bool wantErrors) {
   /* Get a definition of who I am */
 
   GetRString((char *)temp, ME);
-  PtrPlusHand_(temp, myself, strlen((char *)temp));
-  PtrPlusHand_(",", myself, 1);
+  g_string_append(myselfStr, (char *)temp);
+  g_string_append_c(myselfStr, ',');
   GetReturnAddr(temp, true);
-  PtrPlusHand_(temp, myself, strlen((char *)temp));
-  if (!(err = SuckAddresses((void ***)&rawMyself, (void **)myself, false,
-                            wantErrors, false, NULL)) &&
-      !(err = ExpandAliasesLow((Handle *)&cookedMyself, (Handle)rawMyself, 0,
-                               false, "",
-                               EAL_VARS))) // no autoqual
+  g_string_append(myselfStr, (char *)temp);
+
+  /* Parse "myself" string into address array */
   {
-    ZapHandle(rawMyself);
-    ZapHandle(myself);
+    char *myselfPtr = myselfStr->str;
+    char **myselfHandle = &myselfPtr;
+    if (!(err = SuckAddresses(&rawMyself, myselfHandle, false,
+                              wantErrors, false, NULL)) &&
+        !(err = ExpandAliasesLow((Handle *)&cookedMyself, (Handle)rawMyself, 0,
+                                 false, "",
+                                 EAL_VARS))) // no autoqual
+    {
+      g_strfreev(rawMyself); rawMyself = NULL;
+      g_string_free(myselfStr, TRUE); myselfStr = NULL;
 
-    /* expand the text */
+      /* expand the text */
 
-    if (CompHeadFind(messH, head, &hs) &&
-        !CompHeadGetText(TheBody, &hs, &oldText)) {
-      if (!(err = SuckAddresses((void ***)&rawAddress, (void **)oldText, true,
-                                wantErrors, false, NULL)) &&
-          (text = NuHTempBetter(0L))) {
-        /* Remove myself from address */
-        if (rawAddress && cookedMyself) {
-          for (offset = 0; (*rawAddress)[offset];
-               offset += (*rawAddress)[offset] + 2) {
-            /* clean up the address */
-            SuckPtrAddresses((void ***)&spewHandle, (*rawAddress) + offset + 1,
-                             (*rawAddress)[offset], false, wantErrors, true,
-                             NULL);
-            if (spewHandle) {
-              group = (*spewHandle)[**spewHandle] == ':';
-              /* look for this in the "me" addresses */
-              for (meOffset = 0; (*cookedMyself)[meOffset];
-                   meOffset += (*cookedMyself)[meOffset] + 2) {
-                if (StringSame((const char *)*spewHandle,
-                               (const char *)(*cookedMyself) + meOffset))
-                  break;
+      if (CompHeadFind(messH, head, &hs) &&
+          !CompHeadGetText(TheBody, &hs, &oldText)) {
+        if (!(err = SuckAddresses(&rawAddress, (char **)oldText, true,
+                                  wantErrors, false, NULL))) {
+          text = g_string_new("");
+          /* Remove myself from address */
+          if (rawAddress && cookedMyself) {
+            for (int i = 0; rawAddress[i]; i++) {
+              /* clean up the address */
+              SuckPtrAddresses(&spewHandle, rawAddress[i],
+                               strlen(rawAddress[i]), false, wantErrors, true,
+                               NULL);
+              if (spewHandle) {
+                size_t spewLen = spewHandle[0] ? strlen(spewHandle[0]) : 0;
+                group = spewLen > 0 && spewHandle[0][spewLen - 1] == ':';
+                /* look for this in the "me" addresses */
+                int j;
+                bool foundMe = false;
+                for (j = 0; cookedMyself[j]; j++) {
+                  if (g_ascii_strcasecmp(spewHandle[0], cookedMyself[j]) == 0) {
+                    foundMe = true;
+                    break;
+                  }
+                }
+                g_strfreev(spewHandle); spewHandle = NULL;
+
+                /* if we didn't find it, then add this address to the result */
+                if (!foundMe) {
+                  if (!groupWas && text->len > 0)
+                    g_string_append(text, ", ");
+                  g_string_append(text, rawAddress[i]);
+                } else
+                  removed = true;
+                groupWas = group;
               }
-              ZapHandle(spewHandle);
             }
-
-            /* if we didn't find it, then add this address to the result */
-            if (!(*cookedMyself)[meOffset]) {
-
-              if (!groupWas && GetHandleSize_(text))
-                PtrPlusHand_(", ", text, 2);
-              PtrPlusHand_((*rawAddress) + offset + 1, text,
-                           (*rawAddress)[offset]);
-            } else
-              removed = true;
-            groupWas = group;
           }
         }
       }
@@ -2907,18 +2926,18 @@ OSErr RemoveSelf(MessHandle messH, short head, bool wantErrors) {
   }
 
   ZapHandle(oldText);
-  ZapHandle(rawMyself);
-  ZapHandle(cookedMyself);
-  ZapHandle(rawAddress);
-  ZapHandle(spewHandle);
-  ZapHandle(myself);
+  if (rawMyself) { g_strfreev(rawMyself); rawMyself = NULL; }
+  if (cookedMyself) { g_strfreev(cookedMyself); cookedMyself = NULL; }
+  if (rawAddress) { g_strfreev(rawAddress); rawAddress = NULL; }
+  if (spewHandle) { g_strfreev(spewHandle); spewHandle = NULL; }
+  if (myselfStr) { g_string_free(myselfStr, TRUE); myselfStr = NULL; }
 
   if (removed) {
-    CompHeadSet(TheBody, &hs, (char *)*text);
+    CompHeadSet(TheBody, &hs, text->str);
     CompGatherRecipientAddresses(messH, true);
   }
 
-  ZapHandle(text);
+  if (text) g_string_free(text, TRUE);
   return err;
 }
 
@@ -4189,18 +4208,17 @@ OSErr CopyNewsgroups(MessHandle origMH, MessHandle newMH) {
   unsigned char s[256];
   HeadSpec hs, origHS;
   UHandle text = NULL;
-  UHandle addresses = NULL;
+  char **addresses = NULL;
   OSErr err = fnfErr;
-  UPtr address;
   bool first = true;
 
   GetRString(s, NEWSGROUPS);
 
   if (CompHeadFindStr(origMH, s, &origHS))
     if (!(err = CompHeadGetText(origMH->bodyPTE, &origHS, &text)))
-      if (!(err = SuckAddresses((void ***)&addresses, (void **)text, false,
+      if (!(err = SuckAddresses(&addresses, (char **)text, false,
                                 false, false, NULL)) &&
-          addresses && *addresses && **addresses) {
+          addresses && addresses[0] && addresses[0][0]) {
         if (CompHeadFind(newMH, BCC_HEAD, &hs)) {
           if (*GetRString(s, MAIL2NEWS)) {
             if (hs.length > 0)
@@ -4208,20 +4226,20 @@ OSErr CopyNewsgroups(MessHandle origMH, MessHandle newMH) {
             CompHeadAppendPtr(newMH->bodyPTE, &hs, s, strlen((char *)s));
             first = false;
           }
-          for (address = (UPtr)*addresses; *address;
-               address += *address + 2) {
+          for (int i = 0; addresses[i]; i++) {
             if (!first || hs.length > 0)
               if (!InsertCommaIfNeedBe(newMH->bodyPTE, &hs))
                 CompHeadAppendPtr(newMH->bodyPTE, &hs, " ", 1);
 
-            if (err = CompHeadAppendPtr(newMH->bodyPTE, &hs, "�", 1))
+            if ((err = CompHeadAppendPtr(newMH->bodyPTE, &hs, "!", 1)))
               break;
-            if (err = CompHeadAppendPtr(newMH->bodyPTE, &hs, address + 1,
-                                        *address))
+            if ((err = CompHeadAppendPtr(newMH->bodyPTE, &hs, addresses[i],
+                                        strlen(addresses[i]))))
               break;
             first = false;
           }
         }
+        g_strfreev(addresses); addresses = NULL;
       }
   return (err);
 }
@@ -4418,7 +4436,7 @@ OSErr SpoolIndAttachment(MessHandle messH, short i) {
 /**********************************************************************
  * MakeAttSubFolder - make the subfolder for attachment spooling
  **********************************************************************/
-OSErr MakeAttSubFolder(MessHandle messH, uLong uidHash, FSSpecPtr folder) {
+OSErr MakeAttSubFolder(MessHandle messH, unsigned long uidHash, FSSpecPtr folder) {
   OSErr err;
   FSSpec spool;
   unsigned char scratch[256];
@@ -4442,7 +4460,7 @@ OSErr MakeAttSubFolder(MessHandle messH, uLong uidHash, FSSpecPtr folder) {
   /*
    * specify
    */
-  SimpleMakeFSSpec(spool.vRefNum, spool.parID, scratch, folder);
+  spec_make(spool.path, scratch, folder);
 
   /*
    * create
@@ -4457,9 +4475,8 @@ OSErr MakeAttSubFolder(MessHandle messH, uLong uidHash, FSSpecPtr folder) {
     return (err);
 
   /*
-   * and make it point into the folder
+   * folder->path already points into the created subfolder
    */
-  folder->parID = dirID;
   *folder->name = 0;
 
   return (err);
@@ -4544,8 +4561,8 @@ void SumInfoCpy(MSumPtr newSum, MSumPtr oldSum) {
 /************************************************************************
  * HashWithSeed - generate a hash from a string and a seed.
  ************************************************************************/
-uLong HashWithSeedLo(unsigned char *s, uLong n, uLong seed) {
-  uLong sum = seed - 1;
+unsigned long HashWithSeedLo(unsigned char *s, unsigned long n, unsigned long seed) {
+  unsigned long sum = seed - 1;
   int Bit;
 
   for (; n; n--, s++) {
@@ -4565,24 +4582,26 @@ uLong HashWithSeedLo(unsigned char *s, uLong n, uLong seed) {
 /************************************************************************
  * MIDHash - hash a message id, stripping <>'s first
  ************************************************************************/
-uLong MIDHash(UPtr text, long size) {
+unsigned long MIDHash(UPtr text, long size) {
   unsigned char scratch[256];
-  UHandle addresses;
+  char **addresses = NULL;
 
-  SuckPtrAddresses(&addresses, text, size, false, false, false, NULL);
+  SuckPtrAddresses(&addresses, (const char *)text, size, false, false, false, NULL);
 
-  if (addresses) {
-    strcpy((char *)scratch, (const char *)*addresses);
-    ZapHandle(addresses);
+  if (addresses && addresses[0]) {
+    g_strlcpy((char *)scratch, addresses[0], sizeof(scratch));
+    g_strfreev(addresses); addresses = NULL;
     return (Hash(scratch));
-  } else
+  } else {
+    if (addresses) { g_strfreev(addresses); addresses = NULL; }
     return (kNoMessageId);
+  }
 }
 
 /************************************************************************
  * SetHash - set a message's hash function
  ************************************************************************/
-void SetHashLo(TOCType * tocH, short sumNum, uLong hash, bool soft) {
+void SetHashLo(TOCType * tocH, short sumNum, unsigned long hash, bool soft) {
   DBNoteUIDHash(tocH->sums[sumNum].uidHash, hash);
   if (!soft || !ValidHash(tocH->sums[sumNum].uidHash))
     tocH->sums[sumNum].uidHash = hash;
@@ -4598,7 +4617,7 @@ void RehashLo(TOCType * tocH, short sumNum, UHandle text, bool soft) {
   unsigned char scratch[256];
   UPtr spot;
   long size = GetHandleSize_(text);
-  uLong hash;
+  unsigned long hash;
 
   spot = (unsigned char *)(*text);
   GetRString(scratch, HEADER_STRN + MSGID_HEAD);
@@ -4664,12 +4683,12 @@ void Preview(TOCType * tocH, short sumNum) {
           && tocWinWP == FrontWindow_() // frontmost
           && tocH->userActive) // user has recently clicked or typed at me
       {
-        if (TickCount() - tocH->lastSameTicks >
-                10              // it's been a while since we last checked
+        if (g_get_monotonic_time() - tocH->lastSameTicks >
+                166667          // it's been a while since we last checked (~166ms)
             && PreviewReadTimer // the user wants this marking
             &&
-            TickCount() - tocH->lastSameTicks >
-                GetRLong(PREVIEW_READ_SECS) * 60) // and it's been long enough
+            g_get_monotonic_time() - tocH->lastSameTicks >
+                GetRLong(PREVIEW_READ_SECS) * (gint64)1000000) // and it's been long enough
         {
           tocH->lastSameTicks = 1;
           // do not automatically mark IMAP minimal headers as read, ever.
@@ -4678,11 +4697,11 @@ void Preview(TOCType * tocH, short sumNum) {
         }
       } else
         tocH->lastSameTicks =
-            TickCount(); // reset counter if user not active
+            g_get_monotonic_time(); // reset counter if user not active
     }
     return;
   } else
-    tocH->lastSameTicks = TickCount();
+    tocH->lastSameTicks = g_get_monotonic_time();
 
   if (tocH->previewID && tocH->imapTOC) {
     // Cancel the IMAP download if this is an imap message ...
@@ -4985,7 +5004,7 @@ void EnableMsgButtons(MyWindowPtr win, bool enable) {
 /************************************************************************
  * GetMessageLength - return length of message
  ************************************************************************/
-uLong GetMessageLength(TOCType * tocH, short sumNum) {
+unsigned long GetMessageLength(TOCType * tocH, short sumNum) {
   short realSum;
   TOCType * realTOC;
 
@@ -4999,8 +5018,8 @@ uLong GetMessageLength(TOCType * tocH, short sumNum) {
  ************************************************************************/
 void RedateTS(TOCType * tocH, short sumNum) {
   unsigned char dateStr[256];
-  uLong secs;
-  uLong zoneSecs;
+  unsigned long secs;
+  unsigned long zoneSecs;
   OSErr err = CacheMessage(tocH, sumNum);
 
   if (!err && tocH->sums[sumNum].cache) {

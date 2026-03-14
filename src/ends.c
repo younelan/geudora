@@ -5,6 +5,7 @@
 
 #include "ends.h"
 #include "mailbox.h"
+#include "schizo.h"
 #include "toc.h"
 #include "threading.h"
 #include "StringDefs.h"
@@ -16,8 +17,6 @@
 
 /* Global send queue counter */
 int SendQueue = 0;
-bool SendImmediately = false;
-bool SendThreadRunning = false;
 
 void Initialize(void)
 {
@@ -52,22 +51,35 @@ void RecallOpenWindows(void)
 
 void SetSendQueue(void)
 {
+    /* Reset per-personality send queue counts */
+    PersHandle pers;
+    for (pers = PersList; pers; pers = pers->next)
+        pers->sendQueue = 0;
+
     /* Count messages in Out mailbox that are QUEUED or TIMED */
     TOCType *toc = GetOutTOC();
+    g_print("SetSendQueue: toc=%p count=%d\n", (void*)toc, toc ? toc->count : -1);
     int count = 0;
     if (toc) {
-        g_print("SetSendQueue: Out TOC has %d messages\n", toc->count);
         for (int i = 0; i < toc->count; i++) {
             int state = toc->sums[i].state;
-            g_print("  msg %d: state=%d subj='%s'\n", i, state, toc->sums[i].subj);
-            if (state == QUEUED || state == TIMED)
+            if (state == QUEUED || state == TIMED) {
                 count++;
+                /* Credit to the owning personality */
+                for (pers = PersList; pers; pers = pers->next) {
+                    if (pers->persId == toc->sums[i].persId) {
+                        pers->sendQueue++;
+                        break;
+                    }
+                }
+                /* If no matching pers found, credit the dominant (first) one */
+                if (!pers && PersList)
+                    PersList->sendQueue++;
+            }
         }
-    } else {
-        g_print("SetSendQueue: GetOutTOC() returned NULL\n");
     }
     SendQueue = count;
-    g_print("SetSendQueue: %d messages queued\n", count);
+    g_print("SetSendQueue: SendQueue=%d\n", SendQueue);
 }
 
 void GetBoxLines(void)

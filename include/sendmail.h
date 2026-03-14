@@ -152,8 +152,8 @@ OSErr BufferSend(TransStream stream, DecoderFunc *encoder, unsigned char *data,
       goto done;                                                               \
   } while (0)
 #define SendBoundary(stream)                                                   \
-  (/*SendTrans(nil,NewLine+1,*NewLine,NewLine+1,*NewLine,nil)||*/ SendTrans(   \
-      stream, "--", 2, boundary + 1, *boundary, NewLine + 1, *NewLine, nil))
+  (SendTrans(stream, "--", 2, boundary, strlen((const char *)boundary),        \
+             NewLine, strlen((const char *)NewLine), nil))
 #define BufferSendRelease(stream) (void)BufferSend(stream, nil, nil, -1, False)
 OSErr SendPString(TransStream stream, PStr string);
 PStr FormatZone(PStr string, long delta);

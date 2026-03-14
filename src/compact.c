@@ -131,13 +131,12 @@ extern bool AnalDelayOutgoing(void);
 extern void SumInfoCpy(MSumPtr dst, MSumPtr src);
 extern void TextFindAndCopyHeader(unsigned char *text, long bodySpot, MessHandle messH, unsigned char *header, short head, short label);
 extern int Snarf(FSSpec *spec, void **textH, long flags);
-extern int SuckAddresses(void ***addr, void **text, bool b1, bool b2, bool b3, void *p);
 extern void NicknameCachingScan(GtkWidget *pte, void *raw);
 extern int ExpandAliases(void **h, void *raw, int n, bool deep);
 extern void CommaList(Handle h);
 extern int FSpIsItAFolder(FSSpec *spec);
 extern long FSpFileSize(FSSpec *spec);
-extern void FolderSizeHi(short vRefNum, long dirId, long *size);
+extern void FolderSizeHi(const char *dir, uint32_t *cumSize);
 extern long SpecDirId(FSSpec *spec);
 extern void RefreshSigButton(MessHandle messH);
 extern void CompSwitchFields(MessHandle messH, bool forward);
@@ -540,7 +539,7 @@ uLong ApproxMessageSize(MessHandle messH)
 		if (GetIndAttachment(messH, index, &spec, NULL))
 			break;
 		if (FSpIsItAFolder(&spec))
-			FolderSizeHi(spec.vRefNum, SpecDirId(&spec), &oneSize);
+			FolderSizeHi(spec.path, &oneSize);
 		else
 			oneSize = FSpFileSize(&spec);
 		size += (4 * oneSize) / 3; /* base64 expansion */
@@ -1152,7 +1151,7 @@ int NickExpandAndCacheHead(MessHandle messH, short head, bool cacheOnly)
 	int err = -1;
 	HeadSpec hs;
 	char *text = NULL;
-	Handle raw = NULL; /* BinAddrHandle in original */
+	char **raw = NULL;
 
 	GtkWidget *pte = TheBody ? TheBody : messH->win->pte;
 	if (!pte)
@@ -1160,65 +1159,55 @@ int NickExpandAndCacheHead(MessHandle messH, short head, bool cacheOnly)
 
 	if (CompHeadFind(messH, head, &hs) && hs.stop - hs.value > 0) {
 		if (CompHeadGetText(pte, &hs, &text) == 0 && text) {
-			/* Convert text to Handle for SuckAddresses */
-			Handle textH = NewHandle(strlen(text));
-			if (textH) {
-				memcpy(*textH, text, strlen(text));
+			long textLen = strlen(text);
 
-				if (SuckAddresses(&raw, (void *)textH, true, true, false, NULL) == 0) {
-					DisposeHandle(textH);
-					textH = NULL;
+			if (SuckPtrAddresses(&raw, text, textLen, true, true, false, NULL) == 0) {
 
-					NicknameCachingScan(pte, raw);
+				NicknameCachingScan(pte, (void *)raw);
 
-					if (PrefIsSet(PREF_NICK_AUTO_EXPAND) && !cacheOnly) {
-						Handle expanded = NULL;
-						if (ExpandAliases((void **)&expanded, raw, 0, true) == 0 && expanded) {
-							if (raw) {
-								DisposeHandle((Handle)raw);
-								raw = NULL;
-							}
-							CommaList(expanded);
-							long len = GetHandleSize_(expanded);
-							if (len > 0) {
-								/* Check if expansion caused any changes.
-								 * Don't replace text if no changes so selection doesn't change. */
-								long selStart = 0, selEnd = 0;
-								void *fieldTextH = NULL;
-								PeteGetTextAndSelection(pte, &fieldTextH, &selStart, &selEnd);
+				if (PrefIsSet(PREF_NICK_AUTO_EXPAND) && !cacheOnly) {
+					Handle expanded = NULL;
+					if (ExpandAliases((void **)&expanded, (void *)raw, 0, true) == 0 && expanded) {
+						g_strfreev(raw);
+						raw = NULL;
+						CommaList(expanded);
+						long len = GetHandleSize_(expanded);
+						if (len > 0) {
+							/* Check if expansion caused any changes.
+							 * Don't replace text if no changes so selection doesn't change. */
+							long selStart = 0, selEnd = 0;
+							void *fieldTextH = NULL;
+							PeteGetTextAndSelection(pte, &fieldTextH, &selStart, &selEnd);
 
-								long fieldLen = hs.stop - hs.value;
-								bool changed = false;
-								if (fieldTextH) {
-									if (fieldLen != len || memcmp(*expanded, (char *)*(Handle)fieldTextH + hs.value, fieldLen))
-										changed = true;
-								} else {
+							long fieldLen = hs.stop - hs.value;
+							bool changed = false;
+							if (fieldTextH) {
+								if (fieldLen != len || memcmp(*expanded, (char *)*(Handle)fieldTextH + hs.value, fieldLen))
 									changed = true;
-								}
-
-								if (changed) {
-									/* Text has changed — replace field contents */
-									PetePrepareUndo(pte, 0/*peCantUndo*/, hs.value, hs.stop, NULL, NULL);
-									if (PeteDelete(pte, hs.value, hs.stop) == 0) {
-										if (PeteInsertPtr(pte, hs.value, *expanded, len) == 0) {
-											/* If previous selection was entire field, reselect entire field */
-											bool selectAll = (selStart == hs.value && selEnd == hs.stop);
-											if (CompHeadCurrent(pte) == head && CompHeadFind(messH, head, &hs))
-												PeteSelect(messH->win, pte, selectAll ? hs.value : hs.stop, hs.stop);
-										}
-									}
-									PeteFinishUndo(pte, 1/*peUndoPaste*/, hs.value, hs.value + len);
-								}
+							} else {
+								changed = true;
 							}
-							CompGatherRecipientAddresses(messH, true);
-							DisposeHandle(expanded);
+
+							if (changed) {
+								/* Text has changed — replace field contents */
+								PetePrepareUndo(pte, 0/*peCantUndo*/, hs.value, hs.stop, NULL, NULL);
+								if (PeteDelete(pte, hs.value, hs.stop) == 0) {
+									if (PeteInsertPtr(pte, hs.value, *expanded, len) == 0) {
+										/* If previous selection was entire field, reselect entire field */
+										bool selectAll = (selStart == hs.value && selEnd == hs.stop);
+										if (CompHeadCurrent(pte) == head && CompHeadFind(messH, head, &hs))
+											PeteSelect(messH->win, pte, selectAll ? hs.value : hs.stop, hs.stop);
+									}
+								}
+								PeteFinishUndo(pte, 1/*peUndoPaste*/, hs.value, hs.value + len);
+							}
 						}
-					} else {
-						/* Just cache, no expand */
 						CompGatherRecipientAddresses(messH, true);
+						DisposeHandle(expanded);
 					}
 				} else {
-					if (textH) DisposeHandle(textH);
+					/* Just cache, no expand */
+					CompGatherRecipientAddresses(messH, true);
 				}
 			}
 			g_free(text);
@@ -1227,7 +1216,7 @@ int NickExpandAndCacheHead(MessHandle messH, short head, bool cacheOnly)
 	}
 
 	if (raw)
-		DisposeHandle((Handle)raw);
+		{ g_strfreev(raw); raw = NULL; }
 	return err;
 }
 

@@ -77,38 +77,36 @@ ProgressBlock **GetPrbl(MyWindowPtr win);
 void SetPrbl(MyWindowPtr win, ProgressBlock **prbl);
 
 /**********************************************************************
- * ProgressR - progress, but with resource id's for title/subtitle
+ * ProgressR - progress with string resource IDs
  **********************************************************************/
 void ProgressR(short percent, short remaining, short titleId, short subTitleId,
                PStr message) {
-  Str255 title, subTitle;
-
-  *title = *subTitle = 0;
+  char title[256] = "", subTitle[256] = "";
 
   if (titleId)
-    GetRString(title, titleId);
+    GetRString((unsigned char *)title, titleId);
   if (subTitleId)
-    GetRString(subTitle, subTitleId);
-  Progress(percent, remaining, titleId ? title : nil,
-           subTitleId ? subTitle : nil, message);
+    GetRString((unsigned char *)subTitle, subTitleId);
+  Progress(percent, remaining,
+           titleId ? (unsigned char *)title : nil,
+           subTitleId ? (unsigned char *)subTitle : nil,
+           message);
 }
 
 /**********************************************************************
- * ProgressMessage - put something in one section of progress
+ * ProgressMessage - update one section of task progress
  **********************************************************************/
 void ProgressMessage(short which, const unsigned char *message) {
-  UPtr msgs[kpTitle + 1];
-  Str15 empty;
-  ProgressRectEnum remaining;
+  const char *title = NULL, *subTitle = NULL, *msg = NULL;
+  const char *text = message ? (const char *)message : NULL;
 
-  *empty = 0;
-  remaining = which == kpMessage ? NoChange : NoBar;
-  WriteZero(msgs, sizeof(msgs));
-  msgs[which] = message;
-  while (which)
-    msgs[--which] = empty;
-  Progress(remaining, remaining, msgs[kpTitle], msgs[kpSubTitle],
-           msgs[kpMessage]);
+  switch (which) {
+  case kpTitle:    title = text; break;
+  case kpSubTitle: subTitle = text; break;
+  case kpMessage:  msg = text; break;
+  }
+  UpdateTaskProgress(which == kpMessage ? NoChange : NoBar, NoBar);
+  UpdateTaskMessage(title, subTitle, msg);
 }
 
 #pragma segment Progress
@@ -163,67 +161,55 @@ void ProgressMessageR(short which, short messageId) {
  * GetProgressBytes - return the number of bytes transmitted so far
  ************************************************************************/
 int GetProgressBytes(void) {
-  ProgressBlock **prbl;
-  if (prbl = (ProgressBlock **)GetPrbl(ProgWindow))
-    return ((*prbl)->on);
   return 0;
 }
 
-/************************************************************************
- * ByteProgressExcess - we under-estimated
- ************************************************************************/
 void ByteProgressExcess(int excess) {
-  ProgressBlock **prbl;
-  if (prbl = (ProgressBlock **)GetPrbl(ProgWindow))
-    (*prbl)->excessOn += excess;
+  (void)excess;
 }
 
 /************************************************************************
  * ByteProgress - keep track of the number of bytes transmitted so far
  ************************************************************************/
 void ByteProgress(UPtr message, int onLine, int totLines) {
-  ProgressBlock **prbl;
   static long lastTicks;
+  static int currentOn, currentTotal;
 
   CycleBalls();
 
-  if (prbl = (ProgressBlock **)GetPrbl(ProgWindow)) {
-    if (onLine >= 0) {
-      (*prbl)->on = onLine;
-      (*prbl)->excessOn = 0;
-      lastTicks = 0;
-    } else {
-      if ((*prbl)->excessOn > 0) {
-        if (((*prbl)->excessOn -= onLine) < 0)
-          onLine = (*prbl)->excessOn;
-        else
-          onLine = 0;
-      }
-      (*prbl)->on -= onLine;
-    }
-    if (totLines) {
-      (*prbl)->excessOn = 0;
-      (*prbl)->total = totLines;
-      lastTicks = 0;
-    }
+  if (onLine >= 0) {
+    currentOn = onLine;
+    lastTicks = 0;
+  } else {
+    currentOn -= onLine;
+  }
+  if (totLines) {
+    currentTotal = totLines;
+    lastTicks = 0;
+  }
+  if (!currentTotal)
+    return;
 
-    if (!(*prbl)->total)
-      return;
-
-    if (TickCount() - lastTicks > 10) {
-      lastTicks = TickCount();
-      ASSERT((*prbl)->total != 0);
-      Progress((100 * (*prbl)->on) / (*prbl)->total, NoChange, nil, nil,
-               message);
-    }
+  if (TickCount() - lastTicks > 10) {
+    lastTicks = TickCount();
+    Progress((100 * currentOn) / currentTotal, NoChange, nil, nil, message);
   }
 }
 
 /************************************************************************
  * OpenProgress - create the progress window
  ************************************************************************/
-int OpenProgress(void) {
+static gboolean open_progress_idle(gpointer data) {
+  (void)data;
   OpenTasksWin();
+  return G_SOURCE_REMOVE;
+}
+
+int OpenProgress(void) {
+  if (InAThread())
+    g_idle_add(open_progress_idle, NULL);
+  else
+    OpenTasksWin();
   return 0;
 }
 #pragma segment Progress
@@ -239,7 +225,8 @@ void ProgressButton(MyWindowPtr win, ControlHandle button, long modifiers,
 /************************************************************************
  * CloseProgress - close the progress window
  ************************************************************************/
-void CloseProgress(void) {
+static gboolean close_progress_idle(gpointer data) {
+  (void)data;
 #ifdef TASK_PROGRESS_ON
   if (ProgWindow && (ProgWindow != TaskProgressWindow))
     CloseMyWindow(GetMyWindowWindowPtr(ProgWindow));
@@ -247,6 +234,14 @@ void CloseProgress(void) {
   if (ProgWindow)
     CloseMyWindow(GetMyWindowWindowPtr(ProgWindow));
 #endif
+  return G_SOURCE_REMOVE;
+}
+
+void CloseProgress(void) {
+  if (InAThread())
+    g_idle_add(close_progress_idle, NULL);
+  else
+    close_progress_idle(NULL);
 }
 
 /**********************************************************************
@@ -272,110 +267,37 @@ void DisposProgress(ProgressBHandle prbl) {
 }
 
 /************************************************************************
- * Progress - record progress in the progress window
+ * Progress - update task progress (thread-safe, no legacy Mac code)
  ************************************************************************/
-// thread-aware version
-
 void Progress(short percent, short remaining, PStr title, PStr subTitle,
               PStr message) {
-  /* This should call the GTK version of Progress or update ProgressBlock */
-  ProgressBlock **prbl;
-  char c_title[256], c_subtitle[256];
-
-  if (!(prbl = (ProgressBlock **)GetPrbl(ProgWindow))) {
-    /* If no legacy window, just update the taskProgress wazoo */
-    UpdateTaskProgress(percent, remaining);
-    UpdateTaskMessage(title ? (char *)pstr_to_c(title) : NULL,
-                      subTitle ? (char *)pstr_to_c(subTitle) : NULL,
-                      message ? (char *)pstr_to_c(message) : NULL);
-    return;
-  }
-
-  if (percent != NoChange)
-    (*prbl)->percent = percent;
-  if (title)
-    PCopy((*prbl)->title, title);
-
-  InstallProgMessage(message, kpMessage);
-  InstallProgMessage(subTitle, kpSubTitle);
-
-  /* Log message if needed */
-  if (message)
+  /* Log message if provided */
+  if (message && *message)
     Log(LOG_PROG, message);
 
-  /* Also update the taskProgress wazoo */
+  /* Update the GTK task progress panel via g_idle_add (thread-safe) */
   UpdateTaskProgress(percent, remaining);
-  UpdateTaskMessage(title ? (char *)pstr_to_c(title) : NULL,
-                    subTitle ? (char *)pstr_to_c(subTitle) : NULL,
-                    message ? (char *)pstr_to_c(message) : NULL);
+  UpdateTaskMessage(title ? (const char *)title : NULL,
+                    subTitle ? (const char *)subTitle : NULL,
+                    message ? (const char *)message : NULL);
 }
 
 /************************************************************************
- * ProgPosition - ph window position
+ * ProgPosition - stub (no legacy progress window)
  ************************************************************************/
 bool ProgPosition(bool save, MyWindowPtr win) {
-  Str31 progress;
-
-  SetWTitle_(GetMyWindowWindowPtr(win), GetRString(progress, PROGRESS));
-  return (PositionPrefsTitle(save, win));
+  (void)save; (void)win;
+  return true;
 }
 
-/**********************************************************************
- * InstallProgressMessage - install a progress message
- **********************************************************************/
+/* InstallProgMessage - legacy stub */
 void InstallProgMessage(PStr string, ProgressRectEnum which) {
-  Str255 scratch;
-  ProgressBlock **prbl;
-
-  if (!(prbl = (ProgressBlock **)GetPrbl(ProgWindow)))
-    return;
-
-  if (string) {
-    PCopyTrim(scratch, string, sizeof(scratch));
-    LDRef(prbl);
-    if (!StringSame(scratch, (*prbl)->messages[which])) {
-      PCopy((*prbl)->messages[which], scratch);
-      InvalProgress(which);
-      if (which == kpMessage)
-        Log(LOG_PROG, scratch);
-    }
-    UL(prbl);
-  }
+  (void)string; (void)which;
 }
 
-/************************************************************************
- * InvalProgress - invalidate the selected part of the progress window
- ************************************************************************/
+/* InvalProgress - legacy stub */
 void InvalProgress(ProgressRectEnum which) {
-  ProgressBlock **prbl;
-  short start, stop;
-
-#ifdef TASK_PROGRESS_ON
-  if (!ProgWindow)
-    return;
-  if (ProgWindow == TaskProgressWindow &&
-      GetWindowKind(GetMyWindowWindowPtr(TaskProgressWindow)) != TASKS_WIN)
-    return;
-#endif
-  if (!(prbl = (ProgressBlock **)GetPrbl(ProgWindow)))
-    return;
-  PushGWorld();
-  SetPort_(GetMyWindowCGrafPtr(ProgWindow));
-  if (which == kpTitle) {
-    start = 0;
-    stop = kpTitle;
-  } else
-    start = stop = which;
-  for (; start <= stop; start++) {
-    Rect textRect = (*prbl)->rects[start];
-#ifdef TASK_PROGRESS_ON
-    if (ProgWindow == TaskProgressWindow)
-      InvalTPRect(&textRect);
-    else
-#endif
-      InvalWindowRect(GetMyWindowWindowPtr(ProgWindow), &textRect);
-  }
-  PopGWorld();
+  (void)which;
 }
 
 /************************************************************************
@@ -383,86 +305,14 @@ void InvalProgress(ProgressRectEnum which) {
  ************************************************************************/
 void ProgressUpdate(MyWindowPtr win) {}
 
-/************************************************************************
- * PushProgress - stash a copy of the progress info
- ************************************************************************/
-void PushProgress(void) {
-  ProgressBHandle prbl;
-  ProgressBHandle pH;
+/* PushProgress - legacy stub */
+void PushProgress(void) {}
 
-  if (!ProgWindow)
-    return;
+/* PopProgress - legacy stub */
+void PopProgress(bool messageOnly) { (void)messageOnly; }
 
-  if (!(prbl = (ProgressBlock **)GetPrbl(ProgWindow)))
-    return;
-
-  UL(prbl);
-  GetWTitle(GetMyWindowWindowPtr(ProgWindow), (*prbl)->title);
-  UL(prbl);
-  if (pH = NuHandle(sizeof(ProgressBlock))) {
-    **pH = **prbl;
-    (*pH)->next = prbl;
-    SetPrbl(ProgWindow, pH);
-  }
-}
-
-/************************************************************************
- * PopProgress - restore the progress info
- ************************************************************************/
-void PopProgress(bool messageOnly) {
-  WindowPtr ProgWindowWP = GetMyWindowWindowPtr(ProgWindow);
-  ProgressBHandle prbl;
-  ProgressBHandle pNext;
-
-  if (!ProgWindow)
-    return;
-
-  if (!(prbl = (ProgressBlock **)GetPrbl(ProgWindow)))
-    return;
-
-  if ((*prbl)->next) {
-    pNext = (*prbl)->next;
-    (*pNext)->percent = (*prbl)->percent;
-    (*pNext)->on = (*prbl)->on;
-    (*pNext)->total = (*prbl)->total;
-    SetWTitle_(ProgWindowWP, LDRef(pNext)->title);
-    UL(pNext);
-    if ((*prbl)->bar) {
-      SetControlValue((*prbl)->bar, (*prbl)->percent);
-      if ((*prbl)->percent == NoBar)
-        SetControlVisibility((*prbl)->bar, false, true);
-      //				HideControl((*prbl)->bar);
-      else {
-        SetControlVisibility((*prbl)->bar, true, false);
-#ifdef TASK_PROGRESS_ON
-        if (ProgWindow == TaskProgressWindow)
-          DrawTaskProgressBar((*prbl)->bar);
-        else
-#endif
-          ShowControl((*prbl)->bar);
-      }
-    }
-
-    SetPrbl(ProgWindow, pNext);
-    InvalProgress(kpTitle);
-    ZapHandle(prbl);
-    UpdateMyWindow(ProgWindowWP);
-  }
-}
-
-/**********************************************************************
- * PressStop - press the stop button
- **********************************************************************/
-void PressStop(void) {
-  ProgressBlock **prbl = (ProgressBlock **)GetPrbl(ProgWindow);
-  ControlHandle stopH;
-
-  if (ProgWindow && prbl && (stopH = (*prbl)->stop)) {
-    HiliteControl(stopH, 1);
-    Pause(20L);
-    HiliteControl(stopH, 0);
-  }
-}
+/* PressStop - legacy stub */
+void PressStop(void) {}
 
 #pragma segment Main
 

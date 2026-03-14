@@ -32,7 +32,6 @@ ADVISED OF THE POSSIBILITY OF SUCH DAMAGE. */
 /* Copyright (c) 1990-1992 by the University of Illinois Board of Trustees */
 /* Copyright (c) 1994 by QUALCOMM Incorporated */
 
-/* #pragma segment Misc */
 
 #define ARRAY(i) (array + i * size)
 void QSort(UPtr array, int size, int f, int l, int (*compare)(),
@@ -48,7 +47,7 @@ void QuickSort(UPtr array, int size, int f, int l, int (*compare)(),
     return;
 
 #ifdef NEVER
-  ComposeLogS(-1, nil, (UPtr)"Sort %d %d", f, l);
+  ComposeLogS(-1, NULL, (UPtr)"Sort %d %d", f, l);
 #endif
   CycleBalls();
 
@@ -96,7 +95,7 @@ void VQuickSort(short **vector, short f, short l, void *data,
     return;
 
 #ifdef NEVER
-  ComposeLogS(-1, nil, (UPtr)"Sort %d %d", f, l);
+  ComposeLogS(-1, NULL, (UPtr)"Sort %d %d", f, l);
 #endif
   CycleBalls();
 
@@ -136,12 +135,12 @@ void StrSwap(UPtr s1, UPtr s2) {
 }
 
 int CStrCompar(UPtr s1, UPtr s2) {
-#pragma unused(s1, s2)
+  (void)s1; (void)s2;
   return (0);
 }
 
 void CStrSwap(UPtr s1, UPtr s2) {
-#pragma unused(s1, s2)
+  (void)s1; (void)s2;
 }
 
 int SortStrCompare(UPtr *s1, UPtr *s2) { return StringComp(*s1, *s2); }

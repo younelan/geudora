@@ -43,8 +43,8 @@ long BeautifyDate(unsigned char *dateStr, long *zoneSecs);
 bool HasUnicode(void);
 
 	Token822Enum WriteHeaderToken(Token822Enum tokenType, L822SPtr l822p, AccuPtr a);
-	OSErr AddHeaderAttribute(HeaderDPtr (*hdh), PStr value, bool etl);
-	OSErr AddFunField(HeaderDPtr (*hdh), PStr value, short funFieldsID);
+	OSErr AddHeaderAttribute(HeaderDHandle hdh, unsigned char *value, bool etl);
+	OSErr AddFunField(HeaderDHandle hdh, unsigned char *value, short funFieldsID);
 	void TextPlain(HeaderDHandle hdh);
 
 void Ungrok(HeaderDHandle hdh);
@@ -177,9 +177,9 @@ OSErr ReadHeaderLo(TransStream stream, HeaderDHandle hdh, long estSize, short re
 		{
 #ifndef SAVE_MIME
 			if ((*hdh)->xlateResID)
-				TransLitRes(l822s.token+1,*l822s.token,(*hdh)->xlateResID);
+				TransLitRes(l822s.token,strlen((const char*)l822s.token),(*hdh)->xlateResID);
 			else if ((*hdh)->isMIME && !(*hdh)->xlateResID)
-				TransLitRes(l822s.token+1,*l822s.token,defaultTableId);
+				TransLitRes(l822s.token,strlen((const char*)l822s.token),defaultTableId);
 #endif
 		}
 		else if(PrefIsSet(PREF_ALWAYS_CHARSET))
@@ -221,7 +221,7 @@ OSErr ReadHeaderLo(TransStream stream, HeaderDHandle hdh, long estSize, short re
 			 * the header can only legally end in ExpectText or ExpectSem or ExpectVersion states
 			 */
 			case Special:
-				if (l822s.token[1]=='\015')
+				if (l822s.token[0]=='\015')
 				{
 					if (!OkStateAtWhichToEnd((*hdh)->state))
 					{
@@ -271,7 +271,7 @@ OSErr ReadHeaderLo(TransStream stream, HeaderDHandle hdh, long estSize, short re
 							case LinearWhite: break; /* ignore */
 							
 							case Special:
-								if (l822s.token[1] == ':')
+								if (l822s.token[0] == ':')
 								{
 									if(funFieldsID==InterestHeadStrn) {
 										switch ((*hdh)->hFound)
@@ -355,7 +355,7 @@ OSErr ReadHeaderLo(TransStream stream, HeaderDHandle hdh, long estSize, short re
 									(*hdh)->hasMDN = True;
 									break;
 								case hMessageId:
-									hash = MIDHash(l822s.token+1,*l822s.token);
+									hash = MIDHash(l822s.token,strlen((const char*)l822s.token));
 									(*hdh)->msgIdHash = hash;
 									AddFunField(hdh,l822s.token,funFieldsID);
 									break;
@@ -432,8 +432,8 @@ OSErr ReadHeaderLo(TransStream stream, HeaderDHandle hdh, long estSize, short re
 						{
 							case LinearWhite:	break;	/* ignore */
 							default:
-								PSCopy((*hdh)->mimeVersion,l822s.token);
-								if (!StringSame(GetRString(scratch,MIME_VERSION),(*hdh)->mimeVersion))
+								g_strlcpy((char*)(*hdh)->mimeVersion,(const char*)l822s.token,sizeof((*hdh)->mimeVersion));
+								if (!StringSame((const char*)GetRString(scratch,MIME_VERSION),(const char*)(*hdh)->mimeVersion))
 									Ungrok(hdh);
 								(*hdh)->isMIME = True;
 								//	Add version to ems MIME info
@@ -454,7 +454,7 @@ OSErr ReadHeaderLo(TransStream stream, HeaderDHandle hdh, long estSize, short re
 						{
 							// hack to avoid over-deep mime structures
 							if ((*hdh)->depth > GetRLong(MAX_MULTI_DEPTH)) GetRString(l822s.token,MIME_TEXT);
-							PSCopy((*hdh)->contentType,l822s.token);
+							g_strlcpy((char*)(*hdh)->contentType,(const char*)l822s.token,sizeof((*hdh)->contentType));
 							(*hdh)->state = ExpectSlash;
 							if (EqualStrRes(l822s.token,MIME_TEXT) && *GetRString(scratch,UNSPECIFIED_CHARSET))
 								if (xlateResID = FindMIMECharset(scratch))
@@ -477,7 +477,7 @@ OSErr ReadHeaderLo(TransStream stream, HeaderDHandle hdh, long estSize, short re
 					/*********************************/
 					case ExpectSlash:
 						if (tokenType==LinearWhite) break;	/* ignore */
-						if (tokenType==Special && l822s.token[1]=='/')
+						if (tokenType==Special && l822s.token[0]=='/')
 						{
 							(*hdh)->state = ExpectSubType;
 							break;
@@ -496,7 +496,7 @@ OSErr ReadHeaderLo(TransStream stream, HeaderDHandle hdh, long estSize, short re
 						{
 							// hack to avoid over-deep mime structures
 							if ((*hdh)->depth > GetRLong(MAX_MULTI_DEPTH)) GetRString(l822s.token,MIME_PLAIN);
-							PSCopy((*hdh)->contentSubType,l822s.token);
+							g_strlcpy((char*)(*hdh)->contentSubType,(const char*)l822s.token,sizeof((*hdh)->contentSubType));
 							(*hdh)->state = ExpectSem;
 							(*hdh)->isMIME = True;
 							if (EqualStrRes(l822s.token,MIME_PARTIAL))
@@ -548,7 +548,7 @@ OSErr ReadHeaderLo(TransStream stream, HeaderDHandle hdh, long estSize, short re
 					/*********************************/
 					case ExpectSem:
 						if (tokenType==LinearWhite) break;
-						if (tokenType==Special && l822s.token[1]==';')
+						if (tokenType==Special && l822s.token[0]==';')
 						{
 							(*hdh)->state = ExpectAttribute;
 							break;
@@ -565,7 +565,7 @@ OSErr ReadHeaderLo(TransStream stream, HeaderDHandle hdh, long estSize, short re
 						if (tokenType==LinearWhite) break;	/* skip this */
 						if (tokenType==Atom)
 						{
-							PSCopy((*hdh)->attributeName,l822s.token);
+							g_strlcpy((char*)(*hdh)->attributeName,(const char*)l822s.token,sizeof((*hdh)->attributeName));
 							(*hdh)->state = ExpectEqual;
 						}
 						else
@@ -578,7 +578,7 @@ OSErr ReadHeaderLo(TransStream stream, HeaderDHandle hdh, long estSize, short re
 					/*********************************/
 					case ExpectEqual:
 						if (tokenType==LinearWhite) break;
-						if (tokenType==Special && l822s.token[1]=='=')
+						if (tokenType==Special && l822s.token[0]=='=')
 						{
 							(*hdh)->state = ExpectValue;
 							break;
@@ -622,11 +622,11 @@ OSErr ReadHeaderLo(TransStream stream, HeaderDHandle hdh, long estSize, short re
 							}
 							else if (attr==aMRType)
 							{
-								PSCopy((*hdh)->contentSubType,l822s.token);
+								g_strlcpy((char*)(*hdh)->contentSubType,(const char*)l822s.token,sizeof((*hdh)->contentSubType));
 							}
 							else if (attr==aFormat && EqualStrRes(l822s.token,FORMAT_FLOWED))
 								(*hdh)->hasFlow = AnyFlow = true;
-							else if (attr==aDelSP && (l822s.token[1]=='y' || l822s.token[1]=='Y' || l822s.token[1]=='t' || l822s.token[1]=='T'))
+							else if (attr==aDelSP && (l822s.token[0]=='y' || l822s.token[0]=='Y' || l822s.token[0]=='t' || l822s.token[0]=='T'))
 								AnyDelSP = true;
 							if (refN) lastParam = AccuFTell(&a,refN);
 						}
@@ -681,11 +681,11 @@ out:
 void TextPlain(HeaderDHandle hdh)
 {
 	Str63 scratch;
-	
+
 	GetRString(scratch,MIME_TEXT);
-	PSCopy((*hdh)->contentType,scratch);
+	g_strlcpy((char*)(*hdh)->contentType,(const char*)scratch,sizeof((*hdh)->contentType));
 	GetRString(scratch,MIME_PLAIN);
-	PSCopy((*hdh)->contentSubType,scratch);
+	g_strlcpy((char*)(*hdh)->contentSubType,(const char*)scratch,sizeof((*hdh)->contentSubType));
 }
 
 /************************************************************************
@@ -711,7 +711,7 @@ HeaderDHandle NewHeaderDesc(HeaderDHandle parentHDH)
 		(*hdh)->fullHeaders = accu;
 		if (parentHDH)
 		{
-			PCopy((*hdh)->summaryInfo,(*parentHDH)->summaryInfo);
+			g_strlcpy((char*)(*hdh)->summaryInfo,(const char*)(*parentHDH)->summaryInfo,sizeof((*hdh)->summaryInfo));
 			(*hdh)->gmtSecs = (*parentHDH)->gmtSecs;
 			(*hdh)->depth = (*parentHDH)->depth+1;
 		}
@@ -775,15 +775,15 @@ Token822Enum WriteHeaderToken(Token822Enum tokenType, L822SPtr l822p, AccuPtr a)
 		 */
 		case QText:
 			if (!(err=AccuAddChar(a,'"')))
-			if (!(err=AccuAddStr(a,l822p->token)))
+			if (!(err=AccuAddPtr(a,l822p->token,l822p->tokenLen)))
 				err = AccuAddChar(a,'"');
 			break;
-		
+
 		/*
 		 * write out the token
 		 */
 		default:
-			err = AccuAddStr(a,l822p->token);
+			err = AccuAddPtr(a,l822p->token,l822p->tokenLen);
 			break;
 	}
 	
@@ -799,32 +799,30 @@ Token822Enum WriteHeaderToken(Token822Enum tokenType, L822SPtr l822p, AccuPtr a)
 /************************************************************************
  * AddHeaderAttribute - add an attribute to a header descriptor
  ************************************************************************/
-OSErr AddHeaderAttribute(HeaderDHandle hdh, PStr value, bool etl)
+OSErr AddHeaderAttribute(HeaderDHandle hdh, unsigned char *value, bool etl)
 {
 	short err;
 	AttributeEnum attributeNum;
-	short oldLen;
-	
-	oldLen = *value;
-	if (*value >= (*(*hdh)->contentAttributes)->dataSize)
-		*value = (*(*hdh)->contentAttributes)->dataSize-1;
-	err = AAAddItem((*hdh)->contentAttributes,True,(void*)LDRef(hdh)->attributeName,(void*)value);
-	*value = oldLen;
-	
+	unsigned char truncated[256];
+	short dataSize = (*(*hdh)->contentAttributes)->dataSize;
+
+	g_strlcpy((char*)truncated,(const char*)value,dataSize < (short)sizeof(truncated) ? dataSize : (short)sizeof(truncated));
+	err = AAAddItem((*hdh)->contentAttributes,True,(void*)LDRef(hdh)->attributeName,(void*)truncated);
+
 	if (err) {UL(hdh);return(WarnUser(MEM_ERR,MemError()));}
-		
+
 	switch (attributeNum = FindSTRNIndex(AttributeStrn,(void*)(*hdh)->attributeName))
-	{		
+	{
 		case aUnknown:
 			if (!BeginsWith((*hdh)->attributeName,(UPtr)"x-")) Ungrok(hdh);
 			break;
 	}
-	
+
 #ifdef ETL
 	if(etl)
 		err = AddTLMIME((*hdh)->tlMIME,(*hdh)->hFound==hContentDisposition ? TLMIME_CONTENTDISP_PARAM : TLMIME_PARAM,(*hdh)->attributeName,value);
 #endif
-	
+
 	UL(hdh);
 	return(err);
 }
@@ -832,7 +830,7 @@ OSErr AddHeaderAttribute(HeaderDHandle hdh, PStr value, bool etl)
 /************************************************************************
  * AddFunField - add a field to a header descriptor
  ************************************************************************/
-OSErr AddFunField(HeaderDHandle hdh, PStr value, short funFieldsID)
+OSErr AddFunField(HeaderDHandle hdh, unsigned char *value, short funFieldsID)
 {
 	short err;
 	Str31 fName;
