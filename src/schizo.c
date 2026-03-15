@@ -22,6 +22,7 @@ DAMAGE. */
 #include "StringDefs.h"
 #include "gtk_prefs.h"
 #include "gtk_dialogs.h"
+#include "keychain.h"
 #include "fileutil.h"
 #include "util.h"
 #include "acap.h"
@@ -71,14 +72,16 @@ OSErr PersFillPw(PersHandle pers,uint32_t whichOnes)
 
 	if (!pers->password[0])
 	{
-		/* Try loading saved password from INI first */
+		/* Try loading saved password from keychain first */
 		if (prefs_get_bool(PREFS_GROUP_CHECKING_MAIL, "save_password", FALSE)) {
-			gchar *saved = prefs_get_string(PREFS_GROUP_CHECKING_MAIL, "saved_password", "");
-			if (saved && saved[0]) {
+			char acct[256];
+			snprintf(acct, sizeof(acct), "%s@%s", uName, hName);
+			char saved[256] = {0};
+			if (keychain_find("gEudora", acct, saved, sizeof(saved)) == KEYCHAIN_OK
+			    && saved[0]) {
 				strncpy((char *)pers->password, saved, sizeof(pers->password) - 1);
 				pers->password[sizeof(pers->password) - 1] = '\0';
 			}
-			g_free(saved);
 		}
 
 		/* If still no password, prompt the user */
@@ -104,15 +107,16 @@ OSErr PersSavePw(PersHandle pers)
 {
 	OSErr err = noErr;
 
-	if (prefs_get_bool(PREFS_GROUP_CHECKING_MAIL, "save_password", FALSE)) {
-		/* Save password to INI */
-		if (pers->password[0]) {
-			prefs_set_string(PREFS_GROUP_CHECKING_MAIL, "saved_password",
-			                 (const char *)pers->password);
-		}
-	} else {
-		/* User doesn't want password saved — clear it from INI */
-		prefs_set_string(PREFS_GROUP_CHECKING_MAIL, "saved_password", "");
+	/* Password is stored in the system keychain by GetPassword() when the
+	 * user checks "Save password". PersSavePw only needs to clear it when
+	 * the save preference is turned off. */
+	if (!prefs_get_bool(PREFS_GROUP_CHECKING_MAIL, "save_password", FALSE)) {
+		/* Clear any previously saved credential from keychain */
+		char uName[128] = {0}, hName[128] = {0};
+		GetPassStuff(NULL, (unsigned char *)uName, (unsigned char *)hName);
+		char acct[256];
+		snprintf(acct, sizeof(acct), "%s@%s", uName, hName);
+		keychain_delete("gEudora", acct);
 	}
 
 	return(err);

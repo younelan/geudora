@@ -44,6 +44,7 @@ EUDORA_RGBColor *DarkenColor(EUDORA_RGBColor *color, short percent);
 #include "StringDefs.h"
 #include "string_table.h"
 #include "gtk_prefs.h"
+#include "keychain.h"
 
 #include <ctype.h>
 #include <time.h>
@@ -359,13 +360,19 @@ int GetPassword(PStr personality, PStr userName, PStr serverName, UPtr word,
   gboolean want_save = gtk_check_button_get_active(GTK_CHECK_BUTTON(save_check));
   gtk_window_destroy(GTK_WINDOW(dlg));
 
-  /* Persist the save_password preference */
+  /* Persist the save_password preference and store/clear credential */
   if (data.result == PASSWORD_OK) {
     prefs_set_bool(PREFS_GROUP_CHECKING_MAIL, "save_password", want_save);
+    prefs_flush();
     if (want_save && word[0]) {
-      prefs_set_string(PREFS_GROUP_CHECKING_MAIL, "saved_password", (const char *)word);
+      /* Build account key: "user@server" */
+      char acct[256];
+      snprintf(acct, sizeof(acct), "%s@%s", user_str, server_str);
+      keychain_store("gEudora", acct, (const char *)word);
     } else if (!want_save) {
-      prefs_set_string(PREFS_GROUP_CHECKING_MAIL, "saved_password", "");
+      char acct[256];
+      snprintf(acct, sizeof(acct), "%s@%s", user_str, server_str);
+      keychain_delete("gEudora", acct);
     }
   }
 
