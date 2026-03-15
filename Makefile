@@ -1,12 +1,14 @@
 CC = cc
 KRB5_PREFIX = $(shell brew --prefix krb5 2>/dev/null)
-CFLAGS = $(shell pkg-config --cflags gtk4 json-glib-1.0 libxml-2.0) -Wall -Iinclude -IgEditCtrl -ICrispinIMAP/Include -DIMAP -DTHREADING_ON -pthread \
-         -I$(KRB5_PREFIX)/include
-KRB5_PREFIX = $(shell brew --prefix krb5 2>/dev/null)
+OPENSSL_CFLAGS = $(shell pkg-config --cflags openssl 2>/dev/null)
+OPENSSL_LIBS = $(shell pkg-config --libs openssl 2>/dev/null || echo "-lssl -lcrypto")
+CFLAGS = $(shell pkg-config --cflags gtk4 json-glib-1.0 libxml-2.0) -Wall -Iinclude -IgEditCtrl -ICrispinIMAP/Include -DIMAP -DTHREADING_ON -DESSL -pthread \
+         -I$(KRB5_PREFIX)/include $(OPENSSL_CFLAGS)
 LIBS = $(shell pkg-config --libs gtk4 json-glib-1.0 libxml-2.0) -pthread \
        $(shell pkg-config --libs libcurl 2>/dev/null || echo -lcurl) \
        -L$(KRB5_PREFIX)/lib -lgssapi_krb5 -lkrb5 -lk5crypto \
-       -lresolv
+       -lresolv $(OPENSSL_LIBS) \
+       $(shell uname | grep -q Darwin && echo "-framework Security -framework CoreFoundation")
 TARGET = geudora
 BUILD_DIR = build
 
