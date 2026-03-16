@@ -27,7 +27,6 @@ ADVISED OF THE POSSIBILITY OF SUCH DAMAGE. */
 #define TCP_H
 
 #include "TransStream.h" /* TransStream, TransVector */
-#include "mailbox.h"     /* PStr, Str255, Str31, etc. */
 #include "mydefs.h"      /* TransVector and other Eudora types */
 #include "portable-compat.h"
 
@@ -67,14 +66,14 @@ typedef struct InetMailExchange {
 struct hostInfo {
   long rtnCode;
   char cname[255];
-  SInt8 filler; /* Filler for proper byte alignment */
+  int8_t filler; /* Filler for proper byte alignment */
   unsigned long addr[NUM_ALT_ADDRS];
 };
 typedef struct hostInfo hostInfo;
 
-typedef struct HIQ HostInfoQ, *HostInfoQPtr, **HostInfoQHandle;
+typedef struct HIQ HostInfoQ, *HostInfoQPtr;
 struct HIQ {
-  HostInfoQHandle next;
+  HostInfoQPtr next;
   struct hostInfo hi;
   short done;
   bool inUse;
@@ -83,10 +82,10 @@ struct HIQ {
 void TcpFastFlush(bool destroy);
 
 int GetTCPStatus(TransStream stream, void *pb);
-OSErr GetHostByAddr(struct hostInfo *hi, long addr);
-int GetHostByName(unsigned char *name, struct hostInfo **hostInfoPtr);
-OSErr GetMyHostid(uint32_t *myAddr, uint32_t *myMask);
-bool SplitPort(PStr host, long *port);
+int GetHostByAddr(struct hostInfo *hi, long addr);
+int GetHostByName(const char *name, struct hostInfo **hostInfoPtr);
+int GetMyHostid(uint32_t *myAddr, uint32_t *myMask);
+bool SplitPort(char *host, long *port);
 
 #define NUM_MX 10 /* The number of MX records to look up for a host */
 
@@ -122,7 +121,7 @@ enum {
 };
 
 /* Per-connection POSIX TCP stream structure - replaces OT MyOTTCPStream */
-typedef struct MTS MyOTTCPStream, *MyOTTCPStreamPtr, *MyOTTCPStreamHandle;
+typedef struct MTS MyOTTCPStream, *MyOTTCPStreamPtr;
 struct MTS {
   int sockfd; /* POSIX socket fd, -1 if not open */
 
@@ -141,7 +140,7 @@ struct MTS {
 
 /* PPP info stub - kept because globals reference it */
 typedef struct MyOTPPPInfoStruct {
-  Boolean weConnectedPPP;
+  bool weConnectedPPP;
   short state;
 } MyOTPPPInfoStruct, *MyOTPPPInfoPtr;
 
@@ -149,33 +148,33 @@ typedef struct MyOTPPPInfoStruct {
 void OTInitOpenTransport(void);
 void OTCleanUpAfterOpenTransport(void);
 
-OSErr OTTCPConnectTrans(TransStream stream, unsigned char *serverName,
-                        long port, bool silently, uint32_t timeout);
-OSErr OTTCPSendTrans(TransStream stream, unsigned char *text, long size, ...);
-OSErr OTTCPRecvTrans(TransStream stream, unsigned char *line, long *size);
-OSErr OTTCPDisTrans(TransStream stream);
-OSErr OTTCPDestroyTrans(TransStream stream);
-OSErr OTTCPTransError(TransStream stream);
+int OTTCPConnectTrans(TransStream stream, const char *serverName,
+                         long port, bool silently, uint32_t timeout);
+int OTTCPSendTrans(TransStream stream, const char *text, long size, ...);
+int OTTCPRecvTrans(TransStream stream, char *line, long *size);
+int OTTCPDisTrans(TransStream stream);
+int OTTCPDestroyTrans(TransStream stream);
+int OTTCPTransError(TransStream stream);
 void OTTCPSilenceTrans(TransStream stream, bool silence);
-unsigned char *OTTCPWhoAmI(TransStream stream, UPtr who);
+char *OTTCPWhoAmI(TransStream stream, char *who);
 
 void KillDeadMyTStreams(bool destroy);
 void OTFlushInput(TransStream stream, uint32_t timeout);
 
 /* DNS helpers */
-OSErr OTGetHostByName(InetDomainName hostName, InetHostInfo *hostInfoPtr);
-OSErr OTGetHostByAddr(InetHost addr, InetHostInfo *domainNamePtr);
+int OTGetHostByName(InetDomainName hostName, InetHostInfo *hostInfoPtr);
+int OTGetHostByAddr(InetHost addr, InetHostInfo *domainNamePtr);
 InetHost OTRandomAddr(InetHostInfo *host);
-OSErr OTGetDomainMX(InetDomainName hostName, InetMailExchange *MXPtr,
+int OTGetDomainMX(InetDomainName hostName, InetMailExchange *MXPtr,
                     short *numMX);
 void GetPreferredMX(InetDomainName preferredName, InetMailExchange *MXPtr,
                     short numMX);
 
-OSErr DNSHostid(uint32_t *dnsAddr);
-OSErr OTMyHostid(uint32_t *myAddr, uint32_t *myMask);
+int DNSHostid(uint32_t *dnsAddr);
+int OTMyHostid(uint32_t *myAddr, uint32_t *myMask);
 
 /* Stubs for PPP/RAS/dial-up - always assume online */
-OSErr SelectedConnectionMode(unsigned long *connectionSelection,
+int SelectedConnectionMode(unsigned long *connectionSelection,
                              bool forceRead);
 bool NeedToUpdateTP(void);
 bool AutoCheckOKWithDBRead(bool updatePers);
@@ -183,15 +182,15 @@ bool CanCheckPPPState(void);
 bool CanChangePPPState(void);
 bool PPPDown(void);
 bool PPPIsMostDefinitelyUpAndRunning(void);
-OSErr OTConnectForLink(void);
+int OTConnectForLink(void);
 bool UserIdle(uint32_t ticks);
 
-void OTErrorToString(short specificError, Str255 tcpMessage);
+void OTErrorToString(short specificError, char *tcpMessage);
 
 TransVector GetTCPTrans(void);
 
-OSErr CheckConnectionSettings(unsigned char *host, long port,
-                              StringPtr errorMessage);
+int CheckConnectionSettings(const char *host, long port,
+                               char *errorMessage);
 
 #define ALMOST(x) (.95 * (x))
 

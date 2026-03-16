@@ -2198,7 +2198,7 @@ void SetStateLo(TOCType * tocH, int sumNum, int state) {
   if (oldState == state)
     return; /* nothing to do */
 
-  InvalTocBox(tocH, sumNum, blStat);
+  // InvalTocBox(tocH, sumNum, blStat); // DELETED: must update state first
 
   tocH->sums[sumNum].state = state;
   TOCSetDirty(tocH, true);
@@ -2207,6 +2207,8 @@ void SetStateLo(TOCType * tocH, int sumNum, int state) {
 
   if (oldState == UNREAD || state == UNREAD)
     tocH->unreadBase = -1; // force update
+
+  InvalTocBox(tocH, sumNum, blStat); // MOVED: call after state is updated
 
   if (IsQueuedState(oldState) || IsQueuedState(state))
     tocH->reallyDirty = True;
@@ -2271,7 +2273,7 @@ int RedoWho(TOCType * tocH, short sumNum) {
   if (!(err = CacheMessage(tocH, sumNum)))
     if (tocH->sums[sumNum].cache) {
       hState = HGetState(tocH->sums[sumNum].cache);
-      text = LDRef(tocH->sums[sumNum].cache);
+      text = *(tocH->sums[sumNum].cache);
       len = GetHandleSize(tocH->sums[sumNum].cache);
       *who = 0;
       if (tocH->sums[sumNum].state == SENT ||
@@ -2438,9 +2440,9 @@ bool DeleteSum(TOCType * tocH, int sumNum) {
 // bool IsQueued(TOCType * tocH, int sumNum); MOVED TO TOP
 
 /**********************************************************************
- * InvalSum - invalidate an entire message summary line
+ * InvalSumInternal - real implementation of summary invalidation
  **********************************************************************/
-void InvalSum(TOCType * tocH, short sumNum) {
+static void InvalSumInternal(TOCType * tocH, short sumNum) {
   MyWindowPtr win = tocH->win;
   if (!win || !win->window)
     return;
@@ -2455,6 +2457,7 @@ void InvalSum(TOCType * tocH, short sumNum) {
     return;
 
   /* Find the row matching this sumNum and update it */
+  if (sumNum < 0 || sumNum >= tocH->count) return;
   MSumPtr sum = &tocH->sums[sumNum];
   GtkTreeIter iter;
   gboolean valid = gtk_tree_model_get_iter_first(model, &iter);
@@ -2504,6 +2507,27 @@ void InvalSum(TOCType * tocH, short sumNum) {
 
   /* Row not found — message may be new, repopulate the entire list */
   populate_mbox_list(GTK_LIST_STORE(model), tocH);
+}
+
+typedef struct {
+  TOCType *tocH;
+  short sumNum;
+} InvalSumData;
+
+static gboolean InvalSumIdle(gpointer data) {
+  InvalSumData *isd = (InvalSumData *)data;
+  if (IsTOCValid(isd->tocH)) {
+    InvalSumInternal(isd->tocH, isd->sumNum);
+  }
+  g_free(isd);
+  return FALSE;
+}
+
+void InvalSum(TOCType * tocH, short sumNum) {
+  InvalSumData *isd = g_new0(InvalSumData, 1);
+  isd->tocH = tocH;
+  isd->sumNum = sumNum;
+  g_idle_add(InvalSumIdle, isd);
 }
 
 /************************************************************************
@@ -3256,7 +3280,7 @@ int BoxMatchMenuItems(unsigned char *name, MenuAndScoreHandle *mashPtr,
   else if (a.offset) {
     AccuTrim(&a);
     *mashPtr = (MenuAndScoreHandle)a.data;
-    QuickSort((UPtr)LDRef(a.data), sizeof(MenuAndScore), 0,
+    QuickSort((UPtr)(*(a.data)), sizeof(MenuAndScore), 0,
               a.offset / sizeof(MenuAndScore) - 1, CompareMAS, SwapMAS);
     UL(a.data);
   }
@@ -3581,7 +3605,7 @@ bool IsMailbox(FSSpecPtr spec) {
    * is it an envelope?
    */
   count = GetHandleSize(data) - 1;
-  for (spot = (UPtr)LDRef(data);
+  for (spot = (UPtr)(*data);
        *spot != '\015' && spot < (UPtr)(*data) + count; spot++)
     ;
   spot[1] = 0;
@@ -3891,7 +3915,7 @@ static void ProcessIMAPChanges(Handle sumList, TOCType * toc,
   // suffice
   if (message == kDoCopy) {
     count = GetHandleSize_(sumList) / sizeof(UIDCopyStruct);
-    for (pCopy = LDRef(sumList); count--; pCopy++) {
+    for (pCopy = *sumList; count--; pCopy++) {
       toTocH = TOCBySpec(&(pCopy->toSpec));
 
       if (toTocH && pCopy->hOldSums && pCopy->hNewUIDs) {
@@ -3917,7 +3941,7 @@ static void ProcessIMAPChanges(Handle sumList, TOCType * toc,
   }
 
   count = GetHandleSize_(sumList) / sizeof(MSumType);
-  for (pSum = LDRef(sumList); count--; pSum++) {
+  for (pSum = *sumList; count--; pSum++) {
     Boolean found;
 
     // Spin the cursor every 100 messages or so.

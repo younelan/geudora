@@ -67,7 +67,7 @@ long LogLevel = 0;
 #define NuHandle(s) 0
 #define NCWrite(a,b,c)
 uint32_t TickCount(void);
-void ByteProgress(unsigned char *message, int onLine, int totLines);
+void ByteProgress(const char *message, int onLine, int totLines);
 
 /* FlagsString declared in imapdownload.h */
 #define ASSERT(x)

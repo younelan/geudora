@@ -45,6 +45,7 @@ ADVISED OF THE POSSIBILITY OF SUCH DAMAGE. */
 #include "StringUtil.h"
 #include "threading.h"
 #include "trans.h"
+#include "toc.h"
 #include "auditdefs.h"
 #include "fileutil.h"
 #include "Globals.h"
@@ -388,6 +389,7 @@ short XferMailSetup(bool *check, bool *send, bool manual, bool scripted,
   XferFlags flags;
   bool special = 0 != (modifiers & optionKey);
   char pass[256];
+  Zero(pass);
   uint32_t ticks, ivalTicks;
   PersHandle pers;
 
@@ -1244,7 +1246,7 @@ short SendTheQueue(TransStream stream, XferFlags flags) {
   if (!inThread)
     TotalQueuedSize = FindTotalQueuedSize(tocH, gmtSecs);
 
-  ByteProgress(0, 0, TotalQueuedSize);
+  ByteProgress(NULL, 0, TotalQueuedSize);
 
   if (inThread || (openedFilters = !RegenerateFilters()))
     for (sumNum = 0; sumNum < tocH->count && code < 600 && !CommandPeriod &&
@@ -1303,7 +1305,7 @@ short SendTheQueue(TransStream stream, XferFlags flags) {
             ComposeLogS(LOG_TPUT, NULL, (unsigned char *)"%d.%d KBps", rate / 10, rate % 10);
             approxBytes = (ApproxMessageSize(messH) K);
             if (actualBytes < approxBytes)
-              ByteProgress(0, actualBytes - approxBytes, 0);
+              ByteProgress(NULL, actualBytes - approxBytes, 0);
             else
               ByteProgressExcess(approxBytes - actualBytes);
           }

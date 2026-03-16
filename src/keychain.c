@@ -37,6 +37,13 @@ int keychain_store(const char *service, const char *account,
     CFStringRef acct = CFStringCreateWithCString(NULL, account,  kCFStringEncodingUTF8);
     CFDataRef   data = CFDataCreate(NULL, (const UInt8 *)password, (CFIndex)strlen(password));
 
+    if (!svc || !acct || !data) {
+        if (svc) CFRelease(svc);
+        if (acct) CFRelease(acct);
+        if (data) CFRelease(data);
+        return KEYCHAIN_ERR;
+    }
+
     CFDictionaryRef attrs = CFDictionaryCreate(NULL,
         (const void *[]){
             kSecClass, kSecAttrService, kSecAttrAccount, kSecValueData
@@ -60,6 +67,12 @@ int keychain_find(const char *service, const char *account,
                   char *out, size_t size) {
     CFStringRef svc  = CFStringCreateWithCString(NULL, service,  kCFStringEncodingUTF8);
     CFStringRef acct = CFStringCreateWithCString(NULL, account,  kCFStringEncodingUTF8);
+
+    if (!svc || !acct) {
+        if (svc) CFRelease(svc);
+        if (acct) CFRelease(acct);
+        return KEYCHAIN_ERR;
+    }
 
     CFDictionaryRef query = CFDictionaryCreate(NULL,
         (const void *[]){
@@ -95,6 +108,12 @@ int keychain_find(const char *service, const char *account,
 int keychain_delete(const char *service, const char *account) {
     CFStringRef svc  = CFStringCreateWithCString(NULL, service,  kCFStringEncodingUTF8);
     CFStringRef acct = CFStringCreateWithCString(NULL, account,  kCFStringEncodingUTF8);
+
+    if (!svc || !acct) {
+        if (svc) CFRelease(svc);
+        if (acct) CFRelease(acct);
+        return KEYCHAIN_ERR;
+    }
 
     CFDictionaryRef query = CFDictionaryCreate(NULL,
         (const void *[]){ kSecClass, kSecAttrService, kSecAttrAccount },

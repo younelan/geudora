@@ -249,13 +249,34 @@ static void disk_to_sum(const MSumDisk *d, MSumType *s) {
   s->sumRandBytes = d->sumRandBytes;
   s->origZone = d->origZone;
   s->sigId = d->sigId;
-  memcpy(s->from, d->from, sizeof(s->from));
+
+  /* Handle potential legacy Pascal strings from disk */
+  unsigned char fromLen = (unsigned char)d->from[0];
+  if (fromLen > 0 && fromLen < sizeof(d->from)) {
+    /* If the first byte looks like a length and we find a null or end of buffer
+       shortly after, it's likely a Pascal string. In the GTK port, we want C strings. */
+    memmove(s->from, d->from + 1, fromLen);
+    s->from[fromLen] = '\0';
+  } else {
+    memcpy(s->from, d->from, sizeof(s->from));
+    s->from[sizeof(s->from) - 1] = '\0';
+  }
+
   s->popPersId = d->popPersId;
   s->persId = d->persId;
   s->msgIdHash = d->msgIdHash;
   s->subjId = d->subjId;
   s->spareShort = d->spareShort;
-  memcpy(s->subj, d->subj, sizeof(s->subj));
+
+  unsigned char subjLen = (unsigned char)d->subj[0];
+  if (subjLen > 0 && subjLen < sizeof(d->subj)) {
+    memmove(s->subj, d->subj + 1, subjLen);
+    s->subj[subjLen] = '\0';
+  } else {
+    memcpy(s->subj, d->subj, sizeof(s->subj));
+    s->subj[sizeof(s->subj) - 1] = '\0';
+  }
+
   s->opts = d->opts;
   s->uidHash = d->uidHash;
   /* pointer fields stay NULL */
@@ -290,13 +311,20 @@ static void sum_to_disk(const MSumType *s, MSumDisk *d) {
   d->sumRandBytes = s->sumRandBytes;
   d->origZone = s->origZone;
   d->sigId = (uint32_t)s->sigId;
-  memcpy(d->from, s->from, sizeof(d->from));
+
+  /* Always write as C strings from now on */
+  strncpy(d->from, s->from, sizeof(d->from) - 1);
+  d->from[sizeof(d->from) - 1] = '\0';
+
   d->popPersId = (uint32_t)s->popPersId;
   d->persId = (uint32_t)s->persId;
   d->msgIdHash = (int32_t)s->msgIdHash;
   d->subjId = s->subjId;
   d->spareShort = s->spareShort;
-  memcpy(d->subj, s->subj, sizeof(d->subj));
+
+  strncpy(d->subj, s->subj, sizeof(d->subj) - 1);
+  d->subj[sizeof(d->subj) - 1] = '\0';
+
   d->opts = (uint32_t)s->opts;
   d->uidHash = (uint32_t)s->uidHash;
   d->cache = 0;

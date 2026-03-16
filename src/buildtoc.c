@@ -39,6 +39,7 @@ ADVISED OF THE POSSIBILITY OF SUCH DAMAGE. */
 #include "buildtoc.h"
 #include "fileutil.h"
 #include "mailbox.h"
+#include "toc.h"
 #include "mydefs.h"
 #include "StringDefs.h"
 #include "util.h"
@@ -541,9 +542,14 @@ int SumToFrom(MSumPtr sum, unsigned char *fromLine) {
  * Returns the index. Currently unused in the port.
  ************************************************************************/
 long FindTOCSpot(TOCType * tocH, long length) {
-  (void)tocH;
-  (void)length;
-  return 0;
+  long eof = 0;
+  if (tocH && tocH->refN > 0) {
+    if (GetEOF(tocH->refN, &eof) != 0) {
+      /* If GetEOF fails, fallback to 0 (corrupt but better than random) */
+      eof = 0;
+    }
+  }
+  return eof;
 }
 
 /************************************************************************

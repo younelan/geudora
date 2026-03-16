@@ -587,8 +587,16 @@ void InvalTocBox(TOCType *tocH, short sumNum, short box)
     if (MBGetSort(tocH, box))
         tocH->resort = (tocH->resort > kNoSlowResort) ? tocH->resort : kNoSlowResort;
 
-    if (sumNum >= 0)
+    if (sumNum >= 0) {
         SearchInvalTocBox(tocH, sumNum, box);
+        InvalSum(tocH, sumNum);
+    } else if (sumNum == -2) {
+        /* Invalidate all selected messages? Eudora often uses -2 for this. */
+        for (short i = 0; i < tocH->count; i++) {
+            if (tocH->sums[i].selected)
+                InvalSum(tocH, i);
+        }
+    }
 }
 
 /* RedoTOC — real implementation in toc.c */

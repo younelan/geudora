@@ -125,7 +125,7 @@ long ReportStreamAudit(TransStream theStream)
  * ConnectTrans - resolve and connect to serverName:port with timeout (ms)
  * Returns 0 on success, errno-style error on failure.
  */
-int ConnectTrans(TransStream stream, unsigned char *serverName, long port, int silently, unsigned long timeout)
+int ConnectTrans(TransStream stream, const char *serverName, long port, bool silently, unsigned long timeout)
 {
 	struct addrinfo hints, *res, *rp;
 	char portstr[16];
@@ -134,7 +134,7 @@ int ConnectTrans(TransStream stream, unsigned char *serverName, long port, int s
 
 	if (!serverName || !stream) return EINVAL;
 
-	snprintf((char *)stream->serverName, sizeof(stream->serverName), "%s", (char *)serverName);
+	snprintf(stream->serverName, sizeof(stream->serverName), "%s", serverName);
 	stream->port = (unsigned long)port;
 
 	memset(&hints, 0, sizeof(hints));
@@ -142,7 +142,7 @@ int ConnectTrans(TransStream stream, unsigned char *serverName, long port, int s
 	hints.ai_socktype = SOCK_STREAM;
 
 	snprintf(portstr, sizeof(portstr), "%ld", port);
-	if ((err = getaddrinfo((char *)serverName, portstr, &hints, &res)) != 0) {
+	if ((err = getaddrinfo(serverName, portstr, &hints, &res)) != 0) {
 		return EINVAL;
 	}
 
@@ -203,7 +203,7 @@ int ConnectTrans(TransStream stream, unsigned char *serverName, long port, int s
 	stream->RcvSpot = -1;
 	/* Allocate receive buffer for NetRecvLine if not already present */
 	if (!stream->RcvBuffer) {
-		stream->RcvBuffer = (unsigned char *)malloc(4096);
+		stream->RcvBuffer = (char *)malloc(4096);
 	}
 
 	return 0;
@@ -213,13 +213,13 @@ int ConnectTrans(TransStream stream, unsigned char *serverName, long port, int s
  * SendTrans - variadic send helper. Accepts pairs (ptr, size) ending with a NULL pointer.
  * Returns 0 on success or errno on failure.
  */
-int SendTrans(TransStream stream, unsigned char *text, long size, ...)
+int SendTrans(TransStream stream, const char *text, long size, ...)
 {
 	if (!stream) return EINVAL;
 	if (stream->sockfd < 0) return ENOTCONN;
 
 	va_list ap;
-	unsigned char *ptr = text;
+	const char *ptr = text;
 	long len = size;
 	ssize_t sent;
 	int lastErr = 0;
@@ -227,7 +227,7 @@ int SendTrans(TransStream stream, unsigned char *text, long size, ...)
 	va_start(ap, size);
 	while (ptr) {
 		long toSend = len;
-		unsigned char *p = ptr;
+		const char *p = ptr;
 		while (toSend > 0) {
 			sent = send(stream->sockfd, p, (size_t)toSend, 0);
 			if (sent < 0) {
@@ -239,7 +239,7 @@ int SendTrans(TransStream stream, unsigned char *text, long size, ...)
 			p += sent;
 			stream->bytesTransferred += sent;
 		}
-		ptr = va_arg(ap, unsigned char *);
+		ptr = va_arg(ap, const char *);
 		if (!ptr) break;
 		len = va_arg(ap, long);
 	}
@@ -251,7 +251,7 @@ int SendTrans(TransStream stream, unsigned char *text, long size, ...)
  * RecvTrans - receive up to *size bytes into line. On success, *size is set to bytes received.
  * Returns 0 on success, errno on failure, or 1 on EOF.
  */
-int RecvTrans(TransStream stream, unsigned char *line, long *size)
+int RecvTrans(TransStream stream, char *line, long *size)
 {
 	if (!stream || !size || !line) return EINVAL;
 	if (stream->sockfd < 0) return ENOTCONN;

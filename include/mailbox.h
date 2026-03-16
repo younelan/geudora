@@ -624,7 +624,7 @@ int FSpRstFLock(FSSpecPtr spec);
 short FSWriteP(short refN, unsigned char *pString);
 short PBCreateFileIDRefSync(HParmBlkPtr pb);
 short PBResolveFileIDRefSync(HParmBlkPtr pb);
-unsigned char *GetRString(unsigned char *name, short id);
+char *GetRString(char *name, short id);
 short AFSHOpen(const char *name, short vRefN, long dirId, short *refN,
                short perm);
 short ARFHOpen(const char *name, short vRefN, long dirId, short *refN,
@@ -704,7 +704,7 @@ bool IsMyWindow(void *winWP);
 void SetTopMargin(MyWindowPtr win, short h);
 void SetBotMargin(MyWindowPtr win, short h);
 void MyWindowDidResize(MyWindowPtr win, void *oldContR);
-void SetWTitle(void *winWP, unsigned char *title);
+void SetWTitle(void *winWP, const char *title);
 void *GetWindowList(void);
 void *GetNextWindow(void *win);
 void ReZoomMyWindow(void *winWP);
@@ -719,7 +719,7 @@ void OpenMBWin(void);
 
 /* Mailbox function prototypes */
 short FirstMsgSelected(TOCType * tocH);
-unsigned char *GetMailboxName(TOCType * tocH, short sum, unsigned char *name);
+char *GetMailboxName(TOCType * tocH, short sum, char *name);
 int BoxFOpenLo(TOCType * tocH, short sumNum);
 int BoxFOpen(TOCType * tocH);
 void BoxFClose(TOCType * tocH, bool flush);

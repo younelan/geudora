@@ -598,22 +598,22 @@ typedef struct {
 typedef struct wdsEntry wdsEntry;
 
 typedef struct {
-  int (*vConnectTrans)(TransStream stream, unsigned char *serverName, long port,
-                       int silently, unsigned long timeout);
-  int (*vSendTrans)(TransStream stream, unsigned char *text, long size, ...);
-  int (*vRecvTrans)(TransStream stream, unsigned char *line, long *size);
+  int (*vConnectTrans)(TransStream stream, const char *serverName, long port,
+                       bool silently, unsigned long timeout);
+  int (*vSendTrans)(TransStream stream, const char *text, long size, ...);
+  int (*vRecvTrans)(TransStream stream, char *line, long *size);
   int (*vDisTrans)(TransStream stream);
   int (*vDestroyTrans)(TransStream stream);
   int (*vTransError)(TransStream stream);
-  void (*vSilenceTrans)(TransStream stream, int silence);
+  void (*vSilenceTrans)(TransStream stream, bool silence);
   int (*vSendWDS)(TransStream stream, wdsEntry *theWDS);
-  unsigned char *(*vWhoAmI)(TransStream stream, unsigned char *who);
-  int (*vRecvLine)(TransStream stream, unsigned char *line, long *size);
-  int (*vAsyncSendTrans)(TransStream stream, unsigned char *buffer, long size);
+  char *(*vWhoAmI)(TransStream stream, char *who);
+  int (*vRecvLine)(TransStream stream, char *line, long *size);
+  int (*vAsyncSendTrans)(TransStream stream, char *buffer, long size);
 } TransVector;
 
-int ConnectTrans(TransStream stream, unsigned char *serverName, long port,
-                 int silently, unsigned long timeout);
+int ConnectTrans(TransStream stream, const char *serverName, long port,
+                 bool silently, unsigned long timeout);
 
 #define ConnectTransLo (*CurTrans.vConnectTrans)
 #define SendTrans (*CurTrans.vSendTrans)

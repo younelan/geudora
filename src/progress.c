@@ -61,7 +61,7 @@ void InvalProgress(ProgressRectEnum which);
 
 void ProgressButton(MyWindowPtr win, ControlHandle button, long modifiers,
                     short part);
-void InstallProgMessage(PStr string, ProgressRectEnum which);
+void InstallProgMessage(const char *string, ProgressRectEnum which);
 bool ProgPosition(bool save, MyWindowPtr win);
 bool ProgClose(MyWindowPtr win);
 /* CycleBalls is in legacy_shim.h */
@@ -80,30 +80,27 @@ void SetPrbl(MyWindowPtr win, ProgressBlock **prbl);
  * ProgressR - progress with string resource IDs
  **********************************************************************/
 void ProgressR(short percent, short remaining, short titleId, short subTitleId,
-               PStr message) {
+               const char *message) {
   char title[256] = "", subTitle[256] = "";
 
   if (titleId)
     GetRString((unsigned char *)title, titleId);
   if (subTitleId)
     GetRString((unsigned char *)subTitle, subTitleId);
-  Progress(percent, remaining,
-           titleId ? (unsigned char *)title : nil,
-           subTitleId ? (unsigned char *)subTitle : nil,
-           message);
+  Progress(percent, remaining, titleId ? title : nil,
+           subTitleId ? subTitle : nil, message);
 }
 
 /**********************************************************************
  * ProgressMessage - update one section of task progress
  **********************************************************************/
-void ProgressMessage(short which, const unsigned char *message) {
+void ProgressMessage(short which, const char *message) {
   const char *title = NULL, *subTitle = NULL, *msg = NULL;
-  const char *text = message ? (const char *)message : NULL;
 
   switch (which) {
-  case kpTitle:    title = text; break;
-  case kpSubTitle: subTitle = text; break;
-  case kpMessage:  msg = text; break;
+  case kpTitle:    title = message; break;
+  case kpSubTitle: subTitle = message; break;
+  case kpMessage:  msg = message; break;
   }
   UpdateTaskProgress(which == kpMessage ? NoChange : NoBar, NoBar);
   UpdateTaskMessage(title, subTitle, msg);
@@ -152,9 +149,9 @@ void SetPrbl(MyWindowPtr win, ProgressBlock **prbl) {
  * ProgressMessageR - like progressmessage, but with resource id instead
  **********************************************************************/
 void ProgressMessageR(short which, short messageId) {
-  Str255 message;
+  char message[256];
 
-  ProgressMessage(which, GetRString(message, messageId));
+  ProgressMessage(which, (const char *)GetRString((unsigned char *)message, messageId));
 }
 
 /************************************************************************
@@ -171,7 +168,7 @@ void ByteProgressExcess(int excess) {
 /************************************************************************
  * ByteProgress - keep track of the number of bytes transmitted so far
  ************************************************************************/
-void ByteProgress(UPtr message, int onLine, int totLines) {
+void ByteProgress(const char *message, int onLine, int totLines) {
   static long lastTicks;
   static int currentOn, currentTotal;
 
@@ -269,17 +266,15 @@ void DisposProgress(ProgressBHandle prbl) {
 /************************************************************************
  * Progress - update task progress (thread-safe, no legacy Mac code)
  ************************************************************************/
-void Progress(short percent, short remaining, PStr title, PStr subTitle,
-              PStr message) {
+void Progress(short percent, short remaining, const char *title,
+              const char *subTitle, const char *message) {
   /* Log message if provided */
   if (message && *message)
     Log(LOG_PROG, message);
 
   /* Update the GTK task progress panel via g_idle_add (thread-safe) */
   UpdateTaskProgress(percent, remaining);
-  UpdateTaskMessage(title ? (const char *)title : NULL,
-                    subTitle ? (const char *)subTitle : NULL,
-                    message ? (const char *)message : NULL);
+  UpdateTaskMessage(title, subTitle, message);
 }
 
 /************************************************************************
@@ -291,7 +286,7 @@ bool ProgPosition(bool save, MyWindowPtr win) {
 }
 
 /* InstallProgMessage - legacy stub */
-void InstallProgMessage(PStr string, ProgressRectEnum which) {
+void InstallProgMessage(const char *string, ProgressRectEnum which) {
   (void)string; (void)which;
 }
 

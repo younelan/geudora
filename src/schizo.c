@@ -75,6 +75,7 @@ OSErr PersFillPw(PersHandle pers,uint32_t whichOnes)
 		/* Try loading saved password from keychain first */
 		if (prefs_get_bool(PREFS_GROUP_CHECKING_MAIL, "save_password", FALSE)) {
 			char acct[256];
+			GetPassStuff((unsigned char *)persName, (unsigned char *)uName, (unsigned char *)hName);
 			snprintf(acct, sizeof(acct), "%s@%s", uName, hName);
 			char saved[256] = {0};
 			if (keychain_find("gEudora", acct, saved, sizeof(saved)) == KEYCHAIN_OK
@@ -86,7 +87,7 @@ OSErr PersFillPw(PersHandle pers,uint32_t whichOnes)
 
 		/* If still no password, prompt the user */
 		if (!pers->password[0]) {
-			GetPassStuff((unsigned char *)persName, (unsigned char *)uName, (unsigned char *)hName);
+			if (!uName[0]) GetPassStuff((unsigned char *)persName, (unsigned char *)uName, (unsigned char *)hName);
 			GetPassword((unsigned char *)persName, (unsigned char *)uName, (unsigned char *)hName,
 			            (unsigned char *)pw, sizeof(pw), ENTER);
 			pers->dirty = true;

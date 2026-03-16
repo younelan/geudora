@@ -33,19 +33,19 @@ OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE. */
 
 #include "mailbox.h" /* PStr, Str255, etc. */
 
-unsigned char *ComposeLogR(unsigned long level, unsigned char *into,
+char *ComposeLogR(unsigned long level, char *into,
                            short format, ...);
-unsigned char *ComposeLogS(unsigned long level, unsigned char *into,
-                           unsigned char *format, ...);
-unsigned char *Log(unsigned long level, unsigned char *string);
-void MyParamText(PStr p1, PStr p2, PStr p3, PStr p4);
+char *ComposeLogS(unsigned long level, char *into,
+                           const char *format, ...);
+char *Log(unsigned long level, const char *string);
+void MyParamText(const char *p1, const char *p2, const char *p3, const char *p4);
 void CloseLog(void);
 void LogAlert(short template_id);
-void CarefulLog(unsigned long level, short format, unsigned char *data,
+void CarefulLog(unsigned long level, short format, const char *data,
                 short dSize);
-void LineLog(unsigned long level, short format, unsigned char *data,
+void LineLog(unsigned long level, short format, const char *data,
              short dSize);
-void HexLog(unsigned long level, short format, unsigned char *data,
+void HexLog(unsigned long level, short format, const char *data,
             short dSize);
 
 #ifdef DEBUG

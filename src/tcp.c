@@ -37,7 +37,7 @@ OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE. */
  */
 
 #include "tcp.h"
-#include "Globals.h" /* PCopy, PIndex, PrefIsSet, SettingsRefN, etc. */
+#include "Globals.h" /* PrefIsSet, SettingsRefN, etc. */
 #include "MyRes.h" /* FNAME_STRN, OPEN_ERR_ALRT, BIG_OK_ALRT, TIMEOUT_ALRT, Caution */
 #include "StringDefs.h" /* OPEN_ERR_ALRT, BIG_OK_ALRT, Caution, FNAME_STRN, etc. */
 #include "StringUtil.h"  /* MyStringToNum, ComposeRString, etc. */
@@ -79,7 +79,7 @@ unsigned long connectionSelection = kOtherSelected;
 
 /* Pending-close queue (streams waiting for the remote FIN).
  * Declared extern in Globals.h — not static here. */
-MyOTTCPStreamHandle pendingCloses = NULL;
+MyOTTCPStreamPtr pendingCloses = NULL;
 
 /* ─── Error reporting macros ─────────────────────────────────────────────────
  */
@@ -101,12 +101,12 @@ MyOTTCPStreamHandle pendingCloses = NULL;
 /* ─── Forward declarations ────────────────────────────────────────────────────
  */
 int TT(TransStream stream, int which, int theErr, int file, int line);
-OSErr OTTE(TransStream stream, OSErr general, OSErr specific, short file,
+int OTTE(TransStream stream, int general, int specific, short file,
            short line);
 static void DestroyMyTStream(MyOTTCPStreamPtr myStream);
 static void EnqueueMyTStream(MyOTTCPStreamPtr myStream);
 static short WaitForChars(TransStream stream, long timeoutSecs,
-                          unsigned char *line, long *size);
+                          char *line, long *size);
 uint32_t RandomAddr(uint32_t *addrs);
 void NoteAddrGoodness(struct hostInfo *hip, uint32_t addr, short err);
 
@@ -156,12 +156,11 @@ void NoteAddrGoodness(struct hostInfo *hip, uint32_t addr, short err) {
 
 /* ─── SplitPort
  * ──────────────────────────────────────────────────────────────── */
-
-bool SplitPort(PStr host, long *port) {
-  unsigned char *colon;
+bool SplitPort(char *host, long *port) {
+  char *colon;
   long localPort;
 
-  if ((colon = PIndex(host, ':')) != NULL) {
+  if ((colon = strchr(host, ':')) != NULL) {
     *colon = 0;  /* null-terminate host at the colon */
     MyStringToNum(colon + 1, &localPort);
     assert(localPort > 0);
@@ -180,12 +179,11 @@ int TT(TransStream stream, int which, int theErr, int file, int line) {
       (!stream->BeSilent &&
        (!CommandPeriod || (stream->Opening && !PrefIsSet(PREF_OFFLINE) &&
                            !PrefIsSet(PREF_NO_OFF_OFFER))))) {
-    Str255 message, tcpMessage, debugStr, rawNumber;
+    char message[256], tcpMessage[256], debugStr[256], rawNumber[256];
     short realRef = SettingsRefN;
 
-    /* Format error number as Pascal string for alert display */
-    rawNumber[0] = (unsigned char)snprintf((char *)rawNumber + 1,
-                                           sizeof(rawNumber) - 1, "%d", theErr);
+    /* Format error number as C string for alert display */
+    snprintf(rawNumber, sizeof(rawNumber), "%d", theErr);
     SettingsRefN = GetMainGlobalSettingsRefN();
     GetRString(message, which);
     OTErrorToString(theErr, tcpMessage);
@@ -217,29 +215,30 @@ void OTCleanUpAfterOpenTransport(void) { /* No-op on POSIX. */ }
 /* ─── OTTCPConnectTrans
  * ───────────────────────────────────────────────────────── */
 
-OSErr OTTCPConnectTrans(TransStream stream, unsigned char *serverName,
+int OTTCPConnectTrans(TransStream stream, const char *serverName,
                         long port, bool silently, uint32_t timeout) {
   char hostName[256];
   char portStr[16];
   struct addrinfo hints, *res = NULL, *rp;
   int sockfd = -1;
   int gaierr;
-  OSErr err = noErr;
-  Str255 scratch;
+  int err = 0;
+  char scratch[256];
 
   assert(stream);
   assert(stream->sockfd < 0); /* must not already have a socket */
 
-  stream->streamErr = noErr;
+  stream->streamErr = 0;
   stream->Opening = true;
   stream->BeSilent = (unsigned char)silently;
 
-  /* serverName is already a C string (from GetPOPInfo/GetSMTPInfoLo) */
-  g_strlcpy(hostName, (const char *)serverName, sizeof(hostName));
+  /* serverName is already a C string */
+  g_strlcpy(hostName, serverName, sizeof(hostName));
   snprintf(portStr, sizeof(portStr), "%ld", port);
 
   /* Progress feedback */
-  PCat(GetRString(scratch, DNR_LOOKUP), serverName);
+  GetRString(scratch, DNR_LOOKUP);
+  strncat(scratch, serverName, sizeof(scratch) - strlen(scratch) - 1);
   ProgressMessage(kpSubTitle, scratch);
 
   /* DNS resolution */
@@ -250,7 +249,7 @@ OSErr OTTCPConnectTrans(TransStream stream, unsigned char *serverName,
 
   gaierr = getaddrinfo(hostName, portStr, &hints, &res);
   if (gaierr != 0) {
-    ComposeLogS(LOG_PROTO, NULL, (UPtr)"DNS lookup of '%s' failed: %s", hostName,
+    ComposeLogS(LOG_PROTO, NULL, "DNS lookup of '%s' failed: %s", hostName,
                 gai_strerror(gaierr));
     err = stream->streamErr = errDNR;
     if (!silently)
@@ -260,15 +259,13 @@ OSErr OTTCPConnectTrans(TransStream stream, unsigned char *serverName,
 
   /* Log resolved addresses */
   if (LogLevel & LOG_PROTO) {
+    ComposeLogS(LOG_PROTO, NULL, "DNS Lookup of \"%s\"", hostName);
     struct addrinfo *p;
-    Str63 logHost;
-    MakePStr(logHost, hostName, strlen(hostName));
-    ComposeLogS(LOG_PROTO, NULL, (UPtr)"DNS Lookup of \"%p\"", logHost);
     for (p = res; p; p = p->ai_next) {
       char ip[INET_ADDRSTRLEN];
       struct sockaddr_in *in4 = (struct sockaddr_in *)p->ai_addr;
       inet_ntop(AF_INET, &in4->sin_addr, ip, sizeof(ip));
-      ComposeLogS(LOG_PROTO, NULL, (UPtr)"    %s", ip);
+      ComposeLogS(LOG_PROTO, NULL, "    %s", ip);
     }
   }
 
@@ -279,7 +276,7 @@ OSErr OTTCPConnectTrans(TransStream stream, unsigned char *serverName,
     char ip[INET_ADDRSTRLEN];
     struct sockaddr_in *in4 = (struct sockaddr_in *)rp->ai_addr;
     inet_ntop(AF_INET, &in4->sin_addr, ip, sizeof(ip));
-    ComposeLogS(LOG_PROTO, NULL, (UPtr)"Connecting to %s:%ld", ip, port);
+    ComposeLogS(LOG_PROTO, NULL, "Connecting to %s:%ld", ip, port);
 
     sockfd = socket(rp->ai_family, rp->ai_socktype, rp->ai_protocol);
     if (sockfd < 0)
@@ -323,7 +320,7 @@ OSErr OTTCPConnectTrans(TransStream stream, unsigned char *serverName,
   res = NULL;
 
   if (sockfd < 0) {
-    ComposeLogS(LOG_PROTO, NULL, (UPtr)"Connection to %s:%ld failed", hostName,
+    ComposeLogS(LOG_PROTO, NULL, "Connection to %s:%ld failed", hostName,
                 port);
     err = stream->streamErr = errOpenStream;
     if (!silently)
@@ -338,7 +335,7 @@ OSErr OTTCPConnectTrans(TransStream stream, unsigned char *serverName,
   stream->RcvSpot = -1;
   /* Allocate receive buffer for NetRecvLine if not already present */
   if (!stream->RcvBuffer) {
-    stream->RcvBuffer = (unsigned char *)malloc(RECV_BUFFER_SIZE);
+    stream->RcvBuffer = (char *)malloc(RECV_BUFFER_SIZE);
   }
   gActiveConnections++;
 
@@ -348,32 +345,32 @@ OSErr OTTCPConnectTrans(TransStream stream, unsigned char *serverName,
     char ip[INET_ADDRSTRLEN];
     getpeername(sockfd, (struct sockaddr *)&peer, &plen);
     inet_ntop(AF_INET, &peer.sin_addr, ip, sizeof(ip));
-    ComposeLogS(LOG_PROTO, NULL, (UPtr)"Connected to %s:%ld", ip, port);
+    ComposeLogS(LOG_PROTO, NULL, "Connected to %s:%ld", ip, port);
   }
 
 done:
   if (res)
     freeaddrinfo(res);
   stream->Opening = false;
-  return (OSErr)stream->streamErr;
+  return stream->streamErr;
 }
 
 /* ─── OTTCPSendTrans
  * ─────────────────────────────────────────────────────────── */
 
-OSErr OTTCPSendTrans(TransStream stream, unsigned char *text, long size, ...) {
+int OTTCPSendTrans(TransStream stream, const char *text, long size, ...) {
   va_list extra;
-  unsigned char *buf;
+  const char *buf;
   long remaining;
 
   assert(stream);
   assert(stream->sockfd >= 0);
 
-  stream->streamErr = noErr;
+  stream->streamErr = 0;
   if (CommandPeriod)
     return userCancelled;
   if (size == 0)
-    return noErr;
+    return 0;
 
   va_start(extra, size);
   buf = text;
@@ -423,7 +420,7 @@ OSErr OTTCPSendTrans(TransStream stream, unsigned char *text, long size, ...) {
     }
 
     if (!stream->streamErr) {
-      buf = va_arg(extra, unsigned char *);
+      buf = va_arg(extra, const char *);
       if (buf)
         remaining = va_arg(extra, long);
     }
@@ -441,15 +438,15 @@ done:
 /* ─── OTTCPRecvTrans
  * ─────────────────────────────────────────────────────────── */
 
-OSErr OTTCPRecvTrans(TransStream stream, unsigned char *line, long *size) {
-  Str31 scratch;
+int OTTCPRecvTrans(TransStream stream, char *line, long *size) {
+  char scratch[32];
   long timeout =
       InAThread() ? GetRLong(THREAD_RECV_TIMEOUT) : GetRLong(RECV_TIMEOUT);
 
   assert(stream);
   assert(stream->sockfd >= 0);
 
-  stream->streamErr = noErr;
+  stream->streamErr = 0;
 
   do {
     stream->streamErr = WaitForChars(stream, timeout, line, size);
@@ -459,7 +456,7 @@ OSErr OTTCPRecvTrans(TransStream stream, unsigned char *line, long *size) {
                                                      : RECV_TIMEOUT)),
             false) /* AlertStr is void; never retry — break out on timeout */);
 
-  if (stream->streamErr == noErr) {
+  if (stream->streamErr == 0) {
     if (*size)
       ResetAlertStage();
     if (*size && (LogLevel & LOG_TRANS))
@@ -477,7 +474,7 @@ OSErr OTTCPRecvTrans(TransStream stream, unsigned char *line, long *size) {
  * ────────────────────────────────────────────────── */
 
 static short WaitForChars(TransStream stream, long timeoutSecs,
-                          unsigned char *line, long *size) {
+                          char *line, long *size) {
   struct pollfd pfd;
 
   if (CommandPeriod)
@@ -504,7 +501,7 @@ static short WaitForChars(TransStream stream, long timeoutSecs,
     ssize_t got = recv(stream->sockfd, line, (size_t)*size, 0);
     if (got > 0) {
       *size = (long)got;
-      return noErr;
+      return 0;
     }
     if (got == 0)
       return errLostConnection;
@@ -516,10 +513,10 @@ static short WaitForChars(TransStream stream, long timeoutSecs,
 /* ─── OTTCPDisTrans
  * ──────────────────────────────────────────────────────────── */
 
-OSErr OTTCPDisTrans(TransStream stream) {
+int OTTCPDisTrans(TransStream stream) {
   if (!stream || stream->sockfd < 0)
-    return noErr;
-  stream->streamErr = noErr;
+    return 0;
+  stream->streamErr = 0;
   /* Send FIN; keep socket open so we can still receive the remote's FIN */
   shutdown(stream->sockfd, SHUT_WR);
   return stream->streamErr;
@@ -528,9 +525,9 @@ OSErr OTTCPDisTrans(TransStream stream) {
 /* ─── OTTCPDestroyTrans
  * ──────────────────────────────────────────────────────── */
 
-OSErr OTTCPDestroyTrans(TransStream stream) {
+int OTTCPDestroyTrans(TransStream stream) {
   if (!stream)
-    return noErr;
+    return 0;
 
   if (stream->sockfd >= 0) {
     close(stream->sockfd);
@@ -548,22 +545,22 @@ OSErr OTTCPDestroyTrans(TransStream stream) {
 /* ─── OTTCPTransError / OTTCPSilenceTrans
  * ────────────────────────────────────── */
 
-OSErr OTTCPTransError(TransStream stream) {
+int OTTCPTransError(TransStream stream) {
   assert(stream);
   return stream->streamErr;
 }
 
 void OTTCPSilenceTrans(TransStream stream, bool silence) {
   assert(stream);
-  stream->BeSilent = (unsigned char)silence;
+  stream->BeSilent = silence;
 }
 
 /* ─── OTTCPWhoAmI ─────────────────────────────────────────────────────────────
- */
+ * ────────────────────────────────────────────────────────────────── */
 
-unsigned char *OTTCPWhoAmI(TransStream stream, unsigned char *who) {
+char *OTTCPWhoAmI(TransStream stream, char *who) {
   char hostname[256];
-  short len;
+  size_t len;
   (void)stream;
 
   if (!*MyHostname) {
@@ -583,20 +580,20 @@ unsigned char *OTTCPWhoAmI(TransStream stream, unsigned char *who) {
 
     ComposeRString(who, TCP_ME, hostname);
     SetPref(PREF_LASTHOST, who);
-    PCopy(MyHostname, who);
+    strcpy(MyHostname, who);
   }
-  PCopy(who, MyHostname);
+  strcpy(who, MyHostname);
 
-  len = (short)strlen((char *)who + 1);
-  if (len > 0 && who[len] == '.')
-    who[len] = '\0';
+  len = strlen(who);
+  if (len > 0 && who[len - 1] == '.')
+    who[len - 1] = '\0';
   return who;
 }
 
 /* ─── DNSHostid
  * ──────────────────────────────────────────────────────────────── */
 
-OSErr DNSHostid(uint32_t *dnsAddr) {
+int DNSHostid(uint32_t *dnsAddr) {
   *dnsAddr = 0;
 #if defined(__APPLE__) || defined(__linux__)
   {
@@ -608,13 +605,13 @@ OSErr DNSHostid(uint32_t *dnsAddr) {
     }
   }
 #endif
-  return noErr;
+  return 0;
 }
 
 /* ─── OTMyHostid / GetMyHostid
  * ───────────────────────────────────────────────── */
 
-OSErr OTMyHostid(uint32_t *myAddr, uint32_t *myMask) {
+int OTMyHostid(uint32_t *myAddr, uint32_t *myMask) {
   struct ifaddrs *ifap = NULL, *ifa;
   *myAddr = 0;
   *myMask = 0;
@@ -635,17 +632,17 @@ OSErr OTMyHostid(uint32_t *myAddr, uint32_t *myMask) {
     break;
   }
   freeifaddrs(ifap);
-  return noErr;
+  return 0;
 }
 
-OSErr GetMyHostid(uint32_t *addr, uint32_t *mask) {
+int GetMyHostid(uint32_t *addr, uint32_t *mask) {
   return OTMyHostid(addr, mask);
 }
 
 /* ─── OTGetHostByName
  * ────────────────────────────────────────────────────────── */
 
-OSErr OTGetHostByName(InetDomainName hostName, InetHostInfo *hostInfoPtr) {
+int OTGetHostByName(InetDomainName hostName, InetHostInfo *hostInfoPtr) {
   struct addrinfo hints, *res = NULL, *rp;
   int rc, count = 0;
 
@@ -659,9 +656,7 @@ OSErr OTGetHostByName(InetDomainName hostName, InetHostInfo *hostInfoPtr) {
   rc = getaddrinfo(hostName, NULL, &hints, &res);
   if (rc != 0) {
     if (LogLevel & LOG_PROTO) {
-      Str63 logHost;
-      MakePStr(logHost, hostName, strlen(hostName));
-      ComposeLogS(LOG_PROTO, NULL, (UPtr)"DNS Lookup of \"%p\" failed: %s", logHost,
+      ComposeLogS(LOG_PROTO, NULL, "DNS Lookup of \"%s\" failed: %s", hostName,
                   gai_strerror(rc));
     }
     return errDNR;
@@ -675,24 +670,22 @@ OSErr OTGetHostByName(InetDomainName hostName, InetHostInfo *hostInfoPtr) {
 
   if (LogLevel & LOG_PROTO) {
     int i;
-    Str63 logHost;
-    MakePStr(logHost, hostName, strlen(hostName));
-    ComposeLogS(LOG_PROTO, NULL, (UPtr)"DNS Lookup of \"%p\"", logHost);
+    ComposeLogS(LOG_PROTO, NULL, "DNS Lookup of \"%s\"", hostName);
     for (i = 0; i < count; i++) {
       char ip[INET_ADDRSTRLEN];
       struct in_addr ia;
       ia.s_addr = hostInfoPtr->addrs[i];
       inet_ntop(AF_INET, &ia, ip, sizeof(ip));
-      ComposeLogS(LOG_PROTO, NULL, (UPtr)"    %s (%d)", ip, i + 1);
+      ComposeLogS(LOG_PROTO, NULL, "    %s (%d)", ip, i + 1);
     }
   }
-  return noErr;
+  return 0;
 }
 
 /* ─── OTGetHostByAddr
  * ────────────────────────────────────────────────────────── */
 
-OSErr OTGetHostByAddr(InetHost addr, InetHostInfo *domainNamePtr) {
+int OTGetHostByAddr(InetHost addr, InetHostInfo *domainNamePtr) {
   struct sockaddr_in sa;
   char host[NI_MAXHOST];
   size_t len;
@@ -711,7 +704,7 @@ OSErr OTGetHostByAddr(InetHost addr, InetHostInfo *domainNamePtr) {
 
   strncpy(domainNamePtr->name, host, sizeof(domainNamePtr->name) - 1);
   domainNamePtr->addrs[0] = addr;
-  return noErr;
+  return 0;
 }
 
 /* ─── OTRandomAddr
@@ -734,7 +727,7 @@ InetHost OTRandomAddr(InetHostInfo *host) {
  * MX lookup stub – Eudora falls back gracefully to a direct connection
  * when no MX records are returned, so we simply return errNoMXRecords.
  */
-OSErr OTGetDomainMX(InetDomainName hostName, InetMailExchange *MXPtr,
+int OTGetDomainMX(InetDomainName hostName, InetMailExchange *MXPtr,
                     short *numMX) {
   (void)hostName;
   (void)MXPtr;
@@ -770,7 +763,7 @@ void GetPreferredMX(InetDomainName preferredName, InetMailExchange *MXPtr,
  * ───────────────────────────────────────────────────────────── */
 
 void OTFlushInput(TransStream stream, uint32_t timeout) {
-  unsigned char junk[256];
+  char junk[256];
   long got;
   if (!stream || stream->sockfd < 0)
     return;
@@ -802,7 +795,7 @@ static short errorMessages[errMyLastOTErr - errOTInitFailed] = {
     OT_MISSING_LIBRARY,    /* errOTMissingLib   */
 };
 
-static void OTTELo(OSErr generalError, OSErr specificError, StringPtr message) {
+static void OTTELo(int generalError, int specificError, char *message) {
   (void)specificError;
   if (generalError >= errOTInitFailed && generalError < errMyLastOTErr)
     GetRString(message, errorMessages[generalError - errOTInitFailed]);
@@ -810,19 +803,18 @@ static void OTTELo(OSErr generalError, OSErr specificError, StringPtr message) {
     GetRString(message, TCP_TROUBLE);
 }
 
-OSErr OTTE(TransStream stream, OSErr generalError, OSErr specificError,
+int OTTE(TransStream stream, int generalError, int specificError,
            short file, short line) {
-  if (generalError != noErr && (stream == NULL || !stream->BeSilent) &&
+  if (generalError != 0 && (stream == NULL || !stream->BeSilent) &&
       !AmQuitting &&
       (!CommandPeriod || stream == NULL ||
        (stream->Opening && !PrefIsSet(PREF_OFFLINE) &&
         !PrefIsSet(PREF_NO_OFF_OFFER)))) {
-    Str255 message, tcpMessage, debugStr, rawNumber;
+    char message[256], tcpMessage[256], debugStr[256], rawNumber[256];
     short realRef = SettingsRefN;
 
     tcpMessage[0] = 0;
-    rawNumber[0] = (unsigned char)snprintf(
-        (char *)rawNumber + 1, sizeof(rawNumber) - 1, "%d", specificError);
+    snprintf(rawNumber, sizeof(rawNumber), "%d", specificError);
     SettingsRefN = GetMainGlobalSettingsRefN();
     OTErrorToString(specificError, tcpMessage);
     OTTELo(generalError, specificError, message);
@@ -843,7 +835,7 @@ OSErr OTTE(TransStream stream, OSErr generalError, OSErr specificError,
 /* ─── OTErrorToString
  * ────────────────────────────────────────────────────────── */
 
-void OTErrorToString(short specificError, Str255 tcpMessage) {
+void OTErrorToString(short specificError, char *tcpMessage) {
   tcpMessage[0] = 0;
 
   if (specificError >= errOTInitFailed && specificError < errMyLastOTErr) {
@@ -872,7 +864,7 @@ void OTErrorToString(short specificError, Str255 tcpMessage) {
     const char *msg = strerror(-specificError);
     if (!msg)
       msg = "Unknown network error";
-    MakePStr(tcpMessage, msg, strlen(msg));
+    strcpy(tcpMessage, msg);
   }
 }
 
@@ -954,36 +946,36 @@ void KillDeadMyTStreams(bool destroy) {
 /* ─── OTVerifyOpen (RAS/PPP stub)
  * ────────────────────────────────────────────── */
 
-OSErr OTVerifyOpen(TransStream stream) {
+int OTVerifyOpen(TransStream stream) {
   /* Stub: no dial-up/PPP/RAS — assume always connected. */
   if (stream)
-    stream->streamErr = noErr;
+    stream->streamErr = 0;
   needPPPConnection = false;
   MyOTPPPInfo.state = kPPPUp;
   MyOTPPPInfo.weConnectedPPP = false;
-  return noErr;
+  return 0;
 }
 
 /* ─── GetHostByAddr / GetHostByName
  * ──────────────────────────────────────────── */
 
-OSErr GetHostByAddr(struct hostInfo *hostInfoPtr, long addr) {
+int GetHostByAddr(struct hostInfo *hostInfoPtr, long addr) {
   /* Detect private/NAT ranges and return a literal string */
   if ((addr & 0xff000000) == 0x0A000000 || (addr & 0xfff00000) == 0xAC100000 ||
       (addr & 0xffff0000) == 0xC0A80000) {
-    Str31 literal;
+    char literal[32];
     ComposeRString(literal, NAT_FMT, addr);
-    strcpy(hostInfoPtr->cname, (char *)literal);
+    strcpy(hostInfoPtr->cname, literal);
     hostInfoPtr->addr[0] = (unsigned long)addr;
     hostInfoPtr->rtnCode = 0;
-    return noErr;
+    return 0;
   }
 
   {
     InetHostInfo domainName;
     short count;
-    OSErr err = OTGetHostByAddr((InetHost)addr, &domainName);
-    if (err == noErr) {
+    int err = OTGetHostByAddr((InetHost)addr, &domainName);
+    if (err == 0) {
       strcpy(hostInfoPtr->cname, domainName.name);
       for (count = 0; count < NUM_ALT_ADDRS; count++)
         hostInfoPtr->addr[count] = domainName.addrs[count];
@@ -993,16 +985,16 @@ OSErr GetHostByAddr(struct hostInfo *hostInfoPtr, long addr) {
   }
 }
 
-int GetHostByName(unsigned char *name, struct hostInfo **hostInfoPtr) {
+int GetHostByName(const char *name, struct hostInfo **hostInfoPtr) {
   static struct hostInfo trickCaller;
   InetHostInfo domainName;
   InetDomainName hostName;
   short count;
   int err;
 
-  PtoCcpy(hostName, name);
+  strcpy(hostName, name);
   err = OTGetHostByName(hostName, &domainName);
-  if (err == noErr) {
+  if (err == 0) {
     *hostInfoPtr = &trickCaller;
     strcpy(trickCaller.cname, domainName.name);
     for (count = 0; count < NUM_ALT_ADDRS; count++)
@@ -1015,18 +1007,18 @@ int GetHostByName(unsigned char *name, struct hostInfo **hostInfoPtr) {
 /* ─── PPP/RAS stubs
  * ──────────────────────────────────────────────────────────── */
 
-OSErr SelectedConnectionMode(unsigned long *sel, bool forceRead) {
+int SelectedConnectionMode(unsigned long *sel, bool forceRead) {
   (void)forceRead;
   if (sel)
     *sel = kOtherSelected;
-  return noErr;
+  return 0;
 }
 
 bool CanCheckPPPState(void) { return false; }
 bool CanChangePPPState(void) { return false; }
 bool PPPDown(void) { return false; }
 bool PPPIsMostDefinitelyUpAndRunning(void) { return true; }
-OSErr OTConnectForLink(void) { return noErr; }
+int OTConnectForLink(void) { return 0; }
 bool UserIdle(uint32_t ticks) {
   (void)ticks;
   return false;
@@ -1068,10 +1060,10 @@ void TcpFastFlush(bool destroy) {
  * Ported from Mac ph.c, adapted for direct pointer (no Handle).
  * ──────────────────────────────────────────────────────────────── */
 
-OSErr NetRecvLine(TransStream stream, UPtr line, long *size) {
+int NetRecvLine(TransStream stream, char *line, long *size) {
   long bSize = *size;
-  UPtr anchor, end;
-  unsigned char c;
+  char *anchor, *end;
+  char c;
 
   if (!stream->RcvBuffer)
     return (CommandPeriod ? userCancelled : memFullErr);
@@ -1083,7 +1075,7 @@ OSErr NetRecvLine(TransStream stream, UPtr line, long *size) {
   while (anchor < end) {
     if (stream->RcvSpot >= 0) {
       /* There are buffered chars — scan for newline */
-      UPtr rPtr = stream->RcvBuffer + stream->RcvSpot;
+      char *rPtr = stream->RcvBuffer + stream->RcvSpot;
       for (c = *rPtr++; anchor < end; c = *rPtr++) {
         if (c && c != '\015') {
           *anchor++ = c;
@@ -1103,7 +1095,7 @@ OSErr NetRecvLine(TransStream stream, UPtr line, long *size) {
       if ((anchor > line && anchor[-1] == '\015') || anchor >= end) {
         *size = anchor - line;
         *anchor = 0;
-        return noErr;
+        return 0;
       }
     } else {
       /* Need more data from network */
@@ -1123,7 +1115,7 @@ OSErr NetRecvLine(TransStream stream, UPtr line, long *size) {
   }
   *size = anchor - line;
   *anchor = 0;
-  return noErr;
+  return 0;
 }
 
 /* ─── OTTCPTrans — TransVector for POSIX TCP transport
@@ -1133,11 +1125,11 @@ OSErr NetRecvLine(TransStream stream, UPtr line, long *size) {
  * ──────────────────────────────────────────────────────────────── */
 
 TransVector OTTCPTrans = {
-    (int (*)(TransStream, unsigned char *, long, int, unsigned long))OTTCPConnectTrans,
-    (int (*)(TransStream, unsigned char *, long, ...))OTTCPSendTrans,
+    (int (*)(TransStream, const char *, long, bool, unsigned long))OTTCPConnectTrans,
+    (int (*)(TransStream, const char *, long, ...))OTTCPSendTrans,
     OTTCPRecvTrans,
     OTTCPDisTrans,     OTTCPDestroyTrans, OTTCPTransError,
-    (void (*)(TransStream, int))OTTCPSilenceTrans,
+    (void (*)(TransStream, bool))OTTCPSilenceTrans,
     NULL,              OTTCPWhoAmI,
     NetRecvLine,       NULL
 };
@@ -1158,25 +1150,25 @@ TransVector GetTCPTrans(void) {
 /* ─── CheckConnectionSettings
  * ────────────────────────────────────────────────── */
 
-OSErr CheckConnectionSettings(unsigned char *host, long port,
-                              StringPtr errorMessage) {
-  OSErr err = noErr;
+int CheckConnectionSettings(const char *host, long port,
+                               char *errorMessage) {
+  int err = 0;
   TransStream stream = NULL;
   bool oldPref = PrefIsSet(PREF_IGNORE_PPP);
 
-  if (noErr == (err = NewTransStream(&stream))) {
+  if (0 == (err = NewTransStream(&stream))) {
     SetPref(PREF_IGNORE_PPP, YesStr);
-    err = ConnectTrans(stream, host, port, true, GetRLong(SHORT_OPEN_TIMEOUT));
+    err = ConnectTrans(stream, (char *)host, port, true, GetRLong(SHORT_OPEN_TIMEOUT));
     SetPref(PREF_IGNORE_PPP, oldPref ? YesStr : NoStr);
 
-    if (noErr != err && errorMessage != NULL) {
+    if (0 != err && errorMessage != NULL) {
       short realRef = SettingsRefN;
       SettingsRefN = GetMainGlobalSettingsRefN();
       OTTELo(errOpenStream, stream->streamErr, errorMessage);
       SettingsRefN = realRef;
     }
 
-    if (noErr == err)
+    if (0 == err)
       DestroyTrans(stream);
     ZapTransStream(&stream);
   }

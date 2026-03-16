@@ -76,12 +76,12 @@ typedef void *ControlUserPaneBackgroundUPP;
 
 static inline void *NewMenu(short id, const char *title) { return NULL; }
 static inline void *IsMessWindow(void *win) { return NULL; }
-static inline void GetWTitle(void *win, unsigned char *title) {
+static inline void GetWTitle(void *win, char *title) {
   if (title)
     *title = 0;
 }
 /* SetWTitle - real impl in mywindow.c */
-void SetWTitle(void *winWP, unsigned char *title);
+void SetWTitle(void *winWP, const char *title);
 static inline void InsertMenu(void *mh, short item) {}
 static inline void SetDItemValue(void *dp, short item, short value) {}
 static inline short GetDItemValue(void *dp, short item) { return 0; }

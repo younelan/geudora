@@ -658,8 +658,8 @@ int ArchiveJunk(TOCType * tocH) {
 
     // progress dialog
     OpenProgress();
-    ProgressMessage(kpTitle, (const char *)ComposeRString(dest, TRIMMING_JUNK,
-                                                          FILE_ALIAS_JUNK));
+    ProgressMessage(kpTitle, ComposeRString(dest, TRIMMING_JUNK,
+                                           FILE_ALIAS_JUNK));
 
     // where are we going?
     GetRString((char *)dest, JUNK_MAILBOX_EMPTY_DEST);
@@ -762,7 +762,7 @@ int ArchiveIMAPJunk(void) {
 
             // progress dialog
             OpenProgress();
-            ProgressMessage(kpTitle, (const char *)ComposeRString(
+            ProgressMessage(kpTitle, ComposeRString(
                                          dest, TRIMMING_JUNK, FILE_ALIAS_JUNK));
 
             // where are we going?

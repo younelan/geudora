@@ -239,6 +239,7 @@ typedef struct TOCType {
 
 /* Function prototypes */
 void InvalSum(TOCType * tocH, short sumNum);
+TOCType * IsTOCValid(TOCType * testTOC);
 short FindSumByHash(TOCType * tocH, uint32_t hash);
 TOCType * GetSpecialTOC(short nameId);
 TOCType * GetRealTOC(TOCType * tocH, short sum, short *realSum);

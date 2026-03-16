@@ -70,7 +70,7 @@ static long LogFileSize(void) {
 
 /* ─── Log ────────────────────────────────────────────────────────────────── */
 
-unsigned char *Log(unsigned long level, unsigned char *string) {
+char *Log(unsigned long level, const char *string) {
   MyThreadBeginCritical();
 
   if (level == 0xFFFFFFFF || (level & LogLevel) != 0) {
@@ -106,18 +106,18 @@ unsigned char *Log(unsigned long level, unsigned char *string) {
   }
 
   MyThreadEndCritical();
-  return string;
+  return (char *)string;
 }
 
 /* ─── ComposeLogR ────────────────────────────────────────────────────────── */
 
-unsigned char *ComposeLogR(unsigned long level, unsigned char *into,
+char *ComposeLogR(unsigned long level, char *into,
                            short format, ...) {
   char buf[256];
   snprintf(buf, sizeof(buf), "[LogR format=%d]", format);
   if (into)
-    strncpy((char *)into, buf, 255);
-  Log(level, (unsigned char *)buf);
+    strncpy(into, buf, 255);
+  Log(level, buf);
   return into;
 }
 
@@ -130,10 +130,10 @@ unsigned char *ComposeLogR(unsigned long level, unsigned char *into,
  *   - Convert Mac CR (\015) to Unix LF (\n)
  * This way all existing callers work without modification.
  */
-unsigned char *ComposeLogS(unsigned long level, unsigned char *into,
-                           unsigned char *format, ...) {
+char *ComposeLogS(unsigned long level, char *into,
+                           const char *format, ...) {
   char buf[512];
-  const char *fmt = (const char *)format;
+  const char *fmt = format;
 
   /* Skip Pascal length byte if present */
   if (fmt && (unsigned char)fmt[0] < 32 && fmt[0] != '\0')
@@ -161,11 +161,11 @@ unsigned char *ComposeLogS(unsigned long level, unsigned char *into,
   va_end(args);
 
   if (into) {
-    strncpy((char *)into, buf, 255);
+    strncpy(into, buf, 255);
     into[255] = '\0';
   }
 
-  Log(level, (unsigned char *)buf);
+  Log(level, buf);
   return into;
 }
 
@@ -233,154 +233,136 @@ static void OpenLog(void) {
 void LogAlert(short template_id) {
   char buf[64];
   snprintf(buf, sizeof(buf), "ALRT %d", template_id);
-  Log(LOG_ALRT, (unsigned char *)buf);
+  Log(LOG_ALRT, buf);
 }
 
 /* ─── MyParamText ────────────────────────────────────────────────────────── */
 
-void MyParamText(PStr p1, PStr p2, PStr p3, PStr p4) {
+void MyParamText(const char *p1, const char *p2, const char *p3, const char *p4) {
   P1[0] = 0;
   P2[0] = 0;
   P3[0] = 0;
   P4[0] = 0;
   if (p1 && *p1) {
-    PCopy(P1, p1);
-    /* Convert Pascal to C for logging */
-    char cbuf[256];
-    int len = (unsigned char)p1[0];
-    if (len > 254) len = 254;
-    memcpy(cbuf, p1 + 1, len);
-    cbuf[len] = '\0';
-    Log(LOG_ALRT, (unsigned char *)cbuf);
+    g_strlcpy(P1, p1, sizeof(P1));
+    Log(LOG_ALRT, p1);
   }
   if (p2 && *p2) {
-    PCopy(P2, p2);
-    char cbuf[256];
-    int len = (unsigned char)p2[0];
-    if (len > 254) len = 254;
-    memcpy(cbuf, p2 + 1, len);
-    cbuf[len] = '\0';
-    Log(LOG_ALRT, (unsigned char *)cbuf);
+    g_strlcpy(P2, p2, sizeof(P2));
+    Log(LOG_ALRT, p2);
   }
   if (p3 && *p3) {
-    PCopy(P3, p3);
-    char cbuf[256];
-    int len = (unsigned char)p3[0];
-    if (len > 254) len = 254;
-    memcpy(cbuf, p3 + 1, len);
-    cbuf[len] = '\0';
-    Log(LOG_ALRT, (unsigned char *)cbuf);
+    g_strlcpy(P3, p3, sizeof(P3));
+    Log(LOG_ALRT, p3);
   }
   if (p4 && *p4) {
-    PCopy(P4, p4);
-    char cbuf[256];
-    int len = (unsigned char)p4[0];
-    if (len > 254) len = 254;
-    memcpy(cbuf, p4 + 1, len);
-    cbuf[len] = '\0';
-    Log(LOG_ALRT, (unsigned char *)cbuf);
+    g_strlcpy(P4, p4, sizeof(P4));
+    Log(LOG_ALRT, p4);
   }
 }
 
 /* ─── CarefulLog ─────────────────────────────────────────────────────────── */
 
-void CarefulLog(unsigned long level, short format, unsigned char *data,
+void CarefulLog(unsigned long level, short format, const char *data,
                 short dSize) {
   if (!(level & LogLevel))
     return;
 
   char logBuf[256];
-  unsigned char *dataEnd = data + dSize;
+  const char *ptr = data;
+  const char *dataEnd = data + dSize;
 
-  while (data < dataEnd) {
+  while (ptr < dataEnd) {
     char *to = logBuf;
     char *toEnd = logBuf + sizeof(logBuf) - 6;
 
-    while (data < dataEnd && to < toEnd) {
-      if (*data < ' ') {
-        switch (*data) {
+    while (ptr < dataEnd && to < toEnd) {
+      if ((unsigned char)*ptr < ' ') {
+        switch (*ptr) {
         case '\n': *to++ = '\\'; *to++ = 'n'; break;
         case '\r': *to++ = '\\'; *to++ = 'r'; break;
         case '\t': *to++ = '\t'; break;
         default:
           *to++ = '\\';
-          *to++ = '0' + (*data / 64) % 8;
-          *to++ = '0' + (*data / 8) % 8;
-          *to++ = '0' + *data % 8;
+          *to++ = '0' + ((unsigned char)*ptr / 64) % 8;
+          *to++ = '0' + ((unsigned char)*ptr / 8) % 8;
+          *to++ = '0' + (unsigned char)*ptr % 8;
           break;
         }
       } else {
-        *to++ = *data;
+        *to++ = *ptr;
       }
-      data++;
-      if (data[-1] == '\n')
+      ptr++;
+      if (ptr[-1] == '\n')
         break;
     }
     *to = '\0';
-    Log(level, (unsigned char *)logBuf);
+    Log(level, logBuf);
   }
 }
 
 /* ─── LineLog ────────────────────────────────────────────────────────────── */
 
-void LineLog(unsigned long level, short format, unsigned char *data,
+void LineLog(unsigned long level, short format, const char *data,
              short dSize) {
   if (!(level & LogLevel))
     return;
 
   char logBuf[256];
-  unsigned char *dataEnd = data + dSize;
+  const char *ptr = data;
+  const char *dataEnd = data + dSize;
 
-  while (data < dataEnd) {
+  while (ptr < dataEnd) {
     char *to = logBuf;
     char *toEnd = logBuf + sizeof(logBuf) - 6;
 
-    while (data < dataEnd && to < toEnd) {
-      if (*data == '\r') {
-        data++;
+    while (ptr < dataEnd && to < toEnd) {
+      if (*ptr == '\r') {
+        ptr++;
         break; /* line boundary */
-      } else if (*data < ' ') {
-        switch (*data) {
+      } else if ((unsigned char)*ptr < ' ') {
+        switch (*ptr) {
         case '\n': *to++ = '\\'; *to++ = 'n'; break;
         case '\t': *to++ = '\t'; break;
         default:
           *to++ = '\\';
-          *to++ = '0' + (*data / 64) % 8;
-          *to++ = '0' + (*data / 8) % 8;
-          *to++ = '0' + *data % 8;
+          *to++ = '0' + ((unsigned char)*ptr / 64) % 8;
+          *to++ = '0' + ((unsigned char)*ptr / 8) % 8;
+          *to++ = '0' + (unsigned char)*ptr % 8;
           break;
         }
       } else {
-        *to++ = *data;
+        *to++ = *ptr;
       }
-      data++;
-      if (data[-1] == '\n')
+      ptr++;
+      if (ptr[-1] == '\n')
         break;
     }
     *to = '\0';
-    Log(level, (unsigned char *)logBuf);
+    Log(level, logBuf);
   }
 }
 
 /* ─── HexLog ─────────────────────────────────────────────────────────────── */
 
-void HexLog(unsigned long level, short format, unsigned char *data,
+void HexLog(unsigned long level, short format, const char *data,
             short dSize) {
   if (!(level & LogLevel))
     return;
 
   char logBuf[128];
-  unsigned char *dataEnd = data + dSize;
+  const char *ptr = data;
+  const char *dataEnd = data + dSize;
 
-  while (data < dataEnd) {
-    unsigned char *end = (data + 32 < dataEnd) ? data + 32 : dataEnd;
+  while (ptr < dataEnd) {
+    const char *end = (ptr + 32 < dataEnd) ? ptr + 32 : dataEnd;
     char *p = logBuf;
-    while (data < end) {
-      *p++ = "0123456789ABCDEF"[(*data >> 4) & 0xF];
-      *p++ = "0123456789ABCDEF"[*data & 0xF];
-      data++;
+    while (ptr < end) {
+      *p++ = "0123456789ABCDEF"[((unsigned char)*ptr >> 4) & 0xF];
+      *p++ = "0123456789ABCDEF"[(unsigned char)*ptr & 0xF];
+      ptr++;
     }
     *p = '\0';
-    Log(level, (unsigned char *)logBuf);
+    Log(level, logBuf);
   }
 }

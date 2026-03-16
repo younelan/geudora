@@ -555,7 +555,14 @@ short GetMyMail(TransStream stream, bool quietly, short *gotSome,
                 }
               g_print("GetMyMail: fetch loop done, fetched=%d inThread=%d tocH->count=%d\n", fetched, inThread, tocH ? tocH->count : -1);
               fflush(stdout);
-              if (inThread)
+              /*
+               * Ensure any messages already sitting in In.temp get moved into
+               * the delivery folder for filtering even when this particular
+               * fetch didn't retrieve new messages. Previously this only ran
+               * when running in a background thread; call whenever the temp
+               * inbox contains messages.
+               */
+              if (tocH && tocH->count)
                 RenameInTemp(tocH);
             }
 
@@ -757,8 +764,8 @@ int EndPOP(TransStream stream) {
  * POPIntroductions - sniff the POP server's bottom, and vice-versa
  ************************************************************************/
 int POPIntroductions(TransStream stream, PStr user, bool *capabilities) {
-  unsigned char buffer[256];
-  unsigned char args[256];
+  char buffer[256];
+  char args[256];
   long size;
   int result = -1;
   bool useAPOP = PrefIsSet(PREF_APOP);
@@ -2920,19 +2927,18 @@ bool GenDigest(unsigned char *banner, unsigned char *secret,
   MD5_CTX md5;
   short i;
 
-  if (!*ExtractStamp(stamp, banner))
+  if (!ExtractStamp(stamp, banner)[0])
     return (False);
 
   MD5Init(&md5);
-  MD5Update(&md5, stamp + 1, *stamp);
-  MD5Update(&md5, secret + 1, *secret);
+  MD5Update(&md5, stamp, strlen((const char *)stamp));
+  MD5Update(&md5, secret, strlen((const char *)secret));
   MD5Final(&md5);
 
   for (i = 0; i < sizeof(md5.digest); i++) {
-    digest[2 * i + 1] = hex[(md5.digest[i] >> 4) & 0xf];
-    digest[2 * i + 2] = hex[md5.digest[i] & 0xf];
+    sprintf((char *)digest + (2 * i), "%02x", md5.digest[i]);
   }
-  digest[0] = 2 * sizeof(md5.digest);
+  digest[2 * sizeof(md5.digest)] = '\0';
   return (True);
 }
 
@@ -2945,42 +2951,22 @@ bool GenDigest(unsigned char *banner, unsigned char *secret,
 bool GenKeyedDigest(unsigned char *banner, unsigned char *secret,
                     unsigned char *digest) {
   unsigned char stamp[256];
-  MD5_CTX /*ipadMD5,*/ md5;
+  MD5_CTX md5;
   short i;
-  /*	Str255 localS; */
 
-  if (!*ExtractStamp(stamp, banner))
+  if (!ExtractStamp(stamp, banner)[0])
     return (False);
 
-  /*
-          Zero(localS);
-          BMD(secret+1,localS,*secret);
-          for (i=0;i<kmd5Len;i++) localS[i] ^= kmd5ipad;
-
-          MD5Init(&ipadMD5);
-          MD5Update(&ipadMD5,localS,kmd5Len);
-          MD5Update(&ipadMD5,stamp+1,*stamp);
-          MD5Final(&ipadMD5);
-
-          Zero(localS);
-          BMD(secret+1,localS,*secret);
-          for (i=0;i<kmd5Len;i++) localS[i] ^= kmd5opad;
-
-          MD5Init(&md5);
-          MD5Update(&md5,localS,kmd5Len);
-          MD5Update(&md5,ipadMD5.digest,sizeof(ipadMD5.digest));
-          MD5Final(&md5);
-  */
 #ifndef hmac_md5
 #define hmac_md5(s, sl, k, kl, d)
 #endif
-  hmac_md5(stamp + 1, *stamp, secret + 1, *secret, &md5.digest);
+  hmac_md5(stamp, strlen((const char *)stamp), secret,
+           strlen((const char *)secret), &md5.digest);
 
   for (i = 0; i < sizeof(md5.digest); i++) {
-    digest[2 * i + 1] = hex[(md5.digest[i] >> 4) & 0xf];
-    digest[2 * i + 2] = hex[md5.digest[i] & 0xf];
+    sprintf((char *)digest + (2 * i), "%02x", md5.digest[i]);
   }
-  digest[0] = 2 * sizeof(md5.digest);
+  digest[2 * sizeof(md5.digest)] = '\0';
   return (True);
 }
 
@@ -3923,8 +3909,8 @@ OSErr KerbGetTicket(PStr serviceName, PStr inHost, PStr realm, PStr version,
    * call the driver
    */
 
-  err = KClientMakeSendAuthCompat(&gSession, fullName + 1, *ticket, &bufLen,
-                                  GetRLong(KERBEROS_CHECKSUM), version + 1);
+  err = KClientMakeSendAuthCompat(&gSession, fullName, *ticket, &bufLen,
+                                  GetRLong(KERBEROS_CHECKSUM), version);
 
   /*
    * adjust the ticket size

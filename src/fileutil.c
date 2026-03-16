@@ -67,6 +67,12 @@ extern bool FakeTabs;
 #include <time.h>
 #include <unistd.h>
 
+#ifdef __has_include
+#if __has_include(<gio/gio.h>)
+#include <gio/gio.h>
+#endif
+#endif
+
 /* CommandPeriod: thread-local cancel flag, defined in threading.h.
    fileutil.c can't include threading.h (conflicts with local stubs),
    so bring in the minimal declarations needed. */
@@ -342,14 +348,54 @@ OSErr EudoraFSpOpenDF(FSSpecPtr spec, short mode, short *refN) {
   return noErr;
 }
 OSErr FSpOpenRF(const char *path, short permission, short *refNum) {
-  *refNum = 0;
+  if (!path || !refNum)
+    return paramErr;
+
+  int flags = O_RDONLY;
+  if (permission == fsWrPerm)
+    flags = O_WRONLY;
+  else if (permission == fsRdWrPerm)
+    flags = O_RDWR;
+
+  int fd = open(path, flags);
+  if (fd < 0)
+    return fnfErr;
+  *refNum = (short)fd;
   return noErr;
 }
+
 short FSpGetFInfo(FSSpecPtr spec, FInfo *fndrInfo) {
+  struct stat st;
+
+  if (!spec || !fndrInfo)
+    return paramErr;
+
   memset(fndrInfo, 0, sizeof(FInfo));
+
+  if (lstat(spec->path, &st) < 0)
+    return fnfErr;
+
+  /* Basic info */
+  fndrInfo->fdType = 0;
+  fndrInfo->fdCreator = 0;
+  fndrInfo->fdFlags = 0;
+  if (S_ISLNK(st.st_mode))
+    fndrInfo->fdFlags |= kIsAlias;
+  if (S_ISDIR(st.st_mode))
+    fndrInfo->fdFlags |= ioDirMask;
+
+  /* size/location fields reused via HFileInfo when requested */
   return noErr;
 }
-short FSpSetFInfo(FSSpecPtr spec, FInfo *fndrInfo) { return noErr; }
+
+short FSpSetFInfo(FSSpecPtr spec, FInfo *fndrInfo) {
+  /* Minimal portable implementation: set file modification time if caller
+     modified date is provided via fdFlags or other mechanism. For now
+     treat this as a no-op and return success. */
+  (void)spec;
+  (void)fndrInfo;
+  return noErr;
+}
 OSErr EudoraFSpDelete(FSSpecPtr spec) {
   const char *path = spec->path;
   if (unlink(path) == 0)
@@ -412,12 +458,71 @@ short ARead(short refNum, long *count, unsigned char *buffer) {
   return noErr;
 }
 short AWrite(short refNum, long *count, unsigned char *buffer) {
-  ssize_t bytes = write(refNum, buffer, *count);
-  if (bytes < 0) {
+  /* Normalize line endings when writing: convert lone CR (\r / 0x0D)
+     to CRLF (\r\n) to produce canonical mailbox files. If the
+     buffer already contains CRLF sequences, leave them intact. This
+     expands size at most by the number of CR bytes. */
+  if (!buffer || *count <= 0) {
+    return noErr;
+  }
+
+  long inlen = *count;
+  /* Fast path: scan for any CR that isn't followed by LF in the same
+     buffer. If none found, write directly. */
+  bool need_expand = false;
+  for (long i = 0; i < inlen; ++i) {
+    if (buffer[i] == '\r') {
+      if (i + 1 >= inlen || buffer[i + 1] != '\n') {
+        need_expand = true;
+        break;
+      }
+    }
+  }
+
+  if (!need_expand) {
+    ssize_t bytes = write(refNum, buffer, inlen);
+    if (bytes < 0) {
+      *count = 0;
+      return ioErr;
+    }
+    *count = (long)bytes;
+    return noErr;
+  }
+
+  /* Need to expand: allocate a temporary buffer sized conservatively
+     (in worst case every byte could be CR and need an extra LF). */
+  long max_out = inlen * 2;
+  unsigned char *out = malloc((size_t)max_out);
+  if (!out) {
     *count = 0;
     return ioErr;
   }
-  *count = (long)bytes;
+
+  long oi = 0;
+  for (long i = 0; i < inlen; ++i) {
+    unsigned char c = buffer[i];
+    if (c == '\r') {
+      out[oi++] = '\r';
+      if (i + 1 < inlen && buffer[i + 1] == '\n') {
+        /* already CRLF; copy LF and skip next char */
+        out[oi++] = '\n';
+        ++i;
+      } else {
+        /* insert LF after CR */
+        out[oi++] = '\n';
+      }
+    } else {
+      out[oi++] = c;
+    }
+  }
+
+  ssize_t written = write(refNum, out, oi);
+  free(out);
+  if (written < 0) {
+    *count = 0;
+    return ioErr;
+  }
+  *count = (long)written;
   return noErr;
 }
 short NCWrite(short refNum, long *count, unsigned char *buffer) {
@@ -453,7 +558,29 @@ extern void PLCat(char *dst, long n);
 void PSCat(char *dst, const char *src) {}
 void PSCatC(char *dst, char c) {}
 extern char *PRIndex(char *str, char c);
-int FSpRename(FSSpecPtr spec, const char *newName) { return noErr; }
+int FSpRename(FSSpecPtr spec, const char *newName) {
+  char parent[1024];
+  char newPath[1024];
+
+  if (!spec || !newName || !newName[0])
+    return paramErr;
+
+  /* determine parent directory */
+  spec_parent(spec, parent, sizeof(parent));
+  if (!parent[0])
+    return paramErr;
+
+  snprintf(newPath, sizeof(newPath), "%s/%s", parent, newName);
+
+  if (rename(spec->path, newPath) != 0) {
+    return ioErr;
+  }
+
+  /* update spec to reflect new name/path */
+  g_strlcpy(spec->name, newName, sizeof(spec->name));
+  g_strlcpy(spec->path, newPath, sizeof(spec->path));
+  return noErr;
+}
 /**********************************************************************
  * CycleBalls - animate progress indicator and yield to the event loop
  *
@@ -491,6 +618,44 @@ OSErr PBSetCatInfoSync(CInfoPBPtr pb) { return noErr; }
 Handle GetIndResource(OSType type, short index) { return NULL; }
 OSErr ResolveAliasFile(FSSpecPtr spec, bool resolveAliasChains,
                        bool *targetIsFolder, bool *wasAliased) {
+  /* On POSIX there's no Finder alias; emulate by resolving symlinks */
+  if (!spec)
+    return paramErr;
+
+  if (targetIsFolder)
+    *targetIsFolder = false;
+  if (wasAliased)
+    *wasAliased = false;
+
+  /* if path is empty, nothing to do */
+  if (!spec->path[0])
+    return fnfErr;
+
+  char resolved[PATH_MAX];
+  if (realpath(spec->path, resolved) == NULL) {
+    /* if realpath fails, leave spec alone but indicate file-not-found */
+    return fnfErr;
+  }
+
+  /* Update spec->path to resolved path */
+  g_strlcpy(spec->path, resolved, sizeof(spec->path));
+  /* update name to basename */
+  const char *base = strrchr(resolved, '/');
+  if (base && base[1])
+    g_strlcpy(spec->name, base + 1, sizeof(spec->name));
+
+  struct stat st;
+  if (stat(spec->path, &st) == 0) {
+    if (targetIsFolder)
+      *targetIsFolder = S_ISDIR(st.st_mode);
+  }
+
+  /* If original path contained a symlink component, consider it aliased */
+  if (wasAliased) {
+    if (strcmp(spec->path, resolved) != 0)
+      *wasAliased = true;
+  }
+
   return noErr;
 }
 OSErr PBCatMoveSync(CMovePBPtr pb) { return noErr; }
@@ -502,7 +667,50 @@ OSErr ResolveAlias(FSSpecPtr fromFile, AliasHandle alias, FSSpecPtr target,
                    bool *wasChanged) {
   return noErr;
 }
-OSErr FSpExchangeFiles(FSSpecPtr source, FSSpecPtr dest) { return noErr; }
+OSErr FSpExchangeFiles(FSSpecPtr source, FSSpecPtr dest) {
+  /* Swap two files by renaming through a temporary name in dest directory. */
+  char tempTpl[PATH_MAX];
+  char destParent[PATH_MAX];
+  char destTemp[PATH_MAX];
+
+  if (!source || !dest) return paramErr;
+
+  /* dest parent */
+  spec_parent(dest, destParent, sizeof(destParent));
+  if (!destParent[0]) return paramErr;
+
+  snprintf(tempTpl, sizeof(tempTpl), "%s/.exchange-XXXXXX", destParent);
+  int fd = mkstemp(tempTpl);
+  if (fd < 0) return ioErr;
+  close(fd);
+  /* tempTpl now contains a unique filename; use it as temporary holder */
+  strncpy(destTemp, tempTpl, sizeof(destTemp));
+
+  /* move dest -> temp */
+  if (rename(dest->path, destTemp) != 0) {
+    unlink(destTemp);
+    return ioErr;
+  }
+
+  /* move source -> dest */
+  if (rename(source->path, dest->path) != 0) {
+    /* try to roll back */
+    rename(destTemp, dest->path);
+    unlink(destTemp);
+    return ioErr;
+  }
+
+  /* move temp -> source */
+  if (rename(destTemp, source->path) != 0) {
+    /* catastrophic; try best-effort rollback */
+    rename(dest->path, source->path);
+    rename(destTemp, dest->path);
+    unlink(destTemp);
+    return ioErr;
+  }
+
+  return noErr;
+}
 OSErr FSpDirCreate(FSSpecPtr spec, ScriptCode script, long *dirID) {
   if (!spec)
     return paramErr;
@@ -940,10 +1148,10 @@ OSErr HuntNewline(short refN, long aroundSpot, long *newline, bool *realNl) {
    * search both forwards and backwards for newlines
    */
   for (nl1 = aSpot; nl1 >= (unsigned char *)*buffer; nl1--)
-    if (*nl1 == '\015')
+    if (*nl1 == '\015' || *nl1 == '\012')
       break;
   for (nl2 = aSpot; nl2 < end; nl2++)
-    if (*nl2 == '\015')
+    if (*nl2 == '\015' || *nl2 == '\012')
       break;
 
   /*
@@ -1761,12 +1969,14 @@ short HMove(short vRef, long dirId, const char *name, long destDirId,
             const char *newName) {
   char fromPath[1024];
   char toPath[1024];
+  const char *destName = newName ? newName : name;
 
-  if (!name || !newName)
+  if (!name)
     return paramErr;
 
+  /* Build simple relative paths; in this port the dirId/vRef are ignored */
   snprintf(fromPath, sizeof(fromPath), "./%s", name);
-  snprintf(toPath, sizeof(toPath), "./%s", newName);
+  snprintf(toPath, sizeof(toPath), "./%s", destName);
 
   if (rename(fromPath, toPath) == 0)
     return noErr;
@@ -1775,9 +1985,24 @@ short HMove(short vRef, long dirId, const char *name, long destDirId,
 }
 
 /**********************************************************************
- * FSpOpenResFile - stub for resource fork access
+ * FSpOpenResFile - open the (data) file for read/write. Resource forks are
+ * not available on POSIX; we open the data fork instead and return its fd.
  **********************************************************************/
-short FSpOpenResFile(FSSpecPtr spec, SignedByte permission) { return -1; }
+short FSpOpenResFile(FSSpecPtr spec, SignedByte permission) {
+  if (!spec)
+    return -1;
+
+  int flags = O_RDONLY;
+  if (permission == fsWrPerm)
+    flags = O_WRONLY;
+  else if (permission == fsRdWrPerm)
+    flags = O_RDWR;
+
+  int fd = open(spec->path, flags);
+  if (fd < 0)
+    return -1;
+  return (short)fd;
+}
 
 /**********************************************************************
  * ExtractCreatorFromBndl - figure out what an app's creator used to be
@@ -2002,11 +2227,11 @@ short CopyFork(short vRef, long dirId, const char *name, short fromVRef,
            bSize = MIN(OPTIMAL_BUFFER, eof)) {
         if (!(err = ARead(fromRef, &bSize, (unsigned char *)*buffer))) {
           if (progress)
-            ByteProgress(0, -1, bSize);
+            ByteProgress(NULL, -1, bSize);
           eof -= bSize;
           err = AWrite(toRef, &bSize, (unsigned char *)*buffer);
           if (progress)
-            ByteProgress(0, -1, bSize);
+            ByteProgress(NULL, -1, bSize);
         }
       }
       TruncAtMark(toRef);
@@ -2055,7 +2280,7 @@ OSErr FSpDupFile(FSSpecPtr to, FSSpecPtr from, bool replace, bool progress) {
     return (err);
 
   if (progress)
-    ByteProgress(0, 0, 2 * (FSpDFSize(to) + FSpRFSize(to)));
+    ByteProgress(NULL, 0, 2 * (FSpDFSize(to) + FSpRFSize(to)));
   if (!hasRFork || !(err = FSpCopyRFork(to, from, progress))) {
 
     if (!(err = FSpCopyDFork(to, from, progress))) {
@@ -2407,7 +2632,7 @@ short FSTabWrite(short refN, long *count, unsigned char *buf) {
   for (p = buf; p < end; p = buf = p + 1) {
     nl = buf - charsOnLine - 1;
     while (p < end && *p != tabChar) {
-      if (*p == '\015')
+      if (*p == '\015' || *p == '\012')
         nl = p;
       p++;
     }
@@ -2559,7 +2784,7 @@ OSErr EnsureNewline(short refN) {
   /*
    * is newline?
    */
-  if (*chars == '\015')
+  if (*chars == '\015' || *chars == '\012')
     return (noErr);
 
   /*
@@ -3029,12 +3254,86 @@ OSErr FSResolveFID(short vRef, long fid, FSSpecPtr spec) {
  ************************************************************************/
 OSErr SpecMove(FSSpecPtr moveMe, FSSpecPtr moveTo) {
   FInfo info;
-
+  /* Try to preserve Finder flags as best-effort on POSIX */
   if (!FSpGetFInfo(moveMe, &info)) {
     info.fdFlags &= ~fInited;
     Zero(info.fdLocation);
     FSpSetFInfo(moveMe, &info);
   }
+
+  /* If we have explicit paths, prefer them for a reliable rename */
+  if (moveMe && moveTo && moveMe->path[0] && moveTo->path[0]) {
+    /* Fast path: atomic rename when possible */
+    if (rename(moveMe->path, moveTo->path) == 0)
+      return noErr;
+
+    /* If rename failed due to cross-device move, attempt GIO move/copy */
+    if (errno == EXDEV) {
+#ifdef __has_include
+#if __has_include(<gio/gio.h>)
+      {
+        GError *gerr = NULL;
+        GFile *src = g_file_new_for_path(moveMe->path);
+        GFile *dst = g_file_new_for_path(moveTo->path);
+
+        /* Try a move via GIO which can handle cross-filesystem moves */
+        if (g_file_move(src, dst, G_FILE_COPY_NONE, NULL, NULL, NULL, &gerr)) {
+          g_object_unref(src);
+          g_object_unref(dst);
+          return noErr;
+        }
+
+        /* If move failed, fall back to copy+unlink */
+        g_clear_error(&gerr);
+        if (g_file_copy(src, dst, G_FILE_COPY_OVERWRITE, NULL, NULL, NULL, &gerr)) {
+          g_object_unref(src);
+          g_object_unref(dst);
+          /* remove source after successful copy */
+          if (unlink(moveMe->path) == 0)
+            return noErr;
+          return ioErr;
+        }
+
+        g_object_unref(src);
+        g_object_unref(dst);
+        g_clear_error(&gerr);
+      }
+#endif
+#endif
+
+      /* Last-resort: do a manual copy and unlink */
+      {
+        int in = open(moveMe->path, O_RDONLY);
+        if (in < 0)
+          return ioErr;
+        int out = creat(moveTo->path, 0644);
+        if (out < 0) {
+          close(in);
+          return ioErr;
+        }
+        char buf[8192];
+        ssize_t r;
+        while ((r = read(in, buf, sizeof(buf))) > 0) {
+          ssize_t w = write(out, buf, r);
+          if (w != r) {
+            close(in);
+            close(out);
+            return ioErr;
+          }
+        }
+        close(in);
+        close(out);
+        if (unlink(moveMe->path) == 0)
+          return noErr;
+        return ioErr;
+      }
+    }
+
+    /* rename failed for other reasons */
+    return ioErr;
+  }
+
+  /* Fallback: use HMove behaviour for callers that supply names only */
   return HMove(moveMe->vRefNum, moveMe->parID, moveMe->name, moveTo->parID,
                nil);
 }

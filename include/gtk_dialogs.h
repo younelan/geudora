@@ -27,23 +27,23 @@ typedef int AlertType;
 
 /* Show standard alert dialog */
 short ComposeStdAlert(AlertType alertType, int msgResId, ...);
-void AlertStr(short alertID, short type, unsigned char *message);
+void AlertStr(short alertID, short type, const char *message);
 
 /* Progress dialog functions - signatures aligned with progress.h to avoid
   conflicting declarations when both headers are included. */
 int OpenProgress(void);
-void ProgressMessage(short which, const unsigned char *message);
+void ProgressMessage(short which, const char *message);
 int Nag(int id, void *p, void *proc, void *filter, bool b, ...);
 void ProgressMessageR(short which, short messageId);
 void CloseProgress(void);
 
 /* String resource functions */
-unsigned char *GetRString(unsigned char *dest, short id);
+char *GetRString(char *dest, short id);
 // unsigned char* ComposeRString(unsigned char *dest, int resId, ...);
 // bool EqualStrRes(const unsigned char *str, short resId);
 
 /* Preference functions */
-unsigned char *GetPref(unsigned char *dest, short prefId);
+char *GetPref(char *dest, short prefId);
 long GetPrefLong(short prefId);
 void SetPrefLong(short prefId, long value);
 void SetPref(int prefId, const char *value);

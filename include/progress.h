@@ -65,15 +65,15 @@ typedef enum {
 #endif
 
 int OpenProgress(void);
-void Progress(short percent, short remaining, PStr title, PStr subTitle,
-              PStr message);
-void ProgressMessage(short which, const unsigned char *message);
+void Progress(short percent, short remaining, const char *title,
+              const char *subTitle, const char *message);
+void ProgressMessage(short which, const char *message);
 
 void ProgressMessageR(short which, short messageId);
 void ProgressR(short percent, short remaining, short titleId, short subTitleId,
-               PStr message);
+               const char *message);
 void CloseProgress(void);
-void ByteProgress(PStr message, int onLine, int totLines);
+void ByteProgress(const char *message, int onLine, int totLines);
 void PushProgress(void);
 void PopProgress(bool messageOnly);
 void SetProgressN(short n);
@@ -93,9 +93,9 @@ struct ProgressBlock {
 #else
   Rect rects[kpBar + 1];
 #endif
-  Str255 messages[kpTitle + 1];
+  char messages[kpTitle + 1][256];
   ProgressBHandle next;
-  Str255 title;
+  char title[256];
   ControlHandle bar;
   ControlHandle stop;
 };
