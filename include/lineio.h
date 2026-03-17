@@ -41,7 +41,7 @@ typedef struct LineIODesc {
 } LineIOD, *LineIOP;
 
 short OpenLine(const char *path, short perm, LineIOP lip);
-#define FSpOpenLine(spec, perm, lip) OpenLine((spec)->path, perm, lip)
+#define FSpOpenLine(spec, perm, lip) OpenLine((spec), perm, lip)
 int GetLine(unsigned char * line, int size, long *len, LineIOP lip);
 void CloseLine(LineIOP lip);
 long TellLine(LineIOP lip);

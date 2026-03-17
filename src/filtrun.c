@@ -80,7 +80,7 @@ extern bool IsDelivery(const char *path);
 extern void SetState(TOCType *tocH, short sumNum, short state);
 extern short PrintClosedMessage(TOCType *tocH, short sumNum, bool now);
 extern void MakeMessTitle(unsigned char *title, TOCType *tocH, int sumNum, bool b);
-extern int OpenFilterMessages(FSSpecPtr spec);
+extern int OpenFilterMessages(char * spec);
 extern void NotifyHelpers(int code, int event, TOCType *tocH);
 extern void CheckSLIP(void);
 extern void PlaySoundId(short id);
@@ -166,30 +166,30 @@ static void Filter1Postprocess(FilterKeywordEnum fType, FilterPBPtr fpb)
 
 	if (fpb->xferred)
 	{
-		spec = fpb->spec;
+		g_strlcpy(spec, fpb->spec, sizeof(spec));
 		which = 0;
 		if (!fpb->xferredFromIMAP)
 		{
-			if (IsRoot(spec.path))
+			if (IsRoot(spec))
 			{
-				if (EqualStrRes((unsigned char *)spec.name,IN)) which = IN;
-				else if (EqualStrRes((unsigned char *)spec.name,OUT)) which = OUT;
-				else if (EqualStrRes((unsigned char *)spec.name,TRASH)) which = TRASH;
+				if (EqualStrRes((unsigned char *)spec_name(spec),IN)) which = IN;
+				else if (EqualStrRes((unsigned char *)spec_name(spec),OUT)) which = OUT;
+				else if (EqualStrRes((unsigned char *)spec_name(spec),TRASH)) which = TRASH;
 			}
 		}
 	}
 	else
 	{
-		spec = GetMailboxSpec(fpb->tocH,-1);
+		GetMailboxSpec(fpb->tocH,-1, spec);
 		which = fpb->tocH->which;
 		if (which==IN_TEMP)
 		{
 			TOCType *tocH = GetRealInTOC();
 			which = IN;
 			if (!tocH) return;
-			spec = GetMailboxSpec(tocH,-1);
+			GetMailboxSpec(tocH,-1, spec);
 		}
-			if (IsDelivery(spec.path))
+			if (IsDelivery(spec))
 		{
 			unsigned char inName[256];
 			GetRString((char *)inName, IN);
@@ -201,7 +201,7 @@ static void Filter1Postprocess(FilterKeywordEnum fType, FilterPBPtr fpb)
 	if (fpb->tocH->imapTOC)
 		GetRealIMAPSpec(spec, &spec);
 
-	if (spec.name[0])
+	if (spec_name(spec)[0])
 	{
 		/* do we need to open the mailbox? */
 		if (openBox && (fpb->xferred || !openPref))
@@ -410,7 +410,7 @@ int FilterSelectedMessages(FilterKeywordEnum fType, TOCType *tocH, FilterPBPtr f
 	if (fType==flkIncoming)
 	{
 		if (!(inTocH = GetRealInTOC())) return(userCanceledErr);
-		inSpec = GetMailboxSpec(inTocH, -1);
+		GetMailboxSpec(inTocH, -1, inSpec);
 	}
 
 	if ((err = InitFPB(fpb, false, true))) return(WarnUser(MEM_ERR, err));
@@ -594,7 +594,7 @@ int FilterIMAPTocIncrementally(TOCType *tocH, FilterPBPtr fpb, bool noXfer)
 	long spamThresh = GetRLong(JUNK_MAILBOX_THRESHHOLD);
 	FSSpec mailboxspec;
 
-	mailboxspec.name[0] = 0;
+	mailboxspec[0] = '\0';
 
 	if ((err = RegenerateFilters())) return(err);
 
@@ -641,10 +641,10 @@ int FilterIMAPTocIncrementally(TOCType *tocH, FilterPBPtr fpb, bool noXfer)
 		/* clean up after */
 		if (err != euFilterXfered)
 		{
-			if (mailboxspec.name[0] == 0)
+			if (spec_name(mailboxspec)[0] == 0)
 				GetRealIMAPSpec(tocH->mailbox.spec, &mailboxspec);
 
-			if (mailboxspec.name[0])
+			if (spec_name(mailboxspec)[0])
 			{
 				if (!PrefIsSet(PREF_NO_OPEN_IN))
 					AddSpecToList(&mailboxspec, fpb->mailbox);
@@ -732,8 +732,8 @@ void GenSpecWindow(CSpecHandle specList)
 		n = CSpecCount(specList);
 		for (i = 0; i < n; i++)
 		{
-			spec = CSpecAt(specList, i).spec;
-			ComposeRString(s, SPEC_FMT, spec.name, CSpecAt(specList, i).count);
+			g_strlcpy(spec, CSpecAt(specList, i).spec, sizeof(spec));
+			ComposeRString(s, SPEC_FMT, spec_name(spec), CSpecAt(specList, i).count);
 		}
 	}
 }
@@ -761,7 +761,7 @@ int FilterMessagesFrom(FilterKeywordEnum fType, TOCType *tocH, short startWith, 
 	if (!realInTocH) return(1);
 	if (tocH->imapTOC) return(1);
 
-	inSpec = GetMailboxSpec(realInTocH, -1);
+	GetMailboxSpec(realInTocH, -1, inSpec);
 
 	if (deliveryBatch)
 		count = 0;  /* incremental filtering */
@@ -959,8 +959,8 @@ int FilterMessageLo(FilterKeywordEnum fType, TOCType *tocH, short sumNum, Filter
 	}
 
 	openIncomingErr = (fType==flkIncoming && PrefIsSet(PREF_OPEN_IN_ERR_MESS)
-		&& (tocH->which==IN || tocH->which==IN_TEMP)
-		&& tocH->sums[sumNum].state==MESG_ERR);
+		& (tocH->which==IN || tocH->which==IN_TEMP)
+		& tocH->sums[sumNum].state==MESG_ERR);
 
 	if (AnyFilters(fType) || openIncomingErr)
 	{
@@ -1028,13 +1028,13 @@ int FilterMessageLo(FilterKeywordEnum fType, TOCType *tocH, short sumNum, Filter
 /************************************************************************
  * AddSpecToList - add an FSSpec to a list of FSSpecs
  ************************************************************************/
-void AddSpecToList(FSSpecPtr spec, CSpecHandle specList)
+void AddSpecToList(char * spec, CSpecHandle specList)
 {
 	short n;
 	CSpec cspec;
 	if (!specList) return;
 
-	if (IsRoot(spec->path) && EqualStrRes(spec->name, TRASH)) return;
+	if (IsRoot(spec) && EqualStrRes(spec_name(spec), TRASH)) return;
 
 	n = CSpecCount(specList);
 	while (n--)
@@ -1044,7 +1044,7 @@ void AddSpecToList(FSSpecPtr spec, CSpecHandle specList)
 			return;
 		}
 
-	cspec.spec = *spec;
+	g_strlcpy(cspec.spec, spec, sizeof(cspec.spec));
 	cspec.count = 1;
 	CSpecAppend(specList, cspec);
 }
@@ -1173,7 +1173,7 @@ static bool TermMatch(MTPtr mt, TOCType *tocH, short sumNum, FilterPBPtr fpb)
 
 				/* match */
 				match = TermPtrMatch(mt, spot, hEnd);
-				if (!match && (tocH->which==OUT || (tocH->sums[sumNum].flags & FLAG_OUT)))
+				if (!match && (tocH->which==OUT || (tocH->sums[sumNum].flags && FLAG_OUT)))
 				{
 					char *hnStart, *hnEnd;
 					short hid;
@@ -1327,8 +1327,8 @@ done:
 static bool FromIntersectNickFile(MTPtr mt, TOCType *tocH, short sumNum)
 {
 	return (mt->verb==mbmIntersectsFile || mt->verb==mbmNotIntersectsFile)
-		&& !strcasecmp(mt->header, "from")
-		&& ValidHash(tocH->sums[sumNum].fromHash);
+		& !strcasecmp(mt->header, "from")
+		& ValidHash(tocH->sums[sumNum].fromHash);
 }
 
 /************************************************************************
@@ -1689,7 +1689,7 @@ static bool FilterMatch(short filter, TOCType *tocH, short sumNum, FilterPBPtr f
 		gCurFilters[filter].terms[1] = term;  /* store back any cached info */
 	}
 
-	if (result && (LogLevel & LOG_FILT))
+	if (result && (LogLevel && LOG_FILT))
 		FiltLogMatch(filter, tocH, sumNum);
 
 	/* Purge the message cache if we filled it with minimal headers for IMAP filtering */

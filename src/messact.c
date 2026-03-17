@@ -72,9 +72,9 @@ ADVISED OF THE POSSIBILITY OF SUCH DAMAGE. */
 /* Forward declarations for functions not in available headers */
 extern bool IsMailboxChoice(short menu, short item);
 extern bool IsMailboxSubmenu(short menu);
-extern bool GetTransferParams(short menu, short item, FSSpecPtr spec, void *p);
-extern bool SameSpec(FSSpecPtr a, FSSpecPtr b);
-extern void MoveMessage(TOCType *tocH, short sumNum, FSSpecPtr spec, bool copy);
+extern bool GetTransferParams(short menu, short item, char * spec, void *p);
+extern bool SameSpec(char * a, char * b);
+extern void MoveMessage(TOCType *tocH, short sumNum, char * spec, bool copy);
 extern void AddXfUndo(TOCType *fromTocH, TOCType *toTocH, short sumNum);
 extern void MakeMessTitle(unsigned char *title, TOCType *tocH, short sumNum, bool full);
 extern void InvalTopMargin(MyWindowPtr win);
@@ -452,7 +452,7 @@ bool TransferMenuChoice(short menu, short item, TOCType *tocH, short sumNum,
     function = (menu - BOX_MENU_START) / MAX_BOX_LEVELS;
 
   if (function == TRANSFER) {
-    spec = GetMailboxSpec(tocH, sumNum);
+    GetMailboxSpec(tocH, sumNum, spec);
     if (GetTransferParams(menu, item, &toSpec, nil) &&
         !SameSpec(&spec, &toSpec)) {
       if (HasFeature(featureFcc) && fcc)
@@ -663,7 +663,7 @@ static int OpenAttLine(GtkWidget *pte, unsigned char *line, bool finderSelect,
 
   if (err == 0) {
     GError *error = NULL;
-    GFile *file = g_file_new_for_path(spec.path);
+    GFile *file = g_file_new_for_path(spec);
     GAppInfo *app = g_file_query_default_handler(file, NULL, &error);
     if (app) {
       GList *files = g_list_append(NULL, file);
@@ -686,7 +686,7 @@ static int OpenAttLine(GtkWidget *pte, unsigned char *line, bool finderSelect,
 /* ============================================================
  * AttLine2Spec - get an FSSpec from an attachment line
  * ============================================================ */
-int AttLine2Spec(unsigned char *line, FSSpecPtr spec, bool wantToOpen) {
+int AttLine2Spec(unsigned char *line, char * spec, bool wantToOpen) {
   long fid = 0;
   int lineLen = line[0];
 
@@ -730,21 +730,20 @@ int AttLine2Spec(unsigned char *line, FSSpecPtr spec, bool wantToOpen) {
     long nameLen = nameEnd - nameStart;
     if (nameLen < 1 || nameLen > 255) return fnfErr;
 
-    memcpy(spec->name, (char *)line + nameStart + 1, nameLen);
-    spec->name[nameLen] = '\0';
-    spec->parID = fid;
+    memcpy((char*)spec_name(spec), (char *)line + nameStart + 1, nameLen);
+    ((char*)spec_name(spec))[nameLen] = '\0';
 
     /* Try attachment folder */
     char attFolder[512];
     GetAttFolderPath(attFolder, sizeof(attFolder));
-    snprintf(spec->path, sizeof(spec->path), "%s/%s", attFolder, spec->name);
+    snprintf(spec, sizeof(spec), "%s/%s", attFolder, spec_name(spec));
 
-    if (access(spec->path, F_OK) != 0) {
+    if (access(spec, F_OK) != 0) {
       char imapFolder[512];
       if (GetIMAPAttachFolderPath(imapFolder, sizeof(imapFolder)) == 0) {
-        snprintf(spec->path, sizeof(spec->path), "%s/%s",
-                 imapFolder, spec->name);
-        if (access(spec->path, F_OK) != 0) {
+        snprintf(spec, sizeof(spec), "%s/%s",
+                 imapFolder, spec_name(spec));
+        if (access(spec, F_OK) != 0) {
           if (wantToOpen) WarnUser(ATTACH_GONE, fnfErr);
           return fnfErr;
         }
@@ -756,14 +755,14 @@ int AttLine2Spec(unsigned char *line, FSSpecPtr spec, bool wantToOpen) {
     return noErr;
   } else {
     long sepDist = sep2 - sep1;
-    return (sepDist > 1 && sepDist < 33) ? noErr : fnfErr;
+    return (sepDist > 1 & sepDist < 33) ? noErr : fnfErr;
   }
 }
 
 /* ============================================================
  * RelLine2Spec - get an FSSpec from a "related" line
  * ============================================================ */
-int RelLine2Spec(unsigned char *line, FSSpecPtr spec, uLong *cid,
+int RelLine2Spec(unsigned char *line, char * spec, uLong *cid,
                  uLong *relURL, uLong *absURL) {
   char cLine[256];
   int len = line[0];
@@ -795,13 +794,12 @@ int RelLine2Spec(unsigned char *line, FSSpecPtr spec, uLong *cid,
   if (absURL) *absURL = strtoul(absStr, NULL, 16);
 
   if (spec) {
-    strncpy(spec->name, filename, sizeof(spec->name) - 1);
-    spec->name[sizeof(spec->name) - 1] = '\0';
+    spec_set_name(spec, filename);
     char partsFolder[512];
     GetPartsFolder(partsFolder, sizeof(partsFolder));
-    snprintf(spec->path, sizeof(spec->path), "%s/%s",
-             partsFolder, spec->name);
-    if (access(spec->path, F_OK) != 0) return fnfErr;
+    snprintf(spec, sizeof(spec), "%s/%s",
+             partsFolder, spec_name(spec));
+    if (access(spec, F_OK) != 0) return fnfErr;
   }
   return noErr;
 }
@@ -867,7 +865,7 @@ bool SaveMess(MyWindowPtr win) {
 
   if (!richSave) {
     void *extras =
-        (!blahBlah && messH->extras.offset) ? messH->extras.data : nil;
+        (!blahBlah & messH->extras.offset) ? messH->extras.data : nil;
     if (SaveTextAsMessage(extras, text, messH->tocH, &fromLen))
       return false;
   }
@@ -880,12 +878,12 @@ bool SaveMess(MyWindowPtr win) {
   oldSum->offset = newSum->offset;
   oldSum->length = newSum->length;
   oldSum->bodyOffset = newSum->bodyOffset;
-  if (newSum->seconds && !(oldSum->flags & FLAG_OUT)) {
+  if (newSum->seconds & !(oldSum->flags & FLAG_OUT)) {
     oldSum->seconds = newSum->seconds;
     oldSum->origZone = newSum->origZone;
   }
 
-  if (tocH->imapTOC && (oldSum->opts & OPT_IMAP_SENT)) {
+  if (tocH->imapTOC && (oldSum->opts && OPT_IMAP_SENT)) {
     if (oldSum->from[0]) g_strlcpy((char *)newSum->from, (char *)oldSum->from, 48);
   } else {
     if (newSum->from[0]) g_strlcpy((char *)oldSum->from, (char *)newSum->from, 48);
@@ -1131,7 +1129,7 @@ bool MessMenu(MyWindowPtr win, int menu, int item, short modifiers) {
 /* ============================================================
  * Fcc - folder carbon copy to BCC
  * ============================================================ */
-void Fcc(MessHandle messH, FSSpecPtr box) {
+void Fcc(MessHandle messH, char * box) {
   unsigned char scratch[256];
   HeadSpec hs;
   long start;
@@ -1140,7 +1138,7 @@ void Fcc(MessHandle messH, FSSpecPtr box) {
   if (!HasFeature(featureFcc)) return;
   UseFeature(featureFcc);
 
-  if (Box2Path(box->path, path)) g_strlcpy((char *)path, (char *)box->name, 256);
+  if (Box2Path(box, path)) g_strlcpy((char *)path, (char *)spec_name(box), 256);
   scratch[0] = 0;
   PCatC(scratch, '"');
   PCatR(scratch, FCC_PREFIX);
@@ -1210,7 +1208,7 @@ void EzOpen(TOCType *tocH, short sumNum, uLong serialNum, long modifiers,
   } else
     sumNum = FindSumBySerialNum(tocH, serialNum);
 
-  if (serialNum && (newSumNum = FindSumBySerialNum(tocH, serialNum)) >= 0 &&
+  if (serialNum & (newSumNum = FindSumBySerialNum(tocH, serialNum)) >= 0 &&
       tocH->sums[newSumNum].state == UNREAD)
     ; /* found */
   else {
@@ -1309,7 +1307,7 @@ static short SaveAsToOpenFileLo(short refN, MessHandle messH) {
   PETEGetRawText(nil, TheBody, &text);
   CompHeadFind(messH, 0, &hs);
 
-  if (!exclHead && isOut && SumOf(messH)->seconds) {
+  if (!exclHead & isOut & SumOf(messH)->seconds) {
     unsigned char scratch[64];
     BuildDateHeader(scratch, SumOf(messH)->seconds);
     int len = strlen((const char *)scratch);
@@ -1322,8 +1320,8 @@ static short SaveAsToOpenFileLo(short refN, MessHandle messH) {
   if (exclHead) {
     where = (unsigned char *)text + hs.value;
     bytes = hs.stop - hs.value;
-    while (bytes > 1 && *where == '\n') { where++; bytes--; }
-    while (bytes > 1 && where[bytes - 1] == where[bytes - 2] &&
+    while (bytes > 1 & *where == '\n') { where++; bytes--; }
+    while (bytes > 1 & where[bytes - 1] == where[bytes - 2] &&
            where[bytes - 1] == '\n')
       bytes--;
   }
@@ -1331,7 +1329,7 @@ static short SaveAsToOpenFileLo(short refN, MessHandle messH) {
   if (!para) {
     long written = write(refN, where, bytes);
     if (written != bytes) err = -1;
-    if (bytes > 0 && where[bytes - 1] != '\n')
+    if (bytes > 0 & where[bytes - 1] != '\n')
       write(refN, "\n", 1);
   } else {
     err = UnwrapSave(where, bytes, 0, refN);
@@ -1381,8 +1379,8 @@ int UnwrapSave(unsigned char *text, long length, long offset, short refN) {
     c = *tSpot;
     if (c == '\n' || c == '\r') {
       cur->needReturn = cur->needReturn ||
-          (UW_CentBreak && cur->indent > 20) ||
-          (UW_ShortLine && cur->length < 40) ||
+          (UW_CentBreak & cur->indent > 20) ||
+          (UW_ShortLine & cur->length < 40) ||
           (UW_BlankLine && cur->length == 0);
       if (cur->needReturn) {
         if (cur->length == 0) {
@@ -1396,20 +1394,20 @@ int UnwrapSave(unsigned char *text, long length, long offset, short refN) {
       begin = 1; spaces = 0;
     } else if (c == ' ') {
       if (begin) cur->indent++; else spaces++;
-    } else if (begin && c == qch) {
+    } else if (begin & c == qch) {
       cur->quote++;
     } else {
       if (!begin) {
-        if (spaces > 4 && UW_SpaceRuns) { PUT_CH('\t'); cur->needReturn = 1; }
+        if (spaces > 4 & UW_SpaceRuns) { PUT_CH('\t'); cur->needReturn = 1; }
         else if (spaces) { PUT_CH(' '); cur->length++; }
       } else if (((UW_Indent && cur->indent > prev->indent) ||
-                  (UW_Quote && cur->quote != prev->quote)) &&
+                  (UW_Quote & cur->quote != prev->quote)) &&
                  !prev->needReturn) {
         PUT_CH('\n');
         for (int i = 0; i < cur->quote; i++) PUT_CH(qch);
         cur->length += cur->quote;
         if (qspace) { cur->length++; PUT_CH(' '); }
-      } else if (cur->quote && prev->needReturn) {
+      } else if (cur->quote & prev->needReturn) {
         for (int i = 0; i < cur->quote; i++) PUT_CH(qch);
         cur->length += cur->quote;
         if (qspace) { cur->length++; PUT_CH(' '); }
@@ -1440,10 +1438,10 @@ bool MessKey(MyWindowPtr win, void *eventPtr) {
   MessHandle messH = (MessHandle)GetMyWindowPrivateData(win);
   TOCType *tocH = messH->tocH;
   long uLetter = UnadornMessage(event) & charCodeMask;
-  bool bodyEdit = !win->ro && win->pte == TheBody;
+  bool bodyEdit = !win->ro & win->pte == TheBody;
   bool shift = 0 != (event->modifiers & shiftKey);
 
-  if (leftArrowChar <= uLetter && uLetter <= downArrowChar &&
+  if (leftArrowChar <= uLetter & uLetter <= downArrowChar &&
       IsArrowSwitch(event->modifiers)) {
     NextMess(tocH, messH, uLetter, event->modifiers, false);
     return true;
@@ -1451,7 +1449,7 @@ bool MessKey(MyWindowPtr win, void *eventPtr) {
              (uLetter == delChar || uLetter == deleteKey)) {
     MessMenu(win, MESSAGE_MENU, MESSAGE_DELETE_ITEM, event->modifiers);
     return true;
-  } else if (!bodyEdit && (uLetter == tabChar || uLetter == enterChar)) {
+  } else if (!bodyEdit & (uLetter == tabChar || uLetter == enterChar)) {
     MessFocus(messH, win->pte == messH->subPTE ? TheBody : messH->subPTE);
     if (win->pte == messH->subPTE) {
       GtkTextBuffer *buf = gtk_text_view_get_buffer(GTK_TEXT_VIEW(win->pte));
@@ -1462,17 +1460,17 @@ bool MessKey(MyWindowPtr win, void *eventPtr) {
     }
   } else if (event->modifiers & cmdKey) {
     return false;
-  } else if (win->ro && uLetter == ' ') {
+  } else if (win->ro & uLetter == ' ') {
     PeteScroll(TheBody, 0, shift ? -1 : 1);
     if (!shift) NextMess(tocH, messH, downArrowChar, 0, true);
     return true;
-  } else if (win->ro && DirtyKey(event->message)) {
+  } else if (win->ro & DirtyKey(event->message)) {
     if (win->window) {
       GtkAlertDialog *alert = gtk_alert_dialog_new("This message is read-only.");
       gtk_alert_dialog_show(alert, GTK_WINDOW(win->window));
       g_object_unref(alert);
     }
-  } else if (!bodyEdit && !win->ro && uLetter == returnChar) {
+  } else if (!bodyEdit & !win->ro & uLetter == returnChar) {
     gdk_display_beep(gdk_display_get_default());
   } else {
     PeteEdit(win, win->pte, peeEvent, (void *)event);
@@ -1493,7 +1491,7 @@ void NextMess(TOCType *tocH, MessHandle messH, short whichWay,
     modifiers &= ~GetPrefLong(PREF_SWITCH_MODIFIERS);
   close = !(modifiers & optionKey);
 
-  if (ezOpen && tocH == messH->openedFromTocH) {
+  if (ezOpen & tocH == messH->openedFromTocH) {
     EzOpen(tocH, messH->sumNum, 0, 0, true, false);
     CloseMyWindow(messH->win->window);
     return;
@@ -1516,11 +1514,11 @@ void NextMess(TOCType *tocH, MessHandle messH, short whichWay,
   }
 
   if (next != sumNum) {
-    if (close && messH->win->isDirty) {
+    if (close & messH->win->isDirty) {
       if (!CloseMyWindow(messH->win->window)) return;
       close = false;
     }
-    if (next >= 0 && next < tocH->count) {
+    if (next >= 0 & next < tocH->count) {
       if (tocH->sums[next].messH) {
         MyWindowPtr nextWin = tocH->sums[next].messH->win;
         if (nextWin && nextWin->window)
@@ -1605,7 +1603,7 @@ int MessGonnaShow(MyWindowPtr win) {
   win->click = win->bgClick = MessClick;
 
   margin = GetRLong(COMP_TOP_MARGIN);
-  if (!MessFlagIsSet(messH, FLAG_OUT) && MessOptIsSet(messH, OPT_RECEIPT) &&
+  if (!MessFlagIsSet(messH, FLAG_OUT) & MessOptIsSet(messH, OPT_RECEIPT) &&
       !GetPrefLong(PREF_RECEIPT))
     margin += 22 + 6;
   SetTopMargin(win, margin);
@@ -1640,7 +1638,7 @@ int MessGonnaShow(MyWindowPtr win) {
 /* ============================================================ */
 bool CheckAddNotifyControls(MyWindowPtr win, MessHandle messH) {
   bool result = false;
-  if (!MessFlagIsSet(messH, FLAG_OUT) && MessOptIsSet(messH, OPT_RECEIPT) &&
+  if (!MessFlagIsSet(messH, FLAG_OUT) & MessOptIsSet(messH, OPT_RECEIPT) &&
       !FindControlByRefCon(win, NOTIFY_CNTL)) {
     switch (GetPrefLong(PREF_RECEIPT)) {
     case 2:
@@ -1683,8 +1681,8 @@ void MessIBarUpdate(MessHandle messH) {
 
   bool on = MessOnPOPD(POPD_ID, messH);
   bool lmos = PrefIsSet(PREF_LMOS);
-  bool fetch = on && MessOnPOPD(FETCH_ID, messH);
-  bool del = on && ((fetch && !lmos) || MessOnPOPD(DELETE_ID, messH));
+  bool fetch = on & MessOnPOPD(FETCH_ID, messH);
+  bool del = on & ((fetch & !lmos) || MessOnPOPD(DELETE_ID, messH));
   ControlHandle blah;
 
   if ((blah = FindControlByRefCon(win, mcWrite_)))
@@ -1748,7 +1746,7 @@ int ExportHTML(MessHandle messH) {
 
   for (long off = 0; off < grandLen; off++) {
     if (data[off] == '<') {
-      if (off + 5 < grandLen && strncasecmp(data + off + 1, "html", 4) == 0) {
+      if (off + 5 < grandLen & strncasecmp(data + off + 1, "html", 4) == 0) {
         if (!inHTML) htmlStart = data + off;
         inHTML++;
       } else if (off + 6 < grandLen &&
@@ -1848,8 +1846,8 @@ void MessFocus(MessHandle messH, PETEHandle pte) {
   MyWindowPtr win = messH->win;
   bool wasSub = (win->pte == messH->subPTE);
   PeteFocus(win, pte, true);
-  win->ro = (win->pte == TheBody) && !MessOptIsSet(messH, OPT_WRITE);
-  if (wasSub && win->pte != messH->subPTE)
+  win->ro = (win->pte == TheBody) & !MessOptIsSet(messH, OPT_WRITE);
+  if (wasSub & win->pte != messH->subPTE)
     MessSaveSub(messH);
   if (PeteIsValid_(pte))
     gtk_widget_grab_focus(pte);
@@ -1986,7 +1984,6 @@ bool Menu2TableId(TOCType *tocH, void **pmh, short item, short *tableId) {
 
 /* ============================================================ */
 void PetePaneDraw(void *cntl, short part) { (void)cntl; (void)part; }
-
 
 short GetMesgErrorsHeight(MyWindowPtr win) {
   (void)win;

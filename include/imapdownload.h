@@ -223,7 +223,7 @@ extern bool gFilteringUnderway;
 MailboxNodeHandle FetchNewMessages(TOCType * tocH, bool fetchFlags,
                                    bool sameThread, bool filter,
                                    bool isAutoCheck);
-MailboxNodeHandle DoFetchNewMessages(FSSpecPtr mailboxSpec, bool fetchFlags,
+MailboxNodeHandle DoFetchNewMessages(char * mailboxSpec, bool fetchFlags,
                                      bool isAutoCheck);
 bool IMAPDelivery(TOCType * inToc, void **toAdd, void **toUpdate,
                   void **toDelete, void **toCopy, bool *filter,
@@ -246,7 +246,7 @@ int UIDDownloadMessages(TOCType * inToc, void *uids, bool forceForeground,
 bool EnsureMsgDownloaded(TOCType * tocH, int sumNum, bool attachmentsToo);
 int CacheMessage(TOCType * tocH, short sumNum);
 
-bool IMAPMessagesWaiting(TOCType * tocH, FSSpecPtr spoolSpec);
+bool IMAPMessagesWaiting(TOCType * tocH, char * spoolSpec);
 void IMAPAbortMessageFetch(TOCType * tocH, short sumNum);
 void IMAPRemoveCachedContents(TOCType * tocH, short sumNum);
 void IMAPRemoveSelectedCachedContents(TOCType * tocH);
@@ -261,19 +261,19 @@ void IMAPPollMailboxTree(IMAPStreamPtr imapStream, MailboxNodeHandle tree,
                          long numToPoll, long *remaining);
 
 // Attachment downloading routines
-bool IsIMAPAttachmentStub(FSSpecPtr spec);
-unsigned long DownloadIMAPAttachment(FSSpecPtr spec, MailboxNodeHandle mailbox,
+bool IsIMAPAttachmentStub(char * spec);
+unsigned long DownloadIMAPAttachment(char * spec, MailboxNodeHandle mailbox,
                                      bool forceForeground);
 MailboxNodeHandle PETEHandleToMailboxNode(PETEHandle pte);
 unsigned long DoDownloadIMAPAttachments(FSSpecHandle attachments,
                                         MailboxNodeHandle mailbox);
-bool CanFetchAttachment(FSSpecPtr spec);
+bool CanFetchAttachment(char * spec);
 void UpdateIMAPWindows(void);
 bool FetchAllIMAPAttachments(TOCType * toc, short sumNum, bool forceForeground);
-bool FetchAllIMAPAttachmentsBySpec(FSSpecPtr spec, MailboxNodeHandle mailbox,
+bool FetchAllIMAPAttachmentsBySpec(char * spec, MailboxNodeHandle mailbox,
                                    bool forceForeground);
 bool HasStubFileAttachment(TOCType * tocH, short sumNum);
-int FetchIMAPAttachment(PETEHandle pte, FSSpecPtr spec, bool forceForeground);
+int FetchIMAPAttachment(PETEHandle pte, char * spec, bool forceForeground);
 void RedisplayIMAPMessage(MyWindowPtr win);
 
 // functions to determine the state of a given message in an IMAP mailbox
@@ -392,8 +392,8 @@ void IMAPCollectFlags(void);
 #endif
 
 // Anthony Roybal's growing mailbox problem
-void MarkAsProcessed(FSSpec *spec);
-bool HasBeenProcessed(FSSpec *spec);
+void MarkAsProcessed(char *spec);
+bool HasBeenProcessed(char *spec);
 
 /* SearchUpdateSum — real implementation in searchwin.c */
 void SearchUpdateSum(TOCType * toc, short sum, TOCType * newToc,

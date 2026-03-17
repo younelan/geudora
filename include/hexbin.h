@@ -39,8 +39,8 @@ typedef enum {
 	NotHex, CollectName, CollectInfo, DataWrite, DataCrc1, DataCrc2,
 	RzWrite, RzCrc1, RzCrc2, Excess, HexDone, HexSLimit
 } HexBinStates;
-bool AutoWantTheFileLo(FSSpecPtr specPtr,bool ohYesYouDo,bool relatedPart, bool imapStub);
-bool AutoWantTheFile(FSSpecPtr specPtr,bool ohYesYouDo,bool relatedPart);
+bool AutoWantTheFileLo(char * specPtr,bool ohYesYouDo,bool relatedPart, bool imapStub);
+bool AutoWantTheFile(char * specPtr,bool ohYesYouDo,bool relatedPart);
 void SafeInfo(FInfo *info, FXInfo *fxInfo);
 void ForceAttachFolder(char * volName, long *dirId);
 

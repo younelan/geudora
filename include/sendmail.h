@@ -88,20 +88,20 @@ int SendBodyLines(TransStream stream, char *text, long length, long offset,
 void BuildDateHeader(char *buffer, long seconds);
 char * R822Date(char * date, long seconds);
 char * SimpleNameCharset(char * charset, short tid);
-short SendPlain(TransStream stream, FSSpec *spec, long flags, short tableId,
+short SendPlain(TransStream stream, char *spec, long flags, short tableId,
                 AttMapPtr amp);
-int GetIndAttachment(MessHandle messH, short index, FSSpecPtr spec,
+int GetIndAttachment(MessHandle messH, short index, char * spec,
                        HSPtr where);
-int GetIndAttachmentLo(void *text, short index, FSSpecPtr spec, HSPtr where,
+int GetIndAttachmentLo(void *text, short index, char * spec, HSPtr where,
                          HeadSpec *hs);
 void BuildBoundary(MessHandle messH, char * boundary, char * middle);
-bool IsPostScript(FSSpecPtr spec);
+bool IsPostScript(char * spec);
 short EffectiveTID(short tid);
 short TransOutTablID(void);
 char * TransOutTablName(char * name);
 char *PriorityHeader(char *buffer, uint8_t priority);
-int SendRawMIME(TransStream stream, FSSpecPtr spec);
-int SendTextFile(TransStream stream, FSSpecPtr spec, long flags,
+int SendRawMIME(TransStream stream, char * spec);
+int SendTextFile(TransStream stream, char * spec, long flags,
                    DecoderFunc *encoder);
 int FinishSMTP(TransStream stream, MessHandle messH);
 int AddFccToList(char * fcc, CSpecHandle list);

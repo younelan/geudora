@@ -176,7 +176,7 @@ int ScriptGetFilterProperty(long idOrIndex, bool byId,
 
 	switch (prop) {
 	case kScriptPropName:
-		*out = ScriptString(fr->name);
+		*out = ScriptString(spec_name(fr));
 		break;
 	case kScriptPropId:
 		*out = ScriptLong(fr->fu.id);
@@ -197,7 +197,7 @@ int ScriptGetFilterProperty(long idOrIndex, bool byId,
 		*out = ScriptLong((long)fr->conjunction);
 		break;
 	case kScriptPropTransferMailbox:
-		*out = ScriptString(fr->transferSpec.name);
+		*out = ScriptString(spec_name(fr->transferSpec));
 		break;
 	case kScriptPropCopyInstead:
 		*out = ScriptBool(fr->kill);  /* copyInstead mapped to kill flag */
@@ -255,9 +255,7 @@ int ScriptSetFilterProperty(long idOrIndex, bool byId,
 		break;
 	case kScriptPropTransferMailbox:
 		if (in->type != kScriptValString) return -50;
-		strncpy(fr->transferSpec.name, in->u.str,
-		        sizeof(fr->transferSpec.name) - 1);
-		fr->transferSpec.name[sizeof(fr->transferSpec.name) - 1] = '\0';
+		g_strlcpy(fr->transferSpec, in->u.str, sizeof(fr->transferSpec));
 		break;
 	case kScriptPropCopyInstead:
 		if (in->type != kScriptValBool) return -50;
@@ -382,7 +380,7 @@ int ScriptGetPersonalityProperty(long index, ScriptPropertyID prop,
 
 	switch (prop) {
 	case kScriptPropName:
-		*out = ScriptString(pers->name);
+		*out = ScriptString(spec_name(pers));
 		break;
 	case kScriptPropId:
 		*out = ScriptLong((long)pers->persId);

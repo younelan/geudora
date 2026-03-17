@@ -39,6 +39,11 @@ ADVISED OF THE POSSIBILITY OF SUCH DAMAGE. */
  * typedefs */
 #include <stdbool.h>
 #include <stdint.h>
+#include <limits.h>
+
+#ifndef PATH_MAX
+#define PATH_MAX 4096
+#endif
 
 #ifndef uLong
 typedef unsigned long uLong;
@@ -221,7 +226,12 @@ typedef AppleEvent *AppleEventPtr;
 #define GetNewControlSmall_(i, w) GetNewControlSmall(i, w)
 #define ReleaseResource_(r) ReleaseResource((void *)r)
 /* buf_append/buf_concat: no macros needed — use functions directly */
-#define SetHandleBig_(h, s) SetHandleBig((void *)(h), (long)(s))
+/* SetHandleBig_: resize a malloc'd buffer in-place via realloc.
+   h must be an lvalue (pointer variable). */
+#define SetHandleBig_(h, s) do { \
+  void *_tmp = realloc((void *)(h), (size_t)(s)); \
+  if (_tmp) (h) = _tmp; \
+} while(0)
 #define SetWTitle_(w, t) SetWTitle(w, t)
 #define FindWindow_(p, w) FindWindow(p, w)
 #define GetDItem_(d, i, t, h, r) GetDialogItem(d, i, t, (void *)h, r)

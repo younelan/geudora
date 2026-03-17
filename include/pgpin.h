@@ -43,10 +43,10 @@ typedef struct HeaderDesc *HeaderDHandle;
 bool ConvertPGP(short refN,char * buf,long *size,POPLineType lineType,long estSize,PGPCPtr pgpc);
 void EndPGP(PGPCPtr pgpc);
 void BeginPGP(PGPCPtr pgpc);
-int ReReadPGPClearText(TransStream stream,short refN,char * buf,long bSize,FSSpecPtr spec);
+int ReReadPGPClearText(TransStream stream,short refN,char * buf,long bSize,char * spec);
 int PGPRecvLine(TransStream stream,char * line,long *size);
-int PGPVerifyFile(FSSpecPtr spec);
-int PGPOpenEncrypted(FSSpecPtr spec);
+int PGPVerifyFile(char * spec);
+int PGPOpenEncrypted(char * spec);
 int ReadHeadAndBody(TransStream stream,short refN,char * buf,long bSize,bool display,HeaderDHandle *headersFound);
 #endif
 

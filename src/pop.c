@@ -149,9 +149,9 @@ extern void DeleteSum(void *tocH, short sumNum);
 extern bool TOCIsDirty(void *tocH);
 /* WriteTOC declared in toc.h */
 extern void Aprintf(short alertType, short noteType, short strn, ...);
-extern int SpecMoveAndRename(FSSpecPtr from, FSSpecPtr to);
-extern int StackQueue(void *what, void **stack);
-extern int StackTop(void *into, void **stack);
+extern int SpecMoveAndRename(char * from, char * to);
+extern int StackQueue(void *what, StackHandle *pStack);
+extern int StackTop(void *into, StackHandle stack);
 extern bool ValidHash(uint32_t hash);
 extern void RemoveUTF8FromSum(void *sum);
 void MakeMessTitle(unsigned char *title, TOCType * tocH, int sumNum,
@@ -471,7 +471,7 @@ short GetMyMail(TransStream stream, bool quietly, short *gotSome,
           ComposeLogR(LOG_RETR, NULL, START_POP_LOG, hostName, port,
                       messageCount);
           if (tocH = GetInTOC()) {
-            g_print("GetMyMail: GetInTOC returned tocH=%p count=%d path='%s'\n", (void*)tocH, tocH->count, tocH->path);
+            g_print("GetMyMail: GetInTOC returned tocH=%p count=%d path='%s'\n", (void*)tocH, tocH->count, tocH);
             /*
              * run through the pure deletes
              */
@@ -606,7 +606,7 @@ TOCType * RenameInTemp(TOCType * tocH) {
     Aprintf(OK_ALRT, Note, THREAD_SUBFOLDER_ERR, DELIVERY_FOLDER, err);
     return tocH;
   }
-  g_print("RenameInTemp: delivery folder='%s'\n", deliverFolder.path);
+  g_print("RenameInTemp: delivery folder='%s'\n", deliverFolder);
 
   // make sure the toc is written
   if (TOCIsDirty(tocH) || tocH->reallyDirty)
@@ -616,7 +616,7 @@ TOCType * RenameInTemp(TOCType * tocH) {
   /* find highest-numbered file in delivery folder */
   maxFileNum = 0;
   {
-    DIR *dp = opendir(deliverFolder.path);
+    DIR *dp = opendir(deliverFolder);
     if (dp) {
       struct dirent *entry;
       while ((entry = readdir(dp)) != NULL) {
@@ -630,44 +630,44 @@ TOCType * RenameInTemp(TOCType * tocH) {
   }
 
   // Make name for new mailbox
-  inSpec = GetMailboxSpec(tocH, -1);
+  GetMailboxSpec(tocH, -1, inSpec);
   NumToString(maxFileNum + 1, name);
   while (strlen((const char *)name) < 6)
     PInsertC(name, sizeof(name), '0', name);
-  spec_for(deliverFolder.path, (const char *)name, &deliverSpec);
+  spec_for(deliverFolder, (const char *)name, &deliverSpec);
 
   // toc file?
-  tocSpec = inSpec;
-  PCatR(tocSpec.name, TOC_SUFFIX);
+  g_strlcpy(tocSpec, inSpec, sizeof(tocSpec));
+  PCatR(spec_name(tocSpec), TOC_SUFFIX);
   if (!FSpExists(&tocSpec)) {
-    spec_for(deliverFolder.path, (const char *)name, &deliverTOCSpec);
-    PCatR(&deliverTOCSpec.name, TOC_SUFFIX);
+    spec_for(deliverFolder, (const char *)name, &deliverTOCSpec);
+    { char _fn[256]; g_strlcpy(_fn, spec_name(deliverTOCSpec), sizeof(_fn)); PCatR(_fn, TOC_SUFFIX); spec_set_name(deliverTOCSpec, _fn); }
   } else
-    *tocSpec.name = 0;
+    /* clear filename */ { char *_sn = strrchr(tocSpec, '/'); if (_sn) _sn[1] = '\0'; else tocSpec[0] = '\0'; }
 
-  g_print("RenameInTemp: inSpec='%s' -> deliverSpec='%s'\n", inSpec.path, deliverSpec.path);
+  g_print("RenameInTemp: inSpec='%s' -> deliverSpec='%s'\n", inSpec, deliverSpec);
 
   // Move files
   if (tocH->win)
     CloseMyWindow(GetMyWindowWindowPtr(tocH->win));
   if ((err = SpecMoveAndRename(&inSpec, &deliverSpec))) {
     g_print("RenameInTemp: SpecMoveAndRename failed err=%d\n", err);
-    Aprintf(OK_ALRT, Note, THREAD_DELIVER_CREATE_ERR, deliverSpec.name, err);
+    Aprintf(OK_ALRT, Note, THREAD_DELIVER_CREATE_ERR, spec_name(deliverSpec), err);
   } else {
     g_print("RenameInTemp: moved successfully, NeedToFilterIn will be %d\n", NeedToFilterIn + 1);
-    if (*tocSpec.name) {
+    if (*spec_name(tocSpec)) {
       if ((err = SpecMoveAndRename(&tocSpec, &deliverTOCSpec))) {
-        Aprintf(OK_ALRT, Note, THREAD_DELIVER_CREATE_ERR, deliverTOCSpec.name,
+        Aprintf(OK_ALRT, Note, THREAD_DELIVER_CREATE_ERR, spec_name(deliverTOCSpec),
                 err);
-        unlink(tocSpec.path); // hell with it.  We can rebuild it
+        unlink(tocSpec); // hell with it.  We can rebuild it
       }
     }
 
     // Ok, we have moved the temp.in.  Make a new one
     { char pdir[1024]; spec_parent(&inSpec, pdir, sizeof(pdir));
-    if (err = MakeResFile(inSpec.name, pdir, CREATOR,
+    if (err = MakeResFile(spec_name(inSpec), pdir, CREATOR,
                           MAILBOX_TYPE)) {
-      Aprintf(OK_ALRT, Note, THREAD_DELIVER_CREATE_ERR, inSpec.name, err);
+      Aprintf(OK_ALRT, Note, THREAD_DELIVER_CREATE_ERR, spec_name(inSpec), err);
       // this is bad
     } }
 
@@ -791,7 +791,7 @@ int POPIntroductions(TransStream stream, char * user, bool *capabilities) {
     PopCapabilities(stream, capabilities, &mech);
 
 #ifdef ESSL
-  if (ShouldUseSSL(stream) && !(stream->ESSLSetting & esslSSLInUse)) {
+  if (ShouldUseSSL(stream) && !(stream->ESSLSetting && esslSSLInUse)) {
     if (!capabilities || !capabilities[pcapaSTLS]) {
       if (!(stream->ESSLSetting & esslOptional)) {
         Prr = unimpErr;
@@ -1126,7 +1126,7 @@ int POPCmdLo(TransStream stream, short cmd, unsigned char *args,
   }
 
   if (!err && POPCmds)
-    err = StackQueue(&cmd, POPCmds);
+    err = StackQueue(&cmd, &POPCmds);
 
   return (err);
 }
@@ -1493,8 +1493,8 @@ int FetchMessageTextLo(TransStream stream, long estSize, POPDPtr pdp,
     Prr = -108;
     return (0);
   }
-  spec = GetMailboxSpec(tocH, -1);
-  g_strlcpy((char *)(name), (char *)(spec.name), sizeof(name));
+  GetMailboxSpec(tocH, -1, spec);
+  g_strlcpy((char *)(name), (char *)(spec_name(spec)), sizeof(name));
 
   // if we're adding IMAP messages or importing mail, we've taken care of
   // opening the mailbox already
@@ -1543,7 +1543,7 @@ done:
   /*
    * now, read it back from the file
    */
-  if (Prr = OpenLine(spec.path, (imap || import) ? fsRdPerm : fsRdWrPerm,
+  if (Prr = OpenLine(spec, (imap || import) ? fsRdPerm : fsRdWrPerm,
                      &lid)) {
     FileSystemError(READ_MBOX, name, Prr);
     return (0);
@@ -1652,7 +1652,7 @@ done:
   if (ETLDeleteRequest)
     ComposeLogS(LOG_PLUG, NULL,
                 (unsigned char *)"A plugin has requested the deletion of '%p' in '%p'",
-                savedSub, spec.name);
+                savedSub, spec_name(spec));
 #endif
 
   if (BadBinHex || BadEncoding) {
@@ -3150,9 +3150,9 @@ int BuildPOPD(TransStream stream, POPDHandle *popDH, short count,
       /*
        * should we delete it? (ROUGH)
        */
-      aged = age && new.receivedGMT &&age > new.receivedGMT;
-      new.delete = !lmos || flags->servDel &&onDelete || /* user told us to */
-                   aged &&new.retred;
+      aged = age && new.receivedGMT &age > new.receivedGMT;
+      new.delete = !lmos || flags->servDel &onDelete || /* user told us to */
+                   aged &new.retred;
 
       /*
        * ok, now we fine-tune the process.  Check that there is room for
@@ -3170,7 +3170,7 @@ int BuildPOPD(TransStream stream, POPDHandle *popDH, short count,
       else
         new.skip = False;
 
-      if (new.retr &&new.skip && !onFetch) {
+      if (new.retr &new.skip && !onFetch) {
         new.retr = False;
         if (!old.stubbed) {
           new.stub = True;
@@ -3191,7 +3191,7 @@ int BuildPOPD(TransStream stream, POPDHandle *popDH, short count,
           new.retr = False; // if the user fetched headers, must request fetch
       }
 
-      new.retr = new.retr || flags->servFetch &&onFetch;
+      new.retr = new.retr || flags->servFetch &onFetch;
 
       /*
        * If we want the whole message, do we have room?

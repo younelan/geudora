@@ -709,7 +709,7 @@ int PrintSelectedMessages(TOCType *tocH, bool select, bool now,
         return -1;
 
     /* Original checked if mailbox is "Out" to determine isOut.
-       spec = GetMailboxSpec(tocH,-1); isOut = StringSame(outName, spec.name);
+       GetMailboxSpec(tocH,-1, spec); isOut = StringSame(outName, spec_name(spec));
        For now, default to false — comp windows self-identify. */
     isOut = false;
 

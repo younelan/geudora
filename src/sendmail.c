@@ -78,11 +78,11 @@ extern bool DotToNum(char *str, long *num);
 extern bool IsFCCAddr(char *addr);
 extern bool IsNewsgroupAddr(char *addr);
 extern int UUPCWriteAddr(char *addr);
-extern int BoxSpecByName(FSSpecPtr spec, char *name);
+extern int BoxSpecByName(char * spec, char *name);
 extern int HTMLPreamble(void *acc, char *subj, int n, bool b);
 extern int BuildHTML(void *acc, GtkWidget *pte, void *p, long stop, long val,
                        void *p2, void *p3, int n, char *mid,
-                       void *parts, FSSpecPtr errSpec);
+                       void *parts, char * errSpec);
 extern int PeteLen(GtkWidget *pte);
 extern int BuildEnriched(void *acc, GtkWidget *pte, void *p, long stop,
                            long val, void *p2, bool b);
@@ -107,7 +107,7 @@ extern void GetResInfo(void *res, short *id, unsigned int *type,
 /* AttachOptNumber is a macro in compact.h */
 #include "compact.h"
 extern void UpdateNumStat(int type, int val);
-extern bool IsMailbox(FSSpecPtr spec);
+extern bool IsMailbox(char * spec);
 extern MyWindowPtr GetAMessageLo(TOCType * tocH, int sumNum, GtkWidget *winWP,
                                  void *p1, bool newWin, bool *outNew);
 extern int TransmitMessageForSpool(TransStream stream, MessHandle messH);
@@ -205,7 +205,7 @@ typedef struct wdsEntry *WDSPtr;
  ************************************************************************/
 int SendPtrHead(TransStream stream, char * label, long labelLen, char * body,
                   long bodyLen, bool allowQP, short tid);
-int SendRawMIME(TransStream stream, FSSpecPtr spec);
+int SendRawMIME(TransStream stream, char * spec);
 int SendEnriched(TransStream stream, char *text, long textLen, DecoderFunc *encoder);
 void EhloLine(char *line, long size);
 int DoIntroductions(TransStream stream);
@@ -222,7 +222,7 @@ int SendNewsGroups(TransStream stream, AccuPtr newsGroupAcc, short tid);
 int SendCID(TransStream stream, MessHandle messH, long part, short n);
 int SMTPCmdError(int cmd, char *args, char *message);
 void PrimeProgress(MessHandle messH);
-int SendDigest(TransStream stream, FSSpecPtr spec);
+int SendDigest(TransStream stream, char * spec);
 int WannaSend(MyWindowPtr win);
 short SendXSender(TransStream stream, MessHandle messH);
 int SendMIMEHeaders(TransStream stream, MessHandle messH, void *enriched,
@@ -244,8 +244,8 @@ void Encode1342String(char * s, short tid);
 void Next1342Word(char **startP, char *end,
                   Token1342Ptr current, char * delim, bool *wasQuote,
                   bool *encQuote);
-int SendAnonFTP(TransStream stream, FSSpecPtr spec);
-int SendSpecial(TransStream stream, FSSpecPtr spec, AttMapPtr amp);
+int SendAnonFTP(TransStream stream, char * spec);
+int SendSpecial(TransStream stream, char * spec, AttMapPtr amp);
 int SendAddressHead(TransStream stream, PETEHandle pte, HSPtr hs,
                       bool allowQP, short tid);
 int SendNormalHead(TransStream stream, PETEHandle pte, HSPtr hs, bool allowQP,
@@ -263,15 +263,15 @@ int SendRelatedParts(TransStream stream, MessHandle messH, long flags,
                      StackHandle parts, char * boundary);
 int SendAnAttachment(TransStream stream, MessHandle messH, long flags,
                      bool canQP, bool plainText, short tableID, char * boundary,
-                     FSSpecPtr spec, short multiID, short partID);
+                     char * spec, short multiID, short partID);
 int SendAttachmentFolder(TransStream stream, MessHandle messH, long flags,
                          bool canQP, bool plainText, short tableID,
-                         char * boundary, FSSpecPtr folderSpec, short multiID,
+                         char * boundary, char * folderSpec, short multiID,
                          short partID, short *partBase, CInfoPBRec *hfi);
 int sErr;
-void ConvertPictPart(FSSpecPtr origSpec, FSSpecPtr spec);
-int FlattenAndSpool(FSSpecPtr spec);
-int FlattenQTMovie(FSSpecPtr inSpec, FSSpecPtr outSpec);
+void ConvertPictPart(char * origSpec, char * spec);
+int FlattenAndSpool(char * spec);
+int FlattenQTMovie(char * inSpec, char * outSpec);
 int AllAttachOnBoard(MessHandle messH);
 
 int TransmitMessageMixed(TransmitPBPtr pb, bool topLevel);
@@ -487,7 +487,7 @@ SayHello:
 
   if (sErr / 100 == 2) {
 #ifdef ESSL
-    if (ShouldUseSSL(stream) && !(stream->ESSLSetting & esslSSLInUse)) {
+    if (ShouldUseSSL(stream) && !(stream->ESSLSetting && esslSSLInUse)) {
       if (!Ehlo->starttls) {
         if (!(stream->ESSLSetting & esslOptional)) {
           sErr = 502;
@@ -1135,11 +1135,11 @@ int TransmitMessageLo(TransStream stream, MessHandle messH, bool chatter,
     if (sErr =
             BuildHTML(&pb.enriched, TheBody, NULL, pb.hs.stop, pb.hs.value, NULL,
                       NULL, 1, CompGetMID(messH, scratch), pb.parts, &errSpec)) {
-      if (errSpec.path[0]) {
+      if (errSpec[0]) {
         //	Report error with graphic file
         AddOutgoingMesgError(messH->sumNum,
                              messH->tocH->sums[messH->sumNum].uidHash,
-                             sErr, GRAPHIC_FILE_ERR, sErr, errSpec.name);
+                             sErr, GRAPHIC_FILE_ERR, sErr, spec_name(errSpec));
       }
       sErr = 543;
       goto fail;
@@ -1202,8 +1202,8 @@ int AllAttachOnBoardLo(MessHandle messH, bool errReport) {
       if ((err != 1) && errReport) {
         AddOutgoingMesgError(messH->sumNum,
                              messH->tocH->sums[messH->sumNum].uidHash,
-                             err, ATTACH_MESS_ERR, err, spec.name);
-        FileSystemError(BINHEX_OPEN, spec.name, err);
+                             err, ATTACH_MESS_ERR, err, spec_name(spec));
+        FileSystemError(BINHEX_OPEN, spec_name(spec), err);
       }
   }
   if (err == 1)
@@ -1429,7 +1429,7 @@ int TransmitMessageTextStrip(TransmitPBPtr pb, bool sigToo, bool topLevel) {
 
   if ((pb->opts & OPT_BLOAT) || MessOptIsSet(pb->messH, FLAG_WRAP_OUT))
     pb->flags |= FLAG_WRAP_OUT; // force wrapping on plain part of m/a
-  if ((pb->opts & OPT_BLOAT) && !Flatten)
+  if ((pb->opts && OPT_BLOAT) && !Flatten)
     Flatten = GetFlatten(); // force flattening
   ConvertExcerpt(pb->messH->bodyPTE, pb->hs.value, 0x7fffffff, NULL,
                  NULL); // and convert the excerpts
@@ -2811,10 +2811,10 @@ int SendAttachments(TransStream stream, MessHandle messH, long flags,
       if (err == 1)
         break;
       else
-        return (FileSystemError(BINHEX_OPEN, spec.name, err));
+        return (FileSystemError(BINHEX_OPEN, spec_name(spec), err));
     IsAlias(&spec, &spec);
     struct stat st_2873;
-  if (stat(spec.path, &st_2873) == 0 && S_ISDIR(st_2873.st_mode))
+  if (stat(spec, &st_2873) == 0 && S_ISDIR(st_2873.st_mode))
       err = SendAttachmentFolder(stream, messH, flags, canQP, plainText,
                                  tableID, boundary, &spec, 0,
                                  idBase + index - 1, &idBase, &hfi);
@@ -2857,7 +2857,7 @@ int SendRelatedParts(TransStream stream, MessHandle messH, long flags,
 /************************************************************************
  * ConvertPictPart - convert any PICT HTML parts to something more universal
  ************************************************************************/
-void ConvertPictPart(FSSpecPtr origSpec, FSSpecPtr spec) {
+void ConvertPictPart(char * origSpec, char * spec) {
 #ifdef HAVE_QUICKTIME
   static OSType exportType;
   unsigned char scratch[256];
@@ -2911,7 +2911,7 @@ void ConvertPictPart(FSSpecPtr origSpec, FSSpecPtr spec) {
     if (!GetGraphicsImporterForFile(spec, &imCI)) {
       FSSpec tempSpec;
 
-      tempSpec = *origSpec;
+      g_strlcpy(tempSpec, origSpec, sizeof(tempSpec));
       UniqueSpec(&tempSpec, 31);
       GraphicsExportSetOutputFile(exCI, &tempSpec);
       GraphicsExportSetInputGraphicsImporter(exCI, imCI);
@@ -2926,18 +2926,18 @@ void ConvertPictPart(FSSpecPtr origSpec, FSSpecPtr spec) {
       CloseComponent(exCI);
       if (!err) {
         //	Replace old PICT file (or alias)
-        unlink(origSpec->path);
-        // FSpRename(tempSpec, name) renames tempSpec.path to a new name in the same dir
+        unlink(origSpec);
+        // FSpRename(tempSpec, name) renames tempSpec to a new name in the same dir
         char newPath[1024];
-        char *lastSlash = strrchr(tempSpec.path, '/');
+        char *lastSlash = strrchr(tempSpec, '/');
         if (lastSlash) {
-          int dirLen = lastSlash - tempSpec.path + 1;
-          strncpy(newPath, tempSpec.path, dirLen);
-          strcpy(newPath + dirLen, (char *)origSpec->name + 1);
+          int dirLen = lastSlash - tempSpec + 1;
+          strncpy(newPath, tempSpec, dirLen);
+          strcpy(newPath + dirLen, (char *)spec_name(origSpec) + 1);
         } else {
-          strcpy(newPath, (char *)origSpec->name + 1);
+          strcpy(newPath, (char *)spec_name(origSpec) + 1);
         }
-        rename(tempSpec.path, newPath);
+        rename(tempSpec, newPath);
         *spec = *origSpec;
       }
     } else
@@ -2954,7 +2954,7 @@ void ConvertPictPart(FSSpecPtr origSpec, FSSpecPtr spec) {
  ************************************************************************/
 int SendAttachmentFolder(TransStream stream, MessHandle messH, long flags,
                          bool canQP, bool plainText, short tableID,
-                         char * boundary, FSSpecPtr folderSpec, short multiID,
+                         char * boundary, char * folderSpec, short multiID,
                          short partID, short *partBase, CInfoPBRec *hfi) {
   short err = noErr;
   short index;
@@ -2970,8 +2970,8 @@ int SendAttachmentFolder(TransStream stream, MessHandle messH, long flags,
     return (err);
 
   // now, let's compose our boundary
-  NumToString(partID, spec.name);
-  BuildBoundary(NULL, ourBoundary, spec.name);
+  NumToString(partID, spec_name(spec));
+  BuildBoundary(NULL, ourBoundary, spec_name(spec));
   /*
    * send the multipart header
    */
@@ -2986,21 +2986,21 @@ int SendAttachmentFolder(TransStream stream, MessHandle messH, long flags,
   if (!err)
     err = ComposeRTrans(stream, MIME_CD_FMT,
                         InterestHeadStrn + hContentDisposition, ATTACHMENT,
-                        AttributeStrn + aFilename, folderSpec->name, NewLine);
+                        AttributeStrn + aFilename, spec_name(folderSpec), NewLine);
 
   // header/body separator
   if (err = SendPString(stream, NewLine))
     return (err);
 
   // get our dirID
-  g_strlcpy(spec.path, folderSpec->path, sizeof(spec.path));
+  g_strlcpy(spec, folderSpec, sizeof(spec));
   dirId = SpecDirId(folderSpec); // keep for now if used later
-  if (!spec.path[0])
+  if (!spec[0])
     return fnfErr;
 
   // TODO: Implement POSIX directory iteration for attachment folders.
   // The old Mac CInfoPBRec/DirIterateMac loop has been removed.
-  // When implemented, iterate over spec.path with opendir/readdir or
+  // When implemented, iterate over spec with opendir/readdir or
   // g_dir_open/g_dir_read_name, calling SendAnAttachment for files
   // and recursing with SendAttachmentFolder for subdirectories.
   (void)index;
@@ -3019,7 +3019,7 @@ int SendAttachmentFolder(TransStream stream, MessHandle messH, long flags,
  ************************************************************************/
 int SendAnAttachment(TransStream stream, MessHandle messH, long flags,
                      bool canQP, bool plainText, short tableID, char * boundary,
-                     FSSpecPtr spec, short multiID, short partID) {
+                     char * spec, short multiID, short partID) {
   short err = noErr;
   bool isUU;
   CInfoPBRec hfi;
@@ -3036,13 +3036,13 @@ int SendAnAttachment(TransStream stream, MessHandle messH, long flags,
   isUU = aType + 1 == atmUU;
   hfi.hFileInfo.ioNamePtr = name;
   struct stat st_3084;
-  if (stat(spec->path, &st_3084) == 0)
+  if (stat(spec, &st_3084) == 0)
     err = noErr;
   else
     err = ioErr;
   if (err)
-    return (FileSystemError(BINHEX_OPEN, spec->name, err));
-  ComposeRString(s, BINHEX_PROG_FMT, spec->name);
+    return (FileSystemError(BINHEX_OPEN, spec_name(spec), err));
+  ComposeRString(s, BINHEX_PROG_FMT, spec_name(spec));
   Progress(NoChange, NoChange, NULL, NULL, s);
   noRFork = hfi.hFileInfo.ioFlRLgLen == 0;
 
@@ -3055,7 +3055,7 @@ int SendAnAttachment(TransStream stream, MessHandle messH, long flags,
     return (err);
 
   if (am.mm.specialId == 'flat') {
-    local = *spec;
+    g_strlcpy(local, spec, sizeof(local));
     if (!FlattenAndSpool(&local)) {
       spec = &local; // send the spooled copy
       flat = true;
@@ -3076,17 +3076,17 @@ int SendAnAttachment(TransStream stream, MessHandle messH, long flags,
                          EqualStrRes(am.mm.mimetype, MIME_TEXT) && am.isBasic))
     err = SendPlain(stream, spec, flags, tableID, &am);
   else if (!isUU && plainText && (am.isBasic || noRFork))
-    err = SendDataFork(stream, spec->path, flags, tableID, &am);
+    err = SendDataFork(stream, spec, flags, tableID, &am);
   else {
     switch (aType + 1) {
     case atmDouble:
-      err = SendDouble(stream, spec->path, flags, tableID, &am);
+      err = SendDouble(stream, spec, flags, tableID, &am);
       break;
     case atmSingle:
-      err = SendSingle(stream, spec->path, True, &am);
+      err = SendSingle(stream, spec, True, &am);
       break;
     case atmUU:
-      err = SendUU(stream, spec->path, &am);
+      err = SendUU(stream, spec, &am);
       break;
     default:
       err = SendBinHex(stream, spec, &am);
@@ -3099,12 +3099,12 @@ int SendAnAttachment(TransStream stream, MessHandle messH, long flags,
     if (elapsed_ms < 1) elapsed_ms = 1;
     long rate = (10 * (hfi.hFileInfo.ioFlLgLen + hfi.hFileInfo.ioFlRLgLen)) /
                 (elapsed_ms * 1024);
-    g_debug("%p: %d %d.%d KBps", spec->name, aType,
+    g_debug("%p: %d %d.%d KBps", spec_name(spec), aType,
                 rate / 10, rate % 10);
   }
 
   if (flat)
-    unlink(spec->path);
+    unlink(spec);
   return (err);
 }
 
@@ -3135,7 +3135,7 @@ char * BuildContentID(char * into, char * mid, long part, short i) {
 /**********************************************************************
  * SendDigest - send a mailbox, as a digest
  **********************************************************************/
-int SendDigest(TransStream stream, FSSpecPtr spec) {
+int SendDigest(TransStream stream, char * spec) {
   TOCType * tocH = TOCBySpec(spec);
   unsigned char boundary[256];
   unsigned char date[64];
@@ -3157,9 +3157,9 @@ int SendDigest(TransStream stream, FSSpecPtr spec) {
   if (!sErr)
     sErr = ComposeRTrans(stream, MIME_CD_FMT,
                          InterestHeadStrn + hContentDisposition, ATTACHMENT,
-                         AttributeStrn + aFilename, spec->name, NewLine);
+                         AttributeStrn + aFilename, spec_name(spec), NewLine);
   struct stat st_3202;
-  stat(spec->path, &st_3202);
+  stat(spec, &st_3202);
   if (!sErr && *R822Date(date, st_3202.st_mtime - ZoneSecs()))
     sErr = ComposeRTrans(stream, MIME_CT_ANNOTATE, AttributeStrn + aModDate,
                          date, NewLine);
@@ -3220,7 +3220,7 @@ done:
 /************************************************************************
  * SendSpecial - send a special attachment type
  ************************************************************************/
-int SendSpecial(TransStream stream, FSSpecPtr spec, AttMapPtr amp) {
+int SendSpecial(TransStream stream, char * spec, AttMapPtr amp) {
   int err;
 
   switch (amp->mm.specialId) {
@@ -3258,7 +3258,7 @@ char *GetFlatten(void) {
 /************************************************************************
  * SendAnonFTP - send an 'AURL' doc as an anonymous ftp thingie
  ************************************************************************/
-int SendAnonFTP(TransStream stream, FSSpecPtr spec) {
+int SendAnonFTP(TransStream stream, char * spec) {
   int err;
   void *text;
   char type[128], ftp[128], host[128], dir[128], name[128], token[128];
@@ -3267,7 +3267,7 @@ int SendAnonFTP(TransStream stream, FSSpecPtr spec) {
   short size;
 
   if (err = Snarf(spec, &text, 254))
-    FileSystemError(BINHEX_READ, spec->name, err);
+    FileSystemError(BINHEX_READ, spec_name(spec), err);
   else {
     size = GetHandleSize_(text);
     { size_t _mpl = (size); memcpy(data, (char *)text, _mpl); ((char*)(data))[_mpl] = '\0'; }
@@ -3354,7 +3354,7 @@ int SendAnonFTP(TransStream stream, FSSpecPtr spec) {
 /************************************************************************
  * SendRawMIME - send a raw MIME document
  ************************************************************************/
-int SendRawMIME(TransStream stream, FSSpecPtr spec) {
+int SendRawMIME(TransStream stream, char * spec) {
   long size = FSpDFSize(spec);
   char *buffer = NULL;
   long bSize;
@@ -3368,7 +3368,7 @@ int SendRawMIME(TransStream stream, FSSpecPtr spec) {
   bSize = MIN(size, GetRLong(BUFFER_SIZE));
 
   struct stat st_3397;
-  stat(spec->path, &st_3397);
+  stat(spec, &st_3397);
   size = st_3397.st_size;
   refN = 0;
   err = noErr;
@@ -3379,7 +3379,7 @@ int SendRawMIME(TransStream stream, FSSpecPtr spec) {
       WarnUser(MEM_ERR, err = memFullErr);
       return (err);
     }
-    refN = open(spec->path, O_RDWR);
+    refN = open(spec, O_RDWR);
     if (refN >= 0) {
       err = noErr;
     } else {
@@ -3410,7 +3410,7 @@ int SendRawMIME(TransStream stream, FSSpecPtr spec) {
             sendCount = count;
           err = BufferSend(stream, encoder, buffer, sendCount, True);
         } else
-          FileSystemError(BINHEX_READ, spec->name, err);
+          FileSystemError(BINHEX_READ, spec_name(spec), err);
         size -= count;
       }
       // if the file didn't end with a newline, add one
@@ -3493,14 +3493,14 @@ long StuffPeriods(char *in, long inLen, char *out,
 /************************************************************************
  * IsPostScript - is a file a PostScript file?
  ************************************************************************/
-bool IsPostScript(FSSpecPtr spec) {
+bool IsPostScript(char * spec) {
   short refN;
   unsigned char psMagic[32];
   unsigned char fileMagic[32];
   long count;
   bool result = False;
 
-  refN = open(spec->path, O_RDONLY);
+  refN = open(spec, O_RDONLY);
   if (refN >= 0) {
     GetRString(psMagic, PS_MAGIC);
     count = strlen((const char *)psMagic);
@@ -3516,7 +3516,7 @@ bool IsPostScript(FSSpecPtr spec) {
 /************************************************************************
  * SendPlain - send a plain text file
  ************************************************************************/
-short SendPlain(TransStream stream, FSSpec *spec, long flags, short tableId,
+short SendPlain(TransStream stream, char *spec, long flags, short tableId,
                 AttMapPtr amp) {
   int err;
   DecoderFunc *encoder = NULL;
@@ -3533,7 +3533,7 @@ short SendPlain(TransStream stream, FSSpec *spec, long flags, short tableId,
       flags |= FLAG_ENCBOD;
     }
     struct stat st_3560;
-    stat(spec->path, &st_3560);
+    stat(spec, &st_3560);
     if (err = MIMEFileHeader(stream, amp, POSTSCRIPT, st_3560.st_mtime))
       goto done;
     if (err = ComposeRTrans(stream, MIME_V_FMT,
@@ -3559,7 +3559,7 @@ short SendPlain(TransStream stream, FSSpec *spec, long flags, short tableId,
             ATTACHMENT, AttributeStrn + aFilename, ATT_MAP_NAME(amp), NewLine))
       goto done;
     struct stat st_3581;
-    stat(spec->path, &st_3581);
+    stat(spec, &st_3581);
     if (*R822Date(scratch, st_3581.st_mtime - ZoneSecs()) &&
         (err = ComposeRTrans(stream, MIME_CT_ANNOTATE, AttributeStrn + aModDate,
                              scratch, NewLine)))
@@ -3587,7 +3587,7 @@ done:
 /**********************************************************************
  * SendTextFile - send text from a file
  **********************************************************************/
-int SendTextFile(TransStream stream, FSSpecPtr spec, long flags,
+int SendTextFile(TransStream stream, char * spec, long flags,
                    DecoderFunc *encoder) {
   short refN = 0;
   char *dataBuffer = NULL;
@@ -3608,18 +3608,18 @@ int SendTextFile(TransStream stream, FSSpecPtr spec, long flags,
   /*
    * open it
    */
-  refN = open(spec->path, O_RDONLY);
+  refN = open(spec, O_RDONLY);
   if (refN < 0) {
     err = ioErr;
   } else {
     err = noErr;
   }
   if (err) {
-    FileSystemError(BINHEX_OPEN, spec->name, err);
+    FileSystemError(BINHEX_OPEN, spec_name(spec), err);
     goto done;
   }
   if (err = GetEOF(refN, &fileSize)) {
-    FileSystemError(BINHEX_OPEN, spec->name, err);
+    FileSystemError(BINHEX_OPEN, spec_name(spec), err);
     goto done;
   }
 
@@ -3630,7 +3630,7 @@ int SendTextFile(TransStream stream, FSSpecPtr spec, long flags,
     readSize = MIN(dataSize, fileSize);
     sendSize = readSize;
     if (err = ARead(refN, &sendSize, dataBuffer)) {
-      FileSystemError(BINHEX_READ, spec->name, err);
+      FileSystemError(BINHEX_READ, spec_name(spec), err);
       goto done;
     }
     if (err = SendBodyLines(stream, (void *)dataBuffer, sendSize, 0, flags, False, NULL,
@@ -3730,9 +3730,9 @@ int SendContentType(TransStream stream, char *text1, long text1Len, long offset1
   bool any2022;
   short err;
   short encId;
-  bool strip = 0 != (opts && (*opts & OPT_STRIP));
-  bool rich = !strip && 0 != (flags && (*flags & FLAG_RICH));
-  bool html = !strip && 0 != (opts && (*opts & OPT_HTML));
+  bool strip = 0 != (opts && (*opts && OPT_STRIP));
+  bool rich = !strip && 0 != (flags && (*flags && FLAG_RICH));
+  bool html = !strip && 0 != (opts && (*opts && OPT_HTML));
   short computedSubType =
       html ? HTMLTagsStrn + htmlTag : (rich ? MIME_RICHTEXT : MIME_PLAIN);
 
@@ -3754,7 +3754,7 @@ int SendContentType(TransStream stream, char *text1, long text1Len, long offset1
   else
     NameCharset(scratch, ktMacUS, tlMIME);
 
-  if (0 != (*flags & FLAG_WRAP_OUT) && UseFlowOut) {
+  if (0 != (*flags && FLAG_WRAP_OUT) && UseFlowOut) {
     if (tlMIME)
       AddTLMIME(*tlMIME, TLMIME_PARAM,
                 GetRString(flowed, AttributeStrn + aFormat),
@@ -3812,7 +3812,7 @@ int SendContentType(TransStream stream, char *text1, long text1Len, long offset1
                             *flags); /* determine automatically */
 
   if (0 != (*flags & FLAG_ENCBOD)) {
-    if ((*flags & FLAG_CAN_ENC) && (UUPCOut || (Ehlo && !Ehlo->mime8bit) ||
+    if ((*flags && FLAG_CAN_ENC) && (UUPCOut || (Ehlo && !Ehlo->mime8bit) ||
                                     !PrefIsSet(PREF_ALLOW_8BITMIME)))
       encId = MIME_QP;
     else {
@@ -3844,11 +3844,11 @@ long DecideEncoding(char *text1, long text1Len, char *text2, long text2Len,
 
   if (anyfunny)
     flags |= FLAG_ENCBOD; /* encode funny chars in QP */
-  else if (0 == (flags & FLAG_WRAP_OUT) && !(flags & FLAG_RICH)) {
+  else if (0 == (flags && FLAG_WRAP_OUT) && !(flags && FLAG_RICH)) {
     if (!text1 || LongerThan(text1, text1Len, GetRLong(MAX_SMTP_LINE)) ||
         text2 && LongerThan(text2, text2Len, GetRLong(MAX_SMTP_LINE)))
       flags |= FLAG_ENCBOD;
-  } else if (0 == (flags & FLAG_ENCBOD) && (flags & FLAG_RICH)) {
+  } else if (0 == (flags && FLAG_ENCBOD) && (flags && FLAG_RICH)) {
     if (!text1 || LongerWordThan(text1, text1Len, GetRLong(ENRICHED_MAX_WORD)) ||
         text2 && LongerWordThan(text1, text1Len, GetRLong(ENRICHED_MAX_WORD)))
       flags |= FLAG_ENCBOD;
@@ -4547,7 +4547,7 @@ int BufferSend(TransStream stream, DecoderFunc *encoder, char *data,
 /************************************************************************
  * GetIndAttachment - get a particular attacment
  ************************************************************************/
-int GetIndAttachment(MessHandle messH, short index, FSSpecPtr spec,
+int GetIndAttachment(MessHandle messH, short index, char * spec,
                        HSPtr where) {
   int err = 1;
   void *text = NULL;
@@ -4563,7 +4563,7 @@ int GetIndAttachment(MessHandle messH, short index, FSSpecPtr spec,
 /************************************************************************
  * GetIndAttachmentLo - get a particular attacment
  ************************************************************************/
-int GetIndAttachmentLo(void *text, short index, FSSpecPtr spec, HSPtr where,
+int GetIndAttachmentLo(void *text, short index, char * spec, HSPtr where,
                          HeadSpec *hs) {
   short colons[4];
   short onColon;
@@ -4713,15 +4713,15 @@ int GetReplyLo(TransStream stream, char *buffer, int size,
  * FlattenAndSpool - flatten and spool a movie
  * Changes the filespec passed to it!
  ************************************************************************/
-int FlattenAndSpool(FSSpecPtr spec) {
+int FlattenAndSpool(char * spec) {
   FSSpec tempSpec;
-  int err = NewTempSpec(0, 0, spec->name, &tempSpec);
+  int err = NewTempSpec(0, 0, spec_name(spec), &tempSpec);
 
   if (!err) {
     if (err = FlattenQTMovie(spec, &tempSpec))
-      unlink(tempSpec.path);
+      unlink(tempSpec);
     else {
-      unlink(tempSpec.path);
+      unlink(tempSpec);
     }
     // FSpKillRFork is no-op
   }
@@ -4731,7 +4731,7 @@ int FlattenAndSpool(FSSpecPtr spec) {
 /**********************************************************************
  * FlattenQTMovie - put movie in data fork of new file
  **********************************************************************/
-int FlattenQTMovie(FSSpecPtr inSpec, FSSpecPtr outSpec) {
+int FlattenQTMovie(char * inSpec, char * outSpec) {
 #ifdef HAVE_QUICKTIME
   short movieResFile;
   Movie theMovie, tempMovie;

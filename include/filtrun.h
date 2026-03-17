@@ -51,7 +51,7 @@ int FilterNoteMatch(short filter, long secs);
 uLong FilterLastMatchHi(short filter);
 void NonSequitur(char *subject, TOCType *tocH, short sumNum);
 void FilterPostprocess(FilterKeywordEnum fType, FilterPBPtr fpb);
-void AddSpecToList(FSSpecPtr spec, CSpecHandle specList);
+void AddSpecToList(char * spec, CSpecHandle specList);
 bool FilterMatchHi(short f, TOCType *tocH, short sumNum);
 #define FU_TYPE 'FU  '
 #define FU_ID 1001

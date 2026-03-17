@@ -1034,7 +1034,7 @@ static bool LinkDrawRowCallBack(ViewListPtr pView, short item, Rect *pRect,
     TextFont(pView->font);
     TextSize(pView->fontSize);
 
-    DrawString(pCellData->name);
+    DrawString(spec_name(pCellData));
     if (pCellData->misc.style)
       TextFace(0);
 
@@ -1119,11 +1119,11 @@ static void GetCellRectsForLHWin(ViewListPtr pView, CellRec *pCellData,
       if (column == NAME_COLUMN) {
         *pNamePt = pt;
         SetRect(pName, pt.h, pt.v - fInfo.ascent - fInfo.leading,
-                pt.h + StringWidth(pCellData->name), pt.v + fInfo.descent);
+                pt.h + StringWidth(spec_name(pCellData)), pt.v + fInfo.descent);
       } else if (column == DATE_COLUMN) {
         *pDatePt = pt;
         SetRect(pDate, pt.h, pt.v - fInfo.ascent - fInfo.leading,
-                pt.h + StringWidth(pCellData->name), pt.v + fInfo.descent);
+                pt.h + StringWidth(spec_name(pCellData)), pt.v + fInfo.descent);
       }
       break;
 

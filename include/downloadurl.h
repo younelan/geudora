@@ -39,7 +39,7 @@ typedef struct
 	char	checksum;
 } DownloadInfo;
 
-int DownloadURL(const char *urlString, FSSpec * destSpec,long refCon,void (*FinishFunc)(long,int,DownloadInfo*),long *pReference,HTTPinfo *HTTPstuff);
+int DownloadURL(const char *urlString, char *destSpec,long refCon,void (*FinishFunc)(long,int,DownloadInfo*),long *pReference,HTTPinfo *HTTPstuff);
 void URLDownloadAbort(long urlRef);
 bool DownloadURLOK(void);
 

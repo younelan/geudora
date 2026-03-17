@@ -122,7 +122,7 @@ extern int InsertHTMLLo(unsigned char * text, long *htmlOffset, long textLen, lo
                         PETEHandle pte, TextEncoding encoding, long flags, StackHandle partRefStack);
 extern bool EncodingError(int err);
 extern TextEncoding CreateSystemRomanEncoding(void);
-extern int StackQueue(void *what, StackHandle stack);
+extern int StackQueue(void *what, StackHandle *pStack);
 extern int StackTop(void *into, StackHandle stack);
 extern int PETEInsertTextHandle(PETEInst pi, PETEHandle pte, long offset,
                                 unsigned char * text, long len, long hOffset,
@@ -161,7 +161,7 @@ int InsertFlowedLo(unsigned char * text, long *textOffset, long textLen, long *i
 int InsertFixed(unsigned char * text, long *textOffset, long textLen, long *inOffset, PETEHandle pte, TextEncoding encoding);
 #define FlushIntlText(pte, offset, converter) PeteInsertIntlText(pte, offset, nil, 0L, 0L, converter, kTextEncodingUnknown, false, true);
 bool PartIsReferenced(uLong cID,uLong baseID,uLong sourceID,StackHandle partRefStack);
-int FakeAttachment(PETEHandle pte,uLong *offset,FSSpecPtr spec);
+int FakeAttachment(PETEHandle pte,uLong *offset,char * spec);
 
 #pragma segment Enriched
 
@@ -184,7 +184,7 @@ typedef struct
 	do {																																		\
 		ComposeRString(directive,MIME_RICH_ON,EnrichedStrn+pushMe.directive);	\
 		if (err=AccuAddStr(enriched,directive)) goto done;										\
-		if (err=StackPush(&pushMe,openStack)) goto done;											\
+		if (err=StackPush(&pushMe, &openStack)) goto done;											\
 	} while (0)
 
 /**********************************************************************
@@ -397,10 +397,10 @@ int BuildEnrichedDirectives(PETETextStylePtr oldStyle,PETETextStylePtr newStyle,
 	for (i=0;i<sizeof(counters)/sizeof(short);i++) counters[i]=0;
 	
 	// figure out what it is we have to undo
-	if ((styleDiff & bold) && !(newStyle->tsFace&bold)) counters[enBold]=1;
-	if ((styleDiff & italic) && !(newStyle->tsFace&italic)) counters[enItalic]=1;
-	if ((styleDiff & underline) && !(newStyle->tsFace&underline)) counters[enUnderline]=1;
-	if (styleDiff & peFontValid && oldStyle->tsFont!=kPETEDefaultFont)
+	if ((styleDiff && bold) && !(newStyle->tsFace&bold)) counters[enBold]=1;
+	if ((styleDiff && italic) && !(newStyle->tsFace&italic)) counters[enItalic]=1;
+	if ((styleDiff && underline) && !(newStyle->tsFace&underline)) counters[enUnderline]=1;
+	if (styleDiff && peFontValid && oldStyle->tsFont!=kPETEDefaultFont)
 	{
 #ifdef USEFIXEDDEFAULTFONT
 		if(oldStyle->tsFont == kPETEDefaultFixed)
@@ -409,7 +409,7 @@ int BuildEnrichedDirectives(PETETextStylePtr oldStyle,PETETextStylePtr newStyle,
 #endif
 			counters[enFont]=1;
 	}
-	if (styleDiff & peColorValid && !IS_DEFAULT_COLOR(oldStyle->tsColor)) counters[enColor]=1;
+	if (styleDiff && peColorValid && !IS_DEFAULT_COLOR(oldStyle->tsColor)) counters[enColor]=1;
 	if ((styleDiff & peSizeValid))
 	{
 		oldInc = FindSizeInc(oldStyle->tsSize);
@@ -433,7 +433,7 @@ int BuildEnrichedDirectives(PETETextStylePtr oldStyle,PETETextStylePtr newStyle,
 		if (oldInc==newInc) styleDiff &= ~peSizeValid;
 	}
 	
-	if ((paraDiff & peQuoteLevelValid) && oldInfo->quoteLevel>newInfo->quoteLevel)
+	if ((paraDiff && peQuoteLevelValid) && oldInfo->quoteLevel>newInfo->quoteLevel)
 		counters[enExcerpt] = oldInfo->quoteLevel-newInfo->quoteLevel;
 	
 	if (paraDiff & peJustificationValid)
@@ -489,22 +489,22 @@ int BuildEnrichedDirectives(PETETextStylePtr oldStyle,PETETextStylePtr newStyle,
 		}
 	}
 
-	if ((styleDiff & bold) && (newStyle->tsFace&bold))
+	if ((styleDiff && bold) && (newStyle->tsFace&bold))
 	{
 		pushMe.directive = enBold;
 		ISSUE_DIRECTIVE;
 	}
-	if ((styleDiff & italic) && (newStyle->tsFace&italic))
+	if ((styleDiff && italic) && (newStyle->tsFace&italic))
 	{
 		pushMe.directive = enItalic;
 		ISSUE_DIRECTIVE;
 	}
-	if ((styleDiff & underline) && (newStyle->tsFace&underline))
+	if ((styleDiff && underline) && (newStyle->tsFace&underline))
 	{
 		pushMe.directive = enUnderline;
 		ISSUE_DIRECTIVE;
 	}
-	if (styleDiff & peFontValid && newStyle->tsFont!=kPETEDefaultFont)
+	if (styleDiff && peFontValid && newStyle->tsFont!=kPETEDefaultFont)
 	{
 #ifdef USEFIXEDDEFAULTFONT
 		if(newStyle->tsFont==kPETEDefaultFixed)
@@ -522,7 +522,7 @@ int BuildEnrichedDirectives(PETETextStylePtr oldStyle,PETETextStylePtr newStyle,
 			AccuAddStr(enriched,directive);
 		}
 	}
-	if (styleDiff & peColorValid && !IS_DEFAULT_COLOR(newStyle->tsColor))
+	if (styleDiff && peColorValid && !IS_DEFAULT_COLOR(newStyle->tsColor))
 	{
 		pushMe.directive = enColor;
 		pushMe.param.color = newStyle->tsColor;
@@ -658,7 +658,7 @@ int UnwindRich(short *counters,StackHandle openStack,StackHandle redoStack,AccuP
 			counters[top.directive]--;
 			if (!--counterCount) break;
 		}
-		else if (redoStack) err = StackPush(&top,redoStack);
+		else if (redoStack) err = StackPush(&top, &redoStack);
 	}
 done:
 	return(err ? err : (counterCount?fnfErr:noErr));
@@ -692,7 +692,7 @@ int RewindRich(StackHandle openStack,StackHandle redoStack,AccuPtr enriched)
 				if (err=AccuAddStr(enriched,cmd)) goto done;
 				break;
 		}
-		err = StackPush(&top,openStack);
+		err = StackPush(&top, &openStack);
 	}
 done:
 	return(err);
@@ -823,7 +823,7 @@ int InsertRichLo(unsigned char * text,long textOffset,long textLen,long offset,b
 			if (!RelLine2Spec(scratch,&pd.spec,&pd.cid,&pd.relURL,&pd.absURL))
 			{
 				if (partStack && PartIsReferenced(pd.cid,pd.relURL,pd.absURL,partRefStack))
-					StackQueue(&pd,partStack);
+					StackQueue(&pd, &partStack);
 				else
 				{
 					err = FakeAttachment(pte,&offset,&pd.spec);
@@ -895,7 +895,7 @@ bool PartIsReferenced(uLong cID,uLong baseID,uLong sourceID,StackHandle partRefS
  * FakeAttachment - an html part wasn't referenced by anything; pretend
  * it's an attachment
  ************************************************************************/
-int FakeAttachment(PETEHandle pte,uLong *offset,FSSpecPtr spec)
+int FakeAttachment(PETEHandle pte,uLong *offset,char * spec)
 {
 	int err;
 	char scratch[256];
@@ -907,7 +907,7 @@ int FakeAttachment(PETEHandle pte,uLong *offset,FSSpecPtr spec)
 	if (*offset!=-1) *offset += strlen((const char*)scratch);
 
 	// attachment
-	AttachNoteLo(spec->path,(const char *)scratch);
+	AttachNoteLo(spec,(const char *)scratch);
 	err = PeteInsertPtr(pte,*offset,scratch,strlen((const char*)scratch));
 	if (err) return err;
 	if (*offset!=-1) *offset += strlen((const char*)scratch);
@@ -974,7 +974,7 @@ int InsertFlowedLo(unsigned char * text, long *textOffset, long textLen, long *i
 	while(!err && tStart<textLen)
 	{
 		// gather line
-		for (tStop=tStart;tStop<textLen&&text[tStop]!='\015';tStop++);
+		for (tStop=tStart;tStop<textLen&text[tStop]!='\015';tStop++);
 		
 #ifdef DEBUG
 		{ size_t _mpl = (tStop-tStart); memcpy(line, text+tStart, _mpl); ((char*)(line))[_mpl] = '\0'; }
@@ -1007,7 +1007,7 @@ int InsertFlowedLo(unsigned char * text, long *textOffset, long textLen, long *i
 		if (interpret)
 		{
 			// figure current quotelevel
-			for (quoteLevel=tStart;quoteLevel<tStop&&text[quoteLevel]=='>';quoteLevel++);
+			for (quoteLevel=tStart;quoteLevel<tStop&text[quoteLevel]=='>';quoteLevel++);
 			quoteLevel -= tStart;
 			
 			// if quotelevel changes, make hard newline
@@ -1033,7 +1033,7 @@ int InsertFlowedLo(unsigned char * text, long *textOffset, long textLen, long *i
 			// remove quotes
 			else if ((excerpt||flowNext) && text[tStart]=='>')
 			{
-				while (tStart<tStop&&text[tStart]=='>') tStart++;
+				while (tStart<tStop&text[tStart]=='>') tStart++;
 				if (tStart<tStop && text[tStart]==' ') tStart++;	// more space-stuffing
 			}
 			
@@ -1122,7 +1122,7 @@ int InsertFixed(unsigned char * text, long *textOffset, long textLen, long *inOf
 	while(tStart<textLen)
 	{
 		// gather line
-		for (tStop=tStart;tStop<textLen&&text[tStop]!='\015';tStop++);
+		for (tStop=tStart;tStop<textLen&text[tStop]!='\015';tStop++);
 
 		// is it the magic turn-off?
 		if (tStop-tStart==*notCharset)
@@ -1308,13 +1308,13 @@ DoText :
 						PeteStyleAt(pte,kPETEDefaultStyle,&pse);
 						style.tsColor = pse.psStyle.textStyle.tsColor;
 					}
-					if (!neg) StackPush(&style.tsColor,colorStack);
+					if (!neg) StackPush(&style.tsColor, &colorStack);
 					PETESetTextStyle(PETE,pte,kPETECurrentStyle,kPETECurrentStyle,
 												&style,peColorValid&validMask);
 					break;
 				case enSmaller:
 				case enBigger:
-					if (cmdId==enSmaller&&neg || cmdId==enBigger&&!neg)
+					if (cmdId==enSmaller&neg || cmdId==enBigger&!neg)
 						sizeInc++;
 					else
 						sizeInc--;
@@ -1342,7 +1342,7 @@ DoText :
 						}
 						else
 							style.tsFont = GetFontID(GetRString(scratch,FIXED_FONT));
-						StackPush(&style.tsFont,fontStack);
+						StackPush(&style.tsFont, &fontStack);
 					}
 					PETESetTextStyle(PETE,pte,kPETECurrentStyle,kPETECurrentStyle,
 												&style,peFontValid&validMask);
@@ -1389,7 +1389,7 @@ DoText :
 							case enCenter: pinfo.justification = teCenter; break;
 							case enRight: pinfo.justification = teFlushRight; break;
 						}
-						StackPush(&pinfo.justification,justStack);
+						StackPush(&pinfo.justification, &justStack);
 					}
 					PeteGetTextAndSelection(pte,nil,nil,&offset);
 					pIndex = PeteParaAt(pte,offset);
@@ -1430,7 +1430,7 @@ DoText :
 					Zero(pinfo);
 					if (neg) StackPop(nil,margStack);	// drop top one
 					if (StackTop(&marg,margStack)) Zero(marg);
-					if (!neg) StackPush(&marg,margStack);
+					if (!neg) StackPush(&marg, &margStack);
 					PeteConvertMarg(pte,kPETEDefaultPara,&marg,&pinfo);
 					PeteGetTextAndSelection(pte,nil,nil,&offset);
 					pIndex = PeteParaAt(pte,offset);
@@ -1454,7 +1454,7 @@ DoText :
 								{
 									// *replace* the top font with the new one
 									StackPop(nil,fontStack);
-									StackPush(&style.tsFont,fontStack);
+									StackPush(&style.tsFont, &fontStack);
 									PETESetTextStyle(PETE,pte,kPETECurrentStyle,kPETECurrentStyle,
 											&style,peFontValid&validMask);
 								}
@@ -1464,7 +1464,7 @@ DoText :
 								{
 									// *replace* the top color with the new one
 									StackPop(nil,colorStack);
-									StackPush(&style.tsColor,colorStack);
+									StackPush(&style.tsColor, &colorStack);
 									PETESetTextStyle(PETE,pte,kPETECurrentStyle,kPETECurrentStyle,
 											&style,peColorValid&validMask);
 								}
@@ -1480,7 +1480,7 @@ DoText :
 									marg.second += curMarg.second;
 									marg.right += curMarg.right;
 									PeteConvertMarg(pte,kPETEDefaultPara,&marg,&pinfo);
-									StackPush(&marg,margStack);
+									StackPush(&marg, &margStack);
 									PeteGetTextAndSelection(pte,nil,nil,&offset);
 									pIndex = PeteParaAt(pte,offset);
 									PETESetParaInfo(PETE,pte,pIndex,&pinfo,
@@ -1569,7 +1569,7 @@ int EnrichedToken(unsigned char * enriched,long maxLen,bool headers,short *cmdId
 	// other stuff
 	else
 	{
-		for (stop=start+1; stop<end && (headers || *stop!='<'&&*stop!='>') && (*stop!='\015' || headers&&stop<end-1&&IsWhite(stop[1]));stop++);
+		for (stop=start+1; stop<end && (headers || *stop!='<'&*stop!='>') && (*stop!='\015' || headers&stop<end-1&IsWhite(stop[1]));stop++);
 		if (*start=='<')
 		{
 			// "<<"
@@ -1583,7 +1583,7 @@ int EnrichedToken(unsigned char * enriched,long maxLen,bool headers,short *cmdId
 			{
 				unsigned char * tempStop;
 				
-				for(tempStop=start+1;tempStop<stop&&*tempStop!=' ';tempStop++);
+				for(tempStop=start+1;tempStop<stop&*tempStop!=' ';tempStop++);
 				*neg = start[1]=='/';
 				if (*neg) { size_t _mpl = (tempStop-start-2); memcpy(cmd, start+2, _mpl); ((char*)(cmd))[_mpl] = '\0'; }
 				else { size_t _mpl = (tempStop-start-1); memcpy(cmd, start+1, _mpl); ((char*)(cmd))[_mpl] = '\0'; }
@@ -1850,7 +1850,7 @@ char * Style2String(ESSPtr ess,char * string)
 	PXCat(string,ess->textValid); PCatC(string,',');
 	
 	// font name
-	if ((ess->textValid & peFontValid) && ess->textStyle.tsFont!=kPETEDefaultFont)
+	if ((ess->textValid && peFontValid) && ess->textStyle.tsFont!=kPETEDefaultFont)
 	{
 		GetFontName(ess->textStyle.tsFont,s);
 		PCat(string,s);

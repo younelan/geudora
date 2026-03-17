@@ -103,7 +103,7 @@ int CompHeadFind(void *messH, int headId, void *hs) { return 0; /* stub */ }
 int CompHeadGetText(void *body, void *hs, void **text) { return -1; /* stub */ }
 bool IsVCardAvailable(void) { return false; }
 /* FindAnAttachment declared in message.h (7 params) */
-bool IsVCardFile(FSSpec *spec) { return false; }
+bool IsVCardFile(char *spec) { return false; }
 /* ReplyDefaults and DoReplyMessage are implemented in message.c */
 /* GetAMessage declared in message.h */
 /* IsWindowVisible provided by mailbox.h as static inline */
@@ -161,16 +161,16 @@ int AddAddressHashUniq(void *hash, void *acc) { return 0; /* stub */ }
 #define nrNone 0
 
 // Real implementations using existing code
-bool GetPhotoSpec(FSSpec *spec, int ab, int nick, bool *alreadyExists) {
+bool GetPhotoSpec(char *spec, int ab, int nick, bool *alreadyExists) {
   // TODO: Implement using file utilities
   *alreadyExists = false;
   return false;
 }
 
-unsigned char *MakeFileURL(unsigned char *url, FSSpec *spec, int unused) {
+unsigned char *MakeFileURL(unsigned char *url, char *spec, int unused) {
   // Convert FSSpec path to file:// URL
   if (spec && url) {
-    sprintf((char *)url + 1, "file://%s", spec->path);
+    sprintf((char *)url + 1, "file://%s", spec);
     url[0] = strlen((char *)url + 1);
   }
   return url;
@@ -325,7 +325,7 @@ short TotalNumOfNicks;
 
 int ReadNicknames(short which);
 bool SplitNicknames(short ab);
-int KillNickTOC(FSSpecPtr spec);
+int KillNickTOC(char * spec);
 int ReadNickTOC(short which);
 int WriteNickTOC(short which);
 bool NickFileOkForFastSave(short which);
@@ -380,14 +380,14 @@ int ReadNicknames(short which) {
     dataAcc.size = dataAcc.offset = GetHandleSize(dataAcc.data);
 
   // Find the file, open it for reading, get the command names
-  spec = This.spec;
-  This.collapsed = FindSTRNIndex(NickFileCollapseStrn, spec.name) > 0;
+  g_strlcpy(spec, This.spec, sizeof(spec));
+  This.collapsed = FindSTRNIndex(NickFileCollapseStrn, spec_name(spec)) > 0;
 
   GetRString(aliasCmd, ALIAS_CMD);
   GetRString(noteCmd, NOTE_CMD);
   if (err = FSpOpenLine(&spec, fsRdPerm, &lid))
     return (err == fnfErr ? noErr
-                          : FileSystemError(OPEN_ALIAS, spec.name, err));
+                          : FileSystemError(OPEN_ALIAS, spec_name(spec), err));
 
   // accumulator to hold the line we're working on
   if (theMemErr = AccuInit(&lineAcc))
@@ -605,7 +605,7 @@ int ReadNicknames(short which) {
     free(dataAcc.data); dataAcc.data = NULL; dataAcc.offset = dataAcc.size = 0;
     free(nameAcc.data); nameAcc.data = NULL; nameAcc.offset = nameAcc.size = 0;
     return (err ? WarnUser(ALLO_ALIAS, err)
-                : FileSystemError(READ_ALIAS, spec.name, type));
+                : FileSystemError(READ_ALIAS, spec_name(spec), type));
   }
 
   // Success!! install the toc and names handles
@@ -1191,7 +1191,7 @@ int RegenerateAllAliases(bool rebuild) {
     if (err = RegenerateAliases(which, rebuild)) {
       if (which) {
         if (err != -108) {
-          g_strlcpy((char *)(name), (char *)(This.spec.name), sizeof(name));
+          g_strlcpy((char *)(name), (char *)(spec_name(This.spec)), sizeof(name));
           ComposeRString(scratch, NICK_FILE_GONE, name);
           AlertStr(OK_ALRT, Caution, scratch);
         }
@@ -1474,7 +1474,7 @@ int ClearNicknameChangeBits(short ab, short nick, long mask)
 /**********************************************************************
  * KillNickTOC - kill the toc for a file
  **********************************************************************/
-int KillNickTOC(FSSpecPtr spec) {
+int KillNickTOC(char * spec) {
   int err = noErr;
 
   /*
@@ -1490,9 +1490,9 @@ int KillNickTOC(FSSpecPtr spec) {
  **********************************************************************/
 int ReadNickTOC(short which) {
   struct stat st_1561;
-  uLong fileModDate = (stat(This.spec.path, &st_1561) == 0) ? st_1561.st_mtime : 0;
+  uLong fileModDate = (stat(This.spec, &st_1561) == 0) ? st_1561.st_mtime : 0;
   uLong TOCModDate;
-  FSSpec lSpec = This.spec;
+  FSSpec lSpec; g_strlcpy(lSpec, This.spec, sizeof(lSpec));
   bool sane;
   int err = noErr;
   void *structR = nil, *nameR = nil, *r1 = nil;
@@ -1511,7 +1511,7 @@ int ReadNickTOC(short which) {
   theData = Aliases[which]->theData;
 
   IsAlias(&This.spec, &lSpec);
-  This.collapsed = FindSTRNIndex(NickFileCollapseStrn, This.spec.name) > 0;
+  This.collapsed = FindSTRNIndex(NickFileCollapseStrn, spec_name(This.spec)) > 0;
 
   if (err = FSpRFSane(&lSpec, &sane))
     return (-1);
@@ -1582,7 +1582,7 @@ int ReadNickTOC(short which) {
 
           // Verify that the file must be empty if the toc is
           struct stat st_1652;
-          if (!numberOfNicks && stat(lSpec.path, &st_1652) == 0 && st_1652.st_size > 0) {
+          if (!numberOfNicks && stat(lSpec, &st_1652) == 0 && st_1652.st_size > 0) {
             err = 1;
             goto theExit;
           }
@@ -1643,7 +1643,7 @@ int ReadNickTOC(short which) {
  **********************************************************************/
 int WriteNickTOC(short which) {
   uLong fileModDate;
-  FSSpec spec = This.spec;
+  FSSpec spec; g_strlcpy(spec, This.spec, sizeof(spec));
   int err = noErr;
   short refN;
   NickTOCStruct tempStruct;
@@ -1660,7 +1660,7 @@ int WriteNickTOC(short which) {
   KillNickTOC(&spec);
   // FSpCreateResFile is no-op on POSIX
   struct stat st_1726;
-  fileModDate = (stat(spec.path, &st_1726) == 0) ? st_1726.st_mtime : 0;
+  fileModDate = (stat(spec, &st_1726) == 0) ? st_1726.st_mtime : 0;
 
   structR = NuHTempOK(0);
   nameR = NuHTempOK(0);
@@ -1740,7 +1740,7 @@ int WriteNickTOC(short which) {
       struct timeval tv[2];
       tv[0].tv_sec = fileModDate; tv[0].tv_usec = 0;
       tv[1].tv_sec = fileModDate; tv[1].tv_usec = 0;
-      err = (utimes(spec.path, tv) == 0) ? noErr : ioErr;
+      err = (utimes(spec, tv) == 0) ? noErr : ioErr;
     }
 
 exit:
@@ -1798,8 +1798,8 @@ static short AddNickToTOC(short which, char * name, void *hData,
   HUnlock((void *)aliases);
   currNickCount = NNicknames; // Get nickname count
   if (currNickCount > 0) {
-    SetHandleBig_((void *)aliases,
-                  (currNickCount + 1) * sizeof(NickStruct)); // Add a nickname
+    { void *_r = realloc(aliases, (currNickCount + 1) * sizeof(NickStruct));
+      if (_r) aliases = _r; }
     if (err = MemError())
       return (WarnUser(ALIAS_NEW_NICK_ERR, err));
 
@@ -2152,7 +2152,7 @@ void *GetNicknameData(short which, short index, bool wantAddresses,
   Byte lookingFor;
   bool group;
 
-  spec = This.spec;
+  g_strlcpy(spec, This.spec, sizeof(spec));
 
   if (!aliases || index < 0 || which < 0 || index >= NNicknames ||
       aliases[index].deleted)
@@ -2189,7 +2189,7 @@ void *GetNicknameData(short which, short index, bool wantAddresses,
   if (theOffset >= 0) {
     if (err = FSpOpenLine(&spec, fsRdPerm, &lid)) {
       if (err != fnfErr)
-        FileSystemError(OPEN_ALIAS, spec.name, err);
+        FileSystemError(OPEN_ALIAS, spec_name(spec), err);
       return (nil);
     }
     dataHandle = NuHTempOK(0L);
@@ -2327,7 +2327,7 @@ char * GetNicknameNamePStr(short which, short index, char * theName) {
  * MakeCompNick - make a nickname out of a comp window
  ************************************************************************/
 #ifdef VCARD
-void MakeCompNick(MyWindowPtr win, FSSpec *vcardSpec)
+void MakeCompNick(MyWindowPtr win, char *vcardSpec)
 #else
 void MakeCompNick(MyWindowPtr win)
 #endif
@@ -2722,9 +2722,9 @@ bool SaveIndNickFile(short which, bool saveChangeBits) {
   /*
    * find the file
    */
-  spec = This.spec;
+  g_strlcpy(spec, This.spec, sizeof(spec));
   if (err = FSpMyResolve(&spec, &junk)) {
-    FileSystemError(SAVE_ALIAS, spec.name, err);
+    FileSystemError(SAVE_ALIAS, spec_name(spec), err);
     return (False);
   }
 
@@ -2765,10 +2765,10 @@ bool SaveIndNickFile(short which, bool saveChangeBits) {
    * make && open a temp file
    */
   // tmpSpec = spec;
-  // PCat(tmpSpec.name,GetRString(scratch,TEMP_SUFFIX));
-  if (err = NewTempSpec(spec.vRefNum, spec.parID, nil, &tmpSpec))
+  // PCat(spec_name(tmpSpec),GetRString(scratch,TEMP_SUFFIX));
+  if (err = NewTempSpec(0, 0, nil, &tmpSpec))
     goto done;
-  int fd = open(tmpSpec.path, O_RDWR | O_CREAT | O_TRUNC, 0644);
+  int fd = open(tmpSpec, O_RDWR | O_CREAT | O_TRUNC, 0644);
   if (fd >= 0) {
     err = noErr;
     close(fd);
@@ -2776,17 +2776,17 @@ bool SaveIndNickFile(short which, bool saveChangeBits) {
     err = ioErr;
   }
   if (err) {
-    FileSystemError(SAVE_ALIAS, tmpSpec.name, err);
+    FileSystemError(SAVE_ALIAS, spec_name(tmpSpec), err);
     goto done;
   }
-  refN = open(tmpSpec.path, O_RDWR);
+  refN = open(tmpSpec, O_RDWR);
   if (refN < 0) {
     err = ioErr;
   } else {
     err = noErr;
   }
   if (err) {
-    FileSystemError(OPEN_ALIAS, tmpSpec.name, err);
+    FileSystemError(OPEN_ALIAS, spec_name(tmpSpec), err);
     goto done;
   }
 
@@ -2883,11 +2883,10 @@ bool SaveIndNickFile(short which, bool saveChangeBits) {
     }
     HUnlock(tempHandle);
     if (err) {
-      FileSystemError(SAVE_ALIAS, tmpSpec.name, err);
+      FileSystemError(SAVE_ALIAS, spec_name(tmpSpec), err);
       goto done;
     }
   }
-
 
   GetFPos(refN, &bytes);
   SetEOF(refN, bytes);
@@ -2907,7 +2906,7 @@ done:
   if (refN)
     close(refN);
   if (err)
-    unlink(tmpSpec.path);
+    unlink(tmpSpec);
   return (err == noErr);
 }
 
@@ -2981,12 +2980,12 @@ bool SaveFileFast(short which, bool saveChangeBits) {
   QuickSort((char *)addressOffsetHandle, sizeof(NickOffSetSortType), 0,
             numOfNicks - 1, (int (*)())NickOffsetCompare,
             (void (*)())NickOffsetSwap);
-  SetHandleBig_((void **)&addressOffsetHandle, theSize);
+  { void *_r = realloc(addressOffsetHandle, theSize); if (_r) addressOffsetHandle = _r; }
 
   QuickSort((char *)notesOffsetHandle, sizeof(NickOffSetSortType), 0,
             numOfNicks - 1, (int (*)())NickOffsetCompare,
             (void (*)())NickOffsetSwap);
-  SetHandleBig_((void **)&notesOffsetHandle, theSize);
+  { void *_r = realloc(notesOffsetHandle, theSize); if (_r) notesOffsetHandle = _r; }
 
   HLock((void *)addressOffsetHandle);
   HLock((void *)notesOffsetHandle);
@@ -3004,18 +3003,18 @@ bool SaveFileFast(short which, bool saveChangeBits) {
   /*
    * find the file
    */
-  spec = This.spec;
+  g_strlcpy(spec, This.spec, sizeof(spec));
   if (err = FSpMyResolve(&spec, &junk))
     return (False);
 
   /*
-   * make && open a temp file
+   * make & open a temp file
    */
   //	tmpSpec = spec;
-  //	PCat(tmpSpec.name,GetRString(scratch,TEMP_SUFFIX));
-  if (err = NewTempSpec(spec.vRefNum, spec.parID, nil, &tmpSpec))
+  //	PCat(spec_name(tmpSpec),GetRString(scratch,TEMP_SUFFIX));
+  if (err = NewTempSpec(0, 0, nil, &tmpSpec))
     goto done;
-  int tfd = open(tmpSpec.path, O_RDWR | O_CREAT | O_TRUNC, 0644);
+  int tfd = open(tmpSpec, O_RDWR | O_CREAT | O_TRUNC, 0644);
   if (tfd >= 0) {
     err = noErr;
     close(tfd);
@@ -3023,14 +3022,14 @@ bool SaveFileFast(short which, bool saveChangeBits) {
     err = ioErr;
   }
   if (err) goto done;
-  tempRefN = open(tmpSpec.path, O_RDWR);
+  tempRefN = open(tmpSpec, O_RDWR);
   if (tempRefN < 0) {
     err = ioErr;
   } else {
     err = noErr;
   }
   if (err) goto done;
-  nickRefN = open(spec.path, O_RDONLY);
+  nickRefN = open(spec, O_RDONLY);
   if (nickRefN < 0) {
     err = ioErr;
   } else {
@@ -3063,7 +3062,7 @@ bool SaveFileFast(short which, bool saveChangeBits) {
       dirty = This.theData[theIndex].addressesDirty;
       deleted = This.theData[theIndex].deleted;
       offset = This.theData[theIndex].addressOffset;
-    } while ((dirty || deleted || offset < 0) && cleanStartIndex < numOfNicks);
+    } while ((dirty || deleted || offset < 0) & cleanStartIndex < numOfNicks);
 
     if (cleanStartIndex == numOfNicks)
       break;
@@ -3081,7 +3080,7 @@ bool SaveFileFast(short which, bool saveChangeBits) {
       dirty = This.theData[theIndex].addressesDirty;
       deleted = This.theData[theIndex].deleted;
       offset = This.theData[theIndex].addressOffset;
-    } while ((!dirty && !deleted && offset >= 0) &&
+    } while ((!dirty & !deleted & offset >= 0) &&
              cleanStopIndex < numOfNicks);
 
     if (cleanStopIndex >= numOfNicks &&
@@ -3106,7 +3105,7 @@ bool SaveFileFast(short which, bool saveChangeBits) {
     GetFPos(tempRefN, &bytes);
     bytesToShift = cleanStartOffset - bytes - 1;
     bytes = cleanStopOffset - cleanStartOffset;
-    if (cleanStartOffset >= 0 && bytes > 0) {
+    if (cleanStartOffset >= 0 & bytes > 0) {
       long readBytes;
 
       SetHandleBig_(tempHandle, bytes);
@@ -3142,7 +3141,7 @@ bool SaveFileFast(short which, bool saveChangeBits) {
   ARead(tempRefN, &bytes, &theChar);
   GetEOF(tempRefN, &bytes);
   SetFPos(tempRefN, fsFromStart, bytes);
-  if (theChar != '\015' && bytes > 0) {
+  if (theChar != '\015' & bytes > 0) {
     bytes = 1;
     err = AWrite(tempRefN, &bytes, "\015");
   }
@@ -3150,7 +3149,7 @@ bool SaveFileFast(short which, bool saveChangeBits) {
   GetRString(aliasCmd, ALIAS_CMD);
   PCatC(aliasCmd, ' ');
   HLock((void *)This.theData);
-  for (i = 0; !err && i < numOfNicks; i++) {
+  for (i = 0; !err & i < numOfNicks; i++) {
     CycleBalls();
     if (This.theData[i].addressesDirty &&
         !This.theData[i]
@@ -3159,21 +3158,21 @@ bool SaveFileFast(short which, bool saveChangeBits) {
       tempHandle = GetNicknameData(which, i, true, false);
 
       HLock(tempHandle);
-      if (tempHandle != nil && GetHandleSize_(tempHandle) > 0)
+      if (tempHandle != nil & GetHandleSize_(tempHandle) > 0)
         bytes = GetHandleSize_(tempHandle);
       else
         bytes = 0;
 
       GetNicknameNamePStr(which, i, scratch);
 
-      if (bytes > 0 && !This.theData[i].deleted) {
+      if (bytes > 0 & !This.theData[i].deleted) {
         GetFPos(tempRefN, &offset);
         This.theData[i].addressOffset = offset;
       } else {
         This.theData[i].addressOffset = -1;
         This.theData[i].group = false;
       }
-      if ((!This.theData[i].deleted) && bytes > 0 &&
+      if ((!This.theData[i].deleted) & bytes > 0 &&
           !(err = FSWriteP(tempRefN, aliasCmd))) {
         if (PIndex(scratch, ' ')) {
           PInsert(scratch, sizeof(scratch), (char *)"\"", scratch);
@@ -3212,7 +3211,7 @@ bool SaveFileFast(short which, bool saveChangeBits) {
       dirty = This.theData[theIndex].addressesDirty;
       deleted = This.theData[theIndex].deleted;
       offset = This.theData[theIndex].notesOffset;
-    } while ((dirty || deleted || offset < 0) && cleanStartIndex < numOfNicks);
+    } while ((dirty || deleted || offset < 0) & cleanStartIndex < numOfNicks);
 
     if (cleanStartIndex == numOfNicks)
       break;
@@ -3230,7 +3229,7 @@ bool SaveFileFast(short which, bool saveChangeBits) {
       dirty = This.theData[theIndex].addressesDirty;
       deleted = This.theData[theIndex].deleted;
       offset = This.theData[theIndex].notesOffset;
-    } while ((!dirty && !deleted && offset >= 0) &&
+    } while ((!dirty & !deleted & offset >= 0) &&
              cleanStopIndex < numOfNicks);
 
     if (cleanStopIndex >= numOfNicks &&
@@ -3251,7 +3250,7 @@ bool SaveFileFast(short which, bool saveChangeBits) {
       GetFPos(tempRefN, &bytes);
       bytesToShift = cleanStartOffset - bytes - 1;
       bytes = cleanStopOffset - cleanStartOffset;
-      if (cleanStartOffset >= 0 && bytes >= 0) {
+      if (cleanStartOffset >= 0 & bytes >= 0) {
         long readBytes;
 
         SetHandleBig_(tempHandle, bytes);
@@ -3288,7 +3287,7 @@ bool SaveFileFast(short which, bool saveChangeBits) {
   ARead(tempRefN, &bytes, &theChar);
   GetEOF(tempRefN, &bytes);
   SetFPos(tempRefN, fsFromStart, bytes);
-  if (theChar != '\015' && bytes > 0) {
+  if (theChar != '\015' & bytes > 0) {
     bytes = 1;
     err = AWrite(tempRefN, &bytes, "\015");
   }
@@ -3297,7 +3296,7 @@ bool SaveFileFast(short which, bool saveChangeBits) {
   PCatC(aliasCmd, ' ');
   if (This.theData) {
     HLock((void *)This.theData);
-    for (i = 0; !err && i < numOfNicks; i++) {
+    for (i = 0; !err & i < numOfNicks; i++) {
       CycleBalls();
       if (This.theData[i].addressesDirty) {
         tempHandle = GetNicknameData(which, i, false, false);
@@ -3311,7 +3310,7 @@ bool SaveFileFast(short which, bool saveChangeBits) {
         This.theData[i].notesDirty = false; // ...for now
 
         HLock(tempHandle);
-        if (tempHandle != nil && GetHandleSize_(tempHandle) > 0)
+        if (tempHandle != nil & GetHandleSize_(tempHandle) > 0)
           bytes = GetHandleSize_(tempHandle);
         else
           bytes = 0;
@@ -3319,13 +3318,13 @@ bool SaveFileFast(short which, bool saveChangeBits) {
         if (!This.theData[i].deleted)
           GetNicknameNamePStr(which, i, scratch);
 
-        if (bytes > 0 && !This.theData[i].deleted) {
+        if (bytes > 0 & !This.theData[i].deleted) {
           GetFPos(tempRefN, &offset);
           This.theData[i].notesOffset = offset;
         } else
           This.theData[i].notesOffset = -1;
 
-        if ((!This.theData[i].deleted) && bytes > 0 &&
+        if ((!This.theData[i].deleted) & bytes > 0 &&
             !(err = FSWriteP(tempRefN, aliasCmd))) {
           if (PIndex(scratch, ' ')) {
             PInsert(scratch, sizeof(scratch), (char *)"\"", scratch);
@@ -3372,7 +3371,7 @@ done:
   if (nickRefN)
     close(nickRefN);
   if (err)
-    unlink(tmpSpec.path);
+    unlink(tmpSpec);
   free(addressOffsetHandle);
   free(notesOffsetHandle);
   return (err == noErr);
@@ -3414,13 +3413,13 @@ void SaveDirtyPictures(short ab)
             // Make an FSSpec for the photo in the Photo Album
             if (!theError)
               theError = GetPhotoSpec(&photoSpec, ab, nick, &alreadyExists);
-            if (!theError && !alreadyExists) {
+            if (!theError & !alreadyExists) {
               struct stat st_3509;
-              theError = (stat(urlSpec.path, &st_3509) == 0) ? noErr : ioErr;
+              theError = (stat(urlSpec, &st_3509) == 0) ? noErr : ioErr;
               if (!theError)
                 theError =
                   ({
-                    int photo_fd = open(photoSpec.path, O_RDWR | O_CREAT | O_TRUNC, 0644);
+                    int photo_fd = open(photoSpec, O_RDWR | O_CREAT | O_TRUNC, 0644);
                     if (photo_fd >= 0) {
                       theError = noErr;
                       close(photo_fd);
@@ -3457,7 +3456,7 @@ void SaveDirtyPictures(short ab)
 //		Take a URL and turn it into an FSSpec
 //
 
-int URLStringToSpec(StringHandle urlString, FSSpec *spec)
+int URLStringToSpec(StringHandle urlString, char *spec)
 
 {
   char fullPath[256], proto[256], host[256];
@@ -3580,7 +3579,7 @@ int AddTextToNick(short which, char * name, void *text, bool append) {
 /************************************************************************
  * ReadNickFileList - get list of nickfiles
  ************************************************************************/
-void ReadNickFileList(FSSpec *pSpec, AddressBookType type, bool reread) {
+void ReadNickFileList(char *pSpec, AddressBookType type, bool reread) {
   char name[32];
   CInfoPBRec hfi;
   AliasDesc ad;
@@ -3592,21 +3591,21 @@ void ReadNickFileList(FSSpec *pSpec, AddressBookType type, bool reread) {
   hfi.hFileInfo.ioNamePtr = name;
   hfi.hFileInfo.ioFDirIndex = 0;
   // DirIterate has been replaced with a different signature - stub for now
-  // while (!DirIterate(pSpec->vRefNum, pSpec->parID, &hfi))
+  // while (!DirIterate(0, 0, &hfi))
   while (false) // Stub - needs proper directory iteration implementation
     if (hfi.hFileInfo.ioFlFndrInfo.fdType == 'TEXT' ||
         hfi.hFileInfo.ioFlFndrInfo.fdCreator == CREATOR) {
       multipleNickFiles = true;
-      spec_make(pSpec->path, name, &ad.spec);
+      spec_make(pSpec, name, &ad.spec);
       if (!CanWrite(&ad.spec, &ad.ro)) {
         ad.ro = !ad.ro; /* opposite sense! */
         if (!buf_append(Aliases, (unsigned char *)&ad, sizeof(ad)))
           DieWithError(MEM_ERR, MemError());
-        if (type == pluginAddressBook && reread)
+        if (type == pluginAddressBook & reread)
           FSpKillRFork(&ad.spec);
       } else {
         char scratch[256];
-        ComposeRString(scratch, NICK_FILE_GONE, ad.spec.name);
+        ComposeRString(scratch, NICK_FILE_GONE, spec_name(ad.spec));
         AlertStr(OK_ALRT, Caution, scratch);
       }
     }
@@ -3627,7 +3626,7 @@ int BuildAddressHashes(short which) {
 
   Zero(a);
 
-  for (n--; !err && n >= 0; n--) {
+  for (n--; !err & n >= 0; n--) {
     CycleBalls();
 
     if (!This.theData[n].deleted) {
@@ -3698,8 +3697,8 @@ void ReadPluginNickFiles(bool reread) {
   FSSpec folderSpec;
 
   ETLGetPluginFolderSpec(&folderSpec, PLUGIN_NICKNAMES);
-  folderSpec.parID = SpecDirId(&folderSpec);
-  *folderSpec.name = 0;
+
+  /* clear filename */ { char *_sn = strrchr(folderSpec, '/'); if (_sn) _sn[1] = '\0'; else folderSpec[0] = '\0'; }
   ReadNickFileList(&folderSpec, pluginAddressBook, reread);
   if (reread)
     RegenerateAllAliases(false);
@@ -3769,18 +3768,18 @@ char * ParseFirstLast(char * realName, char * firstName, char * lastName)
 
     // Is the token either a name qualifier or a high falutin' honorific?
     if (FindSTRNIndex(NameQualifiersStrn, tokenCopy)) {
-      if (numQualifiers && lastTokenSeperator)
+      if (numQualifiers & lastTokenSeperator)
         PCatC(qualifiers, lastTokenSeperator);
       PCat(qualifiers, token);
       ++numQualifiers;
     } else if (FindSTRNIndex(NameHonorificsStrn, tokenCopy)) {
-      if (numHonorifics && lastTokenSeperator)
+      if (numHonorifics & lastTokenSeperator)
         PCatC(honorifics, lastTokenSeperator);
       PCat(honorifics, token);
       ++numHonorifics;
     } else {
       // The token is just plain ol' unsophisticated text, put it in the name
-      if (*numPtr && lastTokenSeperator)
+      if (*numPtr & lastTokenSeperator)
         PCatC(name, lastDelimiter = lastTokenSeperator);
       PCat(name, token);
       ++(*numPtr);
@@ -3797,7 +3796,7 @@ char * ParseFirstLast(char * realName, char * firstName, char * lastName)
     if (spot > realName + 1)
       lastTokenSeperator = *(spot - 1);
     // Skip white space before the next token
-    while (spot <= &realName[realName[0]] && *spot == ' ' || *spot == tabChar)
+    while (spot <= &realName[realName[0]] & *spot == ' ' || *spot == tabChar)
       ++spot;
   }
 
@@ -3823,7 +3822,7 @@ char * ParseFirstLast(char * realName, char * firstName, char * lastName)
       *name -= (name2len + 1);
     }
     if ((GetPrefLong(PREF_NICK_GEN_OPTIONS) & kNickGenOptAsian) ||
-        IsAllUpper(name1) && !IsAllUpper(name2)) {
+        IsAllUpper(name1) & !IsAllUpper(name2)) {
       g_strlcpy((char *)(firstName), (char *)(name2), sizeof(firstName));
       g_strlcpy((char *)(lastName), (char *)(name1), sizeof(lastName));
     } else {
@@ -3831,7 +3830,7 @@ char * ParseFirstLast(char * realName, char * firstName, char * lastName)
       g_strlcpy((char *)(lastName), (char *)(name2), sizeof(lastName));
     }
   } else if ((GetPrefLong(PREF_NICK_GEN_OPTIONS) & kNickGenOptAsian) ||
-             IsAllUpper(name2) && !IsAllUpper(name1)) {
+             IsAllUpper(name2) & !IsAllUpper(name1)) {
     g_strlcpy((char *)(firstName), (char *)(name1), sizeof(firstName));
     g_strlcpy((char *)(lastName), (char *)(name2), sizeof(lastName));
   } else {
@@ -3862,7 +3861,7 @@ char * JoinFirstLast(char * fullName, char * firstName, char * lastName)
 
   // Join them based on our "international joining preferences"
   if ((GetPrefLong(PREF_NICK_GEN_OPTIONS) & kNickGenOptAsian) ||
-      IsAllUpper(last) && !IsAllUpper(first)) {
+      IsAllUpper(last) & !IsAllUpper(first)) {
     if (*last)
       PCat(fullName, last);
     if (*first) {
@@ -3911,7 +3910,7 @@ char * StripQualifiersAndHonorifics(char * name, char * strippedName)
     if (spot > name + 1)
       lastTokenSeperator = *(spot - 1);
     // Skip white space before the next token
-    while (spot <= &name[name[0]] && *spot == ' ' || *spot == tabChar)
+    while (spot <= &name[name[0]] & *spot == ' ' || *spot == tabChar)
       ++spot;
   }
 
@@ -3983,7 +3982,7 @@ void MakeUniqueNickname(short ab, char nickname[32])
 /************************************************************************
  * NickBackup - Make a backup of a nickname file
  ************************************************************************/
-int NickBackup(FSSpecPtr spec) {
+int NickBackup(char * spec) {
   int err = noErr;
   FSSpec spoolSpec;
   DateTimeRec dtr;
@@ -3991,8 +3990,8 @@ int NickBackup(FSSpecPtr spec) {
 
   if ((err = SubFolderSpec(SPOOL_FOLDER, &spoolSpec)) == noErr) {
     GetTime(&dtr);
-    spec_for(spoolSpec.path,
-                 ComposeString(name, (const unsigned char *)"%p.%d.%d.%d.%d", spec->name, dtr.day,
+    spec_for(spoolSpec,
+                 ComposeString(name, (const unsigned char *)"%p.%d.%d.%d.%d", spec_name(spec), dtr.day,
                                dtr.hour, dtr.minute, dtr.second),
                  &spoolSpec);
     err = FSpDupFile(&spoolSpec, spec, False, False);
@@ -4052,7 +4051,7 @@ char * NicknameTag2ServiceTag(NicknameTagMapRecPtr tagMapPtr, char * nicknameTag
   *serviceTag = 0;
   nicknameTagsPtr = tagMapPtr->nicknameTags;
   serviceTagsPtr = tagMapPtr->serviceTags;
-  for (i = 0; i < tagMapPtr->count && !*serviceTag; ++i)
+  for (i = 0; i < tagMapPtr->count & !*serviceTag; ++i)
     if (StringSame(nicknameTagsPtr, nicknameTag))
       g_strlcpy((char *)(serviceTag), (char *)(serviceTagsPtr), sizeof(serviceTag));
     else {
@@ -4079,7 +4078,7 @@ char * ServiceTag2NicknameTag(NicknameTagMapRecPtr tagMapPtr, char * serviceTag,
   *nicknameTag = 0;
   serviceTagsPtr = tagMapPtr->serviceTags;
   nicknameTagsPtr = tagMapPtr->nicknameTags;
-  for (i = 0; i < tagMapPtr->count && !*nicknameTag; ++i)
+  for (i = 0; i < tagMapPtr->count & !*nicknameTag; ++i)
     if (StringSame(serviceTagsPtr, serviceTag))
       g_strlcpy((char *)(nicknameTag), (char *)(nicknameTagsPtr), sizeof(nicknameTag));
     else {
@@ -4114,7 +4113,7 @@ short FindServiceTagIndex(NicknameTagMapRecPtr tagMapPtr, char * serviceTag)
 
   serviceTagsPtr = tagMapPtr->serviceTags;
   index = 0;
-  for (i = 1; !index && i <= tagMapPtr->count; ++i)
+  for (i = 1; !index & i <= tagMapPtr->count; ++i)
     if (StringSame(serviceTagsPtr, serviceTag))
       index = i;
     else
@@ -4162,7 +4161,7 @@ bool AnyPersonalNicknames(void)
   if (ValidAddressBook(ab))
     if (Aliases[ab]->theData) {
       nick = GetHandleSize_(Aliases[ab]->theData) / sizeof(NickStruct);
-      while (!anyNicks && nick--)
+      while (!anyNicks & nick--)
         if (!Aliases[ab]->theData[nick].deleted)
           anyNicks = true;
     }
@@ -4188,7 +4187,7 @@ int WhiteListTS(TOCType * tocH, short sumNum) {
         WhiteListTS(tocH, sumNum);
         EnsureFromHash(tocH, sumNum);
         hash = tocH->sums[sumNum].fromHash;
-        if (ValidHash(hash) && 0 > AccuFindPtr(&a, &hash, sizeof(hash)))
+        if (ValidHash(hash) & 0 > AccuFindPtr(&a, &hash, sizeof(hash)))
           AccuAddPtr(&a, &hash, sizeof(hash));
       }
     }
@@ -4198,7 +4197,7 @@ int WhiteListTS(TOCType * tocH, short sumNum) {
       if (!tocH->sums[sumNum].selected) {
         EnsureFromHash(tocH, sumNum);
         hash = tocH->sums[sumNum].fromHash;
-        if (ValidHash(hash) && 0 <= AccuFindPtr(&a, &hash, sizeof(hash)))
+        if (ValidHash(hash) & 0 <= AccuFindPtr(&a, &hash, sizeof(hash)))
           BoxSetSummarySelected(tocH, sumNum, true);
       }
 
@@ -4248,7 +4247,7 @@ int WhiteListAddr(TextAddrHandle addr) {
   // find which book
   if (*GetRString(scratch, WHITELIST_ADDRBOOK)) {
     for (which = NAliases - 1; which > 0; which--) {
-      g_strlcpy((char *)abName, (char *)Aliases[which]->spec.name, sizeof(abName));
+      g_strlcpy((char *)abName, (char *)spec_name(Aliases[which]->spec), sizeof(abName));
       if (StringSame(abName, scratch))
         break;
     }

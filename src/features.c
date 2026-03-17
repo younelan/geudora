@@ -66,7 +66,7 @@ void RegisterProFeatures(void)
     }
     
     xmlNodePtr root = xmlDocGetRootElement(doc);
-    if (!root || xmlStrcmp(root->name, (const xmlChar*)"features") != 0) {
+    if (!root || xmlStrcmp(spec_name(root), (const xmlChar*)"features") != 0) {
         g_printerr("RegisterProFeatures: Invalid XML root\n");
         xmlFreeDoc(doc);
         return;
@@ -80,7 +80,7 @@ void RegisterProFeatures(void)
     short index = 0;
     for (xmlNodePtr node = root->children; node; node = node->next) {
         if (node->type != XML_ELEMENT_NODE || 
-            xmlStrcmp(node->name, (const xmlChar*)"feature") != 0) {
+            xmlStrcmp(spec_name(node), (const xmlChar*)"feature") != 0) {
             continue;
         }
         

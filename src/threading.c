@@ -888,7 +888,7 @@ int PushThreadPrefChange(short pref) {
 
     prefChange.persId = (CurThreadGlobals && CurPers) ? CurPers->persId : 0;
     err = noErr;
-    StackPush(&prefChange, prefStack);
+    StackPush(&prefChange, &prefStack);
   }
   return err;
 }

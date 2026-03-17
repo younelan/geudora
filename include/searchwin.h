@@ -153,7 +153,7 @@ void        SearchClose_cb(MyWindowPtr win);
 
 /* Externally-used functions */
 bool        IsSearchWindow(void *winWP);
-TOCType *   GetTOCFromSearchWin(FSSpecPtr spec);
+TOCType *   GetTOCFromSearchWin(char * spec);
 void        GetSearchTOC(MyWindowPtr win, TOCType * *ptoc);
 void        SearchUpdateSum(TOCType * tocH, short sumNum,
                             TOCType * fromTocH, long serialNum,
@@ -166,13 +166,13 @@ void        SearchMBUpdate(void);
 /* Incremental search / mailbox tracking */
 bool        SearchIncremental(MyWindowPtr win, TOCType * tocH, int sumNum);
 void        SearchInvalTocBox(TOCType * tocH, short sumNum, int boxCol);
-void        TellSearchMBRename(FSSpecPtr oldSpec, FSSpecPtr newSpec);
+void        TellSearchMBRename(char * oldSpec, char * newSpec);
 bool        SearchBoxesInclude(MyWindowPtr win, TOCType * tocH);
 
 /* Saved search files */
 void        SearchSave(MyWindowPtr win, bool saveAs);
-void        OpenSearchFile(FSSpecPtr spec);
-void        OpenSearchFileAndStart(FSSpecPtr spec);
+void        OpenSearchFile(char * spec);
+void        OpenSearchFileAndStart(char * spec);
 
 /* Search menu */
 void        BuildSearchMenu(void);
@@ -181,7 +181,7 @@ void        OpenSearchMenu(short item);
 /* Utility */
 void        SearchNewFindStringLo(const char *str, bool withPrejudice);
 void        SearchFixUnread(TOCType * tocH, bool unread);
-bool        GetSearchWinSpec(void *winWP, FSSpec *spec);
+bool        GetSearchWinSpec(void *winWP, char *spec);
 void        SearchSetWTitle(MyWindowPtr win);
 void        AddCriteriaText(SearchInfo *si, char *buf, int bufSize);
 

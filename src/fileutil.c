@@ -96,7 +96,6 @@ int ReallyDoAnAlert(int templ, int which);
 
 /* Prototypes */
 
-
 /**********************************************************************
  * various useful functions related to the filesystem
  **********************************************************************/
@@ -140,15 +139,15 @@ int ReallyDoAnAlert(int templ, int which);
 /* Forward declarations */
 static int GenerateUniqueName(short volume, long *startSeed, long dir1,
                                 long dir2, char *uniqueName);
-int FSpExchangeFilesCompat(const FSSpec *source, const FSSpec *dest);
+int FSpExchangeFilesCompat(const char *source, const char *dest);
 
-int DirIterate(const FSSpec *dir, void *data,
+int DirIterate(const char *dir, void *data,
                  bool (*callback)(DirIterateInfo *info)) {
   DIR *dp;
   struct dirent *entry;
   int err = 0;
 
-  if (!(dp = opendir(dir->path))) {
+  if (!(dp = opendir(dir))) {
     return ioErr; // Or a more specific error based on errno
   }
 
@@ -159,14 +158,13 @@ int DirIterate(const FSSpec *dir, void *data,
 
     DirIterateInfo info;
     memset(&info, 0, sizeof(DirIterateInfo));
-    info.spec.vRefNum = dir->vRefNum;
-    info.spec.parID = dir->parID; // Parent ID is the directory being iterated
-    g_strlcpy(info.spec.name, entry->d_name, sizeof(info.spec.name));
-    snprintf(info.spec.path, sizeof(info.spec.path), "%s/%s", dir->path,
+
+    spec_set_name(info.spec, entry->d_name);
+    snprintf(info.spec, sizeof(info.spec), "%s/%s", dir,
              entry->d_name);
 
     struct stat st;
-    if (stat(info.spec.path, &st) == 0) {
+    if (stat(info.spec, &st) == 0) {
       info.isDir = S_ISDIR(st.st_mode);
       info.isSymLink = S_ISLNK(st.st_mode);
       info.size = st.st_size;
@@ -198,8 +196,6 @@ void FileIDHack(void); // JDB 980720 Hack to work around apple's fileID bug
  * Stubs and Modern String Utilities
  **********************************************************************/
 
-
-
 /* FS API Stubs - mostly removed or simplified */
 #ifndef fnfErr
 #define fnfErr (-43)
@@ -226,44 +222,44 @@ void FileIDHack(void); // JDB 980720 Hack to work around apple's fileID bug
 
 /* spec_for - build an FSSpec from a directory path and filename.
  * Returns 0 if the resulting path exists, fnfErr if not. */
-short spec_for(const char *dir, const char *name, FSSpec * spec) {
+short spec_for(const char *dir, const char *name, char *spec) {
   if (!spec)
     return paramErr;
   memset(spec, 0, sizeof(FSSpec));
   if (name && name[0])
-    g_strlcpy(spec->name, name, sizeof(spec->name));
+    spec_set_name(spec, name);
   if (!name || !name[0]) {
     if (dir && dir[0])
-      g_strlcpy(spec->path, dir, sizeof(spec->path));
+      g_strlcpy(spec, dir, sizeof(spec));
   } else if (!dir || !dir[0] || name[0] == '/') {
-    g_strlcpy(spec->path, name, sizeof(spec->path));
+    g_strlcpy(spec, name, sizeof(spec));
   } else {
-    snprintf(spec->path, sizeof(spec->path), "%s/%s", dir, name);
+    snprintf(spec, sizeof(spec), "%s/%s", dir, name);
   }
-  return access(spec->path, F_OK) == 0 ? 0 : fnfErr;
+  return access(spec, F_OK) == 0 ? 0 : fnfErr;
 }
 
 /* spec_make - like spec_for but doesn't hit the filesystem */
-void spec_make(const char *dir, const char *name, FSSpec * spec) {
+void spec_make(const char *dir, const char *name, char *spec) {
   if (!spec)
     return;
   memset(spec, 0, sizeof(FSSpec));
   if (name && name[0])
-    g_strlcpy(spec->name, name, sizeof(spec->name));
+    spec_set_name(spec, name);
   if (!name || !name[0]) {
     if (dir && dir[0])
-      g_strlcpy(spec->path, dir, sizeof(spec->path));
+      g_strlcpy(spec, dir, sizeof(spec));
   } else if (!dir || !dir[0] || name[0] == '/') {
-    g_strlcpy(spec->path, name, sizeof(spec->path));
+    g_strlcpy(spec, name, sizeof(spec));
   } else {
-    snprintf(spec->path, sizeof(spec->path), "%s/%s", dir, name);
+    snprintf(spec, sizeof(spec), "%s/%s", dir, name);
   }
 }
 
 /* spec_parent - get the parent directory of a spec's path into buf */
-const char *spec_parent(FSSpec * spec, char *buf, size_t bufsz) {
-  if (spec->path[0]) {
-    g_strlcpy(buf, spec->path, bufsz);
+const char *spec_parent(char *spec, char *buf, size_t bufsz) {
+  if (spec[0]) {
+    g_strlcpy(buf, spec, bufsz);
     char *slash = strrchr(buf, '/');
     if (slash && slash != buf)
       *slash = '\0';
@@ -274,17 +270,17 @@ const char *spec_parent(FSSpec * spec, char *buf, size_t bufsz) {
   buf[0] = '\0';
   return buf;
 }
-short MyFSpCreateResFile(FSSpec * spec, uint32_t creator, uint32_t type,
+short MyFSpCreateResFile(char *spec, uint32_t creator, uint32_t type,
                        ScriptCode script) {
   // POSIX doesn't have resource forks. Just create the data fork.
   return (short)MyFSpCreate(spec, creator, type, script);
 }
 
-int MyFSpCreate(FSSpec * spec, uint32_t creator, uint32_t fileType,
+int MyFSpCreate(char *spec, uint32_t creator, uint32_t fileType,
               ScriptCode script) {
   if (!spec)
     return paramErr;
-  int fd = creat(spec->path, 0644);
+  int fd = creat(spec, 0644);
   if (fd < 0) {
     if (errno == EEXIST)
       return 0; // Or dupFNErr if we want to be strict
@@ -302,8 +298,8 @@ void AddResource(void *h, ResType type, short id, const char *name) {
   // In a full implementation, this would store resources in a separate file
 }
 
-int LowLevelFSpOpenDF(FSSpec *spec, short mode, short *refN) {
-  const char *path = spec->path;
+int LowLevelFSpOpenDF(char *spec, short mode, short *refN) {
+  const char *path = spec;
   int flags = O_RDONLY;
   if (mode == fsWrPerm)
     flags = O_WRONLY;
@@ -334,7 +330,7 @@ int LowLevelFSpOpenRF(const char *path, short permission, short *refNum) {
   return 0;
 }
 
-int LowLevelFSpGetFInfo(FSSpec *spec, FInfo *fndrInfo) {
+int LowLevelFSpGetFInfo(char *spec, FInfo *fndrInfo) {
   struct stat st;
 
   if (!spec || !fndrInfo)
@@ -342,7 +338,7 @@ int LowLevelFSpGetFInfo(FSSpec *spec, FInfo *fndrInfo) {
 
   memset(fndrInfo, 0, sizeof(FInfo));
 
-  if (lstat(spec->path, &st) < 0)
+  if (lstat(spec, &st) < 0)
     return fnfErr;
 
   /* Basic info */
@@ -358,14 +354,14 @@ int LowLevelFSpGetFInfo(FSSpec *spec, FInfo *fndrInfo) {
   return 0;
 }
 
-int LowLevelFSpSetFInfo(FSSpec *spec, FInfo *fndrInfo) {
+int LowLevelFSpSetFInfo(char *spec, FInfo *fndrInfo) {
   /* Minimal portable implementation */
   (void)spec;
   (void)fndrInfo;
   return 0;
 }
-int LowLevelFSpDelete(FSSpec *spec) {
-  if (unlink(spec->path) == 0)
+int LowLevelFSpDelete(char *spec) {
+  if (unlink(spec) == 0)
     return 0;
   return ioErr;
 }
@@ -462,7 +458,7 @@ short AWrite(short refNum, long *count, unsigned char *buffer) {
     unsigned char c = buffer[i];
     if (c == '\r') {
       out[oi++] = '\r';
-      if (i + 1 < inlen && buffer[i + 1] == '\n') {
+      if (i + 1 < inlen & buffer[i + 1] == '\n') {
         /* already CRLF; copy LF and skip next char */
         out[oi++] = '\n';
         ++i;
@@ -530,8 +526,7 @@ int FileSystemError(short errorId, const char *name, int err) {
   return err;
 }
 
-
-int MyFSpRename(FSSpec * spec, const char *newName) {
+int MyFSpRename(char *spec, const char *newName) {
   char parent[1024];
   char newPath[1024];
 
@@ -545,13 +540,13 @@ int MyFSpRename(FSSpec * spec, const char *newName) {
 
   snprintf(newPath, sizeof(newPath), "%s/%s", parent, newName);
 
-  if (rename(spec->path, newPath) != 0) {
+  if (rename(spec, newPath) != 0) {
     return ioErr;
   }
 
   /* update spec to reflect new name/path */
-  g_strlcpy(spec->name, newName, sizeof(spec->name));
-  g_strlcpy(spec->path, newPath, sizeof(spec->path));
+  spec_set_name(spec, newName);
+  g_strlcpy(spec, newPath, sizeof(spec));
   return 0;
 }
 /**********************************************************************
@@ -582,7 +577,7 @@ void ModernProgress(short id, short percent, void *p1, void *p2, void *p3) {}
 int PBSetCatInfoSync(CInfoPBPtr pb) { return 0; }
 void *MyGet1IndResource(OSType type, short index) { (void)type; (void)index; return NULL; }
 void *MyGetIndResource(OSType type, short index) { (void)type; (void)index; return NULL; }
-int ResolveAliasFile(FSSpec * spec, bool resolveAliasChains,
+int ResolveAliasFile(char *spec, bool resolveAliasChains,
                        bool *targetIsFolder, bool *wasAliased) {
   /* On POSIX there's no Finder alias; emulate by resolving symlinks */
   if (!spec)
@@ -594,31 +589,31 @@ int ResolveAliasFile(FSSpec * spec, bool resolveAliasChains,
     *wasAliased = false;
 
   /* if path is empty, nothing to do */
-  if (!spec->path[0])
+  if (!spec[0])
     return fnfErr;
 
   char resolved[PATH_MAX];
-  if (realpath(spec->path, resolved) == NULL) {
+  if (realpath(spec, resolved) == NULL) {
     /* if realpath fails, leave spec alone but indicate file-not-found */
     return fnfErr;
   }
 
-  /* Update spec->path to resolved path */
-  g_strlcpy(spec->path, resolved, sizeof(spec->path));
+  /* Update spec to resolved path */
+  g_strlcpy(spec, resolved, sizeof(spec));
   /* update name to basename */
   const char *base = strrchr(resolved, '/');
   if (base && base[1])
-    g_strlcpy(spec->name, base + 1, sizeof(spec->name));
+    spec_set_name(spec, base + 1);
 
   struct stat st;
-  if (stat(spec->path, &st) == 0) {
+  if (stat(spec, &st) == 0) {
     if (targetIsFolder)
       *targetIsFolder = S_ISDIR(st.st_mode);
   }
 
   /* If original path contained a symlink component, consider it aliased */
   if (wasAliased) {
-    if (strcmp(spec->path, resolved) != 0)
+    if (strcmp(spec, resolved) != 0)
       *wasAliased = true;
   }
 
@@ -629,7 +624,7 @@ int PBHGetFInfoSync(HParmBlkPtr pb) { return 0; }
 int PBHSetFInfoSync(HParmBlkPtr pb) { return 0; }
 bool GetFolderNav(char *name, short *volume, long *folder) { return false; }
 int Gestalt(OSType selector, long *response) { return 0; }
-int MyFSpExchangeFiles(FSSpec * source, FSSpec * dest) {
+int MyFSpExchangeFiles(char *source, char *dest) {
   /* Swap two files by renaming through a temporary name in dest directory. */
   char tempTpl[PATH_MAX];
   char destParent[PATH_MAX];
@@ -649,34 +644,34 @@ int MyFSpExchangeFiles(FSSpec * source, FSSpec * dest) {
   strncpy(destTemp, tempTpl, sizeof(destTemp));
 
   /* move dest -> temp */
-  if (rename(dest->path, destTemp) != 0) {
+  if (rename(dest, destTemp) != 0) {
     unlink(destTemp);
     return ioErr;
   }
 
   /* move source -> dest */
-  if (rename(source->path, dest->path) != 0) {
+  if (rename(source, dest) != 0) {
     /* try to roll back */
-    rename(destTemp, dest->path);
+    rename(destTemp, dest);
     unlink(destTemp);
     return ioErr;
   }
 
   /* move temp -> source */
-  if (rename(destTemp, source->path) != 0) {
+  if (rename(destTemp, source) != 0) {
     /* catastrophic; try best-effort rollback */
-    rename(dest->path, source->path);
-    rename(destTemp, dest->path);
+    rename(dest, source);
+    rename(destTemp, dest);
     unlink(destTemp);
     return ioErr;
   }
 
   return 0;
 }
-int FSpDirCreate(FSSpec * spec, ScriptCode script, long *dirID) {
+int FSpDirCreate(char *spec, ScriptCode script, long *dirID) {
   if (!spec)
     return paramErr;
-  if (mkdir(spec->path, 0755) != 0) {
+  if (mkdir(spec, 0755) != 0) {
     if (errno == EEXIST)
       return 0;
     return ioErr;
@@ -693,12 +688,12 @@ short GetMBarHeight(void) { return 20; }
 extern long GetRLong(int index);
 bool MommyMommy(short id, void *p) { return true; }
 bool UseNavServices(void) { return false; }
-int SFPutOpenNav(FSSpec * spec, uint32_t creator, uint32_t type, short *refN,
-                 short ditlID, uint32_t *script, FSSpec * defaultSpec,
+int SFPutOpenNav(char *spec, uint32_t creator, uint32_t type, short *refN,
+                 short ditlID, uint32_t *script, char *defaultSpec,
                  const char *windowTitle, const char *message) {
   return 0;
 }
-void WhackFinder(FSSpec * spec) {}
+void WhackFinder(char *spec) {}
 int SniffAndConvertHandleToRoman(void ***h) { (void)h; return 0; }
 OSType DefaultCreator(void) { return 'EUDR'; }
 short GetResFileAttrs(short refNum) { return 0; }
@@ -725,7 +720,6 @@ void MyNumToString(long n, char *s);
 
 int FSRenameUnicode(FSRef *ref, int len, const void *name, int encoding,
                       FSRef *newRef);
-
 
 void MyNumToString(long n, char *s) {
   if (s)
@@ -760,7 +754,7 @@ int ConvertFromUnicodeToText(UnicodeToTextInfo info, long len,
   return 0;
 }
 int DisposeUnicodeToTextInfo(UnicodeToTextInfo *info) { return 0; }
-int FSpMakeFSRef(FSSpec * spec, FSRef *ref) { return 0; }
+int FSpMakeFSRef(char *spec, FSRef *ref) { return 0; }
 int FSGetCatalogInfo(FSRef *ref, long bitmap, void *info,
                        HFSUniStr255 *outName, void *fsSpec, void *parentRef) {
   return 0;
@@ -816,7 +810,6 @@ void *buf_concat(void *dst, const void *src) {
   return n ? buf_append(dst, src, n) : dst;
 }
 
-
 void BlockMoveData(const void *src, void *dest, size_t size) {
   if (src && dest && size > 0) {
     memmove(dest, src, size);
@@ -834,18 +827,17 @@ short GetMyVR(const char *name) {
 /************************************************************************
  * ParentSpec - get the FSSpec of a parent
  ************************************************************************/
-int ParentSpec(FSSpec * child, FSSpec * parent) {
+int ParentSpec(char *child, char *parent) {
   char parentPath[1024];
   char *lastSlash;
 
-  strncpy(parentPath, child->path, sizeof(parentPath));
+  strncpy(parentPath, child, sizeof(parentPath));
   lastSlash = strrchr(parentPath, '/');
   if (lastSlash && lastSlash != parentPath) {
     *lastSlash = '\0';
-    strncpy(parent->path, parentPath, sizeof(parent->path));
-    parent->vRefNum = child->vRefNum;
-    parent->parID = 0;
-    *parent->name = 0;
+    strncpy(parent, parentPath, sizeof(parent));
+
+    /* clear filename */ { char *_sn = strrchr(parent, '/'); if (_sn) _sn[1] = '\0'; else parent[0] = '\0'; }
     return 0;
   }
   return ioErr;
@@ -899,7 +891,7 @@ int MakeResFile(const char *name, const char *dir, long creator,
   // apparently wrong) 			We can create a file with both
   // forks, however.
   if (err == noMacDskErr) {
-    int fd = creat(spec.path, 0644);
+    int fd = creat(spec, 0644);
     if (fd < 0)
       err = ioErr;
     else {
@@ -921,7 +913,7 @@ int MakeResFile(const char *name, const char *dir, long creator,
  **********************************************************************/
 bool FileIsInvisible(CInfoPBRec *hfi) {
   return (hfi->hFileInfo.ioFlFndrInfo.fdFlags & fInvisible) ||
-         (HaveOSX() && hfi->hFileInfo.ioNamePtr[0] &&
+         (HaveOSX() & hfi->hFileInfo.ioNamePtr[0] &&
           hfi->hFileInfo.ioNamePtr[1] == '.');
 }
 
@@ -997,7 +989,7 @@ int HuntNewline(short refN, long aroundSpot, long *newline, bool *realNl) {
   }
 
   err = ARead(refN, &count, buffer);
-  if (err == eofErr && count > 0)
+  if (err == eofErr & count > 0)
     err = 0; /* ignore running off the end of the file as long as we got some bytes */
   if (err) {
     FileSystemError(READ_MBOX, "", err);
@@ -1125,7 +1117,7 @@ short ARFHOpen(const char *name, short vRefN, long dirId, short *refN,
 int VolumeMargin(short vRef, long spaceNeeded) {
   long margin = GetRLong(VOLUME_MARGIN);
 
-  if (margin && VolumeFree(vRef) < spaceNeeded + margin)
+  if (margin & VolumeFree(vRef) < spaceNeeded + margin)
     return (dskFulErr);
 
   return (0);
@@ -1149,9 +1141,9 @@ int MyAllocate(short refN, long size) {
 /************************************************************************
  * SFPutOpen - open a file for write, using stdfile
  ************************************************************************/
-short SFPutOpen(FSSpec * spec, long creator, long type, short *refN,
+short SFPutOpen(char *spec, long creator, long type, short *refN,
                 ModalFilterYDUPP filter, DlgHookYDUPP hook, short id,
-                FSSpec * defaultSpec, const char *windowTitle,
+                char *defaultSpec, const char *windowTitle,
                 const char *message) {
   FInfo info;
   ScriptCode script;
@@ -1178,15 +1170,15 @@ short SFPutOpen(FSSpec * spec, long creator, long type, short *refN,
     return (theError);
 
   /*
-   * create && open the file
+   * create & open the file
    */
-  int fd = creat(spec->path, 0644);
+  int fd = creat(spec, 0644);
   if (fd < 0) {
     theError = (errno == EEXIST) ? dupFNErr : ioErr;
     if (theError == dupFNErr)
       theError = 0;
     else {
-      FileSystemError(COULDNT_SAVEAS, (const char *)spec->name, theError);
+      FileSystemError(COULDNT_SAVEAS, (const char *)spec_name(spec), theError);
       return (theError);
     }
   } else {
@@ -1195,7 +1187,7 @@ short SFPutOpen(FSSpec * spec, long creator, long type, short *refN,
   }
 
   if ((theError = MyFSpOpenDF(spec, fsRdWrPerm, refN))) {
-    FileSystemError(COULDNT_SAVEAS, (const char *)spec->name, theError);
+    FileSystemError(COULDNT_SAVEAS, (const char *)spec_name(spec), theError);
     MyFSpDelete(spec);
     return (theError);
   }
@@ -1206,7 +1198,7 @@ short SFPutOpen(FSSpec * spec, long creator, long type, short *refN,
   }
 
   if ((theError = SetEOF(*refN, 0))) {
-    FileSystemError(COULDNT_SAVEAS, (const char *)spec->name, theError);
+    FileSystemError(COULDNT_SAVEAS, (const char *)spec_name(spec), theError);
     MyFSpDelete(spec);
     return (theError);
   }
@@ -1219,7 +1211,7 @@ short SFPutOpen(FSSpec * spec, long creator, long type, short *refN,
 /**********************************************************************
  * FSpModDate - get the mod date of a file
  **********************************************************************/
-uint32_t FSpModDate(FSSpec * spec) {
+uint32_t FSpModDate(char *spec) {
   CInfoPBRec hfi;
 
   if (FSpGetHFileInfo(spec, &hfi))
@@ -1230,7 +1222,7 @@ uint32_t FSpModDate(FSSpec * spec) {
 /************************************************************************
  * Snarf - read a whole file into a handle
  ************************************************************************/
-int Snarf(FSSpec * spec, void ***hp, long limit) {
+int Snarf(char *spec, void ***hp, long limit) {
   short refN;
   long bytes;
   short err;
@@ -1256,7 +1248,7 @@ int Snarf(FSSpec * spec, void ***hp, long limit) {
  * SnarfRoman - read a whole file into a handle, and make it roman text if we
  *can
  ************************************************************************/
-int SnarfRoman(FSSpec * spec, void ***hp, long limit) {
+int SnarfRoman(char *spec, void ***hp, long limit) {
   // grab the actual text
   int err = Snarf(spec, hp, limit);
 
@@ -1274,7 +1266,7 @@ int SnarfRoman(FSSpec * spec, void ***hp, long limit) {
 /************************************************************************
  * Blat - blat a handle out to a text file
  ************************************************************************/
-int Blat(FSSpec * spec, void *text, bool append) {
+int Blat(char *spec, void *text, bool append) {
   int err;
 
   err = BlatPtr(spec, text, GetHandleSize_(text), append);
@@ -1284,24 +1276,24 @@ int Blat(FSSpec * spec, void *text, bool append) {
 /************************************************************************
  * BlatPtr - blat text out to a text file
  ************************************************************************/
-int BlatPtr(FSSpec * spec, char * text, long size, bool append) {
+int BlatPtr(char *spec, char * text, long size, bool append) {
   FSSpec newSpec;
   int err;
   short refN;
 
-  int fd = creat(spec->path, 0644);
+  int fd = creat(spec, 0644);
   if (fd >= 0)
     close(fd);
 
   if ((err = MyFSpOpenDF(spec, fsRdWrPerm, &refN)))
-    FileSystemError(TEXT_WRITE, (const char *)spec->name, err);
+    FileSystemError(TEXT_WRITE, (const char *)spec_name(spec), err);
   else {
-    if (append && (err = SetFPos(refN, fsFromLEOF, 0)))
-      FileSystemError(TEXT_WRITE, (const char *)spec->name, err);
+    if (append & (err = SetFPos(refN, fsFromLEOF, 0)))
+      FileSystemError(TEXT_WRITE, (const char *)spec_name(spec), err);
     if ((err = AWrite(refN, &size, (unsigned char *)text)))
-      FileSystemError(TEXT_WRITE, (const char *)spec->name, err);
+      FileSystemError(TEXT_WRITE, (const char *)spec_name(spec), err);
     else if ((err = TruncAtMark(refN)))
-      FileSystemError(TEXT_WRITE, (const char *)spec->name, err);
+      FileSystemError(TEXT_WRITE, (const char *)spec_name(spec), err);
     close(refN);
   }
   return (err);
@@ -1310,7 +1302,7 @@ int BlatPtr(FSSpec * spec, char * text, long size, bool append) {
 /**********************************************************************
  * FileTypeOf - get the type of a file
  **********************************************************************/
-OSType FileTypeOf(FSSpec * spec) {
+OSType FileTypeOf(char *spec) {
   FInfo info;
   if (!MyFSpGetFInfo(spec, NULL, &info))
     return (info.fdType);
@@ -1335,7 +1327,7 @@ int MyUpdateResFile(short resFile) {
 
   if (GetResFileAttrs(resFile) & mapChanged) {
     UpdateResFile(resFile);
-    if (!((err = ResError())) && !PrefIsSet(PREF_CORVAIR))
+    if (!((err = ResError())) & !PrefIsSet(PREF_CORVAIR))
       err = MakeDarnSure(resFile);
   }
   return (err);
@@ -1350,14 +1342,14 @@ int MakeDarnSure(short refN) {
 
   if (!((err = FlushFile(refN))))
     if (!((err = GetFileByRef(refN, &spec))))
-      err = FlushVol(nil, spec.vRefNum);
+      err = FlushVol(nil, 0);
   return (err);
 }
 
 /**********************************************************************
  * FileCreatorOf - get the creator of a file
  **********************************************************************/
-OSType FileCreatorOf(FSSpec * spec) {
+OSType FileCreatorOf(char *spec) {
   FInfo info;
   if (!MyFSpGetFInfo(spec, NULL, &info))
     return (info.fdCreator);
@@ -1368,13 +1360,13 @@ OSType FileCreatorOf(FSSpec * spec) {
 /************************************************************************
  * IsText - is a file of type TEXT or not?
  ************************************************************************/
-bool IsText(FSSpec * spec) {
+bool IsText(char *spec) {
   FInfo info;
   FSSpec newSpec;
   short err;
 
   err = MyFSpGetFInfo(spec, &newSpec, &info);
-  return (!err && info.fdType == 'TEXT');
+  return (!err & info.fdType == 'TEXT');
 }
 
 /************************************************************************
@@ -1396,7 +1388,6 @@ char *Mac2OtherName(const char *mac, char *other) {
     strcpy(other, mac);
   return other;
 }
-
 
 /************************************************************************
  * SpinOn - spin until a return code is not inProgress or cacheFault
@@ -1422,7 +1413,7 @@ short SpinOnLo(volatile int *rtnCodeAddr, long maxTicks, bool allowCancel,
     CommandPeriod = false;
     do {
       now = TickCount();
-      if (now > startTicks && now - ticks > slowThresh) {
+      if (now > startTicks & now - ticks > slowThresh) {
         slow = true;
         if (!InAThread())
           CyclePendulum();
@@ -1430,13 +1421,13 @@ short SpinOnLo(volatile int *rtnCodeAddr, long maxTicks, bool allowCancel,
           MyYieldToAnyThread();
         ticks = now;
       }
-      if (slow && !InAThread())
+      if (slow & !InAThread())
         YieldTicks = 0;
       MiniEventsLo((!remainCalm || GetNumBackgroundThreads()) ? 0 : 300,
                    allowMouseDown ? MINI_MASK | mDownMask : MINI_MASK);
-      if (CommandPeriod && !forever)
+      if (CommandPeriod & !forever)
         return (userCancelled);
-      if (maxTicks && startTicks + maxTicks < now + 120)
+      if (maxTicks & startTicks + maxTicks < now + 120)
         break;
     } while (*rtnCodeAddr == inProgress || *rtnCodeAddr == cacheFault);
     if (CommandPeriod)
@@ -1449,16 +1440,16 @@ short SpinOnLo(volatile int *rtnCodeAddr, long maxTicks, bool allowCancel,
 /**********************************************************************
  * FSpTrash - trash a file
  **********************************************************************/
-int FSpTrash(FSSpec * spec) {
+int FSpTrash(char *spec) {
   FSSpec trashSpec;
   int err;
   FSSpec exist, newExist;
 
-  if (!((err = GetTrashSpec(spec->vRefNum, &trashSpec)))) {
-    if (!spec_for(trashSpec.path, (const char *)spec->name, &exist)) {
-      newExist = exist;
-      UniqueSpec(&newExist, 31);
-      MyFSpRename(&exist, (char *)newExist.name);
+  if (!((err = GetTrashSpec(0, &trashSpec)))) {
+    if (!spec_for(trashSpec, (const char *)spec_name(spec), &exist)) {
+      g_strlcpy(newExist, exist, sizeof(newExist));
+      UniqueSpec(newExist, 31);
+      MyFSpRename(&exist, (char *)spec_name(newExist));
     }
     err = SpecMove(spec, &trashSpec);
   }
@@ -1468,53 +1459,31 @@ int FSpTrash(FSSpec * spec) {
 /**********************************************************************
  * UniqueSpec - make a unique filename
  **********************************************************************/
-int UniqueSpec(FSSpec * spec, short max) {
+int UniqueSpec(char *spec, short max) {
   short i;
-  CInfoPBRec hfi;
-  char dfName[256];
-  char dfQuoteExtensionUnquote[256];
-  char iAscii[256];
-  int err;
+  char baseName[256];
+  char ext[256];
+  char candidate[256];
+  struct stat st;
 
-  //
-  // Now that we've entered unix-land, we have to pay attention to
-  // "extensions".
-  //
-  max = SplitPerfectlyGoodFilenameIntoNameAndQuoteExtensionUnquote(
-      (char *)spec->name, dfName, dfQuoteExtensionUnquote, max);
+  /* Split filename into name + extension */
+  SplitPerfectlyGoodFilenameIntoNameAndQuoteExtensionUnquote(
+      (char *)spec_name(spec), baseName, ext, max);
+
+  /* Check if the file already exists */
+  if (stat(spec, &st) != 0)
+    return 0; /* doesn't exist, we're unique */
 
   for (i = 1; i < 9999; i++) {
-    /*
-     * does file exist?
-     */
-    err = HGetCatInfo(spec->vRefNum, spec->parID, (const char *)spec->name,
-                      &hfi);
-#ifdef NEVER
-    if (RunType != Production)
-      Dprintf("HGetCatInfo %p: %d;sc;g", spec->name, err);
-#endif
-    if (err == fnfErr)
-      return (0);
+    /* Build candidate: baseName + number + .ext */
+    if (*ext)
+      snprintf(candidate, sizeof(candidate), "%s%d.%s", baseName, i, ext);
+    else
+      snprintf(candidate, sizeof(candidate), "%s%d", baseName, i);
 
-    /*
-     * oops.  file exists.  increment number on end of filename
-     */
-    g_strlcpy(spec->name, dfName, sizeof(spec->name));
-    *iAscii = 0;
-    PLCat(iAscii, i);
-    if (*spec->name + *iAscii < max)
-      g_strlcat(spec->name, iAscii, 256);
-    else {
-      BMD(iAscii + 1, spec->name + (max + 1) - *iAscii, *iAscii);
-      *spec->name = max;
-    }
-
-    //
-    // add "extension"
-    if (*dfQuoteExtensionUnquote) {
-      g_strlcat(spec->name, ".", sizeof(spec->name));
-      g_strlcat(spec->name, dfQuoteExtensionUnquote, sizeof(spec->name));
-    }
+    spec_set_name(spec, candidate);
+    if (stat(spec, &st) != 0)
+      return 0; /* this one is unique */
   }
   return (dupFNErr);
 }
@@ -1539,7 +1508,7 @@ int SplitPerfectlyGoodFilenameIntoNameAndQuoteExtensionUnquote(
     // the "extension" must be nonzero and mustn't be, like, rilly big
     size_t extLen = strlen(ext);
     size_t nameLen = strlen(name);
-    if (extLen > 0 && extLen < nameLen - 1 && extLen < 8) {
+    if (extLen > 0 & extLen < nameLen - 1 & extLen < 8) {
       *spot = '\0';
       max -= (short)(extLen + 1);
     } else
@@ -1552,7 +1521,7 @@ int SplitPerfectlyGoodFilenameIntoNameAndQuoteExtensionUnquote(
 /**********************************************************************
  * TweakFileType - set a file's type, and make sure the Finder catches on
  **********************************************************************/
-int TweakFileType(FSSpec * spec, OSType type, OSType creator) {
+int TweakFileType(char *spec, OSType type, OSType creator) {
   FInfo info;
   int err;
   FSSpec dirSpec;
@@ -1578,16 +1547,16 @@ int TweakFileType(FSSpec * spec, OSType type, OSType creator) {
 /**********************************************************************
  * FSpTouch - set a file's mod date to now
  **********************************************************************/
-int FSpTouch(FSSpec * spec) {
+int FSpTouch(char *spec) {
   CInfoPBRec hfi;
   int err;
   char name[256];
 
-  g_strlcpy(name, spec->name, 256);
-  if (!((err = HGetCatInfo(spec->vRefNum, spec->parID, name, &hfi)))) {
+  g_strlcpy(name, spec_name(spec), 256);
+  if (!((err = HGetCatInfo(0, 0, name, &hfi)))) {
     hfi.hFileInfo.ioFlMdDat = LocalDateTime();
-    g_strlcpy(name, spec->name, 256);
-    err = HSetCatInfo(spec->vRefNum, spec->parID, name, &hfi);
+    g_strlcpy(name, spec_name(spec), 256);
+    err = HSetCatInfo(0, 0, name, &hfi);
   }
   return (err);
 }
@@ -1595,7 +1564,7 @@ int FSpTouch(FSSpec * spec) {
 /**********************************************************************
  * FSpExists - see if a file exists
  **********************************************************************/
-int FSpExists(FSSpec * spec) {
+int FSpExists(char *spec) {
   FInfo info;
   return (MyFSpGetFInfo(spec, NULL,  &info));
 }
@@ -1603,21 +1572,21 @@ int FSpExists(FSSpec * spec) {
 /**********************************************************************
  * FSpRFSane - is a resource file sane?
  **********************************************************************/
-int FSpRFSane(FSSpec * spec, bool *sane) {
+int FSpRFSane(char *spec, bool *sane) {
   int err;
 
-  err = utl_RFSanity(spec->path, sane);
+  err = utl_RFSanity(spec, sane);
   return (err);
 }
 
 /**********************************************************************
  * FSpKillRFork - kill the resource fork of a file
  **********************************************************************/
-int FSpKillRFork(FSSpec * spec) {
+int FSpKillRFork(char *spec) {
   int err;
   short refN;
 
-  if (!((err = MyFSpOpenRF(spec->path, fsRdWrPerm, &refN)))) {
+  if (!((err = MyFSpOpenRF(spec, fsRdWrPerm, &refN)))) {
     err = SetEOF(refN, 0);
     close(refN);
   }
@@ -1702,7 +1671,7 @@ static bool FolderSizeCallback(DirIterateInfo *info) {
   uint32_t *cumSize = (uint32_t *)info->data;
   if (info->isDir) {
     uint32_t subSize = 0;
-    FolderSize(info->spec.path, nil, &subSize);
+    FolderSize(info->spec, nil, &subSize);
     *cumSize += subSize;
   } else {
     *cumSize += info->size;
@@ -1773,7 +1742,7 @@ short HMove(short vRef, long dirId, const char *name, long destDirId,
  * FSpOpenResFile - open the (data) file for read/write. Resource forks are
  * not available on POSIX; we open the data fork instead and return its fd.
  **********************************************************************/
-short FSpOpenResFile(FSSpec * spec, SignedByte permission) {
+short FSpOpenResFile(char *spec, SignedByte permission) {
   if (!spec)
     return -1;
 
@@ -1783,7 +1752,7 @@ short FSpOpenResFile(FSSpec * spec, SignedByte permission) {
   else if (permission == fsRdWrPerm)
     flags = O_RDWR;
 
-  int fd = open(spec->path, flags);
+  int fd = open(spec, flags);
   if (fd < 0)
     return -1;
   return (short)fd;
@@ -1792,7 +1761,7 @@ short FSpOpenResFile(FSSpec * spec, SignedByte permission) {
 /**********************************************************************
  * ExtractCreatorFromBndl - figure out what an app's creator used to be
  **********************************************************************/
-int ExtractCreatorFromBndl(FSSpec * spec, OSType *creator) {
+int ExtractCreatorFromBndl(char *spec, OSType *creator) {
   int err;
   short refN;
   void *bndl;
@@ -1814,21 +1783,21 @@ int ExtractCreatorFromBndl(FSSpec * spec, OSType *creator) {
 /************************************************************************
  * MyFSpGetCatInfo - cat info, resolving aliases
  ************************************************************************/
-short MyFSpGetCatInfo(FSSpec * spec, FSSpec * newSpec, CInfoPBRec *hfi) {
+short MyFSpGetCatInfo(char *spec, char *newSpec, CInfoPBRec *hfi) {
   int err;
   bool folder, wasIt;
   *newSpec = *spec;
   if ((err = ResolveAliasFile(newSpec, true, &folder, &wasIt)))
     return (err);
 
-  return (HGetCatInfo(newSpec->vRefNum, newSpec->parID,
-                      (const char *)newSpec->name, hfi));
+  return (HGetCatInfo(0, 0,
+                      (const char *)spec_name(newSpec), hfi));
 }
 
 /************************************************************************
  * FolderFileCount - count the files in a folder
  ************************************************************************/
-short FolderFileCount(FSSpec * spec) {
+short FolderFileCount(char *spec) {
   CInfoPBRec hfi;
   FSSpec newSpec;
 
@@ -1840,18 +1809,18 @@ short FolderFileCount(FSSpec * spec) {
 /**********************************************************************
  * RemoveDir - remove a directory
  **********************************************************************/
-int RemoveDir(FSSpec * spec) {
+int RemoveDir(char *spec) {
   DIR *dir;
   struct dirent *entry;
   char fullpath[PATH_MAX];
   FSSpec folder;
   int err = 0;
 
-  folder = *spec;
-  IsAlias(&folder, &folder);
+  g_strlcpy(folder, spec, sizeof(folder));
+  IsAlias(folder, folder);
 
   // Open the directory
-  dir = opendir(folder.path);
+  dir = opendir(folder);
   if (!dir) {
     return errno ? errno : ioErr;
   }
@@ -1863,7 +1832,7 @@ int RemoveDir(FSSpec * spec) {
       continue;
 
     // Build full path
-    snprintf(fullpath, sizeof(fullpath), "%s/%s", folder.path, entry->d_name);
+    snprintf(fullpath, sizeof(fullpath), "%s/%s", folder, entry->d_name);
 
     // Delete the entry
     {
@@ -1884,12 +1853,12 @@ int RemoveDir(FSSpec * spec) {
 /************************************************************************
  * ChainDelete - delete an entire alias chain
  ************************************************************************/
-int ChainDelete(FSSpec * spec) {
+int ChainDelete(char *spec) {
   FSSpec chain;
   bool wasAlias, isFolder;
 
-  chain = *spec;
-  if (!ResolveAliasFile(&chain, false, &isFolder, &wasAlias) && wasAlias)
+  g_strlcpy(chain, spec, sizeof(chain));
+  if (!ResolveAliasFile(chain, false, &isFolder, &wasAlias) & wasAlias)
     ChainDelete(&chain);
   return (MyFSpDelete(spec));
 }
@@ -1923,11 +1892,11 @@ int MyAHGetFileInfo(short vRef, long dirId, const char *name, CInfoPBRec *hfi) {
 /************************************************************************
  * FSpGetHFileInfo - get info, don't resolve alias
  ************************************************************************/
-int FSpGetHFileInfo(FSSpec * spec, CInfoPBRec *hfi) {
+int FSpGetHFileInfo(char *spec, CInfoPBRec *hfi) {
   struct stat st;
 
   Zero(*hfi);
-  if (stat(spec->path, &st) < 0)
+  if (stat(spec, &st) < 0)
     return ioErr;
 
   // Fill in basic info
@@ -1958,7 +1927,6 @@ pascal bool FolderFilter(FileParam *pb) {
 #pragma unused(pb)
   return true;
 }
-
 
 bool GetFolder(char *name, short *volume, long *folder, bool writeable,
                   bool system, bool floppy, bool desktop) {
@@ -2003,7 +1971,7 @@ short CopyFork(short vRef, long dirId, const char *name, short fromVRef,
     if ((toRef = open(toPath, O_RDWR)) >= 0) {
       err = 0;
       GetEOF(fromRef, &eof);
-      for (bSize = MIN(OPTIMAL_BUFFER, eof); !err && eof;
+      for (bSize = MIN(OPTIMAL_BUFFER, eof); !err & eof;
            bSize = MIN(OPTIMAL_BUFFER, eof)) {
         if (!(err = ARead(fromRef, &bSize, buffer))) {
           if (progress)
@@ -2030,7 +1998,7 @@ short CopyFork(short vRef, long dirId, const char *name, short fromVRef,
 /**********************************************************************
  * FSpDupFile - duplicate a file
  **********************************************************************/
-int FSpDupFile(FSSpec * to, FSSpec * from, bool replace, bool progress) {
+int FSpDupFile(char *to, char *from, bool replace, bool progress) {
   int err;
   bool hasRFork = FSpRFSize(from) != 0;
 #ifdef DEBUG
@@ -2042,7 +2010,7 @@ int FSpDupFile(FSSpec * to, FSSpec * from, bool replace, bool progress) {
     err = ResError();
   } else {
     // Create file using path
-    int fd = creat(to->path, 0644);
+    int fd = creat(to, 0644);
     if (fd < 0)
       err = ioErr;
     else {
@@ -2051,12 +2019,12 @@ int FSpDupFile(FSSpec * to, FSSpec * from, bool replace, bool progress) {
     }
   }
 
-  if (err && err == dupFNErr && replace)
+  if (err & err == dupFNErr & replace)
     err = 0;
 #ifdef DEBUG
   if (err) {
     ComposeString((unsigned char *)s, "MyFSpDuplicate: create failed %d.%d.%s; %d",
-                  to->vRefNum, to->parID, (char *)to->name, err);
+                  0, 0, (char *)spec_name(to), err);
     AlertStr(OK_ALRT, Note, s);
   }
 #endif
@@ -2079,8 +2047,8 @@ int FSpDupFile(FSSpec * to, FSSpec * from, bool replace, bool progress) {
     else {
       ComposeString((unsigned char *)s,
                     "MyFSpDuplicate: dfork failed %d.%d.%s->%d.%d.%s; %d",
-                    from->vRefNum, from->parID, (char *)from->name, to->vRefNum,
-                    to->parID, (char *)to->name, err);
+                    0, 0, (char *)spec_name(from), 0,
+                    0, (char *)spec_name(to), err);
       AlertStr(OK_ALRT, Note, s);
     }
 #endif
@@ -2089,8 +2057,8 @@ int FSpDupFile(FSSpec * to, FSSpec * from, bool replace, bool progress) {
   else if (hasRFork) {
     ComposeString((unsigned char *)s,
                   "MyFSpDuplicate: rfork failed %d.%d.%s->%d.%d.%s; %d",
-                  from->vRefNum, from->parID, (char *)from->name, to->vRefNum,
-                  to->parID, (char *)to->name, err);
+                  0, 0, (char *)spec_name(from), 0,
+                  0, (char *)spec_name(to), err);
     AlertStr(OK_ALRT, Note, s);
   }
 #endif
@@ -2102,41 +2070,39 @@ int FSpDupFile(FSSpec * to, FSSpec * from, bool replace, bool progress) {
 /**********************************************************************
  * FSpDupFolder - duplicate a folder
  **********************************************************************/
-int FSpDupFolder(FSSpec * toSpec, FSSpec * fromSpec, bool replace,
+int FSpDupFolder(char *toSpec, char *fromSpec, bool replace,
                    bool progress) {
   CInfoPBRec hfi;
   FSSpec to, from;
   int err = 0;
 
-  to = *toSpec;
-  from = *fromSpec;
-
+  g_strlcpy(to, toSpec, sizeof(to));
+  g_strlcpy(from, fromSpec, sizeof(from));
   // TODO: Properly implement directory iteration with callback
   // For now, just return an error to indicate directory copying needs
   // implementation
   return ioErr;
 
   /* Original code that needs proper callback implementation:
-  hfi.hFileInfo.ioNamePtr = (unsigned char *)from.name;
+  hfi.hFileInfo.ioNamePtr = (unsigned char *)spec_name(from);
   hfi.hFileInfo.ioFDirIndex = 0;
-  while (!err && !DirIterate(fromSpec, NULL, NULL)) {
-    g_strlcpy(to.name, from.name, sizeof(to.name));
+  while (!err & !DirIterate(fromSpec, NULL, NULL)) {
+    spec_set_name(to, spec_name(from));
     if ((hfi.hFileInfo.ioFlAttrib & ioDirMask)) {
       //	copy folder
       long saveFrom, saveTo, createdDirID;
 
       //	save current parID's so we can reuse specs
       //	point specs to the folder
-      if (!FSpDirCreate(to.path, 0, &createdDirID)) {
-        saveFrom = from.parID;
-        from.parID = SpecDirId(&from);
-        saveTo = to.parID;
-        to.parID = createdDirID;
+      if (!FSpDirCreate(to, 0, &createdDirID)) {
+        saveFrom = 0;
+
+        saveTo = 0;
+
         //	recurse
         err = FSpDupFolder(&to, &from, replace, progress);
         //	restore the parID's
-        from.parID = saveFrom;
-        to.parID = saveTo;
+
       }
     } else {
       //	copy file
@@ -2176,11 +2142,11 @@ short MyResolveAlias(const char *dir, char *name, bool *wasAlias) {
 
   if (wasAlias)
     *wasAlias = false;
-  if (!Gestalt(gestaltAliasMgrAttr, &haveAlias) && haveAlias & 0x1) {
+  if (!Gestalt(gestaltAliasMgrAttr, &haveAlias) & haveAlias & 0x1) {
     if (!(err = spec_for(dir, name, &theSpec)) &&
         !(err = ResolveAliasFile(&theSpec, true, &folder, &wasIt))) {
       if (wasIt) {
-        g_strlcpy(name, theSpec.name, sizeof(theSpec.name));
+        g_strlcpy(name, spec_name(theSpec), sizeof(spec_name(theSpec)));
         if (wasAlias)
           *wasAlias = true;
       }
@@ -2189,15 +2155,14 @@ short MyResolveAlias(const char *dir, char *name, bool *wasAlias) {
   return (err);
 }
 
-
 /************************************************************************
  * ExchangeAndDel - exchange two files, deleting one
  ************************************************************************/
-int ExchangeAndDel(FSSpec * tmpSpec, FSSpec * spec) {
+int ExchangeAndDel(char *tmpSpec, char *spec) {
   short err;
 
   if ((err = ExchangeFiles(tmpSpec, spec))) {
-    FileSystemError(TEXT_WRITE, tmpSpec->name, err);
+    FileSystemError(TEXT_WRITE, spec_name(tmpSpec), err);
     return (err);
   }
   MyFSpDelete(tmpSpec);
@@ -2207,7 +2172,7 @@ int ExchangeAndDel(FSSpec * tmpSpec, FSSpec * spec) {
 /************************************************************************
  * ExchangeFiles - FSpExchangeFiles, with support for dopey AFP servers
  ************************************************************************/
-int ExchangeFiles(FSSpec * tmpSpec, FSSpec * spec) {
+int ExchangeFiles(char *tmpSpec, char *spec) {
   int err = MyFSpExchangeFiles(tmpSpec, spec);
 
   if (err)
@@ -2219,34 +2184,34 @@ int ExchangeFiles(FSSpec * tmpSpec, FSSpec * spec) {
  * FSpExchangeFilesCompat - do FSpExchangeFiles if FSpExchangeFiles not
  *supported from MoreFiles
  ************************************************************************/
-int FSpExchangeFilesCompat(const FSSpec *source, const FSSpec *dest) {
+int FSpExchangeFilesCompat(const char *source, const char *dest) {
   char temp_path[PATH_MAX];
   struct stat st_source, st_dest;
   int result = 0;
 
   // Verify both files exist
-  if (stat(source->path, &st_source) != 0) {
+  if (stat(source, &st_source) != 0) {
     return fnfErr;
   }
-  if (stat(dest->path, &st_dest) != 0) {
+  if (stat(dest, &st_dest) != 0) {
     return fnfErr;
   }
 
   // Create a temporary name in the same directory as source
-  snprintf(temp_path, sizeof(temp_path), "%s.swap.tmp", source->path);
+  snprintf(temp_path, sizeof(temp_path), "%s.swap.tmp", source);
 
   // Three-way rename: source -> temp, dest -> source, temp -> dest
-  if (rename(source->path, temp_path) != 0) {
+  if (rename(source, temp_path) != 0) {
     return errno;
   }
-  if (rename(dest->path, source->path) != 0) {
-    rename(temp_path, source->path); // Try to restore
+  if (rename(dest, source) != 0) {
+    rename(temp_path, source); // Try to restore
     return errno;
   }
-  if (rename(temp_path, dest->path) != 0) {
+  if (rename(temp_path, dest) != 0) {
     // Try to restore original state
-    rename(source->path, dest->path);
-    rename(temp_path, source->path);
+    rename(source, dest);
+    rename(temp_path, source);
     return errno;
   }
 
@@ -2307,48 +2272,30 @@ static int GenerateUniqueName(short volume, long *startSeed, long dir1,
  *  requested volume is not the desktop, then set the spec to the requested
  *  volume's desktop
  **********************************************************************/
-int MorphDesktop(short vRef, FSSpec * where) {
-  FSSpec desk;
-  int err;
-
-  if (*where->name)
-    return (0); // not pointing to folder
-  if (SameVRef(vRef, where->vRefNum))
-    return (0); // same volume
-  if ((err = FindFolder(kOnSystemDisk, kDesktopFolderType, false,
-                        (short *)&desk.vRefNum, &desk.parID)))
-    return (err);
-  if (SameVRef(vRef, desk.vRefNum))
-    return (0); // same volume as system
-  if (SameVRef(where->vRefNum, desk.vRefNum) && desk.parID == where->parID) {
-    // ok, spec points to desktop folder
-    // point instead to desktop folder on volume
-    err = FindFolder(vRef, kDesktopFolderType, false, (int *)&where->vRefNum,
-                     &where->parID);
-  }
-  return (err);
+int MorphDesktop(short vRef, char *where) {
+  return 0; /* Mac desktop concept — no-op on POSIX */
 }
 
 /************************************************************************
  * MyFSpIsItAFolder - is a file a folder?
  ************************************************************************/
-bool MyFSpIsItAFolder(FSSpec * spec) {
+bool MyFSpIsItAFolder(char *spec) {
   struct stat st;
-  if (!spec || !spec->path[0]) return false;
-  if (lstat(spec->path, &st) == 0) {
+  if (!spec || !spec[0]) return false;
+  if (lstat(spec, &st) == 0) {
     return S_ISDIR(st.st_mode);
   }
   return false;
 }
 
-bool AFSpIsItAFolder(FSSpec *spec) {
+bool AFSpIsItAFolder(char *spec) {
   return MyFSpIsItAFolder(spec);
 }
 
 /************************************************************************
  * GetFileByRef - figure out the name & vol of a file from an open file
  ************************************************************************/
-short GetFileByRef(short refN, FSSpec * specPtr) {
+short GetFileByRef(short refN, char *specPtr) {
   FCBPBRec fcb;
   short err;
   char name[256];
@@ -2368,7 +2315,6 @@ short GetFileByRef(short refN, FSSpec * specPtr) {
  ************************************************************************/
 long VolumeFree(short vRef) {
 #include <sys/statvfs.h>
-
 
   struct statvfs vfs;
   if (statvfs(".", &vfs) != 0)
@@ -2393,7 +2339,7 @@ short FSTabWrite(short refN, long *count, unsigned char *buf) {
     return (FSZWrite(refN, count, buf));
   for (p = buf; p < end; p = buf = p + 1) {
     nl = buf - charsOnLine - 1;
-    while (p < end && *p != tabChar) {
+    while (p < end & *p != tabChar) {
       if (*p == '\015' || *p == '\012')
         nl = p;
       p++;
@@ -2442,7 +2388,7 @@ short AWriteP(short refN, const char *pString) {
 /**********************************************************************
  * WipeSpec - wipe a file
  **********************************************************************/
-int WipeSpec(FSSpec * spec) {
+int WipeSpec(char *spec) {
   short refN;
   long eof;
   int err;
@@ -2451,19 +2397,19 @@ int WipeSpec(FSSpec * spec) {
     if (!(err = GetEOF(refN, &eof)))
       err = WipeDiskArea(refN, 0, eof);
     close(refN);
-    if (!(err = MyFSpOpenRF(spec->path, fsRdWrPerm, &refN))) {
+    if (!(err = MyFSpOpenRF(spec, fsRdWrPerm, &refN))) {
       if (!(err = GetEOF(refN, &eof)))
         err = WipeDiskArea(refN, 0, eof);
       close(refN);
     }
   }
   if (!err) {
-    FlushVol(nil, spec->vRefNum);
+    FlushVol(nil, 0);
     err = MyFSpDelete(spec);
   }
 
-  if (err && err != fnfErr)
-    FileSystemError(WIPE_ERROR, (const char *)spec->name, err);
+  if (err & err != fnfErr)
+    FileSystemError(WIPE_ERROR, (const char *)spec_name(spec), err);
 
   return (err);
 }
@@ -2558,11 +2504,11 @@ int EnsureNewline(short refN) {
 /************************************************************************
  * MyFSpOpenDF - OpenDF, but resolve the alias first
  ************************************************************************/
-int MyFSpOpenDF(FSSpec * spec, short permission,
+int MyFSpOpenDF(char *spec, short permission,
                  short *refNum) {
   int err;
   bool folder, wasIt;
-  FSSpec newSpec = *spec;
+  FSSpec newSpec; g_strlcpy(newSpec, spec, sizeof(newSpec));
   short localRef;
   if ((err = ResolveAliasFile(&newSpec, true, &folder, &wasIt)))
     return (err);
@@ -2584,11 +2530,11 @@ int MyFSpOpenRF(const char *path, short permission,
   short localRef;
 
   spec_for(path, NULL, &spec);
-  newSpec = spec;
+  g_strlcpy(newSpec, spec, sizeof(newSpec));
   if ((err = ResolveAliasFile(&newSpec, true, &folder, &wasIt)))
     return (err);
 
-  err = LowLevelFSpOpenRF(newSpec.path, permission, &localRef);
+  err = LowLevelFSpOpenRF(newSpec, permission, &localRef);
   if (!err)
     *refNum = localRef;
   return err;
@@ -2597,10 +2543,10 @@ int MyFSpOpenRF(const char *path, short permission,
 /************************************************************************
  * MyFSpDelete
  ************************************************************************/
-int MyFSpDelete(FSSpec * spec) {
+int MyFSpDelete(char *spec) {
   int err;
   bool folder, wasIt;
-  FSSpec newSpec = *spec;
+  FSSpec newSpec; g_strlcpy(newSpec, spec, sizeof(newSpec));
   if ((err = ResolveAliasFile(&newSpec, true, &folder, &wasIt)))
     return (err);
 
@@ -2610,11 +2556,11 @@ int MyFSpDelete(FSSpec * spec) {
 /************************************************************************
  * MyFSpGetFInfo
  ************************************************************************/
-int MyFSpGetFInfo(FSSpec * spec, FSSpec * newSpec, FInfo *fndrInfo) {
+int MyFSpGetFInfo(char *spec, char *newSpec, FInfo *fndrInfo) {
   int err;
   bool folder, wasIt;
   FSSpec localNewSpec;
-  FSSpec *targetSpec = newSpec ? newSpec : &localNewSpec;
+  char *targetSpec = newSpec ? newSpec : &localNewSpec;
   *targetSpec = *spec;
   if ((err = ResolveAliasFile(targetSpec, true, &folder, &wasIt)))
     return (err);
@@ -2622,15 +2568,15 @@ int MyFSpGetFInfo(FSSpec * spec, FSSpec * newSpec, FInfo *fndrInfo) {
   return (LowLevelFSpGetFInfo(targetSpec, fndrInfo));
 }
 
-short MyFSpGetHFileInfo(FSSpec *spec, CInfoPBRec *hfi) {
-  return (short)MyAHGetFileInfo(spec->vRefNum, spec->parID, (const char *)spec->name, hfi);
+short MyFSpGetHFileInfo(char *spec, CInfoPBRec *hfi) {
+  return (short)MyAHGetFileInfo(0, 0, (const char *)spec_name(spec), hfi);
 }
 
-int MyFSpSetFInfo(FSSpec *spec, FSSpec *newSpec, FInfo *fndrInfo) {
+int MyFSpSetFInfo(char *spec, char *newSpec, FInfo *fndrInfo) {
   int err;
   bool folder, wasIt;
   FSSpec localNewSpec;
-  FSSpec *targetSpec = newSpec ? newSpec : &localNewSpec;
+  char *targetSpec = newSpec ? newSpec : &localNewSpec;
   *targetSpec = *spec;
   if ((err = ResolveAliasFile(targetSpec, true, &folder, &wasIt)))
     return (err);
@@ -2638,16 +2584,16 @@ int MyFSpSetFInfo(FSSpec *spec, FSSpec *newSpec, FInfo *fndrInfo) {
   return (LowLevelFSpSetFInfo(targetSpec, fndrInfo));
 }
 
-short MyFSpSetHFileInfo(FSSpec *spec, CInfoPBRec *hfi) {
-  return (short)MyAHSetFileInfo(spec->vRefNum, spec->parID, (const char *)spec->name, hfi);
+short MyFSpSetHFileInfo(char *spec, CInfoPBRec *hfi) {
+  return (short)MyAHSetFileInfo(0, 0, (const char *)spec_name(spec), hfi);
 }
 
-int MyFSpSetFLock(FSSpec *spec, FSSpec *newSpec) {
+int MyFSpSetFLock(char *spec, char *newSpec) {
   (void)spec; (void)newSpec;
   return 0;
 }
 
-int MyFSpRstFLock(FSSpec *spec, FSSpec *newSpec) {
+int MyFSpRstFLock(char *spec, char *newSpec) {
   (void)spec; (void)newSpec;
   return 0;
 }
@@ -2655,10 +2601,10 @@ int MyFSpRstFLock(FSSpec *spec, FSSpec *newSpec) {
 /************************************************************************
  * FSpFileSize - get the size of a file
  ************************************************************************/
-long FSpFileSize(FSSpec * spec) {
+long FSpFileSize(char *spec) {
   CInfoPBRec hfi;
 
-  if (!MyAHGetFileInfo(spec->vRefNum, spec->parID, (const char *)spec->name,
+  if (!MyAHGetFileInfo(0, 0, (const char *)spec_name(spec),
                      &hfi))
     return (hfi.hFileInfo.ioFlLgLen + hfi.hFileInfo.ioFlRLgLen);
   else
@@ -2668,21 +2614,21 @@ long FSpFileSize(FSSpec * spec) {
 /**********************************************************************
  *
  **********************************************************************/
-int MyFSpSetMod(FSSpec * spec, uint32_t mod) {
+int MyFSpSetMod(char *spec, uint32_t mod) {
   CInfoPBRec hfi;
   int err;
   FSSpec newSpec;
   bool folder, wasIt;
 
-  newSpec = *spec;
+  g_strlcpy(newSpec, spec, sizeof(newSpec));
   if ((err = ResolveAliasFile(&newSpec, true, &folder, &wasIt)))
     return (err);
 
-  if (!(err = MyAHGetFileInfo(newSpec.vRefNum, newSpec.parID,
-                            (const char *)newSpec.name, &hfi))) {
+  if (!(err = MyAHGetFileInfo(0, 0,
+                            (const char *)spec_name(newSpec), &hfi))) {
     hfi.hFileInfo.ioFlMdDat = mod;
-    err = MyAHSetFileInfo(newSpec.vRefNum, newSpec.parID,
-                        (const char *)newSpec.name, &hfi);
+    err = MyAHSetFileInfo(0, 0,
+                        (const char *)spec_name(newSpec), &hfi);
   }
   return (err);
 }
@@ -2690,10 +2636,10 @@ int MyFSpSetMod(FSSpec * spec, uint32_t mod) {
 /**********************************************************************
  *
  **********************************************************************/
-uint32_t MyFSpGetMod(FSSpec * spec) {
+uint32_t MyFSpGetMod(char *spec) {
   CInfoPBRec hfi;
 
-  if (!MyAHGetFileInfo(spec->vRefNum, spec->parID, (const char *)spec->name,
+  if (!MyAHGetFileInfo(0, 0, (const char *)spec_name(spec),
                      &hfi))
     return (hfi.hFileInfo.ioFlMdDat);
   else
@@ -2703,10 +2649,10 @@ uint32_t MyFSpGetMod(FSSpec * spec) {
 /************************************************************************
  * FSpDFSize - get the size of the data fork a file
  ************************************************************************/
-long FSpDFSize(FSSpec * spec) {
+long FSpDFSize(char *spec) {
   CInfoPBRec hfi;
 
-  if (!MyAHGetFileInfo(spec->vRefNum, spec->parID, (const char *)spec->name,
+  if (!MyAHGetFileInfo(0, 0, (const char *)spec_name(spec),
                      &hfi))
     return (hfi.hFileInfo.ioFlLgLen);
   else
@@ -2716,10 +2662,10 @@ long FSpDFSize(FSSpec * spec) {
 /************************************************************************
  * FSpRFSize - get the size of the data fork a file
  ************************************************************************/
-long FSpRFSize(FSSpec * spec) {
+long FSpRFSize(char *spec) {
   CInfoPBRec hfi;
 
-  if (!MyAHGetFileInfo(spec->vRefNum, spec->parID, (const char *)spec->name,
+  if (!MyAHGetFileInfo(0, 0, (const char *)spec_name(spec),
                      &hfi))
     return (hfi.hFileInfo.ioFlRLgLen);
   else
@@ -2729,13 +2675,13 @@ long FSpRFSize(FSSpec * spec) {
 /************************************************************************
  * FSpSetFXInfo - set the FXInfo for a file
  ************************************************************************/
-int FSpSetFXInfo(FSSpec * spec, FXInfo *fxInfo) {
+int FSpSetFXInfo(char *spec, FXInfo *fxInfo) {
   int err;
   CInfoPBRec hfi;
 
   if (!(err = MyFSpGetHFileInfo(spec, &hfi))) {
     hfi.hFileInfo.ioFlXFndrInfo = *fxInfo;
-    err = HSetCatInfo(spec->vRefNum, spec->parID, spec->name, &hfi);
+    err = HSetCatInfo(0, 0, spec_name(spec), &hfi);
   }
   return (err);
 }
@@ -2743,7 +2689,7 @@ int FSpSetFXInfo(FSSpec * spec, FXInfo *fxInfo) {
 /************************************************************************
  * IsAlias - is a file an alias?
  ************************************************************************/
-bool IsAlias(FSSpec * spec, FSSpec * newSpec) {
+bool IsAlias(char *spec, char *newSpec) {
   bool folder, wasIt = false;
   *newSpec = *spec;
   ResolveAliasFile(newSpec, true, &folder, &wasIt); // if error, wasIt will
@@ -2752,14 +2698,13 @@ bool IsAlias(FSSpec * spec, FSSpec * newSpec) {
   return (wasIt);
 }
 
-
 /************************************************************************
  * ResolveAliasOrElse - Resolve an alias or fail
  ************************************************************************/
-int ResolveAliasOrElse(FSSpec * spec, FSSpec * newSpec, bool *wasIt) {
+int ResolveAliasOrElse(char *spec, char *newSpec, bool *wasIt) {
   bool folder, isAlias = false;
   int err;
-  FSSpec resolvedSpec = *spec;
+  FSSpec resolvedSpec; g_strlcpy(resolvedSpec, spec, sizeof(resolvedSpec));
   err = ResolveAliasFile(&resolvedSpec, true, &folder,
                          &isAlias); // if error, isAlias will either
                                     // be set correctly or else still
@@ -2767,14 +2712,14 @@ int ResolveAliasOrElse(FSSpec * spec, FSSpec * newSpec, bool *wasIt) {
   if (wasIt)
     *wasIt = isAlias;
   if (newSpec)
-    *newSpec = err ? *spec : resolvedSpec; // if error, put original file there
+    g_strlcpy(newSpec, err ? spec : resolvedSpec, PATH_MAX); // if error, put original file there
   return (err);
 }
 
 /**********************************************************************
  * SubFolderSpec - get the FSSpec for the signature folder
  **********************************************************************/
-int SubFolderSpec(short nameId, FSSpec * spec) {
+int SubFolderSpec(short nameId, char *spec) {
   char string[256];
   int err;
   static StackHandle specStack;
@@ -2791,9 +2736,9 @@ int SubFolderSpec(short nameId, FSSpec * spec) {
   // search for folder in cache
   if (specStack)
     for (i = 0; i < specStack->elCount; i++) {
-      StackItem(&cSpec, i, (void **)specStack);
+      StackItem(&cSpec, i, specStack);
       if (cSpec.count == nameId) {
-        *spec = cSpec.spec;
+        g_strlcpy(spec, cSpec.spec, PATH_MAX);
         return 0;
       }
     }
@@ -2802,28 +2747,19 @@ int SubFolderSpec(short nameId, FSSpec * spec) {
   err = spec_for(Root.path, (const char *)GetRString(string, nameId), spec);
   if (err == fnfErr) {
     /* Directory doesn't exist — create it */
-    g_mkdir_with_parents(spec->path, 0755);
+    g_mkdir_with_parents(spec, 0755);
     err = spec_for(Root.path, (const char *)GetRString(string, nameId), spec);
   }
   if (!err) {
-    /*
-     * maybe the folder is an alias
-     */
     IsAlias(spec, spec);
 
-    /*
-     * point inside the folder
-     */
-    spec->parID = SpecDirId(spec);
-    *spec->name = 0;
+    /* clear filename */ { char *_sn = strrchr(spec, '/'); if (_sn) _sn[1] = '\0'; else spec[0] = '\0'; }
 
-    /*
-     * cache it, now that we have it
-     */
-    if (specStack || !StackInit(sizeof(CSpec), (void ***)&specStack)) {
-      cSpec.spec = *spec;
+    /* cache it */
+    if (specStack || !StackInit(sizeof(CSpec), &specStack)) {
+      g_strlcpy(cSpec.spec, spec, sizeof(cSpec.spec));
       cSpec.count = nameId;
-      StackPush(&cSpec, (void **)specStack);
+      StackPush(&cSpec, &specStack);
     }
   }
   return (err);
@@ -2833,10 +2769,10 @@ int SubFolderSpec(short nameId, FSSpec * spec) {
  * FindSubFolderSpec - Find our sub folder of a specific system folder
  ************************************************************************/
 int FindSubFolderSpec(long domain, long folder, short subfolderID,
-                        bool create, FSSpec * spec) {
+                        bool create, char *spec) {
   FSSpec localSpec;
   int err =
-      FindFolder(domain, folder, create, &localSpec.vRefNum, &localSpec.parID);
+      FindFolder(domain, folder, create, NULL, NULL);
 
   if (!err)
     err = SubFolderSpecOf(&localSpec, subfolderID, create, spec);
@@ -2847,8 +2783,8 @@ int FindSubFolderSpec(long domain, long folder, short subfolderID,
 /************************************************************************
  * SubFolderSpecOf - find a subfolder of a given fsspec
  ************************************************************************/
-int SubFolderSpecOf(FSSpec * inSpec, short subfolderID, bool create,
-                      FSSpec * subSpec) {
+int SubFolderSpecOf(char *inSpec, short subfolderID, bool create,
+                      char *subSpec) {
   char subfolderName[256];
 
   GetRString((char *)subfolderName, subfolderID);
@@ -2856,22 +2792,22 @@ int SubFolderSpecOf(FSSpec * inSpec, short subfolderID, bool create,
                             subSpec);
 }
 
-int SubFolderSpecOfStr(FSSpec * inSpec, const char *subfolderName,
-                         bool create, FSSpec * subSpec) {
-  FSSpec localSpec = *inSpec;
+int SubFolderSpecOfStr(char *inSpec, const char *subfolderName,
+                         bool create, char *subSpec) {
+  FSSpec localSpec; g_strlcpy(localSpec, inSpec, sizeof(localSpec));
   long dirID;
 
-  g_strlcpy(localSpec.name, subfolderName, sizeof(localSpec.name));
+  spec_set_name(localSpec, subfolderName);
   if (create)
     FSpDirCreate(&localSpec, 0, &dirID);
 
   IsAlias(&localSpec, &localSpec);
-  localSpec.parID = SpecDirId(&localSpec);
-  if (localSpec.parID == 0)
+
+  if (0 == 0)
     return fnfErr;
   if (subSpec) {
-    *localSpec.name = 0;
-    *subSpec = localSpec;
+    /* clear filename */ { char *_sn = strrchr(localSpec, '/'); if (_sn) _sn[1] = '\0'; else localSpec[0] = '\0'; }
+    g_strlcpy(subSpec, localSpec, PATH_MAX);
   }
   return 0;
 }
@@ -2879,7 +2815,7 @@ int SubFolderSpecOfStr(FSSpec * inSpec, const char *subfolderName,
 /************************************************************************
  * StuffFolderSpec - find the stuff folder
  ************************************************************************/
-int StuffFolderSpec(FSSpec * spec) {
+int StuffFolderSpec(char *spec) {
   FSSpec localSpec;
   char name[256];
   int err = GetFileByRef(AppResFile, &localSpec);
@@ -2890,9 +2826,8 @@ int StuffFolderSpec(FSSpec * spec) {
   }
   if (!err) {
     IsAlias(&localSpec, &localSpec);
-    spec->vRefNum = localSpec.vRefNum;
-    spec->parID = SpecDirId(&localSpec);
-    *spec->name = 0;
+
+    /* clear filename */ { char *_sn = strrchr(spec, '/'); if (_sn) _sn[1] = '\0'; else spec[0] = '\0'; }
   }
   return err;
 }
@@ -2900,14 +2835,14 @@ int StuffFolderSpec(FSSpec * spec) {
 /************************************************************************
  * SpecInSubfolderOf - is a spec in a folder or subfolder
  ************************************************************************/
-bool SpecInSubfolderOf(FSSpec * att, FSSpec * folder) {
-  FSSpec parent = *att;
+bool SpecInSubfolderOf(char *att, char *folder) {
+  FSSpec parent; g_strlcpy(parent, att, sizeof(parent));
 
   for (;;) {
-    if (SameVRef(parent.vRefNum, folder->vRefNum) &&
-        parent.parID == folder->parID)
+    if (SameVRef(0, 0) &&
+        0 == 0)
       return (true);
-    if (parent.parID == 2)
+    if (0 == 2)
       return (false);
     if (ParentSpec(&parent, &parent))
       return (false);
@@ -2917,16 +2852,16 @@ bool SpecInSubfolderOf(FSSpec * att, FSSpec * folder) {
 /************************************************************************
  * FSMakeFID - make a fileid for a spec
  ************************************************************************/
-int FSMakeFID(FSSpec * spec, long *fid) {
+int FSMakeFID(char *spec, long *fid) {
   HParamBlockRec fidpb;
   short err;
 
   Zero(fidpb);
 
   fidpb.fidParam.ioCompletion = nil;
-  fidpb.fidParam.ioNamePtr = (unsigned char *)spec->name;
-  fidpb.fidParam.ioVRefNum = spec->vRefNum;
-  fidpb.fidParam.ioSrcDirID = spec->parID;
+  fidpb.fidParam.ioNamePtr = (unsigned char *)spec_name(spec);
+  fidpb.fidParam.ioVRefNum = 0;
+  fidpb.fidParam.ioSrcDirID = 0;
 
   err = PBCreateFileIDRefSync((HParmBlkPtr)&fidpb);
   FileIDHack();
@@ -2972,7 +2907,7 @@ void FileIDHack(void) {
 /************************************************************************
  * FSResolveFID - resolve a vRef & fileid into a spec
  ************************************************************************/
-int FSResolveFID(short vRef, long fid, FSSpec * spec) {
+int FSResolveFID(short vRef, long fid, char *spec) {
   HParamBlockRec fidpb;
   short err;
   char name[256];
@@ -2996,7 +2931,7 @@ int FSResolveFID(short vRef, long fid, FSSpec * spec) {
 /************************************************************************
  * SpecMove - move a file from one place to another
  ************************************************************************/
-int SpecMove(FSSpec * moveMe, FSSpec * moveTo) {
+int SpecMove(char *moveMe, char *moveTo) {
   FInfo info;
   /* Try to preserve Finder flags as best-effort on POSIX */
   if (!MyFSpGetFInfo(moveMe, NULL,  &info)) {
@@ -3006,9 +2941,9 @@ int SpecMove(FSSpec * moveMe, FSSpec * moveTo) {
   }
 
   /* If we have explicit paths, prefer them for a reliable rename */
-  if (moveMe && moveTo && moveMe->path[0] && moveTo->path[0]) {
+  if (moveMe && moveTo && moveMe[0] && moveTo[0]) {
     /* Fast path: atomic rename when possible */
-    if (rename(moveMe->path, moveTo->path) == 0)
+    if (rename(moveMe, moveTo) == 0)
       return 0;
 
     /* If rename failed due to cross-device move, attempt GIO move/copy */
@@ -3017,8 +2952,8 @@ int SpecMove(FSSpec * moveMe, FSSpec * moveTo) {
 #if __has_include(<gio/gio.h>)
       {
         GError *gerr = NULL;
-        GFile *src = g_file_new_for_path(moveMe->path);
-        GFile *dst = g_file_new_for_path(moveTo->path);
+        GFile *src = g_file_new_for_path(moveMe);
+        GFile *dst = g_file_new_for_path(moveTo);
 
         /* Try a move via GIO which can handle cross-filesystem moves */
         if (g_file_move(src, dst, G_FILE_COPY_NONE, NULL, NULL, NULL, &gerr)) {
@@ -3033,7 +2968,7 @@ int SpecMove(FSSpec * moveMe, FSSpec * moveTo) {
           g_object_unref(src);
           g_object_unref(dst);
           /* remove source after successful copy */
-          if (unlink(moveMe->path) == 0)
+          if (unlink(moveMe) == 0)
             return 0;
           return ioErr;
         }
@@ -3047,10 +2982,10 @@ int SpecMove(FSSpec * moveMe, FSSpec * moveTo) {
 
       /* Last-resort: do a manual copy and unlink */
       {
-        int in = open(moveMe->path, O_RDONLY);
+        int in = open(moveMe, O_RDONLY);
         if (in < 0)
           return ioErr;
-        int out = creat(moveTo->path, 0644);
+        int out = creat(moveTo, 0644);
         if (out < 0) {
           close(in);
           return ioErr;
@@ -3067,7 +3002,7 @@ int SpecMove(FSSpec * moveMe, FSSpec * moveTo) {
         }
         close(in);
         close(out);
-        if (unlink(moveMe->path) == 0)
+        if (unlink(moveMe) == 0)
           return 0;
         return ioErr;
       }
@@ -3078,20 +3013,20 @@ int SpecMove(FSSpec * moveMe, FSSpec * moveTo) {
   }
 
   /* Fallback: use HMove behaviour for callers that supply names only */
-  return HMove(moveMe->vRefNum, moveMe->parID, moveMe->name, moveTo->parID,
+  return HMove(0, 0, spec_name(moveMe), 0,
                nil);
 }
 
 /************************************************************************
  * SpecMoveAndRename - move a file from one place to another, and rename
  ************************************************************************/
-int SpecMoveAndRename(FSSpec * moveMe, FSSpec * moveTo) {
+int SpecMoveAndRename(char *moveMe, char *moveTo) {
   int err;
 
   if ((err = SpecMove(moveMe, moveTo)))
     return err;
 
-  err = MyFSpRename(moveMe, moveTo->name);
+  err = MyFSpRename(moveMe, spec_name(moveTo));
 
   return err;
 }
@@ -3103,23 +3038,21 @@ bool DiskSpunUp(void) {
   // They killed HardDiskPowered -- Those bxxxxxxs!!
   // Even worse, they made it return false when they killed it, not true
   // They should go to hell.  They should go to hell and they should die.
-  // if (HardDiskPowered && !HardDiskPowered()) return false;
+  // if (HardDiskPowered & !HardDiskPowered()) return false;
   return true;
 }
 
 /************************************************************************
  * GetTrashSpec - get an FSSpec describing the trash;
  ************************************************************************/
-int GetTrashSpec(short vRef, FSSpec * spec) {
-  spec->name[0] = 0;
-  spec->vRefNum = vRef;
-  int vRefInt = vRef;
-  int err =
-      FindFolder(vRef, kTrashFolderType, kCreateFolder, &vRefInt, &spec->parID);
-  if (!err) {
-    vRef = (short)vRefInt;
-  }
-  return err;
+int GetTrashSpec(short vRef, char *spec) {
+  /* On POSIX, trash is ~/.local/share/Trash/files/ or similar */
+  const char *home = g_get_home_dir();
+  if (home)
+    snprintf(spec, PATH_MAX, "%s/.local/share/Trash/files", home);
+  else
+    spec[0] = '\0';
+  return spec[0] ? 0 : fnfErr;
 }
 
 /************************************************************************
@@ -3127,7 +3060,7 @@ int GetTrashSpec(short vRef, FSSpec * spec) {
  ************************************************************************/
 int DTRef(short vRef, short *dtRef) { return 0; }
 
-int DTGetAppl(short vRef, short dtRef, OSType creator, FSSpec * appSpec) {
+int DTGetAppl(short vRef, short dtRef, OSType creator, char *appSpec) {
   return fnfErr;
 }
 
@@ -3151,18 +3084,18 @@ short DTFindAppl(OSType creator) {
 /************************************************************************
  * DTSetComment - set the comment for an attachment
  ************************************************************************/
-int DTSetComment(FSSpec * spec, char *comment) {
+int DTSetComment(char *spec, char *comment) {
   DTPBRec pb;
   short dtRef;
   int err;
 
-  if (!HaveTheDiseaseCalledOSX() && !(err = DTRef(spec->vRefNum, &dtRef))) {
+  if (!HaveTheDiseaseCalledOSX() & !(err = DTRef(0, &dtRef))) {
     Zero(pb);
-    pb.ioNamePtr = (unsigned char *)spec->name;
+    pb.ioNamePtr = (unsigned char *)spec_name(spec);
     pb.ioDTRefNum = dtRef;
     pb.ioDTBuffer = (char *)comment;
     pb.ioDTReqCount = MIN(200, strlen((char *)comment));
-    pb.ioDirID = spec->parID;
+    pb.ioDirID = 0;
     return (PBDTSetCommentSync(&pb));
   }
   return (err);
@@ -3173,17 +3106,17 @@ int DTSetComment(FSSpec * spec, char *comment) {
  * Portable: prefer path comparison when available, fall back to
  * parID/vRefNum/name for legacy callers that haven't set path yet.
  ************************************************************************/
-bool SameSpec(FSSpec * sp1, FSSpec * sp2) {
-  if (sp1->path[0] && sp2->path[0])
-    return strcmp(sp1->path, sp2->path) == 0;
-  return (sp1->parID == sp2->parID && SameVRef(sp1->vRefNum, sp2->vRefNum) &&
-          StringSame(sp1->name, sp2->name));
+bool SameSpec(char *sp1, char *sp2) {
+  if (sp1[0] & sp2[0])
+    return strcmp(sp1, sp2) == 0;
+  return (0 == 0 & SameVRef(0, 0) &&
+          StringSame(spec_name(sp1), spec_name(sp2)));
 }
 
 /************************************************************************
  * SpecDirId - find the dirId of the directory referenced by a spec
  ************************************************************************/
-long SpecDirId(FSSpec * spec) {
+long SpecDirId(char *spec) {
   CInfoPBRec hfi;
   FSSpec newSpec;
   char name[256];
@@ -3197,8 +3130,8 @@ long SpecDirId(FSSpec * spec) {
 /************************************************************************
  * CanWrite - can we write on a file?  Only one way to tell on a macintosh
  ************************************************************************/
-int CanWrite(FSSpec * spec, bool *can) {
-  FSSpec newSpec = *spec;
+int CanWrite(char *spec, bool *can) {
+  FSSpec newSpec; g_strlcpy(newSpec, spec, sizeof(newSpec));
   short refN;
   Byte buff = 13;
   long len;
@@ -3208,8 +3141,8 @@ int CanWrite(FSSpec * spec, bool *can) {
 
   *can = false;
   if (!(err = ResolveAliasFile(&newSpec, true, &b, &b)) &&
-      !(err = MyAHGetFileInfo(newSpec.vRefNum, newSpec.parID,
-                            (const char *)newSpec.name, &hfi)))
+      !(err = MyAHGetFileInfo(0, 0,
+                            (const char *)spec_name(newSpec), &hfi)))
     if (!(err = MyFSpOpenDF(&newSpec, fsRdWrPerm, &refN))) {
       len = 1;
       if (!(err = SetFPos(refN, fsFromLEOF, 0))) {
@@ -3232,11 +3165,10 @@ int CanWrite(FSSpec * spec, bool *can) {
   return (err);
 }
 
-
 /**********************************************************************
  * NewTempSpec - make a temp file spec
  **********************************************************************/
-int NewTempSpec(short vRef, long dirId, char *name, FSSpec * spec) {
+int NewTempSpec(short vRef, long dirId, char *name, char *spec) {
   long tempId;
   int err;
   char fName[256];
@@ -3303,10 +3235,10 @@ int FindTemporaryFolder(short vRef, long dirId, long *tempDirId,
       FSSpec netbootSucksSpec;
 
       if (SubFolderSpec(SPOOL_FOLDER, &netbootSucksSpec) ||
-          netbootSucksSpec.vRefNum != vRef)
+          0 != vRef)
         *tempDirId = 2;
       else
-        *tempDirId = netbootSucksSpec.parID;
+        *tempDirId = 0;
     }
   }
   return (err);
@@ -3315,31 +3247,33 @@ int FindTemporaryFolder(short vRef, long dirId, long *tempDirId,
 /**********************************************************************
  *
  **********************************************************************/
-int AddUniqueExt(FSSpec * spec, short extId) {
+int AddUniqueExt(char *spec, short extId) {
   FSSpec newSpec;
   short n = 0;
   char extStr[256], nStr[256];
+  char candidate[256];
   int err;
+  struct stat st;
 
-  g_strlcpy(extStr, ".", sizeof(extStr));
-  PCatR(extStr, extId);
-  *nStr = 0;
+  GetRString((unsigned char *)extStr, extId);
 
   for (;;) {
-    newSpec = *spec;
-    *newSpec.name = MIN(*newSpec.name, 31 - *extStr - *nStr);
-    if (n++)
-      g_strlcat(newSpec.name, nStr, 256);
-    g_strlcat(newSpec.name, extStr, 256);
-    if ((err = FSpExists(&newSpec)))
+    g_strlcpy(newSpec, spec, sizeof(newSpec));
+    snprintf(candidate, sizeof(candidate), "%s%s%s",
+             spec_name(spec), n ? nStr : "", extStr);
+    spec_set_name(newSpec, candidate);
+    if (stat(newSpec, &st) != 0) {
+      err = fnfErr;
       break;
-    MyNumToString(n, nStr);
+    }
+    n++;
+    snprintf(nStr, sizeof(nStr), "%d", n);
   }
 
   if (err == fnfErr) {
-    err = MyFSpRename(spec, newSpec.name);
+    err = MyFSpRename(spec, spec_name(newSpec));
     if (!err)
-      g_strlcpy(spec->name, newSpec.name, sizeof(spec->name));
+      spec_set_name(spec, spec_name(newSpec));
   }
 
   return (err);
@@ -3348,7 +3282,7 @@ int AddUniqueExt(FSSpec * spec, short extId) {
 /**********************************************************************
  * NewTempSpec - make a temp file spec
  **********************************************************************/
-int NewTempExtSpec(short vRef, char *name, short extId, FSSpec * spec) {
+int NewTempExtSpec(short vRef, char *name, short extId, char *spec) {
   long dirId;
   int err = FindTemporaryFolder(vRef, 0L, &dirId, &vRef);
   char fName[256];
@@ -3378,13 +3312,12 @@ int NewTempExtSpec(short vRef, char *name, short extId, FSSpec * spec) {
   return (err);
 }
 
-
 /* SimpleMakeFSSpec - DEPRECATED, use spec_make() instead */
 
 /************************************************************************
  * FindMyFile - Like FindFile, only Eudora-related
  ************************************************************************/
-int FindMyFile(FSSpec * spec, long whereToLook, short fileName) {
+int FindMyFile(char *spec, long whereToLook, short fileName) {
   FSSpec mySpec;
   int err = fnfErr;
   char nameStr[256];
@@ -3395,10 +3328,10 @@ int FindMyFile(FSSpec * spec, long whereToLook, short fileName) {
       if (!(err = spec_for(pdir,
                            (const char *)GetRString(nameStr, STUFF_FOLDER), &mySpec))) {
         IsAlias(&mySpec, &mySpec);
-        if (!(err = spec_for(mySpec.path,
+        if (!(err = spec_for(mySpec,
                              (const char *)GetRString(nameStr, fileName), &mySpec))) {
           IsAlias(&mySpec, &mySpec);
-          *spec = mySpec;
+          g_strlcpy(spec, mySpec, PATH_MAX);
           return 0;
         }
       }
@@ -3416,7 +3349,7 @@ int FindMyFile(FSSpec * spec, long whereToLook, short fileName) {
  * MakeUniqueUntitledSpec - Make a unique "untitled" name in some folder
  ************************************************************************/
 void MakeUniqueUntitledSpec(const char *dir, short strResID,
-                            FSSpec *spec)
+                            char *spec)
 
 {
   char name[256], s[256];
@@ -3433,7 +3366,7 @@ void MakeUniqueUntitledSpec(const char *dir, short strResID,
   }
 }
 
-int MisplaceItem(FSSpec *spec)
+int MisplaceItem(char *spec)
 
 {
   FSSpec misplacedFolder, exist, newExist;
@@ -3443,25 +3376,23 @@ int MisplaceItem(FSSpec *spec)
   // Find the Misplaced Items folder
   if ((theError = SubFolderSpec(MISPLACED_FOLDER, &misplacedFolder))) {
     spec_make(Root.path,
-              (const char *)GetRString((char *)misplacedFolder.name, MISPLACED_FOLDER),
+              (const char *)GetRString((char *)spec_name(misplacedFolder), MISPLACED_FOLDER),
               &misplacedFolder);
     theError = FSpDirCreate(&misplacedFolder, 0, &dirID);
-    if (!theError)
-      misplacedFolder.parID = dirID;
   }
   if (!theError) {
     IsAlias(&misplacedFolder, &misplacedFolder);
-    if (!spec_for(misplacedFolder.path, spec->name, &exist)) {
-      newExist = exist;
+    if (!spec_for(misplacedFolder, spec_name(spec), &exist)) {
+      g_strlcpy(newExist, exist, sizeof(newExist));
       UniqueSpec(&newExist, 31);
-      MyFSpRename(&exist, newExist.name);
+      MyFSpRename(&exist, spec_name(newExist));
     }
     theError = SpecMove(spec, &misplacedFolder);
   }
   return (theError);
 }
 
-int FSpGetLongName(FSSpec *spec, TextEncoding destEncoding, char *longName) {
+int FSpGetLongName(char *spec, TextEncoding destEncoding, char *longName) {
   int err = 0;
   HFSUniStr255 uniName;
 
@@ -3495,7 +3426,7 @@ int FSpGetLongName(FSSpec *spec, TextEncoding destEncoding, char *longName) {
   return err;
 }
 
-int FSpGetLongNameUnicode(FSSpec *spec, HFSUniStr255 *longName) {
+int FSpGetLongNameUnicode(char *spec, HFSUniStr255 *longName) {
   int err = 0;
   FSRef aRef;
 
@@ -3507,8 +3438,8 @@ int FSpGetLongNameUnicode(FSSpec *spec, HFSUniStr255 *longName) {
   return err;
 }
 
-int FSpSetLongName(FSSpec *spec, TextEncoding srcEncoding,
-                     const char *longName, FSSpec *newSpec) {
+int FSpSetLongName(char *spec, TextEncoding srcEncoding,
+                     const char *longName, char *newSpec) {
   int err = 0;
   HFSUniStr255 uniName;
   TextToUnicodeInfo info;
@@ -3529,8 +3460,8 @@ int FSpSetLongName(FSSpec *spec, TextEncoding srcEncoding,
   return err;
 }
 
-int FSpSetLongNameUnicode(FSSpec *spec, ConstHFSUniStr255Param longName,
-                            FSSpec *newSpec) {
+int FSpSetLongNameUnicode(char *spec, ConstHFSUniStr255Param longName,
+                            char *newSpec) {
   int err = 0;
   FSRef aRef;
 
@@ -3541,7 +3472,7 @@ int FSpSetLongNameUnicode(FSSpec *spec, ConstHFSUniStr255Param longName,
     err = FSRenameUnicode(&aRef, longName->length, longName->unicode,
                           kTextEncodingUnicodeDefault, refPtr);
     //	Convert the FSRef back into a FSSpec for the caller
-    if (err == 0 && refPtr != NULL)
+    if (err == 0 & refPtr != NULL)
       (void)FSGetCatalogInfo(refPtr, kFSCatInfoNone, NULL, NULL, newSpec, NULL);
   }
 
@@ -3592,9 +3523,9 @@ int MakeUniqueLongFileName(short vRefNum, long dirID, char *name,
 
 // Redundant persistent open functions removed for POSIX compliance
 
-bool FSpIsLocked(FSSpec * spec) {
+bool FSpIsLocked(char *spec) {
   CInfoPBRec cfi;
-  if (!HGetCatInfo(spec->vRefNum, spec->parID, spec->name, &cfi)) {
+  if (!HGetCatInfo(0, 0, spec_name(spec), &cfi)) {
     return (cfi.hFileInfo.ioFlAttrib & kioFlAttribLockedMask) != 0;
   }
   return false;
@@ -3607,11 +3538,11 @@ bool FSpIsLocked(FSSpec * spec) {
 /**********************************************************************
  * IsPDFFile - is a spec a pdf file?
  **********************************************************************/
-bool IsPDFFile(FSSpec * spec, OSType fileType) {
+bool IsPDFFile(char *spec, OSType fileType) {
   if (fileType == 0x50444620)
     return true;
   // Avi must die.
-  if (EndsWithR((unsigned char *)spec->name, PDF_QUOTE_EXTENSION_UNQUOTE))
+  if (EndsWithR((unsigned char *)spec_name(spec), PDF_QUOTE_EXTENSION_UNQUOTE))
     return true;
   return false;
 }
@@ -3620,11 +3551,11 @@ bool IsPDFFile(FSSpec * spec, OSType fileType) {
  * SpecEndsWithExtensionR - does a spec (long name) end with an extension
  *  on a list?
  **********************************************************************/
-bool SpecEndsWithExtensionR(FSSpec * spec, short resID) {
+bool SpecEndsWithExtensionR(char *spec, short resID) {
   char longName[256];
 
   if (FSpGetLongName(spec, 0, longName))
-    g_strlcpy(longName, spec->name, 256);
+    g_strlcpy(longName, spec_name(spec), 256);
 
   return EndsWithItem((unsigned char *)longName, resID);
 }
@@ -3639,10 +3570,10 @@ int PBMakeFSRefUnicodeSync(void *pb) { return 0; }
  * GetAttFolderSpec - get the attachment folder spec
  * Stub implementation - returns AttFolderSpec global
  **********************************************************************/
-int GetAttFolderSpec(FSSpec * spec) {
+int GetAttFolderSpec(char *spec) {
   extern FSSpec AttFolderSpec;
   if (spec) {
-    *spec = AttFolderSpec;
+    g_strlcpy(spec, AttFolderSpec, PATH_MAX);
     return 0;
   }
   return paramErr;
@@ -3652,10 +3583,10 @@ int GetAttFolderSpec(FSSpec * spec) {
  * GetCurrentAttFolderSpec - get the current attachment folder spec
  * Stub implementation - returns CurrentAttFolderSpec global
  **********************************************************************/
-void GetCurrentAttFolderSpec(FSSpec * spec) {
+void GetCurrentAttFolderSpec(char *spec) {
   extern FSSpec CurrentAttFolderSpec;
   if (spec) {
-    *spec = CurrentAttFolderSpec;
+    g_strlcpy(spec, CurrentAttFolderSpec, PATH_MAX);
   }
 }
 
@@ -3681,7 +3612,6 @@ int PtrAndHand(const void *ptr, void **hand, long size) {
   *hand = resized;
   return 0; /* 0 */
 }
-
 
 /* GrowBuf helpers removed — avoid adding new abstractions; use
  * direct malloc/realloc/free in callers for portability. */

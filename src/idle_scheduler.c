@@ -27,7 +27,7 @@
 #include <sys/stat.h>
 
 /* GetTOCByFSS is in toc.c but not in a public header */
-extern short GetTOCByFSS(FSSpecPtr specPtr, TOCType **tocH);
+extern short GetTOCByFSS(char * specPtr, TOCType **tocH);
 
 static guint idle_timer_id = 0;
 static bool scheduler_running = false;
@@ -54,7 +54,7 @@ static TOCType *GetNextDeliveryTOC(void) {
   if (SubFolderSpec(DELIVERY_FOLDER, &deliverFolder))
     return NULL;
 
-  dp = opendir(deliverFolder.path);
+  dp = opendir(deliverFolder);
   if (!dp)
     return NULL;
 
@@ -84,7 +84,7 @@ static TOCType *GetNextDeliveryTOC(void) {
     return NULL;
 
   /* Build FSSpec for this delivery mailbox */
-  spec_for(deliverFolder.path, bestName, &deliverSpec);
+  spec_for(deliverFolder, bestName, &deliverSpec);
 
   /* Open the TOC for this mailbox */
   if (GetTOCByFSS(&deliverSpec, &tocH) != noErr)
@@ -110,21 +110,21 @@ static void DeleteDeliveryTOC(TOCType *tocH) {
   if (!tocH)
     return;
 
-  spec = GetMailboxSpec(tocH, -1);
+  GetMailboxSpec(tocH, -1, spec);
 
   /* Close the TOC window if open */
   if (tocH->win)
     CloseMyWindow(GetMyWindowWindowPtr(tocH->win));
 
   /* Delete the mailbox file */
-  if (spec.path[0]) {
-    unlink(spec.path);
+  if (spec[0]) {
+    unlink(spec);
 
     /* Delete the corresponding .toc file */
-    snprintf(tocPath, sizeof(tocPath), "%s.toc", spec.path);
+    snprintf(tocPath, sizeof(tocPath), "%s.toc", spec);
     unlink(tocPath);
 
-    g_print("IdleScheduler: deleted delivery files: %s\n", spec.path);
+    g_print("IdleScheduler: deleted delivery files: %s\n", spec);
   }
 }
 
@@ -220,7 +220,7 @@ static void check_orphaned_deliveries(void) {
   if (SubFolderSpec(DELIVERY_FOLDER, &deliverFolder))
     return;
 
-  dp = opendir(deliverFolder.path);
+  dp = opendir(deliverFolder);
   if (!dp)
     return;
 

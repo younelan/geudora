@@ -1481,10 +1481,10 @@ static int VCardParser7BitValue (VCardParserPtr parserPtr, VCardItemPtr itemPtr,
 	while (!done && !theError && parserPtr->spot <= parserPtr->end) {
 		// Take a look at interesting characters
 		switch (*parserPtr->spot) {
-			case '\\':
+			case '\':
 				// Escape semicolons
 				if (parserPtr->spot + 1 <= parserPtr->end && isSEMI (*(parserPtr->spot + 1))) {
-					// Copy the value up to (but not including) the '\'
+					// Copy the value up to (but not including) the ''
 					if (itemPtr && itemPtr->value)
 						theError = buf_append(itemPtr->value, oldSpot, parserPtr->spot - oldSpot));
 					// Move the pointer to the semicolon and save this spot
@@ -1701,7 +1701,7 @@ static bool VCardParserWSLS (VCardParserPtr parserPtr, bool optional)
 //
 //		A string of 0 or more non-control ASCII characters, terminated by a semicolon.
 //
-//		  ';' or CRLF may appear in the string if escaped with a '\'
+//		  ';' or CRLF may appear in the string if escaped with a ''
 //
 //		At the conclusion of this function, 'spot' points to the first non-strnosemi character.
 //
@@ -1926,7 +1926,7 @@ static short FindXDashString (XDashStringHandle xdash, char * keyword)
 }
 
 
-bool IsVCardFile (FSSpecPtr spec)
+bool IsVCardFile (char * spec)
 
 {
 	char extension[33],
@@ -1947,12 +1947,12 @@ bool IsVCardFile (FSSpecPtr spec)
 	
 	// How about an 8.3 vCard?
 	if (!result) {
-		for (i = spec->name[0]; i; --i)
-			if (spec->name[i] == '.')
+		for (i = spec_name(spec)[0]; i; --i)
+			if (spec_name(spec)[i] == '.')
 				break;
 	
 		if (i) {
-			{ size_t _mpl = (spec->name[0] - i); memcpy(extension, &spec->name[i + 1], _mpl); ((char*)(extension))[_mpl] = '\0'; }
+			{ size_t _mpl = (spec_name(spec)[0] - i); memcpy(extension, &spec_name(spec)[i + 1], _mpl); ((char*)(extension))[_mpl] = '\0'; }
 			
 			result = striscmp (extension, GetRString (vcardExtension, VCARD_FILE_EXTENSION)) == 0;
 		}

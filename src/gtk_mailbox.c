@@ -391,7 +391,7 @@ void gtk_mailbox_free(GtkMailbox *mailbox) {
     return;
 
   g_free(mailbox->name);
-  g_free(mailbox->path);
+  g_free(mailbox);
   g_free(mailbox->toc_path);
   g_free(mailbox);
 }

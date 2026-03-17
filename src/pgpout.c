@@ -37,6 +37,6 @@ short PGPSendMessage(TransStream stream, MessHandle messH, bool chatter) {
 int BuildAddressList(void *addresses, AEDescList *list) {
     (void)addresses; (void)list; return -1;
 }
-int PGPFetchResult(AppleEvent *reply, FSSpecPtr spec) {
+int PGPFetchResult(AppleEvent *reply, char * spec) {
     (void)reply; (void)spec; return -1;
 }

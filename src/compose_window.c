@@ -308,12 +308,12 @@ static gboolean save_composed_message(ComposeWindowData *data) {
     /* Append message to Out mailbox file, recording offset and length */
     struct stat st;
     long msgOffset = 0;
-    if (stat(outToc->path, &st) == 0)
+    if (stat(outToc, &st) == 0)
         msgOffset = (long)st.st_size;
 
-    FILE *f = fopen(outToc->path, "ab");
+    FILE *f = fopen(outToc, "ab");
     if (!f) {
-        g_warning("save_composed_message: cannot open %s", outToc->path);
+        g_warning("save_composed_message: cannot open %s", outToc);
         g_free(body);
         g_date_time_unref(now);
         g_free(date_str);

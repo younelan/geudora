@@ -349,7 +349,7 @@ extern long gHighestAppVersionAtLaunch;
 
 extern FeatureRecHandle gFeatureList;
 extern bool gNeedRemind;
-extern FSSpec *gRegFiles;           /* FSSpec ** simplified */
+extern char *gRegFiles;           /* char ** simplified */
 
 extern void *normFonts;            /* ScriptFontInfo — unused in GTK */
 extern void *monoFonts;

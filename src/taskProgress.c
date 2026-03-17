@@ -738,7 +738,7 @@ int AddTaskErrorsS(const char *error, const char *explanation,
   PersHandle pers = FindPersById(persId);
   if (pers)
     snprintf((char *)taskErrs->taskDesc, sizeof(taskErrs->taskDesc),
-             "%s for %s", kindStr, pers->name);
+             "%s for %s", kindStr, spec_name(pers));
   else
     g_strlcpy((char *)taskErrs->taskDesc, kindStr,
               sizeof(taskErrs->taskDesc));

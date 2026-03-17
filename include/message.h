@@ -238,11 +238,11 @@ int AppendMessage(TOCType * fromTocH, int fromN, TOCType ** toTocHP, bool copy,
 MyWindowPtr GetAMessage(TOCType * tocH, short sumNum, void *u1, void *u2,
                         bool b1);
 int EnsureMID(TOCType * tocH, short sumNum);
-int SpoolMessage(MessHandle messH, FSSpecPtr theSpec, short refN);
-long FindAnAttachment(void *text, long offset, FSSpecPtr spec, bool attach,
+int SpoolMessage(MessHandle messH, char * theSpec, short refN);
+long FindAnAttachment(void *text, long offset, char * spec, bool attach,
                       uLong *cid, uLong *relURL, uLong *absURL);
 MyWindowPtr ReopenMessage(MyWindowPtr win);
-int FileGraphicChangeGraphic(GtkWidget *pte, long offset, FSSpecPtr spec);
+int FileGraphicChangeGraphic(GtkWidget *pte, long offset, char * spec);
 void BoxSelectAfter(MyWindowPtr win, short sumNum);
 void Preview(TOCType * tocH, short sumNum);
 void MovingAttachments(TOCType * tocH, short sumNum, bool attach, bool wipe,

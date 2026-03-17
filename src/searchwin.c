@@ -375,7 +375,7 @@ bool IsSearchWindow(void *winWP) {
   return toc->virtualTOC && toc->mailbox.virtualMB.type == kSearchMB;
 }
 
-TOCType *GetTOCFromSearchWin(FSSpecPtr spec) {
+TOCType *GetTOCFromSearchWin(char * spec) {
   (void)spec;
   /* Walk open windows to find a search TOC matching this spec.
    * Without a window list implementation, return NULL. */
@@ -393,14 +393,14 @@ bool SearchViewIsMailbox(TOCType *tocH) {
   return si && si->mailboxView;
 }
 
-bool GetSearchWinSpec(void *winWP, FSSpec *spec) {
+bool GetSearchWinSpec(void *winWP, char *spec) {
   if (!winWP || !spec) return false;
   MyWindowPtr win = (MyWindowPtr)winWP;
   TOCType *toc = GetSearchTOCFromWin(win);
   if (!toc) return false;
   SearchInfo *si = GetSearchInfoFromTOC(toc);
   if (!si || !si->hasSaveSpec) return false;
-  *spec = si->saveSpec;
+  g_strlcpy(spec, si->saveSpec, PATH_MAX);
   return true;
 }
 
@@ -448,7 +448,7 @@ void SearchInvalTocBox(TOCType *tocH, short sumNum, int boxCol) {
   /* In full implementation, invalidate matching virtual summaries. */
 }
 
-void TellSearchMBRename(FSSpecPtr oldSpec, FSSpecPtr newSpec) {
+void TellSearchMBRename(char * oldSpec, char * newSpec) {
   (void)oldSpec; (void)newSpec;
   if (!gSearchWinCount) return;
   /* In full implementation, update spec lists in search windows. */
@@ -464,7 +464,7 @@ bool SearchBoxesInclude(MyWindowPtr win, TOCType *tocH) {
   /* Check if tocH's path is in the search mailbox list */
   for (unsigned i = 0; i < si->mailboxPaths->len; i++) {
     const char *path = g_ptr_array_index(si->mailboxPaths, i);
-    if (path && strcmp(path, tocH->path) == 0)
+    if (path && strcmp(path, tocH) == 0)
       return true;
   }
   return false;
@@ -499,12 +499,12 @@ void SearchSave(MyWindowPtr win, bool saveAs) {
   /* TODO: Save search criteria to JSON file. */
 }
 
-void OpenSearchFile(FSSpecPtr spec) {
+void OpenSearchFile(char * spec) {
   (void)spec;
   /* TODO: Load saved search from JSON file and open window. */
 }
 
-void OpenSearchFileAndStart(FSSpecPtr spec) {
+void OpenSearchFileAndStart(char * spec) {
   OpenSearchFile(spec);
   /* TODO: Start the search after opening. */
 }

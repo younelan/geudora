@@ -154,15 +154,25 @@ typedef struct Point {
 } Point;
 #endif
 
-/* FSSpec: File specification structure */
+/* FSSpec: now just a POSIX path (Mac HFS fields removed) */
 #ifndef FSSPEC_DEFINED
 #define FSSPEC_DEFINED
-typedef struct FSSpec {
-  int vRefNum;
-  long parID;
-  char name[256];
-  char path[1024];
-} FSSpec, *FSSpecPtr;
+typedef char FSSpec[PATH_MAX];
+typedef char *FSSpecPtr;
+/* Helper: get the filename portion of a path (points into the path itself) */
+static inline const char *spec_name(const char *path) {
+  const char *slash = strrchr(path, '/');
+  return slash ? slash + 1 : path;
+}
+/* Helper: set just the filename portion, rebuilding the full path */
+static inline void spec_set_name(char *path, const char *newName) {
+  char *slash = strrchr(path, '/');
+  if (slash) {
+    g_strlcpy(slash + 1, newName, PATH_MAX - (slash + 1 - path));
+  } else {
+    g_strlcpy(path, newName, PATH_MAX);
+  }
+}
 #endif
 
 /* VDId: Folder reference — path is the authoritative field on POSIX */
@@ -415,6 +425,7 @@ typedef struct {
 typedef struct {
   long elSize;
   short elCount;
+  short capacity;  /* max elements before realloc needed */
 } Stack, *StackPtr, *StackHandle;
 
 typedef struct {
@@ -522,14 +533,14 @@ typedef union ParamBlockRec {
 
 /* Pascal string utilities - moved to StringUtil.h / fileutil.h / modernized */
 void PLCat(char *dst, long n);
-short FSpOpenResFile(FSSpecPtr spec, int8_t permission);
+short FSpOpenResFile(char * spec, int8_t permission);
 void AddResource(void *h, ResType type, short id, ConstStr255Param name);
 short ResError(void);
 short FlushVol(unsigned char *name, short vRefNum);
 
 /* File utilities - more in fileutil.h */
-int FSpRename(FSSpecPtr spec, const char *newName);
-int UniqueSpec(FSSpecPtr spec, short max);
+int FSpRename(char * spec, const char *newName);
+int UniqueSpec(char * spec, short max);
 uint32_t LocalDateTime(void);
 int utl_RFSanity(const char *spec, bool *sane);
 
@@ -550,15 +561,15 @@ short PBHGetVInfo(HParmBlkPtr pb, bool async);
 short FindFolder(short vRef, uint32_t type, bool create, int *foundVRef,
                  long *foundDirID);
 /* Path-based spec construction (replaces FSMakeFSSpec/SimpleMakeFSSpec) */
-short spec_for(const char *dir, const char *name, FSSpecPtr spec);
-void spec_make(const char *dir, const char *name, FSSpecPtr spec);
-const char *spec_parent(FSSpecPtr spec, char *buf, size_t bufsz);
-short FSpCreateResFile(FSSpecPtr spec, uint32_t creator, uint32_t type,
+short spec_for(const char *dir, const char *name, char * spec);
+void spec_make(const char *dir, const char *name, char * spec);
+const char *spec_parent(char * spec, char *buf, size_t bufsz);
+short FSpCreateResFile(char * spec, uint32_t creator, uint32_t type,
                        uint32_t script);
-int FSpCreate(FSSpecPtr spec, uint32_t creator, uint32_t fileType,
+int FSpCreate(char * spec, uint32_t creator, uint32_t fileType,
               uint32_t script);
-short FSpGetFInfo(FSSpecPtr spec, FInfo *info);
-short FSpSetFInfo(FSSpecPtr spec, FInfo *info);
+short FSpGetFInfo(char * spec, FInfo *info);
+short FSpSetFInfo(char * spec, FInfo *info);
 short HGetCatInfo(short vRefNum, long dirID, const char *name, CInfoPBPtr pb);
 short HSetCatInfo(short vRefNum, long dirID, const char *name, CInfoPBPtr pb);
 short HMove(short vRef, long dirId, const char *name, long destDirId,
@@ -566,13 +577,13 @@ short HMove(short vRef, long dirId, const char *name, long destDirId,
 int AHGetFileInfo(short vRef, long dirId, const char *name, CInfoPBRec *hfi);
 short AHSetFileInfo(short vRef, long dirId, const char *name, CInfoPBRec *hfi);
 int FSpDelete(const char *path);
-int ResolveAliasFile(FSSpecPtr spec, bool resolveAliasChains,
+int ResolveAliasFile(char * spec, bool resolveAliasChains,
                      bool *targetIsFolder, bool *wasAliased);
 int PBCatMoveSync(CMovePBPtr pb);
 int PBHGetFInfoSync(HParmBlkPtr pb);
 int PBHSetFInfoSync(HParmBlkPtr pb);
 int PBExchangeFilesSync(HParmBlkPtr pb);
-int FSpExchangeFiles(FSSpecPtr source, FSSpecPtr dest);
+int FSpExchangeFiles(char * source, char * dest);
 int PBSetCatInfoSync(CInfoPBPtr pb);
 
 /* Resource Manager */
@@ -587,7 +598,7 @@ void *GetResource(uint32_t type, short id);
 int Gestalt(uint32_t selector, long *response);
 int FileSystemError(short errorId, const char *name, int err);
 void DieWithError(short errorId, int err);
-short MatchAlias(FSSpecPtr spec, long flags, ...);
+short MatchAlias(char * spec, long flags, ...);
 uint32_t TickCount(void);
 bool InAThread(void);
 void CyclePendulum(void);
@@ -599,17 +610,17 @@ short GetMBarHeight(void);
 long GetRLong(int index);
 bool MommyMommy(short id, void *p);
 bool UseNavServices(void);
-int SFPutOpenNav(FSSpecPtr spec, uint32_t creator, uint32_t type, short *refN,
-                 short ditlID, uint32_t *script, FSSpecPtr defaultSpec,
+int SFPutOpenNav(char * spec, uint32_t creator, uint32_t type, short *refN,
+                 short ditlID, uint32_t *script, char * defaultSpec,
                  const char *windowTitle, const char *message);
-void WhackFinder(FSSpecPtr spec);
+void WhackFinder(char * spec);
 int SniffAndConvertHandleToRoman(void ***h);
 uint32_t DefaultCreator(void);
 short GetResFileAttrs(short refNum);
 void UpdateResFile(short refNum);
 void TransLitRes(char *string, long len, short resId);
-int FSpGetHFileInfo(FSSpecPtr spec, CInfoPBPtr hfi);
-int AFSpOpenDF(FSSpecPtr spec, FSSpecPtr newSpec, int8_t permission,
+int FSpGetHFileInfo(char * spec, CInfoPBPtr hfi);
+int AFSpOpenDF(char * spec, char * newSpec, int8_t permission,
                short *refNum);
 short PBGetFCBInfo(FCBInfoPBPtr pb, bool async);
 short PBHRenameSync(HParmBlkPtr pb);
@@ -617,8 +628,8 @@ short FSRead(short refNum, long *count, void *buffer);
 short FSWrite(short refNum, long *count, const void *buffer);
 void *NuHTempBetter(long size);
 short PBWriteAsync(IOParam *pb);
-int FSpSetFLock(FSSpecPtr spec);
-int FSpRstFLock(FSSpecPtr spec);
+int FSpSetFLock(char * spec);
+int FSpRstFLock(char * spec);
 short FSWriteP(short refN, unsigned char *pString);
 short PBCreateFileIDRefSync(HParmBlkPtr pb);
 short PBResolveFileIDRefSync(HParmBlkPtr pb);
@@ -627,8 +638,8 @@ short AFSHOpen(const char *name, short vRefN, long dirId, short *refN,
                short perm);
 short ARFHOpen(const char *name, short vRefN, long dirId, short *refN,
                short perm);
-short SFPutOpen(FSSpecPtr spec, long creator, long type, short *refN,
-                void *filter, void *hook, short id, FSSpecPtr defaultSpec,
+short SFPutOpen(char * spec, long creator, long type, short *refN,
+                void *filter, void *hook, short id, char * defaultSpec,
                 const char *windowTitle, const char *message);
 bool StringSame(const char *s1, const char *s2);
 

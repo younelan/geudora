@@ -45,7 +45,7 @@ int TruncAtMark(short refN);
 short GetMyVR(const char *name);
 long GetMyDirID(short refNum);
 short GetDirName(char *volName, short vRef, long dirId, char *name);
-int ParentSpec(FSSpec *child, FSSpec *parent);
+int ParentSpec(char *child, char *parent);
 char *GetMyVolName(short refNum, char *name);
 int BlessedDirID(long *sysDirIDPtr);
 short BlessedVRef(void);
@@ -53,7 +53,7 @@ int IndexVRef(short index, short *vRef);
 int MakeResFile(const char *name, const char *dir, long creator,
                 long type);
 // void free(void *h);
-int ExchangeAndDel(FSSpec *tmpSpec, FSSpec *spec);
+int ExchangeAndDel(char *tmpSpec, char *spec);
 typedef struct {
   FSSpec spec;
   bool isDir;
@@ -64,7 +64,7 @@ typedef struct {
   void *data;
 } DirIterateInfo;
 
-int DirIterate(const FSSpec *dir, void *data,
+int DirIterate(const char *dir, void *data,
                bool (*callback)(DirIterateInfo *info));
 int CopyFBytes(short fromRefN, long fromOffset, long length, short toRefN,
                long toOffset);
@@ -72,11 +72,11 @@ void StdFileSpot(Point *where, short id);
 short ARFHOpen(const char *name, short vRefN, long dirId, short *refN,
                short perm);
 int MyAllocate(short refN, long size);
-short SFPutOpen(FSSpec *spec, long creator, long type, short *refN,
+short SFPutOpen(char *spec, long creator, long type, short *refN,
                 void *filter, void *hook, short id,
-                FSSpec *defaultSpec, const char *windowTitle,
+                char *defaultSpec, const char *windowTitle,
                 const char *message);
-bool IsText(FSSpec *spec);
+bool IsText(char *spec);
 short MyOpenResFile(short vRef, long dirId, const char *name);
 short SpinOnLo(volatile int *rtnCodeAddr, long maxTicks, bool allowCancel,
                bool forever, bool remainCalm, bool allowMouseDown);
@@ -88,12 +88,12 @@ bool HFIIsFolder(CInfoPBRec *hfi);
 bool HFIIsFolderOrAlias(CInfoPBRec *hfi);
 void FolderSizeHi(const char *dir, uint32_t *cumSize);
 void FolderSize(const char *dir, CInfoPBRec *hfi, uint32_t *cumSize);
-int FSpDirCreate(FSSpec *spec, ScriptCode script, long *dirID);
+int FSpDirCreate(char *spec, ScriptCode script, long *dirID);
 bool AliasFolderType(OSType type);
 #define FSpIsItAFolder(spec)                                                   \
-  IsItAFolder((spec)->vRefNum, (spec)->parID, (const char *)(spec)->name)
-bool AFSpIsItAFolder(FSSpec *spec);
-short FolderFileCount(FSSpec *spec);
+  IsItAFolder(0, 0, spec_name(spec))
+bool AFSpIsItAFolder(char *spec);
+short FolderFileCount(char *spec);
 short AFSHOpen(const char *name, short vRefN, long dirId, short *refN,
                short perm);
 short GetMyWD(short vRef, long dirID);
@@ -101,31 +101,28 @@ short HMove(short vRef, long fromDirId, const char *fromName, long toDirId,
             const char *toName);
 int AHGetFileInfo(short vRef, long dirId, const char *name, CInfoPBRec *hfi);
 short AHSetFileInfo(short vRef, long dirId, const char *name, CInfoPBRec *hfi);
-int FSpGetHFileInfo(FSSpec *spec, CInfoPBRec *hfi);
-long FSpFileSize(FSSpec *spec);
-long FSpDFSize(FSSpec *spec);
-long FSpRFSize(FSSpec *spec);
-int SubFolderSpec(short nameId, FSSpec *spec);
-int StuffFolderSpec(FSSpec *spec);
+int FSpGetHFileInfo(char *spec, CInfoPBRec *hfi);
+long FSpFileSize(char *spec);
+long FSpDFSize(char *spec);
+long FSpRFSize(char *spec);
+int SubFolderSpec(short nameId, char *spec);
+int StuffFolderSpec(char *spec);
 int FindSubFolderSpec(long domain, long folder, short subfolderID, bool create,
-                      FSSpec *subSpec);
-int SubFolderSpecOf(FSSpec *inSpec, short subfolderID, bool create,
-                    FSSpec *subSpec);
-int SubFolderSpecOfStr(FSSpec *inSpec, const char *subfolderName, bool create,
-                       FSSpec *subSpec);
-uint32_t FSpModDate(FSSpec *spec);
+                      char *subSpec);
+int SubFolderSpecOf(char *inSpec, short subfolderID, bool create,
+                    char *subSpec);
+int SubFolderSpecOfStr(char *inSpec, const char *subfolderName, bool create,
+                       char *subSpec);
+uint32_t FSpModDate(char *spec);
 short AHSetFileInfo(short vRef, long dirId, const char *name, CInfoPBRec *hfi);
 bool GetFolder(char *name, short *volume, long *folder, bool writeable,
                bool system, bool floppy, bool desktop);
 #define FSpCopyRFork(t, f, p)                                                  \
-  CopyRFork((t)->vRefNum, (t)->parID, (const char *)(t)->name, (f)->vRefNum,   \
-            (f)->parID, (const char *)(f)->name, p)
+  CopyRFork(0, 0, spec_name(t), 0, 0, spec_name(f), p)
 #define FSpCopyDFork(t, f, p)                                                  \
-  CopyDFork((t)->vRefNum, (t)->parID, (const char *)(t)->name, (f)->vRefNum,   \
-            (f)->parID, (const char *)(f)->name, p)
+  CopyDFork(0, 0, spec_name(t), 0, 0, spec_name(f), p)
 #define FSpCopyFInfo(t, f)                                                     \
-  CopyFInfo((t)->vRefNum, (t)->parID, (const char *)(t)->name, (f)->vRefNum,   \
-            (f)->parID, (const char *)(f)->name)
+  CopyFInfo(0, 0, spec_name(t), 0, 0, spec_name(f))
 short CopyFork(short vRef, long dirId, const char *name, short fromVRef,
                long fromDirId, const char *fromName, bool rFork, bool progress);
 #define CopyRFork(v, d, n, fv, fd, fn, p) CopyFork(v, d, n, fv, fd, fn, true, p)
@@ -134,35 +131,35 @@ short CopyFork(short vRef, long dirId, const char *name, short fromVRef,
 short CopyFInfo(short vRef, long dirId, const char *name, short fromVRef,
                 long fromDirId, const char *fromName);
 int MyUpdateResFile(short resFile);
-int FSpDupFile(FSSpec *to, FSSpec *from, bool replace, bool progress);
-int FSpDupFolder(FSSpec *toSpec, FSSpec *fromSpec, bool replace,
+int FSpDupFile(char *to, char *from, bool replace, bool progress);
+int FSpDupFolder(char *toSpec, char *fromSpec, bool replace,
                  bool progress);
-int RemoveDir(FSSpec *spec);
+int RemoveDir(char *spec);
 int MakeDarnSure(short refN);
 int FlushFile(short refN);
-int UniqueSpec(FSSpec *spec, short max);
+int UniqueSpec(char *spec, short max);
 int SplitPerfectlyGoodFilenameIntoNameAndQuoteExtensionUnquote(
     const char *full, char *name, char *ext, short max);
 short NCWriteP(short refN, const char *pString);
 short AWriteP(short refN, const char *pString);
-int TweakFileType(FSSpec *spec, OSType type, OSType creator);
+int TweakFileType(char *spec, OSType type, OSType creator);
 int HuntNewline(short refN, long aroundSpot, long *newline, bool *realNl);
-int Snarf(FSSpec *spec, void ***hp, long limit);
-int SnarfRoman(FSSpec *spec, void ***hp, long limit);
+int Snarf(char *spec, void ***hp, long limit);
+int SnarfRoman(char *spec, void ***hp, long limit);
 short MyResolveAlias(const char *dir, char *name, bool *wasAlias);
 #define FSpMyResolve(s, wasAlias)                                              \
-  MyResolveAlias((s)->path, (s)->name, wasAlias)
+  MyResolveAlias((s), (char *)spec_name(s), wasAlias)
 void PromptGetFile(FileFilterProcPtr filter, DlgHookYDProcPtr hook,
                    long hookData, short numTypes, SFTypeList tl,
                    StandardFileReply *reply, char *prompt);
 /* Use portable unsigned-byte pointer for write-params */
 short FSWriteP(short refN, unsigned char *pString);
-short GetFileByRef(short refN, FSSpec *specPtr);
-int AFSpSetMod(FSSpec *spec, uint32_t mod);
-uint32_t AFSpGetMod(FSSpec *spec);
-int ChainDelete(FSSpec *spec);
+short GetFileByRef(short refN, char *specPtr);
+int AFSpSetMod(char *spec, uint32_t mod);
+uint32_t AFSpGetMod(char *spec);
+int ChainDelete(char *spec);
 long VolumeFree(short vRef);
-bool SpecInSubfolderOf(FSSpec *att, FSSpec *folder);
+bool SpecInSubfolderOf(char *att, char *folder);
 short FSTabWrite(short refN, long *count, unsigned char *buf);
 short ARead(short refN, long *count, unsigned char *buf);
 short AWrite(short refN, long *count, unsigned char *buf);
@@ -174,99 +171,99 @@ short NCWrite(short refN, long *count, unsigned char *buf);
 /* SimpleMakeFSSpec removed — use spec_make(dir, name, spec) instead */
 short HGetCatInfo(short vRef, long inDirId, const char *name, CInfoPBRec *hfi);
 short HSetCatInfo(short vRef, long inDirId, const char *name, CInfoPBRec *hfi);
-short AFSpGetCatInfo(FSSpec *spec, FSSpec *newSpec, CInfoPBRec *hfi);
-int FSpKillRFork(FSSpec *spec);
-int FSpRFSane(FSSpec *spec, bool *sane);
+short AFSpGetCatInfo(char *spec, char *newSpec, CInfoPBRec *hfi);
+int FSpKillRFork(char *spec);
+int FSpRFSane(char *spec, bool *sane);
 int TruncOpenFile(short refN, long spot);
 int EnsureNewline(short refN);
-OSType FileTypeOf(FSSpec *spec);
-OSType FileCreatorOf(FSSpec *spec);
-int FSpTrash(FSSpec *spec);
+OSType FileTypeOf(char *spec);
+OSType FileCreatorOf(char *spec);
+int FSpTrash(char *spec);
 char *Mac2OtherName(const char *mac, char *other);
 #define Other2MacName(x, y)                                                    \
   SanitizeFN((const char *)(x), (char *)(y), MAC_FN_BAD, MAC_FN_REP, true)
 char *SanitizeFN(const char *shortName, char *name, short badCharId,
                  short repCharId, bool kill8);
 /* Portable filesystem helpers implemented in src/fileutil.c */
-int MyFSpOpenDF(FSSpec *spec, short mode, short *refN);
+int MyFSpOpenDF(char *spec, short mode, short *refN);
 int MyFSpOpenRF(const char *path, short mode, short *refN);
-int MyFSpDelete(FSSpec *spec);
-int MyFSpGetFInfo(FSSpec *spec, FSSpec *newSpec, FInfo *fndrInfo);
-int MyFSpSetFInfo(FSSpec *spec, FSSpec *newSpec, FInfo *fndrInfo);
-int MyFSpSetFLock(FSSpec *spec, FSSpec *newSpec);
-int MyFSpRstFLock(FSSpec *spec, FSSpec *newSpec);
-int MyFSpCreate(FSSpec *spec, uint32_t creator, uint32_t fileType, ScriptCode script);
-int MyFSpRename(FSSpec *spec, const char *newName);
-int MyFSpExchangeFiles(FSSpec *source, FSSpec *dest);
-short MyFSpCreateResFile(FSSpec *spec, uint32_t creator, uint32_t type, ScriptCode script);
+int MyFSpDelete(char *spec);
+int MyFSpGetFInfo(char *spec, char *newSpec, FInfo *fndrInfo);
+int MyFSpSetFInfo(char *spec, char *newSpec, FInfo *fndrInfo);
+int MyFSpSetFLock(char *spec, char *newSpec);
+int MyFSpRstFLock(char *spec, char *newSpec);
+int MyFSpCreate(char *spec, uint32_t creator, uint32_t fileType, ScriptCode script);
+int MyFSpRename(char *spec, const char *newName);
+int MyFSpExchangeFiles(char *source, char *dest);
+short MyFSpCreateResFile(char *spec, uint32_t creator, uint32_t type, ScriptCode script);
 int MyAHGetFileInfo(short vRef, long dirId, const char *name, CInfoPBRec *hfi);
 short MyAHSetFileInfo(short vRef, long dirId, const char *name, CInfoPBRec *hfi);
-int MyFSpSetMod(FSSpec *spec, uint32_t mod);
-uint32_t MyFSpGetMod(FSSpec *spec);
-short MyFSpGetCatInfo(FSSpec *spec, FSSpec *newSpec, CInfoPBRec *hfi);
-short MyFSpGetHFileInfo(FSSpec *spec, CInfoPBRec *hfi);
-short MyFSpSetHFileInfo(FSSpec *spec, CInfoPBRec *hfi);
+int MyFSpSetMod(char *spec, uint32_t mod);
+uint32_t MyFSpGetMod(char *spec);
+short MyFSpGetCatInfo(char *spec, char *newSpec, CInfoPBRec *hfi);
+short MyFSpGetHFileInfo(char *spec, CInfoPBRec *hfi);
+short MyFSpSetHFileInfo(char *spec, CInfoPBRec *hfi);
 void *MyGet1IndResource(OSType type, short index);
 void *MyGetIndResource(OSType type, short index);
 void MyCloseResFile(short refN);
-bool MyFSpIsItAFolder(FSSpec *spec);
-int FSpSetFXInfo(FSSpec *spec, FXInfo *fxInfo);
-bool IsAlias(FSSpec *spec, FSSpec *newSpec);
-int ResolveAliasOrElse(FSSpec *spec, FSSpec *newSpec, bool *wasIt);
-int FSMakeFID(FSSpec *spec, long *fid);
-int FSResolveFID(short vRef, long fid, FSSpec *spec);
+bool MyFSpIsItAFolder(char *spec);
+int FSpSetFXInfo(char *spec, FXInfo *fxInfo);
+bool IsAlias(char *spec, char *newSpec);
+int ResolveAliasOrElse(char *spec, char *newSpec, bool *wasIt);
+int FSMakeFID(char *spec, long *fid);
+int FSResolveFID(short vRef, long fid, char *spec);
 int DTRef(short vRef, short *dtRef);
-int DTGetAppl(short vRef, short dtRef, OSType creator, FSSpec *appSpec);
+int DTGetAppl(short vRef, short dtRef, OSType creator, char *appSpec);
 short DTFindAppl(OSType creator);
-int DTSetComment(FSSpec *spec, char *comment);
-int MorphDesktop(short vRef, FSSpec *where);
-int Blat(FSSpec *spec, void *text, bool append);
-int BlatPtr(FSSpec *spec, char *text, long size, bool append);
+int DTSetComment(char *spec, char *comment);
+int MorphDesktop(short vRef, char *where);
+int Blat(char *spec, void *text, bool append);
+int BlatPtr(char *spec, char *text, long size, bool append);
 #define SameVRef(vr1, vr2) (vr1 == vr2)
-bool SameSpec(FSSpec *sp1, FSSpec *sp2);
+bool SameSpec(char *sp1, char *sp2);
 short RealVRef(short wdRef);
-long SpecDirId(FSSpec *spec);
+long SpecDirId(char *spec);
 bool IsRoot(const char *path);
-int CanWrite(FSSpec *spec, bool *can);
-int SpecMove(FSSpec *moveMe, FSSpec *moveTo);
-int SpecMoveAndRename(FSSpec *moveMe, FSSpec *moveTo);
-int GetTrashSpec(short vRef, FSSpec *spec);
-int WipeSpec(FSSpec *spec);
+int CanWrite(char *spec, bool *can);
+int SpecMove(char *moveMe, char *moveTo);
+int SpecMoveAndRename(char *moveMe, char *moveTo);
+int GetTrashSpec(short vRef, char *spec);
+int WipeSpec(char *spec);
 int WipeDiskArea(short refN, long offset, long len);
-int NewTempExtSpec(short vRef, char *name, short extId, FSSpec *spec);
-int ExchangeFiles(FSSpec *tmpSpec, FSSpec *spec);
-int FSpTouch(FSSpec *spec);
-int ExtractCreatorFromBndl(FSSpec *spec, OSType *creator);
+int NewTempExtSpec(short vRef, char *name, short extId, char *spec);
+int ExchangeFiles(char *tmpSpec, char *spec);
+int FSpTouch(char *spec);
+int ExtractCreatorFromBndl(char *spec, OSType *creator);
 int CreatorToName(OSType creator, char *appName);
-int NewTempSpec(short vRef, long dirId, char *name, FSSpec *spec);
-int FSpExists(FSSpec *spec);
-int AddUniqueExt(FSSpec *spec, short extId);
+int NewTempSpec(short vRef, long dirId, char *name, char *spec);
+int FSpExists(char *spec);
+int AddUniqueExt(char *spec, short extId);
 int VolumeMargin(short vRef, long spaceNeeded);
 bool DiskSpunUp(void);
-short SFPutNew(FSSpec *spec);
+short SFPutNew(char *spec);
 int FindTemporaryFolder(short vRef, long dirId, long *tempDirId,
                           short *tempVRef);
-bool IsPDFFile(FSSpec *spec, OSType fileType);
+bool IsPDFFile(char *spec, OSType fileType);
 #define kStuffFolderBit 0x1
-int FindMyFile(FSSpec *spec, long whereToLook, short fileName);
+int FindMyFile(char *spec, long whereToLook, short fileName);
 
 void MakeUniqueUntitledSpec(const char *dir, short strResID,
-                            FSSpec *spec);
-int MisplaceItem(FSSpec *spec);
-int FSpGetLongName(FSSpec *spec, TextEncoding destEncoding, char *longName);
-int FSpGetLongNameUnicode(FSSpec *spec, HFSUniStr255 *longName);
+                            char *spec);
+int MisplaceItem(char *spec);
+int FSpGetLongName(char *spec, TextEncoding destEncoding, char *longName);
+int FSpGetLongNameUnicode(char *spec, HFSUniStr255 *longName);
 
-int FSpSetLongName(FSSpec *spec, TextEncoding destEncoding,
-                     const char *longName, FSSpec *newName);
-int FSpSetLongNameUnicode(FSSpec *spec, ConstHFSUniStr255Param longName,
-                            FSSpec *newName);
+int FSpSetLongName(char *spec, TextEncoding destEncoding,
+                     const char *longName, char *newName);
+int FSpSetLongNameUnicode(char *spec, ConstHFSUniStr255Param longName,
+                            char *newName);
 
 int MakeUniqueLongFileName(short vRefNum, long dirID, char *name,
                              TextEncoding srcEncoding, short maxLen);
 
 /* Refactored to portable paths */
-bool FSpIsLocked(FSSpec *spec);
-bool SpecEndsWithExtensionR(FSSpec *spec, short resID);
+bool FSpIsLocked(char *spec);
+bool SpecEndsWithExtensionR(char *spec, short resID);
 
 #define kTrashFolderType 'trsh'
 #define kTemporaryFolderType 'temp'
@@ -278,8 +275,8 @@ bool SpecEndsWithExtensionR(FSSpec *spec, short resID);
 #define gestaltSystemVersion 'sysv'
 
 /* Attachment folder functions */
-int GetAttFolderSpec(FSSpec *spec);
-void GetCurrentAttFolderSpec(FSSpec *spec);
+int GetAttFolderSpec(char *spec);
+void GetCurrentAttFolderSpec(char *spec);
 bool TypeIsOnListWhereAndIndex(long type, short list, void *ptr, short *index);
 
 /* SettingsRefN may be defined as a macro mapping to thread-local storage */

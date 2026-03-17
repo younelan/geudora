@@ -136,7 +136,7 @@ typedef BoundaryType ReadBodyFunc(TransStream stream, short refN,
 DecoderFunc *FindMIMEDecoder(char *encoding, bool *isExtern,
                              bool load);
 DecoderFunc QPEncoder, B64Encoder, UUEncoder;
-int FindAttMap(FSSpecPtr spec, AttMapPtr mmp);
+int FindAttMap(char * spec, AttMapPtr mmp);
 
 typedef struct {
   long offset;
@@ -179,8 +179,8 @@ struct MIMEState {
 
 MIMESHandle NewMIMES(TransStream stream, HeaderDHandle hdh, bool forceMIME,
                      short context);
-int RecordTLMIME(FSSpecPtr spec, emsMIMEHandle tlMIME);
-int RecordTL(FSSpecPtr spec, void **tl);              // guessed handle type
+int RecordTLMIME(char * spec, emsMIMEHandle tlMIME);
+int RecordTL(char * spec, void **tl);              // guessed handle type
 void DisposeMIMES(MIMESHandle msh);
 #define ZapMIMES(msh)                                                          \
   do {                                                                         \

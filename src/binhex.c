@@ -81,7 +81,7 @@ uint8_t LineLength;
 /************************************************************************
  * SendBinHex - send a file as BinHex data
  ************************************************************************/
-int SendBinHex(TransStream stream, FSSpecPtr spec, AttMapPtr amp)
+int SendBinHex(TransStream stream, char * spec, AttMapPtr amp)
 {
 	int refN = -1;
 	char *dataBuffer = NULL;
@@ -103,14 +103,14 @@ int SendBinHex(TransStream stream, FSSpecPtr spec, AttMapPtr amp)
 	 */
 	{
 		struct stat st;
-		if (stat(spec->path, &st) == 0) {
+		if (stat(spec, &st) == 0) {
 			dataForkLen = st.st_size;
 			err = noErr;
 		} else {
 			err = ioErr;
 		}
 	}
-	if (err) { FileSystemError(BINHEX_OPEN, spec->name, err); goto done; }
+	if (err) { FileSystemError(BINHEX_OPEN, spec_name(spec), err); goto done; }
 
 	/*
 	 * allocate the buffers
@@ -126,7 +126,7 @@ int SendBinHex(TransStream stream, FSSpecPtr spec, AttMapPtr amp)
 	{
 		long mod_time = 0;
 		struct stat st;
-		if (stat(spec->path, &st) == 0) mod_time = st.st_mtime;
+		if (stat(spec, &st) == 0) mod_time = st.st_mtime;
 		if ((err = MIMEFileHeader(stream, amp, MIME_BINHEX2, mod_time))) goto done;
 	}
 	if ((err = SendPString(stream, NewLine))) goto done;
@@ -143,8 +143,8 @@ int SendBinHex(TransStream stream, FSSpecPtr spec, AttMapPtr amp)
 	DontTranslate = True;
 	LineLength = 1;
 	State86 = CalcCrc = codedSpot = 0;
-	nameLen = strlen(spec->name) + 1;
-	for (spot = spec->name; nameLen--; spot++)
+	nameLen = strlen(spec_name(spec)) + 1;
+	for (spot = spec_name(spec); nameLen--; spot++)
 		CODE((uint8_t)*spot);
 	CODE(0);
 	CODELONG(fdType);
@@ -166,9 +166,9 @@ int SendBinHex(TransStream stream, FSSpecPtr spec, AttMapPtr amp)
 	/*
 	 * data fork
 	 */
-	refN = open(spec->path, O_RDONLY);
-	if (refN < 0) { FileSystemError(BINHEX_OPEN, spec->name, ioErr); goto done; }
-	err = BinHexFork(stream, refN, dataBuffer, dataSize, codedBuffer, spec->name);
+	refN = open(spec, O_RDONLY);
+	if (refN < 0) { FileSystemError(BINHEX_OPEN, spec_name(spec), ioErr); goto done; }
+	err = BinHexFork(stream, refN, dataBuffer, dataSize, codedBuffer, spec_name(spec));
 	if (err) goto done;
 
 	/*
@@ -176,7 +176,7 @@ int SendBinHex(TransStream stream, FSSpecPtr spec, AttMapPtr amp)
 	 */
 	close(refN);
 	refN = -1;
-	err = BinHexFork(stream, -1, dataBuffer, dataSize, codedBuffer, spec->name);
+	err = BinHexFork(stream, -1, dataBuffer, dataSize, codedBuffer, spec_name(spec));
 	if (err) goto done;
 
 	/*

@@ -149,8 +149,8 @@ int CreateNewPersCaches(void);
 void CreateIMAPMailFolder(void);
 void RebuildAllIMAPMailboxTrees(void);
 bool IsSpecialIMAPName(unsigned char *name, bool *bIsDir);
-bool IsIMAPSubPers(FSSpecPtr spec);
-int ReadIMAPMailboxAttributes(FSSpecPtr spec, long *attributes);
+bool IsIMAPSubPers(char * spec);
+int ReadIMAPMailboxAttributes(char * spec, long *attributes);
 void PathToMailboxName(CStr path, char mboxName[64], char delimiter);
 void PersNameToCacheName(PersHandle pers, unsigned char * cacheName);
 int CreateLocalCache(void);
@@ -158,7 +158,7 @@ void DisposePersIMAPMailboxTrees(void);
 void DisposeMailboxTree(MailboxNodeHandle *tree);
 void ZapMailboxNode(MailboxNodeHandle *node);
 bool IsIMAPCacheName(unsigned char *name);
-int WriteIMAPMailboxInfo(FSSpecPtr spec, MailboxNodeHandle node);
+int WriteIMAPMailboxInfo(char * spec, MailboxNodeHandle node);
 bool IMAPExists(void);
 int IMAPRefreshAllCaches(void);
 int IMAPRefreshPersCaches(void);
@@ -166,7 +166,7 @@ int RemoveIMAPCacheDir(FSSpec toDelete);
 bool CanModifyMailboxTrees(void);
 int UpdateLocalCache(bool progress);
 bool MailboxTreeGood(PersHandle pers);
-int GetIMAPAttachFolder(FSSpecPtr attachSpec);
+int GetIMAPAttachFolder(char * attachSpec);
 MailboxNodeHandle TOCToMbox(TOCType * tocH);
 PersHandle TOCToPers(TOCType * tocH);
 PersHandle MailboxNodeToPers(MailboxNodeHandle mbox);
@@ -174,7 +174,7 @@ void SalvageIMAPTOC(TOCType * oldTocH, TOCType * newTocH, short *newCount);
 void LockMailboxNodeHandle(MailboxNodeHandle node);
 void UnlockMailboxNodeHandle(MailboxNodeHandle node);
 void ClosePersMailboxes(PersHandle pers);
-void IMAPCloseChildMailboxes(FSSpecPtr spec);
+void IMAPCloseChildMailboxes(char * spec);
 bool IMAPMailboxHasUnread(TOCType * tocH, bool itDoesNow);
 void PathToMailboxName(CStr path, char mboxName[64], char delimiter);
 int UpdateIMAPMailboxInfo(TOCType * tocH);
@@ -183,20 +183,20 @@ bool IMAPMailboxTitle(TOCType * tocH, char title[256]);
 void IMAPPersIDChanged(PersHandle pers, MailboxNodeHandle tree);
 
 // Mailbox Information
-bool IsIMAPMailboxFile(FSSpecPtr spec);
-bool IsIMAPMailboxFileLo(FSSpecPtr spec, MailboxNodeHandle *node);
-bool IsIMAPCacheFolder(FSSpecPtr spec);
+bool IsIMAPMailboxFile(char * spec);
+bool IsIMAPMailboxFileLo(char * spec, MailboxNodeHandle *node);
+bool IsIMAPCacheFolder(char * spec);
 bool IsIMAPVD(short vRef, long dirId);
-void LocateNodeBySpecInAllPersTrees(FSSpecPtr spec, MailboxNodeHandle *node,
+void LocateNodeBySpecInAllPersTrees(char * spec, MailboxNodeHandle *node,
                                     PersHandle *pers);
-MailboxNodeHandle LocateNodeBySpec(MailboxNodeHandle tree, FSSpecPtr spec);
+MailboxNodeHandle LocateNodeBySpec(MailboxNodeHandle tree, char * spec);
 MailboxNodeHandle LocateNodeByMailboxName(MailboxNodeHandle tree,
                                           char *mailboxName);
-bool MailboxAttributes(FSSpecPtr spec, IMAPMailboxAttributesPtr attributes);
+bool MailboxAttributes(char * spec, IMAPMailboxAttributesPtr attributes);
 bool CanHaveChildren(MailboxNodeHandle node);
-bool IsIMAPMailboxEmpty(FSSpecPtr mailboxSpec);
-long IMAPMailboxMessageCount(FSSpecPtr mailboxSpec, bool check);
-bool ReallyIsIMAPMailbox(FSSpecPtr spec);
+bool IsIMAPMailboxEmpty(char * mailboxSpec);
+long IMAPMailboxMessageCount(char * mailboxSpec, bool check);
+bool ReallyIsIMAPMailbox(char * spec);
 void SetIMAPMailboxNeeds(MailboxNodeHandle node, MailboxNeedsEnum flag,
                          bool on);
 #define DoesIMAPMailboxNeed(n, f) (n ? ((n)->mailboxneeds & f) != 0 : false)
@@ -207,10 +207,10 @@ long IMAPCountMailboxes(MailboxNodeHandle tree, MailboxNeedsEnum needs);
      : false)
 
 // Mailbox Creation and Deletion
-bool IMAPAddMailbox(FSSpecPtr spec, bool folder, bool *success, bool silent);
-bool IMAPDeleteMailbox(FSSpecPtr toDelete);
-bool IMAPRenameMailbox(FSSpecPtr spec, unsigned char * name);
-bool IMAPMoveMailbox(FSSpecPtr fromFolderSpec, FSSpecPtr toSpec,
+bool IMAPAddMailbox(char * spec, bool folder, bool *success, bool silent);
+bool IMAPDeleteMailbox(char * toDelete);
+bool IMAPRenameMailbox(char * spec, unsigned char * name);
+bool IMAPMoveMailbox(char * fromFolderSpec, char * toSpec,
                      bool lastToMove, bool oneMoved, bool *dontWarn);
 
 // Special IMAP mailboxes, Trash and Junk
@@ -258,7 +258,7 @@ void MarkSumAsDeleted(TOCType * tocH, short sumNum, bool bDeleted);
 
 // Hidden Summary Filtering
 bool ShowHideFilteredSummary(TOCType * toc, short sumNum);
-MailboxNodeHandle GetRealIMAPSpec(FSSpec orig, FSSpecPtr spec);
+MailboxNodeHandle GetRealIMAPSpec(FSSpec orig, char * spec);
 
 // IMAP Fancy Trash Mode
 bool IMAPEmptyTrash(bool localOnly, bool currentOnly, bool all);
@@ -266,7 +266,7 @@ short IMAPCountTrashMessages(bool localOnly, bool currentOnly, bool all);
 bool FancyTrashForThisPers(TOCType * tocH);
 
 // Other
-bool SpecIsFilled(FSSpecPtr spec);
+bool SpecIsFilled(char * spec);
 MailboxNodeHandle LocateInboxForPers(PersHandle pers);
 bool IMAPDontAutoFccMailbox(TOCType * tocH);
 

@@ -31,9 +31,7 @@ ADVISED OF THE POSSIBILITY OF SUCH DAMAGE. */
 #include <stdbool.h>
 #include <stdint.h>
 
-/* Forward declare FSSpec so we don't pull in all of mailbox.h here.
-   Files that use FSSpec members must include mailbox.h themselves. */
-struct FSSpec;
+/* FSSpec is defined in mailbox.h as char[PATH_MAX] */
 
 /**********************************************************************
  *  routines to manage multiple link history lists

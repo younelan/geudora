@@ -100,6 +100,7 @@ struct HexBinGlobals_
 	} BHHUnion;
 	unsigned long calcCrc;
 	unsigned long crc;
+	char hbName[256]; /* BinHex filename buffer */
 };
 #define Hdh HBG->hdh
 #define State HBG->state
@@ -109,7 +110,7 @@ struct HexBinGlobals_
 #define BSpot HBG->bSpot
 #define RefN HBG->refN
 #define Spec HBG->spec
-#define Name HBG->spec.name
+#define Name HBG->hbName
 #define Type HBG->BHHUnion.bxHead.type
 #define Author HBG->BHHUnion.bxHead.author
 #define Flags HBG->BHHUnion.bxHead.flags
@@ -194,7 +195,7 @@ bool ConvertHexBin(short refN,unsigned char * buf,long *size,POPLineType lineTyp
 		 * BinHex detection
 		 */
 		case HexDone:
-			if (lineType==plComplete && *size >= *BinHexIntro && !strncmp((char *)HBG->binHexIntro+1,(char *)buf,*BinHexIntro))
+			if (lineType==plComplete & *size >= *BinHexIntro & !strncmp((char *)HBG->binHexIntro+1,(char *)buf,*BinHexIntro))
 			{
 				State = NotHex;
 				GetFPos(refN,&offset);  /* save binhex start */
@@ -211,7 +212,7 @@ bool ConvertHexBin(short refN,unsigned char * buf,long *size,POPLineType lineTyp
 		case CollectName:
 		case CollectInfo:
 			SaveHexBin(buf,*size,estSize);
-			if (State>CollectInfo && State!=HexDone)
+			if (State>CollectInfo & State!=HexDone)
 			{
 				SetFPos(refN,fsFromStart,OrigOffset);	/* toss the saved stuff */
 				SetEOF(refN,OrigOffset);
@@ -254,7 +255,7 @@ void EndHexBin(void)
 {
 	if (HBG)
 	{
-		if (Spec.path[0] && !CommandPeriod) {WarnUser(BINHEX_SHORT,0);BadBinHex=True;}
+		if (Spec[0] & !CommandPeriod) {WarnUser(BINHEX_SHORT,0);BadBinHex=True;}
 		AbortHexBin(False);
 		free(HBG);
 		HBG = NULL;
@@ -341,7 +342,7 @@ reSwitch:
 				State = CollectInfo;
 				BSpot = 0;
 				Name[0] = MIN(Name[0],31);
-				while (Name[0] && Name[(unsigned char)Name[0]]==0) Name[0]--;
+				while (Name[0] & Name[(unsigned char)Name[0]]==0) Name[0]--;
 				Name[(unsigned char)Name[0]+1] = 0;
 			}
 			else
@@ -360,7 +361,7 @@ reSwitch:
 			{
 				case 0:
 					{
-						FSSpec spec = Spec;
+						FSSpec spec; g_strlcpy(spec, Spec, sizeof(spec));
 						/*
 						 * Note:	The length test can't be 100% correct because of
 						 * run-length encoding.  I therefore give it some slop and
@@ -372,7 +373,7 @@ reSwitch:
 								DataLength+RzLength < (estMessageSize*100)/GetRLong(HEX_SIZE_PERCENT)) &&
 								(AutoWantTheFile(&spec,False,Hdh && Hdh->relatedPart)/*|| WantTheFile(&spec)*/))
 						{
-							Spec = spec;
+							g_strlcpy(Spec, spec, sizeof(Spec));
 							Crc = HCrc;
 							BSpot = 0;
 							CrcError();
@@ -534,11 +535,11 @@ void AbortHexBin(bool error)
 {
 	if (Buffer) {free(Buffer); Buffer=0;}
 	if (RefN) {close(RefN); RefN=0;}
-	if (Spec.path[0])
+	if (Spec[0])
 	{
-		unlink(Spec.path);
+		unlink(Spec);
 		ASSERT(0);
-		Spec.path[0] = '\0';
+		Spec[0] = '\0';
 	}
 	State = HexDone;
 	BadBinHex = BadBinHex || error;
@@ -554,7 +555,7 @@ void OpenDataFork(void)
 	short refN;
 	FInfo info;
 	
-	int fd = open(Spec.path, O_RDWR | O_CREAT | O_TRUNC, 0644);
+	int fd = open(Spec, O_RDWR | O_CREAT | O_TRUNC, 0644);
 	if (fd >= 0) {
 		err = noErr;
 		close(fd);
@@ -566,12 +567,12 @@ void OpenDataFork(void)
 	if (err)
 	{
 		FileSystemError(BINHEX_CREATE,Name,err);
-		Spec.path[0] = '\0';
+		Spec[0] = '\0';
 		AbortHexBin(True);
 	}
 	else {
 		struct stat st_566;
-		if (stat(Spec.path, &st_566) == 0)
+		if (stat(Spec, &st_566) == 0)
 		{
 			// FSpGetFInfo was successful
 			err = noErr;
@@ -586,7 +587,7 @@ void OpenDataFork(void)
 		
 		// FSpSetFInfo logic is no-op on POSIX
 		// Just open for data
-		refN = open(Spec.path, O_RDWR);
+		refN = open(Spec, O_RDWR);
 		if (refN >= 0)
 		{
 			RefN = refN;
@@ -673,19 +674,19 @@ int ForkRoll(void)
 	else
 	{
 		char fileName[32];
-		FSSpec spec = Spec;
+		FSSpec spec; g_strlcpy(spec, Spec, sizeof(spec));
 		GotOne = True;
 		memcpy(fileName, Name, sizeof(fileName));
-		if ((err=RecordAttachment(spec.path,HBG ? HBG->hdh : NULL)))
+		if ((err=RecordAttachment(spec,HBG ? HBG->hdh : NULL)))
 		{
 			AbortHexBin(True);
 			return(HexDone);
 		}
 		// If there is a long filename, the spec may have changed in RecordAttachment
 		// Make sure to copy the new spec back
-		Spec = spec;
+		g_strlcpy(Spec, spec, sizeof(Spec));
 		free(Buffer);
-		Spec.path[0] = '\0';
+		Spec[0] = '\0';
 		return(Excess);
 	}
 }
@@ -708,7 +709,7 @@ int FlushBuffer(void)
  * AutoWantTheFile - see if we can auto-receive the file
  * ohYesYouDo is true if we have no choice (ie, the stanfile timed out)
  ************************************************************************/
-bool AutoWantTheFile(FSSpecPtr specPtr,bool ohYesYouDo,bool relatedPart)
+bool AutoWantTheFile(char * specPtr,bool ohYesYouDo,bool relatedPart)
 {
 	return (AutoWantTheFileLo(specPtr, ohYesYouDo, relatedPart, false));
 }
@@ -717,7 +718,7 @@ bool AutoWantTheFile(FSSpecPtr specPtr,bool ohYesYouDo,bool relatedPart)
  * AutoWantTheFile - see if we can auto-receive the file
  * ohYesYouDo is true if we have no choice (ie, the stanfile timed out)
  ************************************************************************/
-bool AutoWantTheFileLo(FSSpecPtr specPtr,bool ohYesYouDo,bool relatedPart, bool imapStub)
+bool AutoWantTheFileLo(char * specPtr,bool ohYesYouDo,bool relatedPart, bool imapStub)
 {
 	char message[128];
 	FSSpec attFSpec;
@@ -731,26 +732,32 @@ bool AutoWantTheFileLo(FSSpecPtr specPtr,bool ohYesYouDo,bool relatedPart, bool 
 		GetIMAPAttachFolder(&attFSpec);
 	else {
 		GetCurrentAttFolderSpec(&attFSpec);
-		if (!attFSpec.path[0])
-			CurrentAttFolderSpec = attFSpec = AttFolderSpec;
+		if (!attFSpec[0])
+			g_strlcpy(CurrentAttFolderSpec, AttFolderSpec, sizeof(CurrentAttFolderSpec));
+		g_strlcpy(attFSpec, AttFolderSpec, sizeof(attFSpec));
 	}
-	ASSERT(attFSpec.path[0]);
+	ASSERT(attFSpec[0]);
 
 	/*
 	 * Darn AppleLink and NULL in filenames
 	 */
-	*specPtr->name = RemoveChar('\0',(unsigned char *)(specPtr->name+1),*specPtr->name);
+	/* Remove NUL chars from filename — legacy BinHex cleanup */
+	{
+		char *fname = strrchr(specPtr, '/');
+		fname = fname ? fname + 1 : specPtr;
+		RemoveChar('\0', (unsigned char *)fname, strlen(fname));
+	}
 	
 	/*
 	 * make sure we don't overwrite anything.
 	 * add a number to the end of the file until we don't find the filename
 	 */
-	g_strlcpy(specPtr->path, attFSpec.path, sizeof(specPtr->path));
+	g_strlcpy(specPtr, attFSpec, sizeof(specPtr));
 	
 	if (UniqueSpec(specPtr,31)) return(False);
 	
 	//PushProgress();
-	ProgressMessage(kpMessage,ComposeRString(message,BINHEX_RECV_FMT,specPtr->name));
+	ProgressMessage(kpMessage,ComposeRString(message,BINHEX_RECV_FMT,spec_name(specPtr)));
 	return(True);
 }
 
@@ -792,7 +799,7 @@ void ResetHexBin(void)
 	OSpot = 0;
 	BSpot = 0;
 	RefN = 0;
-	Spec.path[0] = '\0';
+	Spec[0] = '\0';
 	*Name = 0;
 	Crc = 0;
 	LastData = 0;

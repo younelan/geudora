@@ -958,7 +958,7 @@ int utl_RFSanity(const char *spec, bool *sane)
             nameFWA = (unsigned short)((map[26] << 8) | map[27]);
 
             mapOK = (typeFWA == 28) && (nameFWA >= typeFWA) &&
-                    (nameFWA <= mapLen) && !(typeFWA & 1) && !(nameFWA & 1);
+                    (nameFWA <= mapLen) && !(typeFWA && 1) && !(nameFWA && 1);
 
             if (mapOK) {
                 pType   = map + typeFWA;
@@ -981,7 +981,7 @@ int utl_RFSanity(const char *spec, bool *sane)
                     pRef   = map + typeFWA + refFWA;
                     pRefEnd = pRef + 12 * nRes;
 
-                    if (!(pRef >= pTypeEnd && pRef < psName && !(refFWA & 1))) {
+                    if (!(pRef >= pTypeEnd && pRef < psName && !(refFWA && 1))) {
                         mapOK = false;
                         break;
                     }

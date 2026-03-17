@@ -213,7 +213,7 @@ static const char *parse_nick_name(const char *p, char *out, size_t out_len) {
 static NickEntry *find_or_create_nick(NickFile *nf, const char *name) {
   NickEntry *e = nf->entries;
   while (e) {
-    if (strcmp(e->name, name) == 0)
+    if (strcmp(spec_name(e), name) == 0)
       return e;
     e = e->next;
   }
@@ -232,7 +232,7 @@ static NickFile *read_nick_file(const char *path, const char *label) {
     return NULL;
 
   NickFile *nf = g_new0(NickFile, 1);
-  nf->path = g_strdup(path);
+  nf = g_strdup(path);
   nf->label = g_strdup(label);
 
   char line[4096];
@@ -267,10 +267,10 @@ static NickFile *read_nick_file(const char *path, const char *label) {
 
 /* Write a nickname file back to disk */
 static void write_nick_file(NickFile *nf) {
-  if (!nf || !nf->path)
+  if (!nf || !nf)
     return;
 
-  FILE *fp = fopen(nf->path, "w");
+  FILE *fp = fopen(nf, "w");
   if (!fp)
     return;
 
@@ -278,17 +278,17 @@ static void write_nick_file(NickFile *nf) {
   NickEntry *we;
   for (we = nf->entries; we; we = we->next) {
     const char *addr = (we->addresses && we->addresses[0]) ? we->addresses : "";
-    if (strchr(we->name, ' '))
-      fprintf(fp, "alias \"%s\" %s\n", we->name, addr);
+    if (strchr(spec_name(we), ' '))
+      fprintf(fp, "alias \"%s\" %s\n", spec_name(we), addr);
     else
-      fprintf(fp, "alias %s %s\n", we->name, addr);
+      fprintf(fp, "alias %s %s\n", spec_name(we), addr);
   }
   for (we = nf->entries; we; we = we->next) {
     if (we->notes && we->notes[0]) {
-      if (strchr(we->name, ' '))
-        fprintf(fp, "note \"%s\" %s\n", we->name, we->notes);
+      if (strchr(spec_name(we), ' '))
+        fprintf(fp, "note \"%s\" %s\n", spec_name(we), we->notes);
       else
-        fprintf(fp, "note %s %s\n", we->name, we->notes);
+        fprintf(fp, "note %s %s\n", spec_name(we), we->notes);
     }
   }
 
@@ -301,13 +301,13 @@ static void free_nick_file(NickFile *nf) {
   NickEntry *e = nf->entries;
   while (e) {
     NickEntry *next = e->next;
-    g_free(e->name);
+    g_free(spec_name(e));
     g_free(e->addresses);
     g_free(e->notes);
     g_free(e);
     e = next;
   }
-  g_free(nf->path);
+  g_free(nf);
   g_free(nf->label);
   g_free(nf);
 }
@@ -388,7 +388,7 @@ static void ab_fill_list(void) {
 
     int nick_idx = 0;
     for (NickEntry *e = nf->entries; e; e = e->next, nick_idx++) {
-      GtkWidget *nick_label = gtk_label_new(e->name);
+      GtkWidget *nick_label = gtk_label_new(spec_name(e));
       gtk_label_set_xalign(GTK_LABEL(nick_label), 0);
       gtk_widget_set_margin_start(nick_label, 12);
       GtkWidget *nick_row = gtk_list_box_row_new();
@@ -530,7 +530,7 @@ static void on_ab_selection_changed(GtkListBox *box, GtkListBoxRow *row,
   if (!e)
     return;
 
-  gtk_editable_set_text(GTK_EDITABLE(AB.nick_entry), e->name ? e->name : "");
+  gtk_editable_set_text(GTK_EDITABLE(AB.nick_entry), spec_name(e) ? spec_name(e) : "");
 
   GtkTextBuffer *addr_buf =
       gtk_text_view_get_buffer(GTK_TEXT_VIEW(AB.addr_view));
@@ -600,8 +600,8 @@ static void save_current_entry(void) {
 
   /* Update nickname name */
   const char *new_name = gtk_editable_get_text(GTK_EDITABLE(AB.nick_entry));
-  if (new_name && new_name[0] && strcmp(e->name, new_name) != 0) {
-    g_free(e->name);
+  if (new_name && new_name[0] && strcmp(spec_name(e), new_name) != 0) {
+    g_free(spec_name(e));
     e->name = g_strdup(new_name);
     ab_update_selected_label(new_name);
   }
@@ -686,7 +686,7 @@ static void on_ab_new_clicked(GtkButton *button, gpointer user_data) {
     char path[1024];
     snprintf(path, sizeof(path), "%s/Eudora Nicknames", dir);
     nf = g_new0(NickFile, 1);
-    nf->path = g_strdup(path);
+    nf = g_strdup(path);
     nf->label = g_strdup("Eudora Nicknames");
     nf->next = AB.files;
     AB.files = nf;
@@ -696,7 +696,7 @@ static void on_ab_new_clicked(GtkButton *button, gpointer user_data) {
   char name[64];
   int n = 0;
   for (NickEntry *check = nf->entries; check; check = check->next) {
-    if (strncmp(check->name, "New Nickname", 12) == 0)
+    if (strncmp(spec_name(check), "New Nickname", 12) == 0)
       n++;
   }
   if (n == 0)
@@ -735,7 +735,7 @@ static void on_ab_delete_clicked(GtkButton *button, gpointer user_data) {
     if (ni == nick_idx) {
       NickEntry *doomed = *pp;
       *pp = doomed->next;
-      g_free(doomed->name);
+      g_free(spec_name(doomed));
       g_free(doomed->addresses);
       g_free(doomed->notes);
       g_free(doomed);
@@ -767,7 +767,7 @@ static void on_ab_recipient_clicked(GtkButton *button, gpointer user_data) {
       gdk_display_get_clipboard(gdk_display_get_default());
   gdk_clipboard_set_text(clipboard, e->addresses);
 
-  g_print("Address Book: copied %s address for %s field\n", e->name, field);
+  g_print("Address Book: copied %s address for %s field\n", spec_name(e), field);
 }
 
 /* ─── Build form row: label + entry ──────────────────────────────────── */

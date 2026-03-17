@@ -116,18 +116,18 @@ extern bool AnalWarning(MessHandle messH);
 extern bool AnalDelayOutgoing(void);
 extern void SumInfoCpy(MSumPtr dst, MSumPtr src);
 extern void TextFindAndCopyHeader(char *text, long bodySpot, MessHandle messH, char *header, short head, short label);
-extern int Snarf(FSSpec *spec, void **textH, long flags);
+extern int Snarf(char *spec, void **textH, long flags);
 extern void NicknameCachingScan(GtkWidget *pte, void *raw);
 extern int ExpandAliases(void **h, void *raw, int n, bool deep);
 extern void CommaList(void *h);
-extern int FSpIsItAFolder(FSSpec *spec);
-extern long FSpFileSize(FSSpec *spec);
+extern int FSpIsItAFolder(char *spec);
+extern long FSpFileSize(char *spec);
 extern void FolderSizeHi(const char *dir, uint32_t *cumSize);
-extern long SpecDirId(FSSpec *spec);
+extern long SpecDirId(char *spec);
 extern void RefreshSigButton(MessHandle messH);
 extern void CompSwitchFields(MessHandle messH, bool forward);
-extern void MakeAttSubFolder(MessHandle messH, uLong hash, FSSpec *spec);
-extern int FSpDupFolder(FSSpec *toSpec, FSSpec *fromSpec, bool replace, bool deep);
+extern void MakeAttSubFolder(MessHandle messH, uLong hash, char *spec);
+extern int FSpDupFolder(char *toSpec, char *fromSpec, bool replace, bool deep);
 extern char *FindHeaderString(char *text, char *headerName, long *size, bool bodyToo);
 extern bool UseInlineSig;
 extern short pStationeryLabel;
@@ -525,7 +525,7 @@ uLong ApproxMessageSize(MessHandle messH)
 		if (GetIndAttachment(messH, index, &spec, NULL))
 			break;
 		if (FSpIsItAFolder(&spec))
-			FolderSizeHi(spec.path, &oneSize);
+			FolderSizeHi(spec, &oneSize);
 		else
 			oneSize = FSpFileSize(&spec);
 		size += (4 * oneSize) / 3; /* base64 expansion */
@@ -577,7 +577,7 @@ void CompAttach(MyWindowPtr win, bool insertDefault)
 		if (path) {
 			FSSpec spec;
 			memset(&spec, 0, sizeof(spec));
-			g_strlcpy((char *)spec.name, path, sizeof(spec.name));
+			g_strlcpy((char *)spec_name(spec), path, sizeof(spec_name(spec)));
 			CompAttachSpec(win, &spec);
 			g_free(path);
 		}
@@ -621,7 +621,7 @@ void CompReallyPreferBody(MyWindowPtr win)
  * Original: compact.c:425-488
  * Builds attachment text from file path and appends to attachments header.
  ************************************************************************/
-void CompAttachSpec(MyWindowPtr win, FSSpec *spec)
+void CompAttachSpec(MyWindowPtr win, char *spec)
 {
 	MessHandle messH = (MessHandle)GetMyWindowPrivateData(win);
 	if (!messH || !win->pte)
@@ -633,7 +633,7 @@ void CompAttachSpec(MyWindowPtr win, FSSpec *spec)
 
 	/* Build attachment text from file path */
 	char attachText[1024];
-	snprintf(attachText, sizeof(attachText), "%s", (char *)spec->name);
+	snprintf(attachText, sizeof(attachText), "%s", (char *)spec_name(spec));
 
 	/* Append to attachments header */
 	GtkWidget *pte = TheBody ? TheBody : win->pte;
@@ -793,7 +793,7 @@ void WarpQueue(uLong secs)
  *
  * Original: compact.c:605-642
  ************************************************************************/
-int AttachDoc(MyWindowPtr win, FSSpec *spec)
+int AttachDoc(MyWindowPtr win, char *spec)
 {
 	MessHandle messH;
 
@@ -819,7 +819,7 @@ int AttachDoc(MyWindowPtr win, FSSpec *spec)
  *
  * Original: compact.c:644-647
  ************************************************************************/
-void ApplyStationery(MyWindowPtr win, FSSpec *spec, bool dontCleanse, bool personality)
+void ApplyStationery(MyWindowPtr win, char *spec, bool dontCleanse, bool personality)
 {
 	ApplyStationeryLo(win, spec, dontCleanse, personality, false);
 }
@@ -830,7 +830,7 @@ void ApplyStationery(MyWindowPtr win, FSSpec *spec, bool dontCleanse, bool perso
  * Original: compact.c:647-667
  * Reads stationery file via Snarf, then applies via ApplyStationeryHandle.
  ************************************************************************/
-void ApplyStationeryLo(MyWindowPtr win, FSSpec *spec, bool dontCleanse, bool personality, bool editStationery)
+void ApplyStationeryLo(MyWindowPtr win, char *spec, bool dontCleanse, bool personality, bool editStationery)
 {
 	void *textH = NULL;
 
@@ -1001,7 +1001,7 @@ void ApplyStationeryHandle(MyWindowPtr win, char *text, long textLen, bool dontC
 		TextFindAndCopyHeader(spot, bodySpot, messH, HeaderName(SUBJ_HEAD), SUBJ_HEAD, label);
 
 	/* void *spool folder copy for stationery with attachments */
-	if (!editStationery && (oldSum.opts & OPT_HAS_SPOOL)) {
+	if (!editStationery && (oldSum.opts && OPT_HAS_SPOOL)) {
 		FSSpec toSpec, fromSpec;
 		MakeAttSubFolder(messH, oldSum.uidHash, &fromSpec);
 		MakeAttSubFolder(messH, newSum.uidHash, &toSpec);

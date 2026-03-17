@@ -713,10 +713,10 @@ int LoadStats(void) {
     //	There was a problem loading the stats data. Either the file doesn't
     // exist yet 	or there was a file error. In the latter case, rename
     // the bad file so we have 	a backup and so we can create a new one.
-    renameSpec = spec;
-    g_strlcat((char *)renameSpec.name, ".bad", sizeof(renameSpec.name));
+    g_strlcpy(renameSpec, spec, sizeof(renameSpec));
+    g_strlcat((char *)spec_name(renameSpec), ".bad", sizeof(spec_name(renameSpec)));
     UniqueSpec(&renameSpec, 31);
-    MyFSpRename(&spec, renameSpec.name);
+    MyFSpRename(&spec, spec_name(renameSpec));
   }
 
   theTime.hl.lHigh = 0;

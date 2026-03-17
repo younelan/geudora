@@ -42,7 +42,7 @@ _____________________________________________________________________*/
 #include <gtk/gtk.h>
 #include <stdbool.h>
 
-struct FSSpec;
+/* FSSpec is defined in mailbox.h as char[PATH_MAX] */
 
 
 /* ASCII codes. */

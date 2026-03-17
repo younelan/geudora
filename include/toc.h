@@ -104,7 +104,7 @@ typedef struct TOCType {
     FSSpec spec;
     struct {
       long specListCount;
-      FSSpecPtr *specList;
+      char * *specList;
       void *data;   /* search window private data (SearchInfo*) */
       short type;   /* virtual mailbox type (0 = none, kSearchMB = search) */
     } virtualMB;
@@ -229,7 +229,7 @@ short FindSumByHash(TOCType * tocH, uint32_t hash);
 TOCType * GetSpecialTOC(short nameId);
 TOCType * GetRealTOC(TOCType * tocH, short sum, short *realSum);
 TOCType * LocateIMAPJunkToc(TOCType * source, bool create, bool open);
-FSSpec GetMailboxSpec(TOCType * tocH, short num);
+char *GetMailboxSpec(TOCType * tocH, short num, char *outSpec);
 void BoxSetSummarySelected(TOCType * tocH, short sum, bool select);
 int GetPrefBit(short prefId, int bit);
 int GetPrefBitNoDominant(short prefId, int bit);
@@ -240,15 +240,15 @@ void UseFeature(short featureId);
 /* AddSpecToList declared in filtrun.h */
 void RedateTS(TOCType * tocH, short sum);
 void RemIdFromPOPD(uint32_t popdType, short deleteId, uint32_t uidHash);
-int MoveSelectedMessagesLo(TOCType * tocH, FSSpecPtr dest, bool a, bool b,
+int MoveSelectedMessagesLo(TOCType * tocH, char * dest, bool a, bool b,
                            bool c, bool d);
-int MoveSelectedMessages(TOCType * tocH, FSSpecPtr dest, bool openIt);
-int MoveMessageLo(TOCType * tocH, int sumNum, FSSpecPtr dest, bool copy,
+int MoveSelectedMessages(TOCType * tocH, char * dest, bool openIt);
+int MoveMessageLo(TOCType * tocH, int sumNum, char * dest, bool copy,
                   bool toTemp, bool holdOpen);
 /* IMAP-specific functions are declared in imapdownload.h */
 PersHandle TOCToPers(TOCType * tocH);
 MailboxNodeHandle TOCToMbox(TOCType * tocH);
-TOCType * TOCBySpec(FSSpecPtr spec);
+TOCType * TOCBySpec(char * spec);
 TOCType * TOCByPath(const char *path);
 bool IMAPFilteringUnderway(void);
 MailboxNodeHandle LocateInboxForPers(PersHandle pers);
@@ -265,7 +265,7 @@ uint32_t toc_get_message_count(TOCType * toc);
 int toc_get_unread_count(TOCType * toc);
 
 void TOCSetDirty(TOCType * tocH, bool dirty);
-int TOCDates(FSSpecPtr spec, uLong *box, uLong *res, uLong *file);
+int TOCDates(char * spec, uLong *box, uLong *res, uLong *file);
 
 #define OPT_INLINE_SIG 0x0100 /* Dummy value */
 
@@ -274,6 +274,6 @@ void CopySum(MSumPtr from, MSumPtr to, short idx);
 
 short TOCUnreadCount(TOCType *tocH, bool recentOnly);
 int WriteTOC(TOCType *tocH);
-TOCType *CheckTOC(FSSpecPtr spec);
+TOCType *CheckTOC(char * spec);
 
 #endif /* TOC_H */

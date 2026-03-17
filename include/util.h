@@ -111,19 +111,17 @@ typedef struct {
  **********************************************************************/
 typedef struct {
   long elSize;
-  long elCount;
+  short elCount;
+  short capacity;
 } StackType_Util, *StackPtr_Util, **StackHandle_Util;
 // Stack functions - declared in mailbox.h with different signatures
 int StackInit(long size, StackHandle *stack);
-int StackPush(void *what, StackHandle stack);
+int StackPush(void *what, StackHandle *pStack);
 int StackPop(void *into, StackHandle stack);
 int StackItem(void *into, short item, StackHandle stack);
-// int StackPush(void *what,StackHandle stack);
-// int StackPop(void *into,StackHandle stack);
-// int StackQueue(void *what,StackHandle stack);
-// int StackTop(void *into,StackHandle stack);
-
-void StackCompact(StackHandle stack);
+int StackQueue(void *what, StackHandle *pStack);
+int StackTop(void *into, StackHandle stack);
+void StackCompact(StackHandle *pStack);
 short StackStringFind(char *find, StackHandle stack);
 void SCClear(short theId);
 short CountStrnRes(unsigned char * resH);

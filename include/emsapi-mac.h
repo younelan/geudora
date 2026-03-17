@@ -1325,7 +1325,7 @@ typedef struct ems_attacher_infoParams {
 EUDORA_ComponentResult ems_attacher_hook(
     void **globals,           /* Out: Return for allocated instance structure */
     emsMenuP attachMenu,      /* In: The menu */
-    FSSpec *attachDir,        /* In: Location to put attachments */
+    char *attachDir,        /* In: Location to put attachments */
     long *numAttach,          /* Out: Number of files attached */
     emsDataFileH *attachFiles /* Out: Name of files written */
 );
@@ -1335,7 +1335,7 @@ EUDORA_ComponentResult ems_attacher_hook(
 typedef struct ems_attacher_hookParams {
   emsDataFileH *attachFiles;
   long *numAttach;
-  FSSpec *attachDir;
+  char *attachDir;
   emsMenuP attachMenu;
   void **globals;
 } ems_attacher_hookParams;

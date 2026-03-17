@@ -123,7 +123,7 @@ int AddTLMIME(emsMIMEHandle tlMIME, short what, char * name, char * value)
 			/* already in the list? */
 			for (scan=(what==TLMIME_PARAM ? tlMIME->params : tlMIME->contentParams); scan; scan=scan->next)
 			{
-				if (StringSame(scan->name, (const char *)name))
+				if (StringSame(spec_name(scan), (const char *)name))
 				{
 					if (value && valueLen > 0)
 					{
@@ -139,7 +139,7 @@ int AddTLMIME(emsMIMEHandle tlMIME, short what, char * name, char * value)
 			h2 = value ? NuHTempBetter((long)valueLen) : nil;
 			if (h3 && (!value || h2))
 			{
-				g_strlcpy(h3->name, (const char *)name, sizeof(h3->name));
+				spec_set_name(h3, (const char *)name);
 				if (h2 && valueLen > 0)
 				{
 					BMD(value, h2, valueLen);
@@ -415,7 +415,7 @@ int ETLRemoveDeadTranslators(TLMHandle translators)
  *
  * Returns error so mime.c falls through to built-in MIME handling.
  **********************************************************************/
-int ETLInterpretFile(short context, FSSpecPtr source, short resultRefN,
+int ETLInterpretFile(short context, char * source, short resultRefN,
                      AccuPtr resultAcc, emsHeaderDataP addrList,
                      bool *dontSave)
 {
@@ -432,7 +432,7 @@ void ETLDoAbout(void)
 /**********************************************************************
  * RecordTLID - Save translator ID to a file
  **********************************************************************/
-int RecordTLID(FSSpecPtr spec, uLong id)
+int RecordTLID(char * spec, uLong id)
 {
 	return noErr; /* nothing to record without resource forks */
 }
@@ -448,7 +448,7 @@ int TransRecvLine(TransStream stream, unsigned char * line, long *size)
 /**********************************************************************
  * ETLDisplayFile - Display a translated file
  **********************************************************************/
-int ETLDisplayFile(FSSpecPtr spec, PETEHandle pte)
+int ETLDisplayFile(char * spec, PETEHandle pte)
 {
 	return fnfErr;
 }
@@ -508,7 +508,7 @@ int ETLIDToFileIcon(long id, void ***suite)
 /**********************************************************************
  * ETLReadTL - Read translator info from a file
  **********************************************************************/
-int ETLReadTL(FSSpecPtr spec, long *id)
+int ETLReadTL(char * spec, long *id)
 {
 	if (id) *id = 0;
 	return fnfErr;
@@ -535,8 +535,8 @@ int ETLCanTransOut(MessHandle messH)
 /**********************************************************************
  * ETLTransOut - Translate an outgoing message
  **********************************************************************/
-int ETLTransOut(MessHandle messH, emsMIMEHandle emsMIME, FSSpecPtr from,
-                FSSpecPtr to)
+int ETLTransOut(MessHandle messH, emsMIMEHandle emsMIME, char * from,
+                char * to)
 {
 	return fnfErr;
 }
@@ -674,7 +674,7 @@ short ETLMBoxContextFolder(MyWindowPtr win, short *vRefNum, long *dirID)
  *
  * TODO: Return ~/.eudora/plugins/ or similar
  **********************************************************************/
-int ETLGetPluginFolderSpec(FSSpec *spec, short nameId)
+int ETLGetPluginFolderSpec(char *spec, short nameId)
 {
 	return fnfErr;
 }

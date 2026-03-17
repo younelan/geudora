@@ -76,9 +76,9 @@ static gchar *read_message_raw(TOCType *toc, int msg_index) {
     return NULL;
 
   MessageSummary *sum = &toc->sums[msg_index];
-  FILE *fp = fopen(toc->mailbox.spec.path, "rb");
+  FILE *fp = fopen(toc->mailbox.spec, "rb");
   if (!fp)
-    fp = fopen(toc->path, "rb");
+    fp = fopen(toc, "rb");
   if (!fp)
     return NULL;
 
@@ -389,9 +389,9 @@ static gchar *extract_reply_address(TOCType *toc, int msg_index) {
     return NULL;
 
   MessageSummary *sum = &toc->sums[msg_index];
-  FILE *fp = fopen(toc->mailbox.spec.path, "rb");
+  FILE *fp = fopen(toc->mailbox.spec, "rb");
   if (!fp)
-    fp = fopen(toc->path, "rb");
+    fp = fopen(toc, "rb");
   if (!fp)
     return g_strdup(sum->from);
 
@@ -444,9 +444,9 @@ static void extract_all_recipients(TOCType *toc, int msg_index,
     return;
 
   MessageSummary *sum = &toc->sums[msg_index];
-  FILE *fp = fopen(toc->mailbox.spec.path, "rb");
+  FILE *fp = fopen(toc->mailbox.spec, "rb");
   if (!fp)
-    fp = fopen(toc->path, "rb");
+    fp = fopen(toc, "rb");
   if (!fp)
     return;
 

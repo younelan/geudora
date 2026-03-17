@@ -94,9 +94,9 @@ extern void ScrollIt(WindowPtr w, short a, long b);
 extern bool SortedDescending(TOCType *toc);
 extern void ShowMyWindowBehind(WindowPtr a, WindowPtr b);
 extern void eudora_open_mailbox_by_name(const char *name);
-extern MyWindowPtr FindText(FSSpecPtr spec);
+extern MyWindowPtr FindText(char * spec);
 extern void MySelectWindow(WindowPtr w);
-extern MyWindowPtr OpenText(FSSpecPtr spec, void *a, void *b, void *c, bool d,
+extern MyWindowPtr OpenText(char * spec, void *a, void *b, void *c, bool d,
                             void *e, bool f, bool g);
 extern int FindOpenWazoo(int win);
 extern void OpenTasksWinBehind(void *win);
@@ -106,14 +106,14 @@ extern void SetState(TOCType *toc, int sum, int state);
 extern int WriteTOC(TOCType *toc);
 extern void DeleteMessage(TOCType *toc, int sum, bool nuke);
 extern void RedoTOC(TOCType *toc);
-extern int MoveMessageLo(TOCType *tocH, int sumNum, FSSpecPtr dest, bool copy,
+extern int MoveMessageLo(TOCType *tocH, int sumNum, char * dest, bool copy,
                          bool queue, bool open);
 extern void TOCSetDirty(TOCType *toc, bool dirty);
 extern void UpdateNumStat(int type, int val);
 
 /* IMAP mailbox functions — declared in imapdownload.h */
 extern MailboxNodeHandle LocateInboxForPers(PersHandle pers);
-extern TOCType *TOCBySpec(FSSpec *spec);
+extern TOCType *TOCBySpec(char *spec);
 
 /* Debug */
 void Dprintf(const char *fmt, ...);
@@ -288,7 +288,7 @@ short XferMail(bool check, bool send, bool manual, bool scripted, bool thread,
 
   // Cmd-Shift-M resyncs frontmost IMAP mailbox.
   if (!PrefIsSet(PREF_ALTERNATE_CHECK_MAIL_CMD))
-    if (!(modifiers & optionKey) && (modifiers & shiftKey) &&
+    if (!(modifiers && optionKey) && (modifiers && shiftKey) &&
         ResyncCurrentIMAPMailbox())
       return (0);
 
@@ -806,7 +806,7 @@ short XferMailLo(bool check, bool send, bool manual, XferFlags flags,
 
         // locate the inbox, and resync it.
         if ((imapNode = LocateInboxForPers(CurPers))) {
-          FSSpec inboxSpec = imapNode->mailboxSpec;
+          FSSpec inboxSpec; g_strlcpy(inboxSpec, imapNode->mailboxSpec, sizeof(inboxSpec));
           tocH = TOCBySpec(&inboxSpec);
           IMAPCheckThreadRunning++;
           if (FetchNewMessages(tocH, true, true, true, !manual)) {
@@ -909,7 +909,7 @@ bool NeedPassword(bool check, bool send) {
       // If the server says yes but the user says no,
       // better ask the user to change their mind
       if (gave530 && !authOK) {
-        g_strlcpy(s, CurPers->name, sizeof(s));
+        g_strlcpy(s, spec_name(CurPers), sizeof(s));
         switch (ComposeStdAlert(Note, RECONSIDER_AUTH, s)) {
         // user will give us the password.  Yippee.
         case kAlertStdAlertOKButton:
@@ -1053,7 +1053,7 @@ int SpecialXfer(struct XferFlags *flags) {
     for (pers = PersList; pers; pers = pers->next) {
       char name[64];
       // Copy personality name (C string)
-      strncpy(name, (const char *)pers->name, 63);
+      strncpy(name, (const char *)spec_name(pers), 63);
       name[63] = '\0';
 
       GtkWidget *pers_chk = gtk_check_button_new_with_label(name);
@@ -1189,7 +1189,7 @@ short SendTheQueue(TransStream stream, XferFlags flags) {
   if (PersCount() == 1)
     GetRString(s, SENDING_MAIL);
   else {
-    ComposeRString(s, PERS_SENDING_MAIL, (unsigned char *)CurPers->name);
+    ComposeRString(s, PERS_SENDING_MAIL, (unsigned char *)spec_name(CurPers));
   }
   g_print("SendTheQueue: [B2] calling ProgressMessage s='%s'\n", s);
   ProgressMessage(kpTitle, s);
@@ -1332,7 +1332,7 @@ short SendTheQueue(TransStream stream, XferFlags flags) {
             stayed++;
           /* don't delete message if we're in a thread. we'll do that from the
            * main thread. */
-          if (!inThread && (tocH->sums[sumNum].flags & FLAG_KEEP_COPY) == 0)
+          if (!inThread && (tocH->sums[sumNum].flags && FLAG_KEEP_COPY) == 0)
           {
             if (messH && MessOptIsSet(messH, OPT_ATT_DEL))
               CompAttDel(messH);
@@ -1483,7 +1483,7 @@ short CheckForMail(TransStream stream, short *gotSome, XferFlags *flags) {
   if (PersCount() == 1)
     GetRString(s, CHECKING_MAIL);
   else {
-    ComposeRString(s, PERS_CHECKING_MAIL, CurPers->name);
+    ComposeRString(s, PERS_CHECKING_MAIL, spec_name(CurPers));
   }
   ProgressMessage(kpTitle, s);
 
@@ -1892,7 +1892,7 @@ bool AddSigIntro(GtkWidget *pte, void **text) {
       char *ptr = *(char **)text;
       if (len < *sigIntro || memcmp(ptr, sigIntro + 1, *sigIntro) != 0) {
         /* Prepend the sig intro */
-        SetHandleBig_((void *)text, len + *sigIntro);
+        { void *_r = realloc(text, len + *sigIntro); if (_r) text = _r; }
         if (!MemError()) {
           ptr = *(char **)text;
           memmove(ptr + *sigIntro, ptr, len);
@@ -1933,7 +1933,7 @@ bool RemoveSigIntro(GtkWidget *pte, void **text) {
       char *ptr = *(char **)text;
       if (memcmp(ptr, sigIntro + 1, MIN(*sigIntro, 4)) == 0) {
         memmove(ptr, ptr + *sigIntro, len - *sigIntro);
-        SetHandleBig_((void *)text, len - *sigIntro);
+        { void *_r = realloc(text, len - *sigIntro); if (_r) text = _r; }
         didIt = true;
       }
     }
@@ -2028,7 +2028,7 @@ int OutgoingMIDListSave(void) {
     /* Write to file in mail root */
     if (!SubFolderSpec(0, &spec)) {
       char path[512];
-      snprintf(path, sizeof(path), "%s/outgoing_mids.dat", spec.name);
+      snprintf(path, sizeof(path), "%s/outgoing_mids.dat", spec_name(spec));
       FILE *f = fopen(path, "wb");
       if (f) {
         fwrite(OutgoingMIDList->data, sizeof(uint32_t), OutgoingMIDList->len, f);
@@ -2058,7 +2058,7 @@ int OutgoingMIDListLoad(void) {
   if (!SubFolderSpec(0, &spec)) {
     char path[512];
     struct stat st;
-    snprintf(path, sizeof(path), "%s/outgoing_mids.dat", spec.name);
+    snprintf(path, sizeof(path), "%s/outgoing_mids.dat", spec_name(spec));
     if (stat(path, &st) == 0 && st.st_size > 0) {
       long count = st.st_size / sizeof(uint32_t);
       FILE *f = fopen(path, "rb");
@@ -2118,7 +2118,7 @@ long GlobalInUnreadCount(void) {
       continue;
 
     if ((node = LocateInboxForPers(pers))) {
-      FSSpec inboxSpec = node->mailboxSpec;
+      FSSpec inboxSpec; g_strlcpy(inboxSpec, node->mailboxSpec, sizeof(inboxSpec));
       count += TOCUnreadCount(TOCBySpec(&inboxSpec), PrefBadgeRecent());
     }
   }

@@ -89,7 +89,7 @@ void CacheRecentNickname(unsigned char *name);
 int QueueMessage(TOCType * tocH, short sumNum, int when, int flags, bool b1,
                  bool b2);
 int InsertCommaIfNeedBe(GtkWidget *pte, HeadSpec *hs);
-void CompAttachSpec(MyWindowPtr win, FSSpec *spec);
+void CompAttachSpec(MyWindowPtr win, char *spec);
 /* NumToString declared in legacy_shim.h */
 void CompDelAttachment(MessHandle messH, HeadSpec *where);
 void AttachSelect(MessHandle messH);
@@ -102,12 +102,12 @@ int ConConMess(MessHandle messH, GtkWidget *pte, void *profile, void *a,
 void *BoxPreviewProfile(void *name, TOCType * tocH, int which);
 /* BeenThereDoneThat declared in boxact.h */
 int MakeAttSubFolder(MessHandle messH, unsigned long uidHash,
-                       FSSpecPtr folder);
+                       char * folder);
 void ConConMultiple(TOCType * tocH, GtkWidget *pte, void *profile, int rule,
                     void *a, void *b);
 long Munger(void *h, long offset, void *ptr1, long len1, void *ptr2,
             long len2);
-int StackQueue(void *stack, void *elem);
+int StackQueue(void *what, StackHandle *pStack);
 long BeautifyDate(unsigned char *dateStr, long *zoneSecs);
 
 extern _Thread_local threadGlobalsPtr CurThreadGlobals;
@@ -296,9 +296,9 @@ int ReplyReferences(MessHandle origMessH, MessHandle newMessH);
 void HTMLifyText(MyWindowPtr win, void *text);
 
 /* Missing Prototypes */
-int SubFolderSpec(short nameId, FSSpecPtr spec);
+int SubFolderSpec(short nameId, char * spec);
 
-int RemoveDir(FSSpecPtr spec);
+int RemoveDir(char * spec);
 bool PrefIsSetOrNot(int pref, int modifiers, int mask);
 long SizeSelectedMessages(TOCType * tocH, bool includeText);
 bool MemoryPreflight(long size);
@@ -326,7 +326,7 @@ MyWindowPtr DoComposeNew(int type);
 
 #define mLoPlain 1
 int CopyNewsgroups(MessHandle origMH, MessHandle newMH);
-bool AttStillInFolder(FSSpecPtr att, FSSpecPtr folder);
+bool AttStillInFolder(char * att, char * folder);
 char *MessCurAddr(MyWindowPtr win, char *addr);
 void MakeMessTitle(char *title, TOCType * tocH, int sumNum,
                    bool useSummary);
@@ -992,7 +992,7 @@ int ReadMessage(TOCType * tocH, int sumN, unsigned char * buffer) {
  * MoveMessage - transfer a message from one box to another
  * called when the transfer menu is invoked with a message frontmost
  **********************************************************************/
-int MoveMessage(TOCType * tocH, int sumNum, FSSpecPtr toSpec, bool copy) {
+int MoveMessage(TOCType * tocH, int sumNum, char * toSpec, bool copy) {
   TOCType * toTocH;
 
 
@@ -1015,7 +1015,7 @@ int MoveMessage(TOCType * tocH, int sumNum, FSSpecPtr toSpec, bool copy) {
 /**********************************************************************
  * MoveMessageLo - transfer a message from one box to another, no warnings
  **********************************************************************/
-int MoveMessageLo(TOCType * tocH, int sumNum, FSSpecPtr toSpec, bool copy,
+int MoveMessageLo(TOCType * tocH, int sumNum, char * toSpec, bool copy,
                   bool toTemp, bool holdOpen) {
   TOCType * toTocH;
   MessHandle messH = tocH->sums[sumNum].messH;
@@ -1032,7 +1032,7 @@ int MoveMessageLo(TOCType * tocH, int sumNum, FSSpecPtr toSpec, bool copy,
         LOG_MOVE, NULL, "%s \"%s,%s\"  \"%s\"->\"%s\"\r",
         copy ? "Copy" : "Transfer", tocH->sums[sumNum].from,
         tocH->sums[sumNum].subj,
-        GetMailboxName(tocH, sumNum, name), toSpec->name);
+        GetMailboxName(tocH, sumNum, name), spec_name(toSpec));
 
 
   if ((toTocH = TOCBySpec(toSpec)) == NULL)
@@ -1078,7 +1078,7 @@ int MoveMessageLo(TOCType * tocH, int sumNum, FSSpecPtr toSpec, bool copy,
       ComposeLogS(
           LOG_PLUG, NULL,
           "A plugin has deleted an IMAP message: '%s' in '%s'",
-          tocH->sums[sumNum].subj, tocH->mailbox.spec.name);
+          tocH->sums[sumNum].subj, spec_name(tocH->mailbox.spec));
       return (noErr);
     } else if (!downloaded)
       return (1);
@@ -1187,7 +1187,7 @@ int AppendMessage(TOCType * fromTocH, int fromN, TOCType ** toTocHP, bool copy,
   /*
    * is there space?
    */
-  toSpec = GetMailboxSpec(toTocH, -1);
+  GetMailboxSpec(toTocH, -1, toSpec);
   if ((MessErr = VolumeMargin(0, fromTocH->sums[fromN].length)))
     return (MessErr);
 
@@ -1197,7 +1197,7 @@ int AppendMessage(TOCType * fromTocH, int fromN, TOCType ** toTocHP, bool copy,
   if (toTocH->count >= MAX_MESSAGES_PER_MAILBOX) {
     unsigned char s[256];
     ComposeStdAlert(Stop, TOO_MANY_MESSAGES,
-                    strcpy((char *)s, toTocH->mailbox.spec.name));
+                    strcpy((char *)s, spec_name(toTocH->mailbox.spec)));
     return MessErr = 1;
   }
 
@@ -1207,7 +1207,7 @@ int AppendMessage(TOCType * fromTocH, int fromN, TOCType ** toTocHP, bool copy,
   if (!copy)
     fromTocH->sums[fromN].flags &= ~FLAG_SKIPWARN;
   eof = FindTOCSpot(toTocH, fromTocH->sums[fromN].length);
-  if (toTocH->which == OUT && !(fromTocH->sums[fromN].flags & FLAG_OUT)) {
+  if (toTocH->which == OUT && !(fromTocH->sums[fromN].flags && FLAG_OUT)) {
     if ((MessErr = CopyToOut(fromTocH, fromN, toTocH)))
       return (MessErr);
   } else {
@@ -1237,7 +1237,7 @@ int AppendMessage(TOCType * fromTocH, int fromN, TOCType ** toTocHP, bool copy,
           CopyFBytes(fromTocH->refN, fromTocH->sums[fromN].offset,
                      fromTocH->sums[fromN].length, toTocH->refN, eof);
     if (MessErr) {
-      FileSystemError(COPY_FAILED, toSpec.name, MessErr);
+      FileSystemError(COPY_FAILED, spec_name(toSpec), MessErr);
       return (MessErr);
     }
     (void)SetEOF(toTocH->refN, eof + fromTocH->sums[fromN].length);
@@ -1345,7 +1345,7 @@ int AppendMessage(TOCType * fromTocH, int fromN, TOCType ** toTocHP, bool copy,
  * MoveSelectedMessages - transfer all selected messages from one mail
  * box to another.
  **********************************************************************/
-int MoveSelectedMessages(TOCType * tocH, FSSpecPtr toSpec, bool copy) {
+int MoveSelectedMessages(TOCType * tocH, char * toSpec, bool copy) {
   return (MoveSelectedMessagesLo(tocH, toSpec, copy, false, true, true));
 }
 
@@ -1353,7 +1353,7 @@ int MoveSelectedMessages(TOCType * tocH, FSSpecPtr toSpec, bool copy) {
  * MoveSelectedMessages - transfer all selected messages from one mail
  * box to another.
  **********************************************************************/
-int MoveSelectedMessagesLo(TOCType * tocH, FSSpecPtr toSpec, bool copy,
+int MoveSelectedMessagesLo(TOCType * tocH, char * toSpec, bool copy,
                            bool delete, bool undo, bool warnings) {
   TOCType * toTocH;
   int sumNum;
@@ -1361,7 +1361,7 @@ int MoveSelectedMessagesLo(TOCType * tocH, FSSpecPtr toSpec, bool copy,
   unsigned char trashName[32];
   short oldCount;
     bool toTrash =
-      IsRoot(toSpec->path) && StringSame(toSpec->name, GetRString(trashName, TRASH));
+      IsRoot(toSpec) && StringSame(spec_name(toSpec), GetRString(trashName, TRASH));
   long needRoom = 0;
   bool outWarning;
   long count;
@@ -1410,7 +1410,7 @@ int MoveSelectedMessagesLo(TOCType * tocH, FSSpecPtr toSpec, bool copy,
           tocH,
           sumNum); /* in case we're deleting a reply, set orig state back */
       needRoom += tocH->sums[sumNum].length + sizeof(MSumType);
-      if (outWarning && !(tocH->sums[sumNum].flags & FLAG_OUT)) {
+      if (outWarning && !(tocH->sums[sumNum].flags && FLAG_OUT)) {
         outWarning = false; /* don't need anymore */
         if (ReallyDoAnAlert(XFER_TO_OUT, Caution) != 1)
           return (0);
@@ -1545,7 +1545,7 @@ int MoveSelectedMessagesLo(TOCType * tocH, FSSpecPtr toSpec, bool copy,
                     "%s \"%s,%s\"  \"%s\"->\"%s\"\r",
                     copy ? "Copy" : "Transfer", realTocH->sums[realSum].from,
                     realTocH->sums[realSum].subj,
-                    GetMailboxName(realTocH, realSum, name), toSpec->name);
+                    GetMailboxName(realTocH, realSum, name), spec_name(toSpec));
 
       if (oldCount != tocH->count) {
         lastSelected = sumNum;
@@ -1780,7 +1780,7 @@ int TOCFindMessByMsgID(unsigned long mid, TOCType * tocH, long *sumNum) {
 /************************************************************************
  * FindAnAttachment - find an attachment from a line of text
  ************************************************************************/
-long FindAnAttachment(void *text, long offset, FSSpecPtr spec, bool attach,
+long FindAnAttachment(void *text, long offset, char * spec, bool attach,
                       unsigned long *cid, unsigned long *relURL, unsigned long *absURL) {
   unsigned char *spot, *newLine, *end;
   bool result = false;
@@ -1836,7 +1836,7 @@ void InitAttachmentFinder(FindAttPtr pData, void *text, bool attach,
 /**********************************************************************
  * GetNextAttachment - find next attachment
  **********************************************************************/
-bool GetNextAttachment(FindAttPtr pData, FSSpecPtr spec) {
+bool GetNextAttachment(FindAttPtr pData, char * spec) {
   bool result = false;
 
   if (pData->text) {
@@ -1885,11 +1885,11 @@ void DeleteMessageLo(TOCType * tocH, int sumNum, bool nuke) {
   // bool dirt = 0; // Unused variable removed
   FSSpec trashSpec;
   int oldN = tocH->count;
-  bool wipe = PrefIsSet(PREF_WIPE) && (tocH->sums[sumNum].opts & OPT_WIPE);
+  bool wipe = PrefIsSet(PREF_WIPE) && (tocH->sums[sumNum].opts && OPT_WIPE);
 
   if (tocH->which != TRASH && !wipe && !nuke) {
-    g_strlcpy(trashSpec.path, MailRoot.path, sizeof(trashSpec.path));
-    GetRString(trashSpec.name, TRASH);
+    g_strlcpy(trashSpec, MailRoot.path, sizeof(trashSpec));
+    GetRString(spec_name(trashSpec), TRASH);
     MoveMessageLo(tocH, sumNum, &trashSpec, false, false, true);
   } else {
     if (wipe)
@@ -2129,13 +2129,13 @@ int RecordTransAttachments(const char *path) {
 
   /* Build a temporary FSSpec from the path for buf_append storage */
   if (path) {
-    strncpy(tmpSpec.path, path, sizeof(tmpSpec.path) - 1);
+    strncpy(tmpSpec, path, sizeof(tmpSpec) - 1);
     {
       char pathCopy[1024];
       strncpy(pathCopy, path, sizeof(pathCopy) - 1);
       pathCopy[sizeof(pathCopy) - 1] = '\0';
       const char *base = basename(pathCopy);
-      strncpy(tmpSpec.name, base, sizeof(tmpSpec.name) - 1);
+      strncpy(spec_name(tmpSpec), base, sizeof(spec_name(tmpSpec)) - 1);
     }
   }
 
@@ -2164,7 +2164,7 @@ static bool CleanSpoolCallback(DirIterateInfo *info) {
   MiniEvents();
 
   if (info->isDir &&
-      AllDigits(info->spec.name, strlen(info->spec.name))) {
+      AllDigits(spec_name(info->spec), strlen(spec_name(info->spec)))) {
     if (info->modifyDate < spoolAge) {
       RemoveDir(&info->spec);
     }
@@ -2288,8 +2288,8 @@ void DoIterativeThingyLo(TOCType * tocH, int item, long modifiers,
   }
 
   if (item == MESSAGE_DELETE_ITEM && !nuke) {
-    g_strlcpy(trashSpec.path, MailRoot.path, sizeof(trashSpec.path));
-    GetRString(trashSpec.name, TRASH);
+    g_strlcpy(trashSpec, MailRoot.path, sizeof(trashSpec));
+    GetRString(spec_name(trashSpec), TRASH);
     MoveSelectedMessagesLo(tocH, &trashSpec, false, true, true, warnings);
     if (oldEzOpenSerialNum &&
         (sumNum = FindSumBySerialNum(tocH, oldEzOpenSerialNum)) >= 0 &&
@@ -2594,8 +2594,8 @@ int SavePtrAsMessage(unsigned char * preText, long preSize, unsigned char * text
   /*
    * read it back
    */
-  spec = GetMailboxSpec(tocH, -1);
-  if ((err = OpenLine(spec.path, fsRdWrPerm, &lid)))
+  GetMailboxSpec(tocH, -1, spec);
+  if ((err = OpenLine(spec, fsRdWrPerm, &lid)))
     return (FileSystemError(READ_MBOX, name, err));
   if ((err = SeekLine(eof, &lid)))
     return (FileSystemError(READ_MBOX, name, err));
@@ -3377,7 +3377,7 @@ MyWindowPtr DoReplyMessage(MyWindowPtr win, bool all, bool self, bool quote,
         !origMessH->tocH->which &&
         !IMAPDontAutoFccMailbox(origMessH->tocH))
     {
-      FSSpec spec = GetMailboxSpec(origMessH->tocH, -1);
+      FSSpec spec; GetMailboxSpec(origMessH->tocH, -1, spec);
       Fcc(newMessH, &spec);
     }
 
@@ -4074,7 +4074,7 @@ MyWindowPtr DoForwardMessage(MyWindowPtr win, void *toWhom, bool turbo) {
     /*
      * quote them
      */
-    if (!rich && !(0 /* MainEvent.modifiers */ & optionKey))
+    if (!rich && !(0 /* MainEvent.modifiers */ && optionKey))
       QuoteLines(newMessH->bodyPTE, CompBodyOffset(newMessH) - 1, 0x7fffffff,
                  FWD_QUOTE, NULL);
 
@@ -4422,7 +4422,7 @@ int SpoolIndAttachment(MessHandle messH, short i) {
    * make the folder
    */
   if (err = MakeAttSubFolder(messH, SumOf(messH)->uidHash, &newSpec))
-    return (FileSystemError(COPY_ATTACHMENT, newSpec.name, err));
+    return (FileSystemError(COPY_ATTACHMENT, spec_name(newSpec), err));
 
   /*
    * grab it
@@ -4431,12 +4431,12 @@ int SpoolIndAttachment(MessHandle messH, short i) {
     /*
      * Copy the attachment
      */
-    strcpy(newSpec.name, spec.name);
+    spec_set_name(newSpec, spec_name(spec));
     if (!SameSpec(&spec, &newSpec) && !FSpIsItAFolder(&spec)) {
       unsigned char longName[256];
 
       if ((err = FSpDupFile(&newSpec, &spec, false, false)))
-        return (FileSystemError(COPY_ATTACHMENT, spec.name, err));
+        return (FileSystemError(COPY_ATTACHMENT, spec_name(spec), err));
 
       // handle long filename
       if (!FSpGetLongName(&spec, kTextEncodingUnknown, longName) &&
@@ -4453,7 +4453,7 @@ int SpoolIndAttachment(MessHandle messH, short i) {
 /**********************************************************************
  * MakeAttSubFolder - make the subfolder for attachment spooling
  **********************************************************************/
-int MakeAttSubFolder(MessHandle messH, unsigned long uidHash, FSSpecPtr folder) {
+int MakeAttSubFolder(MessHandle messH, unsigned long uidHash, char * folder) {
   int err;
   FSSpec spool;
   unsigned char scratch[256];
@@ -4461,7 +4461,7 @@ int MakeAttSubFolder(MessHandle messH, unsigned long uidHash, FSSpecPtr folder) 
 
   if (messH && !MessOptIsSet(messH, OPT_HAS_SPOOL))
     SetMessOpt(messH, OPT_HAS_SPOOL);
-  GetRString(folder->name, SPOOL_FOLDER); // in case of error
+  GetRString(spec_name(folder), SPOOL_FOLDER); // in case of error
 
   /*
    * find the folder
@@ -4477,7 +4477,7 @@ int MakeAttSubFolder(MessHandle messH, unsigned long uidHash, FSSpecPtr folder) 
   /*
    * specify
    */
-  spec_make(spool.path, scratch, folder);
+  spec_make(spool, scratch, folder);
 
   /*
    * create
@@ -4492,9 +4492,9 @@ int MakeAttSubFolder(MessHandle messH, unsigned long uidHash, FSSpecPtr folder) 
     return (err);
 
   /*
-   * folder->path already points into the created subfolder
+   * folder already points into the created subfolder
    */
-  *folder->name = 0;
+  /* clear filename */ { char *_sn = strrchr(folder, '/'); if (_sn) _sn[1] = '\0'; else folder[0] = '\0'; }
 
   return (err);
 }
@@ -4940,7 +4940,7 @@ void HTMLifyText(MyWindowPtr win, void *text) {
     char *lineEnd, *lineEnd2;
     long len;
 
-    StackQueue(&pd, stack);
+    StackQueue(&pd, &stack);
     //	Remove related line
     lineEnd2 = (char *)text + GetHandleSize_(text);
     for (lineEnd = (char *)text + offset; lineEnd < lineEnd2 && *lineEnd != '\015';
@@ -5077,7 +5077,7 @@ char * CurAddrSel(MyWindowPtr win, char * addr) {
  * Portable POSIX implementation: copies raw message bytes from the mailbox
  * to the destination file.
  ************************************************************************/
-int SpoolMessage(MessHandle messH, FSSpecPtr theSpec, short refN) {
+int SpoolMessage(MessHandle messH, char * theSpec, short refN) {
   if (!messH)
     return -1;
   TOCType * tocH = messH->tocH;
@@ -5088,7 +5088,7 @@ int SpoolMessage(MessHandle messH, FSSpecPtr theSpec, short refN) {
   long offset = tocH->sums[sumNum].offset;
   long length = tocH->sums[sumNum].length;
 
-  FILE *src = fopen(tocH->mailbox.spec.path, "rb");
+  FILE *src = fopen(tocH->mailbox.spec, "rb");
   if (!src)
     return -1;
   if (fseek(src, offset, SEEK_SET) != 0) {
@@ -5100,7 +5100,7 @@ int SpoolMessage(MessHandle messH, FSSpecPtr theSpec, short refN) {
   if (refN != 0) {
     dst = fdopen(dup(refN), "ab");
   } else {
-    dst = fopen(theSpec->path, "wb");
+    dst = fopen(theSpec, "wb");
   }
   if (!dst) {
     fclose(src);
@@ -5126,11 +5126,11 @@ int SpoolMessage(MessHandle messH, FSSpecPtr theSpec, short refN) {
  * FileGraphicChangeGraphic - update an inline graphic in the gEditCtrl
  * widget at the given text offset with the image from spec.
  ************************************************************************/
-int FileGraphicChangeGraphic(GtkWidget *pte, long offset, FSSpecPtr spec) {
-  if (!pte || !spec || !spec->path[0])
+int FileGraphicChangeGraphic(GtkWidget *pte, long offset, char * spec) {
+  if (!pte || !spec || !spec[0])
     return -1;
   GError *err = NULL;
-  GdkPixbuf *pixbuf = gdk_pixbuf_new_from_file(spec->path, &err);
+  GdkPixbuf *pixbuf = gdk_pixbuf_new_from_file(spec, &err);
   if (!pixbuf) {
     if (err)
       g_error_free(err);

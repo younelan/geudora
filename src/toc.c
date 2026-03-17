@@ -90,16 +90,16 @@ static const char *path_basename(const char *path)
 #endif
 
 /* Forward declarations */
-static int ReadDForkTOC(FSSpecPtr aSpec, TOCType * *inTOC);
-FSSpecPtr Box2TOCSpec(FSSpecPtr boxSpec, FSSpecPtr tocSpec);
-static short GetMailboxType(FSSpecPtr spec);
+static int ReadDForkTOC(char * aSpec, TOCType * *inTOC);
+char * Box2TOCSpec(char * boxSpec, char * tocSpec);
+static short GetMailboxType(char * spec);
 void CleanseTOC(TOCType * tocH);
 static int InsaneTOC(TOCType * tocH);
-TOCType * ReadTOC(FSSpecPtr spec);
+TOCType * ReadTOC(char * spec);
 static short GetTOCK(TOCType * tocH, unsigned long *usedK, unsigned long *totalK);
 static bool TOCUnread(TOCType * tocH);
 static void FixBoxUnread(TOCType * tocH);
-static TOCType * FixErrantTOC(FSSpecPtr spec, TOCType * tocH, short why);
+static TOCType * FixErrantTOC(char * spec, TOCType * tocH, short why);
 static void CheckStringLen(char *s, int maxLen, int fillLen);
 
 /* External prototypes for functions defined in other modules */
@@ -109,9 +109,9 @@ bool IsDelivery(const char *path);
 void InvalBoxSizeBox(void *wp);
 void FixSpecUnread(const char *path, bool unread);
 void FixMenuUnread(MenuHandle mh, int item, bool unread);
-int Spec2Menu(FSSpecPtr spec, bool forXfer, short *menu, short *item);
+int Spec2Menu(char * spec, bool forXfer, short *menu, short *item);
 void BoxFClose(TOCType * tocH, bool flush);
-bool IsIMAPMailboxFileLo(FSSpecPtr spec, MailboxNodeHandle *node);
+bool IsIMAPMailboxFileLo(char * spec, MailboxNodeHandle *node);
 void RemoveUTF8FromSum(MSumPtr sum);
 void JunkTOCCleanse(TOCType * tocH);
 /* DBNoteUIDHash is inline in legacy_shim.h */
@@ -335,8 +335,8 @@ static void sum_to_disk(const MSumType *s, MSumDisk *d) {
 /************************************************************************
  * TOCBySpec - take a spec, return a TOC
  ************************************************************************/
-TOCType * TOCBySpec(FSSpecPtr spec) {
-  if (!GetMailbox(spec->path, false))
+TOCType * TOCBySpec(char * spec) {
+  if (!GetMailbox(spec, false))
     return FindTOC(spec);
   return NULL;
 }
@@ -357,7 +357,7 @@ TOCType * TOCByPath(const char *path) {
 /************************************************************************
  * GetTOCByFSS - open a toc from an FSS
  ************************************************************************/
-short GetTOCByFSS(FSSpecPtr specPtr, TOCType * *tocH) {
+short GetTOCByFSS(char * specPtr, TOCType * *tocH) {
   *tocH = TOCBySpec(specPtr);
   return (*tocH ? noErr : 1);
 }
@@ -366,13 +366,13 @@ short GetTOCByFSS(FSSpecPtr specPtr, TOCType * *tocH) {
  * KillTOC - remove the .toc file for a mailbox
  * Ported from Mac: resource fork operations → unlink .toc file
  ************************************************************************/
-int KillTOC(short refN, FSSpecPtr spec) {
+int KillTOC(short refN, char * spec) {
   (void)refN;
   if (!spec)
     return noErr;
 
   char tocPath[PATH_MAX];
-  toc_file_path(spec->path, tocPath, sizeof(tocPath));
+  toc_file_path(spec, tocPath, sizeof(tocPath));
 
   if (unlink(tocPath) != 0 && errno != ENOENT) {
     g_warning("KillTOC: failed to remove %s: %s", tocPath, strerror(errno));
@@ -385,10 +385,10 @@ int KillTOC(short refN, FSSpecPtr spec) {
  * Box2TOCSpec - make a toc spec out of a mailbox spec
  * Ported from Mac: PCat(name, GetRString(suffix, TOC_SUFFIX)) → snprintf
  ************************************************************************/
-FSSpecPtr Box2TOCSpec(FSSpecPtr boxSpec, FSSpecPtr tocSpec) {
+char * Box2TOCSpec(char * boxSpec, char * tocSpec) {
   *tocSpec = *boxSpec;
-  snprintf(tocSpec->path, sizeof(tocSpec->path), "%s.toc", boxSpec->path);
-  snprintf(tocSpec->name, sizeof(tocSpec->name), "%s.toc", boxSpec->name);
+  snprintf(tocSpec, sizeof(tocSpec), "%s.toc", boxSpec);
+  snprintf(spec_name(tocSpec), sizeof(spec_name(tocSpec)), "%s.toc", spec_name(boxSpec));
   return tocSpec;
 }
 
@@ -396,9 +396,9 @@ FSSpecPtr Box2TOCSpec(FSSpecPtr boxSpec, FSSpecPtr tocSpec) {
  * HasExternalTOC - does a file have an external table of contents?
  * Ported from Mac: FSpExists → access()
  ************************************************************************/
-bool HasExternalTOC(FSSpecPtr spec) {
+bool HasExternalTOC(char * spec) {
   char tocPath[PATH_MAX];
-  toc_file_path(spec->path, tocPath, sizeof(tocPath));
+  toc_file_path(spec, tocPath, sizeof(tocPath));
   return access(tocPath, F_OK) == 0;
 }
 
@@ -407,8 +407,8 @@ bool HasExternalTOC(FSSpecPtr spec) {
  * necessary. Combines original CheckTOC + ReadTOC logic.
  * Ported from Mac: resource fork path removed, uses data-fork .toc only
  ************************************************************************/
-TOCType * CheckTOC(FSSpecPtr spec) {
-  if (!spec || !spec->path[0])
+TOCType * CheckTOC(char * spec) {
+  if (!spec || !spec[0])
     return NULL;
 
   unsigned long box, res, file;
@@ -418,11 +418,11 @@ TOCType * CheckTOC(FSSpecPtr spec) {
 
   /* No .toc file → build from mailbox and write the .toc */
   if (!file) {
-    g_debug("CheckTOC: no .toc for %s, building", path_basename(spec->path));
-    TOCType *built = BuildTOC_Path(spec->path);
+    g_debug("CheckTOC: no .toc for %s, building", path_basename(spec));
+    TOCType *built = BuildTOC_Path(spec);
     if (built) {
-      strncpy(built->path, spec->path, sizeof(built->path) - 1);
-      built->mailbox.spec = *spec;
+      strncpy(built, spec, sizeof(built) - 1);
+      g_strlcpy(built->mailbox.spec, spec, sizeof(built->mailbox.spec));
       WriteTOC(built);
     }
     return built;
@@ -432,11 +432,11 @@ TOCType * CheckTOC(FSSpecPtr spec) {
   TOCType *toc = ReadTOC(spec);
   if (!toc) {
     /* .toc file exists but is corrupt or too small — rebuild from mailbox */
-    g_debug("CheckTOC: .toc for %s is corrupt, rebuilding", path_basename(spec->path));
-    toc = BuildTOC_Path(spec->path);
+    g_debug("CheckTOC: .toc for %s is corrupt, rebuilding", path_basename(spec));
+    toc = BuildTOC_Path(spec);
     if (toc) {
-      strncpy(toc->path, spec->path, sizeof(toc->path) - 1);
-      toc->mailbox.spec = *spec;
+      strncpy(toc, spec, sizeof(toc) - 1);
+      g_strlcpy(toc->mailbox.spec, spec, sizeof(toc->mailbox.spec));
       WriteTOC(toc);
     }
   }
@@ -447,7 +447,7 @@ TOCType * CheckTOC(FSSpecPtr spec) {
  * ReadTOC - read the toc file for a mailbox
  * Ported from Mac: resource fork path removed, only data-fork
  ************************************************************************/
-TOCType * ReadTOC(FSSpecPtr spec) {
+TOCType * ReadTOC(char * spec) {
   TOCType * tocH = NULL;
   int insane = noErr;
 
@@ -456,9 +456,9 @@ TOCType * ReadTOC(FSSpecPtr spec) {
   if (tocH) {
     /* Don't take these for granted */
     tocH->durty = tocH->reallyDirty = false;
-    strncpy(tocH->path, spec->path, sizeof(tocH->path) - 1);
+    strncpy(tocH, spec, sizeof(tocH) - 1);
     tocH->path[sizeof(tocH->path) - 1] = '\0';
-    tocH->mailbox.spec = *spec;
+    g_strlcpy(tocH->mailbox.spec, spec, sizeof(tocH->mailbox.spec));
     tocH->refN = 0;
     tocH->win = NULL;
     tocH->volumeFree = 0;
@@ -505,18 +505,18 @@ TOCType * ReadTOC(FSSpecPtr spec) {
  * TOCDates - get the dates off a mailbox
  * Ported from Mac: AFSpGetMod/PeekRTOC → stat(). Resource fork date = 0
  ************************************************************************/
-int TOCDates(FSSpecPtr spec, unsigned long *box, unsigned long *res, unsigned long *file) {
+int TOCDates(char * spec, unsigned long *box, unsigned long *res, unsigned long *file) {
   struct stat st;
 
   /* Mailbox modification time */
-  if (stat(spec->path, &st) == 0)
+  if (stat(spec, &st) == 0)
     *box = (unsigned long)st.st_mtime;
   else
     *box = 0;
 
   /* .toc file modification time */
   char tocPath[PATH_MAX];
-  toc_file_path(spec->path, tocPath, sizeof(tocPath));
+  toc_file_path(spec, tocPath, sizeof(tocPath));
   if (stat(tocPath, &st) == 0)
     *file = (unsigned long)st.st_mtime;
   else
@@ -526,7 +526,7 @@ int TOCDates(FSSpecPtr spec, unsigned long *box, unsigned long *res, unsigned lo
   *res = 0;
 
   if (!*box && !*file) {
-    g_debug("TOCDates(%s): not found", path_basename(spec->path));
+    g_debug("TOCDates(%s): not found", path_basename(spec));
     return fnfErr;
   }
   return noErr;
@@ -536,12 +536,12 @@ int TOCDates(FSSpecPtr spec, unsigned long *box, unsigned long *res, unsigned lo
  * ReadDForkTOC - read a TOC from the data-fork .toc file
  * Ported from Mac: AFSpOpenDF/GetEOF/ARead → fopen/fread
  ************************************************************************/
-static int ReadDForkTOC(FSSpecPtr aSpec, TOCType * *inTOC) {
+static int ReadDForkTOC(char * aSpec, TOCType * *inTOC) {
   *inTOC = NULL;
 
   char tocPath[PATH_MAX];
-  toc_file_path(aSpec->path, tocPath, sizeof(tocPath));
-  const char *baseName = path_basename(aSpec->path);
+  toc_file_path(aSpec, tocPath, sizeof(tocPath));
+  const char *baseName = path_basename(aSpec);
 
   FILE *fp = fopen(tocPath, "rb");
   if (!fp) {
@@ -655,7 +655,7 @@ int WriteTOC(TOCType * tocH) {
   /* Get mailbox file size */
   struct stat st;
   long size = 0;
-  if (stat(tocH->path, &st) == 0)
+  if (stat(tocH, &st) == 0)
     size = (long)st.st_size;
 
   tocH->boxSize = size + 1; /* +1 signals we know it's ok */
@@ -663,11 +663,11 @@ int WriteTOC(TOCType * tocH) {
   tocH->unreadBase = tocH->count;
 
   char tocPath[PATH_MAX];
-  toc_file_path(tocH->path, tocPath, sizeof(tocPath));
+  toc_file_path(tocH, tocPath, sizeof(tocPath));
 
   FILE *fp = fopen(tocPath, "wb");
   if (!fp) {
-    g_warning("WriteTOC(%s): %s", path_basename(tocH->path), strerror(errno));
+    g_warning("WriteTOC(%s): %s", path_basename(tocH), strerror(errno));
     tocH->beingWritten--;
     return -1;
   }
@@ -694,7 +694,7 @@ int WriteTOC(TOCType * tocH) {
 
   size_t written = fwrite(&hdr, 1, sizeof(hdr), fp);
   if (written != sizeof(hdr)) {
-    g_warning("WriteTOC(%s): header write failed", path_basename(tocH->path));
+    g_warning("WriteTOC(%s): header write failed", path_basename(tocH));
     fclose(fp);
     unlink(tocPath);
     tocH->beingWritten--;
@@ -708,7 +708,7 @@ int WriteTOC(TOCType * tocH) {
       sum_to_disk(&tocH->sums[i], &diskSum);
       written = fwrite(&diskSum, 1, sizeof(diskSum), fp);
       if (written != sizeof(diskSum)) {
-        g_warning("WriteTOC(%s): sum[%d] write failed", path_basename(tocH->path), i);
+        g_warning("WriteTOC(%s): sum[%d] write failed", path_basename(tocH), i);
         fclose(fp);
         unlink(tocPath);
         tocH->beingWritten--;
@@ -720,7 +720,7 @@ int WriteTOC(TOCType * tocH) {
   fclose(fp);
 
   tocH->durty = tocH->reallyDirty = false;
-  g_debug("WriteTOC(%s): %d messages, %ld bytes", path_basename(tocH->path),
+  g_debug("WriteTOC(%s): %d messages, %ld bytes", path_basename(tocH),
           tocH->count, (long)TOCDiskSize(tocH->count));
 
   /* Fix up menu items */
@@ -751,14 +751,14 @@ static void FixBoxUnread(TOCType * tocH) {
   tocH->unreadBase = tocH->count;
 
   myItem = 0;
-  /* Build a minimal spec from tocH->path for legacy Spec2Menu API */
+  /* Build a minimal spec from tocH for legacy Spec2Menu API */
   memset(&spec, 0, sizeof(spec));
-  strncpy(spec.path, tocH->path, sizeof(spec.path) - 1);
-  strncpy(spec.name, path_basename(tocH->path), sizeof(spec.name) - 1);
+  strncpy(spec, tocH, sizeof(spec) - 1);
+  strncpy(spec_name(spec), path_basename(tocH), sizeof(spec_name(spec)) - 1);
   Spec2Menu(&spec, false, &myMenu, &myItem);
 
   if (myItem > 0) {
-    FixSpecUnread(spec.path, unread);
+    FixSpecUnread(spec, unread);
     FixMenuUnread(GetMHandle(myMenu), myItem, unread);
   }
 
@@ -848,7 +848,7 @@ TOCType * FindTOC(const char *path) {
   FSSpec tmpSpec;
   spec_make(NULL, path, &tmpSpec);
   for (TOCType *tocH = TOCList; tocH; tocH = tocH->next) {
-    FSSpec boxSpec = GetMailboxSpec(tocH, -1);
+    FSSpec boxSpec; GetMailboxSpec(tocH, -1, boxSpec);
     if (SameSpec(&boxSpec, &tmpSpec))
       return tocH;
   }
@@ -952,8 +952,8 @@ TOCType * GetSpecialTOC(short nameId) {
   /* Fall back to FSSpec-based lookup (loads/builds the TOC) */
   FSSpec spec;
   memset(&spec, 0, sizeof(spec));
-  strncpy(spec.path, path, sizeof(spec.path) - 1);
-  strncpy(spec.name, name, sizeof(spec.name) - 1);
+  strncpy(spec, path, sizeof(spec) - 1);
+  strncpy(spec_name(spec), name, sizeof(spec_name(spec)) - 1);
   return TOCBySpec(&spec);
 }
 
@@ -961,7 +961,7 @@ TOCType * GetSpecialTOC(short nameId) {
  * PeekTOC - peek into a .toc file to get basic info
  * Ported from Mac: resource fork path removed, data-fork only
  ************************************************************************/
-int PeekTOC(FSSpecPtr spec, TOCType *tocPart) {
+int PeekTOC(char * spec, TOCType *tocPart) {
   /* If already open, return the live copy */
   TOCType * tocH = FindTOC(spec);
   if (tocH) {
@@ -980,7 +980,7 @@ int PeekTOC(FSSpecPtr spec, TOCType *tocPart) {
 
   /* Read from .toc file (data fork) using disk header format */
   char tocPath[PATH_MAX];
-  toc_file_path(spec->path, tocPath, sizeof(tocPath));
+  toc_file_path(spec, tocPath, sizeof(tocPath));
 
   FILE *fp = fopen(tocPath, "rb");
   if (!fp)
@@ -1022,17 +1022,17 @@ static int InsaneTOC(TOCType * tocH) {
   /* Figure out how big the mailbox is */
   struct stat st;
   long boxSize = 0;
-  if (stat(tocH->path, &st) == 0)
+  if (stat(tocH, &st) == 0)
     boxSize = (long)st.st_size;
   else
     g_warning("InsaneTOC(%s): stat failed for '%s': %s",
-              path_basename(tocH->path), tocH->path, strerror(errno));
+              path_basename(tocH), tocH, strerror(errno));
 
   /* Right size? Allow off-by-one (Mac line ending differences) */
   if (tocH->boxSize && boxSize > 0 &&
       labs(tocH->boxSize - boxSize) > 1) {
     g_warning("InsaneTOC(%s): file size mismatch (toc=%ld, file=%ld)",
-              path_basename(tocH->path), tocH->boxSize, boxSize);
+              path_basename(tocH), tocH->boxSize, boxSize);
     return euMismatchTOC;
   }
   /* If stat failed (boxSize==0), update boxSize from actual file */
@@ -1046,7 +1046,7 @@ static int InsaneTOC(TOCType * tocH) {
         sum->bodyOffset < 0 || sum->bodyOffset > sum->length ||
         ((sum->offset + sum->length > boxSize) && !tocH->imapTOC)) {
       g_warning("InsaneTOC(%s): bad sum #%d (o=%ld b=%ld l=%ld s=%ld)",
-                path_basename(tocH->path), i, sum->offset, sum->bodyOffset, sum->length,
+                path_basename(tocH), i, sum->offset, sum->bodyOffset, sum->length,
                 boxSize);
       return euCorruptTOC;
     }
@@ -1054,7 +1054,7 @@ static int InsaneTOC(TOCType * tocH) {
 
   /* Wrong version number? */
   if (tocH->majorVersion > CURRENT_TOC_VERS) {
-    g_warning("InsaneTOC(%s): version mismatch (%ld != %d)", path_basename(tocH->path),
+    g_warning("InsaneTOC(%s): version mismatch (%ld != %d)", path_basename(tocH),
               tocH->majorVersion, CURRENT_TOC_VERS);
     return euBadVersion;
   }
@@ -1066,22 +1066,22 @@ static int InsaneTOC(TOCType * tocH) {
  * GetMailboxType - determine which special mailbox this is
  * Ported from Mac: EqualStrRes/IsRoot → strcasecmp on name
  ************************************************************************/
-static short GetMailboxType(FSSpecPtr spec) {
-  if (!spec || !spec->name[0])
+static short GetMailboxType(char * spec) {
+  if (!spec || !spec_name(spec)[0])
     return 0;
 
-  if (strcasecmp(spec->name, "In") == 0)
+  if (strcasecmp(spec_name(spec), "In") == 0)
     return IN;
-  if (strcasecmp(spec->name, "Out") == 0)
+  if (strcasecmp(spec_name(spec), "Out") == 0)
     return OUT;
-  if (strcasecmp(spec->name, "Trash") == 0)
+  if (strcasecmp(spec_name(spec), "Trash") == 0)
     return TRASH;
-  if (strcasecmp(spec->name, "Junk") == 0)
+  if (strcasecmp(spec_name(spec), "Junk") == 0)
     return JUNK;
-  if (IsSpool(spec->path)) {
-    if (strcasecmp(spec->name, "In.temp") == 0)
+  if (IsSpool(spec)) {
+    if (strcasecmp(spec_name(spec), "In.temp") == 0)
       return IN_TEMP;
-    if (strcasecmp(spec->name, "Out.temp") == 0)
+    if (strcasecmp(spec_name(spec), "Out.temp") == 0)
       return OUT_TEMP;
   }
   return 0;
@@ -1129,13 +1129,13 @@ short WantRebuildTOC(const char *boxName, int why, bool isIMAP) {
  * FixErrantTOC - we have determined that something is wrong with a TOC
  * Ported from Mac: WantRebuildTOC dialog + RebuildTOC
  ************************************************************************/
-static TOCType * FixErrantTOC(FSSpecPtr spec, TOCType * tocH, short why) {
+static TOCType * FixErrantTOC(char * spec, TOCType * tocH, short why) {
   /* Temp tocs: automatically rebuild */
   short which = GetMailboxType(spec);
   if (which == IN_TEMP || which == OUT_TEMP)
-    return RebuildTOC(spec->path, tocH, false, true);
+    return RebuildTOC(spec, tocH, false, true);
 
-  short result = WantRebuildTOC(spec->name, why,
+  short result = WantRebuildTOC(spec_name(spec), why,
                                 tocH && tocH->imapTOC != NULL);
 
   switch (result) {
@@ -1146,7 +1146,7 @@ static TOCType * FixErrantTOC(FSSpecPtr spec, TOCType * tocH, short why) {
     }
     return tocH;
   case 1: /* rebuild */
-    return RebuildTOC(spec->path, tocH, false, false);
+    return RebuildTOC(spec, tocH, false, false);
   case 2: /* cancel */
   default:
     g_free(tocH);
@@ -1172,7 +1172,7 @@ static short GetTOCK(TOCType * tocH, unsigned long *usedK, unsigned long *totalK
   *usedK = (unsigned long)(used / 1024);
 
   struct stat st;
-  if (stat(tocH->path, &st) == 0)
+  if (stat(tocH, &st) == 0)
     *totalK = (unsigned long)(st.st_size / 1024);
   else
     *totalK = 0;
@@ -1363,8 +1363,8 @@ TOCType *toc_load(const char *path) {
   /* Fall back to CheckTOC which loads/builds the TOC */
   FSSpec spec;
   memset(&spec, 0, sizeof(spec));
-  strncpy(spec.path, path, sizeof(spec.path) - 1);
-  strncpy(spec.name, path_basename(path), sizeof(spec.name) - 1);
+  strncpy(spec, path, sizeof(spec) - 1);
+  strncpy(spec_name(spec), path_basename(path), sizeof(spec_name(spec)) - 1);
   return CheckTOC(&spec);
 }
 

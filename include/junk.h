@@ -144,9 +144,9 @@ int FilterJunk(TOCType * fromTocH);
 
 void JunkTOCCleanse(TOCType * tocH);
 int ArchiveJunk(TOCType * tocH);
-bool SpecIsJunkSpec(FSSpecPtr spec);
+bool SpecIsJunkSpec(char * spec);
 bool BoxIsJunkBox(TOCType * tocH);
-void PreexistingJunkWarning(FSSpecPtr spec);
+void PreexistingJunkWarning(char * spec);
 short JunkRescanBox(TOCType * tocH);
 int JunkRescanJunkMailbox();
 int Junk(TOCType * tocH, short sumNum, bool isJunk, bool ezOpen);

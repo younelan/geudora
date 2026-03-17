@@ -34,7 +34,7 @@ typedef struct MailboxNode *MailboxNodeHandle;
 #include "TransStream.h"
 #endif
 
-typedef struct FSSpec FSSpec, *FSSpecPtr;
+/* FSSpec is defined in mailbox.h as char[PATH_MAX] */
 typedef struct Personality *PersHandle;
 typedef struct MailboxNode *MailboxNodeHandle;
 
@@ -292,8 +292,8 @@ bool DeleteIMAPMailbox(IMAPStreamPtr imapStream, const char *mailboxName);
 bool RenameIMAPMailbox(IMAPStreamPtr imapStream, const char *oldName,
                        const char *newName);
 bool FetchMailboxAttributes(IMAPStreamPtr imapStream, const char *mailboxName);
-bool MailboxAttributes(FSSpecPtr spec, struct IMAPMailboxAttributes *att);
-void LocateNodeBySpecInAllPersTrees(FSSpecPtr spec, MailboxNodeHandle *node,
+bool MailboxAttributes(char * spec, struct IMAPMailboxAttributes *att);
+void LocateNodeBySpecInAllPersTrees(char * spec, MailboxNodeHandle *node,
                                     PersHandle *pers);
 bool FetchMailboxStatus(IMAPStreamPtr imapStream, const char *mailboxName,
                         long flags);

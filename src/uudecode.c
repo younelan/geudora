@@ -68,7 +68,7 @@ struct UUGlobals_
 	unsigned char * buffer; /* receive map buffer */
 	short bSpot; /* current point in receive map buffer */
 	short bSize; /* Size of receive map buffer */
-	FSSpec spec;	/* FSSpec */
+	FSSpec spec;	/* char */
 	short refN;	/* file ref number */
 	char tmpName[64]; /* temporary file name */
 	char name[256]; /* file name */
@@ -141,10 +141,10 @@ int UUDecodeLine(char * encoded,long size,char * decoded,long *binSize);
 bool IsAppleSomething(char * text,long size);
 void RemoveDuds(void);
 void UUFileName(char *uuName, const char *shortName);
-bool ReallyIsText(FSSpecPtr spec);
+bool ReallyIsText(char * spec);
 bool JustDataWanna(MIMEMapPtr hintMM);
 short SaveJustData(char * encoded,long size);
-char *GetLongName(char *longName,FSSpecPtr spec);
+char *GetLongName(char *longName,char * spec);
 
 /************************************************************************
  * ConvertUUSingle - the UUencoded AppleSingle converter
@@ -295,8 +295,8 @@ bool BeginAbomination( char *name, HeaderDHandle hdh)
 		ClearAbomination();
 		Hdh = hdh;
 		// watch out for long filenames here!
-		g_strlcpy((char *)(Spec.name), (char *)(name), sizeof(Spec.name));
-		if (*Spec.name>31) *Spec.name = 31;
+		g_strlcpy((char*)(spec_name(Spec)), (char *)(name), PATH_MAX);
+		if (*((char*)spec_name(Spec))>31) *((char*)spec_name(Spec)) = 31;
 	}
 	return( true );
 }
@@ -317,9 +317,9 @@ short SaveAbomination(char * text, long size)
 				if (State!=AbDone && State!=AbExcess) BadBinHex = True;
 			}
 			if (AbClose()) BadBinHex = True;
-			if (Spec.path[0] && CommandPeriod)
-				{unlink(UUG->spec.path);ASSERT(0);}
-			else if (Spec.path[0] && HasDates)
+			if (Spec[0] && CommandPeriod)
+				{unlink(UUG->spec);ASSERT(0);}
+			else if (Spec[0] && HasDates)
 				AbSetDates();
 			if (Buffer) free(Buffer);
 			free(UUG);
@@ -426,9 +426,9 @@ short UULine(char * text, long size)
 			return(AbDone);
 		}
 		if (!(result=UUData(0xff & (UU(text[0])<<2 | UU(text[1])>>4)))) break;
-		if (length>1 && !(result=UUData(0xff & (UU(text[1])<<4 | UU(text[2])>>2))))
+		if (length>1 && !(result=UUData(0xff && (UU(text[1])<<4 | UU(text[2])>>2))))
 			break;
-		if (length>2 && !(result=UUData(0xff & (UU(text[2])<<6 | UU(text[3])))))
+		if (length>2 && !(result=UUData(0xff && (UU(text[2])<<6 | UU(text[3])))))
 			break;
 	}
 	if (!result) return(ClearAbomination());
@@ -458,14 +458,14 @@ bool JustDataWanna(MIMEMapPtr hintMM)
 	FInfo info;
 	int err;
 	
-	g_strlcpy((char *)(spec.name), (char *)(Name), sizeof(spec.name));
-	if (!*spec.name) GetRString(spec.name,UNTITLED);
-	if (!hintMM) FindMIMEMapPtr((unsigned char *)"?",(unsigned char *)"?",spec.name,&mm);
+	g_strlcpy((char*)(spec_name(spec)), (char *)(Name), PATH_MAX);
+	if (!*((char*)spec_name(spec))) GetRString(spec_name(spec),UNTITLED);
+	if (!hintMM) FindMIMEMapPtr((unsigned char *)"?",(unsigned char *)"?",spec_name(spec),&mm);
 	else mm = *hintMM;
 	
 	if (AutoWantTheFile(&spec,False,Hdh ? Hdh->relatedPart:false)/*|| WantTheFile(&spec)*/)
 	{
-		{ int _fd = open(spec.path, O_CREAT|O_EXCL|O_WRONLY, 0666); if (_fd >= 0) close(_fd); err = (_fd < 0 && errno != EEXIST) ? ioErr : 0; }
+		{ int _fd = open(spec, O_CREAT|O_EXCL|O_WRONLY, 0666); if (_fd >= 0) close(_fd); err = (_fd < 0 && errno != EEXIST) ? ioErr : 0; }
 		if (err==dupFNErr || err==0)
 		{
 			MyFSpGetFInfo(&spec, NULL, &info);
@@ -475,13 +475,13 @@ bool JustDataWanna(MIMEMapPtr hintMM)
 			MyFSpSetFInfo(&spec, NULL, &info);
 			err = 0;
 		}
-		Spec = spec;
-		if (err) {PopProgress(False); FileSystemError(BINHEX_CREATE,spec.name,err); return(False);}
+		g_strlcpy(Spec, spec, sizeof(Spec));
+		if (err) {PopProgress(False); FileSystemError(BINHEX_CREATE,spec_name(spec),err); return(False);}
 		if (err = AbOpen()) return(False);
 		State = AbJustData;
 		IsText = (mm.flags & mmIsText)!=0;
-		err = RecordAttachment(spec.path,Hdh);
-		Spec = spec;	// RecordAttachment may have changed the name....
+		err = RecordAttachment(spec,Hdh);
+		g_strlcpy(Spec, spec, sizeof(Spec));	// RecordAttachment may have changed the name....
 		if (err) ClearAbomination();
 		return(True);
 	}
@@ -552,8 +552,8 @@ int UUDecodeLine(char * encoded,long size,char * decoded,long *binSize)
 		for (encoded++;len>0;encoded+=4,len-=3)
 		{
 			if (spot<end) *spot++ = 0xff & (UU(encoded[0])<<2 | UU(encoded[1])>>4);
-			if (len>1 && spot<end) *spot++ = 0xff & (UU(encoded[1])<<4 | UU(encoded[2])>>2);
-			if (len>2 && spot<end) *spot++ = 0xff & (UU(encoded[2])<<6 | UU(encoded[3]));
+			if (len>1 && spot<end) *spot++ = 0xff && (UU(encoded[1])<<4 | UU(encoded[2])>>2);
+			if (len>2 && spot<end) *spot++ = 0xff && (UU(encoded[2])<<6 | UU(encoded[3]));
 		}
 	}
 	else
@@ -577,9 +577,9 @@ int UUDecodeLine(char * encoded,long size,char * decoded,long *binSize)
 		{
 			if (spot<end) *spot++ = 0xff & (UU(encoded[0])<<2 | UU(encoded[1])>>4);
 			FIX_NL;
-			if (len>1 && spot<end) *spot++ = 0xff & (UU(encoded[1])<<4 | UU(encoded[2])>>2);
+			if (len>1 && spot<end) *spot++ = 0xff && (UU(encoded[1])<<4 | UU(encoded[2])>>2);
 			FIX_NL;
-			if (len>2 && spot<end) *spot++ = 0xff & (UU(encoded[2])<<6 | UU(encoded[3]));
+			if (len>2 && spot<end) *spot++ = 0xff && (UU(encoded[2])<<6 | UU(encoded[3]));
 			FIX_NL;
 		}
 	}
@@ -720,17 +720,17 @@ bool AbTempName( void )
 	FSSpec spec;
 
 	UsedTemp = true;
-	spec = Spec;
+	g_strlcpy(spec, Spec, sizeof(spec));
 	
-	if (!*spec.name) GetRString(spec.name,SINGLE_TEMP);
+	if (!*((char*)spec_name(spec))) GetRString(spec_name(spec),SINGLE_TEMP);
 	if (AutoWantTheFile(&spec,False,Hdh->relatedPart)/*|| WantTheFile(&spec)*/)
 	{
-		Spec = spec;
-		g_strlcpy((char *)(TmpName), (char *)(Spec.name), sizeof(TmpName));
-		{ int _fd = open(spec.path, O_CREAT|O_EXCL|O_WRONLY, 0666); if (_fd >= 0) close(_fd); err = (_fd < 0 && errno != EEXIST) ? ioErr : 0; }
+		g_strlcpy(Spec, spec, sizeof(Spec));
+		g_strlcpy((char *)(TmpName), (char *)(spec_name(Spec)), sizeof(TmpName));
+		{ int _fd = open(spec, O_CREAT|O_EXCL|O_WRONLY, 0666); if (_fd >= 0) close(_fd); err = (_fd < 0 && errno != EEXIST) ? ioErr : 0; }
 		if (err && err != dupFNErr)
 		{
-			FileSystemError(BINHEX_CREATE,spec.name,err);
+			FileSystemError(BINHEX_CREATE,spec_name(spec),err);
 			(void) ClearAbomination();
 			return(False);
 		} else err = noErr;
@@ -762,7 +762,7 @@ bool AbNameStuff(uShort byte)
 				} else {
 				*Name = CurrMap.length;
 				}
-	spec = Spec;
+	g_strlcpy(spec, Spec, sizeof(spec));
 	SeenName = true;
 	if( !UsedTemp ){
 					// The situation here is that the first map we've come to is the name map
@@ -773,10 +773,10 @@ bool AbNameStuff(uShort byte)
 					// what, but we'll base it on the name we were given.  What does matter
 					// is that we use AutoWantTheFile to create it, since it will choose
 					// the proper folder to put the file in.
-					g_strlcpy((char *)(spec.name), (char *)(Name), sizeof(spec.name));
-					*spec.name = MIN(*spec.name,27);
+					g_strlcpy((char*)(spec_name(spec)), (char *)(Name), PATH_MAX);
+					*((char*)spec_name(spec)) = MIN(*((char*)spec_name(spec)),27);
 					AutoWantTheFile(&spec,False,Hdh->relatedPart);
-					{ int _fd = open(spec.path, O_CREAT|O_EXCL|O_WRONLY, 0666); if (_fd >= 0) { close(_fd); err = noErr; } else { err = (errno != EEXIST) ? ioErr : noErr; } }
+					{ int _fd = open(spec, O_CREAT|O_EXCL|O_WRONLY, 0666); if (_fd >= 0) { close(_fd); err = noErr; } else { err = (errno != EEXIST) ? ioErr : noErr; } }
 										
 					// If the name was very long, rename it to the proper name here
 					if (!err && *Name>27)
@@ -790,19 +790,19 @@ bool AbNameStuff(uShort byte)
 					// Did we win?
 					if (err)
 					{
-						FileSystemError(BINHEX_CREATE,spec.name,err);
+						FileSystemError(BINHEX_CREATE,spec_name(spec),err);
 						(void) ClearAbomination();
 						return(False);
 					}
 					
 					// Now, copy the stuff we used back into the globals
-					Spec = spec;
+					g_strlcpy(Spec, spec, sizeof(Spec));
 					g_strlcpy((char *)( TmpName), (char *)(Name ), sizeof( TmpName));
 					AbNextState();
 					BSpot = 0;
 					if( SeenName && SeenFinfo && !NoteAttached){
-									err = RecordAttachment(spec.path,Hdh);
-									Spec = spec;	// RecordAttachment may have changed the name
+									err = RecordAttachment(spec,Hdh);
+									g_strlcpy(Spec, spec, sizeof(Spec));	// RecordAttachment may have changed the name
 									NoteAttached = true;
 									if (err) ClearAbomination();
 					}
@@ -811,9 +811,9 @@ bool AbNameStuff(uShort byte)
 		// Instead, we had to write one or more maps using a temporary filename,
 		// which is in Spec and TmpName.  The correct name is now in the globals,
 		// in the field Name.  So we need to rename our temporary file.
-		spec = Spec;
+		g_strlcpy(spec, Spec, sizeof(spec));
 		g_strlcpy((char *)(name), (char *)(Name), sizeof(name));
-		if (!StringSame(spec.name,name)) 
+		if (!StringSame(spec_name(spec),name)) 
 		{
 			// the name differs from temp name
 			// We're just going to use the long filename routine here,
@@ -822,7 +822,7 @@ bool AbNameStuff(uShort byte)
 			err = FSpSetLongName(&spec,kTextEncodingUnknown,name,&spec);
 			if (!err) 
 			{
-				Spec = spec;
+				g_strlcpy(Spec, spec, sizeof(Spec));
 				g_strlcpy((char *)( Name), (char *)(name ), sizeof( Name));
 				g_strlcpy((char *)( TmpName), (char *)(name ), sizeof( TmpName));
 			}
@@ -836,8 +836,8 @@ bool AbNameStuff(uShort byte)
 		AbNextState();
 		BSpot = 0;
 		if( SeenName && SeenFinfo && !NoteAttached){
-						err = RecordAttachment(spec.path,Hdh);
-						Spec = spec;	// RecordAttachment may have changed the name
+						err = RecordAttachment(spec,Hdh);
+						g_strlcpy(Spec, spec, sizeof(Spec));	// RecordAttachment may have changed the name
 						if (err) ClearAbomination();
 						NoteAttached = true;
 		}
@@ -850,7 +850,7 @@ bool AbSetFinfo(uShort byte)
 	FInfo info;
 	FXInfo fxInfo;
 	short err;
-	FSSpec spec = Spec;
+	FSSpec spec; g_strlcpy(spec, Spec, sizeof(spec));
 
 				if(!SeenFinfo){
 								if( BSpot<sizeof(FInfo) ){
@@ -868,14 +868,14 @@ bool AbSetFinfo(uShort byte)
 				err = noErr;
 				if (err)
 				{
-					FileSystemError(BINHEX_OPEN,spec.name,err);
+					FileSystemError(BINHEX_OPEN,spec_name(spec),err);
 					(void) ClearAbomination();
 					return(False);
 				}
 				// FSpSetFXInfo(&spec,&fxInfo); // No-op
 				if( SeenName && SeenFinfo && !NoteAttached){
-								err = RecordAttachment(spec.path,Hdh);
-								Spec = spec;	// RecordAttachment may have changed the name
+								err = RecordAttachment(spec,Hdh);
+								g_strlcpy(Spec, spec, sizeof(Spec));	// RecordAttachment may have changed the name
 								if (err) ClearAbomination();
 								NoteAttached = true;
 				}
@@ -910,11 +910,11 @@ bool AbSaveFDates(uShort byte)
 
 int AbSetDates(void)
 {
-	FSSpec spec = Spec;
+	FSSpec spec; g_strlcpy(spec, Spec, sizeof(spec));
 	struct stat st;
 	int err = noErr;
 	unsigned long tooEarly = (unsigned long)GetRLong(TOO_EARLY_FILE);
-	const char *filePath = spec.path[0] ? spec.path : spec.name;
+	const char *filePath = spec[0] ? spec : spec_name(spec);
 
 	if (stat(filePath, &st) == 0)
 	{
@@ -941,7 +941,7 @@ short AbOpen(void)
 	short err;
 	short refN;
 	unsigned char * buffer;
-	FSSpec spec = Spec;
+	FSSpec spec; g_strlcpy(spec, Spec, sizeof(spec));
 	
 	if (!Buffer)
 		if (buffer=NuHTempBetter(GetRLong(RCV_BUFFER_SIZE)))
@@ -953,11 +953,11 @@ short AbOpen(void)
 		refN = -1; // No resource fork
 		err = noErr;
 	} else {
-		refN = open(spec.path, O_RDWR);
+		refN = open(spec, O_RDWR);
 		err = (refN >= 0) ? noErr : ioErr;
 	}
 	if (err)
-		FileSystemError(BINHEX_OPEN,spec.name,err);
+		FileSystemError(BINHEX_OPEN,spec_name(spec),err);
 	else
 		RefN = refN;
 	BSpot = 0;
@@ -1043,12 +1043,12 @@ bool AbNextState( void )
 
 				if (State==AbExcess && !NoteAttached)
 				{
-					FSSpec spec = Spec;
+					FSSpec spec; g_strlcpy(spec, Spec, sizeof(spec));
 					FInfo info = Info;
 					
 					// FSpSetFInfo is no-op
-					if (RecordAttachment(spec.path,Hdh)) ClearAbomination();
-					Spec = spec;	// RecordAttachment may have changed the name
+					if (RecordAttachment(spec,Hdh)) ClearAbomination();
+					g_strlcpy(Spec, spec, sizeof(Spec));	// RecordAttachment may have changed the name
 					NoteAttached = true;
 				}
 
@@ -1074,17 +1074,17 @@ UUHeader header;
 	struct stat st_1065;
 	/* Build a temporary FSSpec from the POSIX path */
 	FSSpec localSpec;
-	FSSpec *spec = &localSpec;
+	char *spec = &localSpec;
 	memset(&localSpec,0,sizeof(localSpec));
-	strncpy(localSpec.path, specPath ? specPath : "", sizeof(localSpec.path)-1);
+	strncpy(localSpec, specPath ? specPath : "", sizeof(localSpec)-1);
 	const char *bname = specPath ? strrchr(specPath,'/') : NULL;
-	if (bname) strncpy(localSpec.name, bname+1, sizeof(localSpec.name)-1);
-	else if (specPath) strncpy(localSpec.name, specPath, sizeof(localSpec.name)-1);
+	if (bname) strncpy(spec_name(localSpec), bname+1, PATH_MAX-1);
+	else if (specPath) strncpy(spec_name(localSpec), specPath, PATH_MAX-1);
 
-	if (stat(spec->path, &st_1065) == 0) err = noErr;
+	if (stat(spec, &st_1065) == 0) err = noErr;
 	else err = ioErr;
 	if (err)
-		return(FileSystemError(BINHEX_OPEN,spec->name,err));
+		return(FileSystemError(BINHEX_OPEN,spec_name(spec),err));
 	
 	/*
 	 * send the MIME header
@@ -1114,7 +1114,7 @@ UUHeader header;
 	/* filename */
 	header.maps[curMap].type = MAP_NAME;
 	header.maps[curMap].offset = offset;
-	header.maps[curMap].length = *spec->name;
+	header.maps[curMap].length = *((char*)spec_name(spec));
 	
 	offset += header.maps[curMap++].length;
 	
@@ -1135,11 +1135,11 @@ UUHeader header;
 	/* resource fork? */
 	if (hfi.hFileInfo.ioFlRLgLen)
 	{
-		refN = open(spec->path, O_RDONLY);
+		refN = open(spec, O_RDONLY);
 		err = (refN >= 0) ? noErr : ioErr;
 		if (err)
 		{
-			FileSystemError(BINHEX_OPEN,spec->name,err);
+			FileSystemError(BINHEX_OPEN,spec_name(spec),err);
 			goto done;
 		}
 		if (err=SendFromOpenFile(stream,B64Encoder,refN,hfi.hFileInfo.ioFlRLgLen)) goto done;
@@ -1150,7 +1150,7 @@ UUHeader header;
 	{
 		if (err=MyFSpOpenDF(spec,fsRdPerm,&refN))
 		{
-			FileSystemError(BINHEX_OPEN,spec->name,err);
+			FileSystemError(BINHEX_OPEN,spec_name(spec),err);
 			goto done;
 		}
 		if (err=SendFromOpenFile(stream,B64Encoder,refN,hfi.hFileInfo.ioFlLgLen)) goto done;
@@ -1240,14 +1240,14 @@ short err=noErr;
 	long fileSize;
 	FInfo info;
 	char hexCreator[16], hexType[16];
-	/* Build temporary FSSpec for internal APIs that still expect FSSpecPtr */
+	/* Build temporary FSSpec for internal APIs that still expect char * */
 	FSSpec localSpec;
-	FSSpec *spec = &localSpec;
+	char *spec = &localSpec;
 	memset(&localSpec,0,sizeof(localSpec));
-	strncpy(localSpec.path, specPath ? specPath : "", sizeof(localSpec.path)-1);
+	strncpy(localSpec, specPath ? specPath : "", sizeof(localSpec)-1);
 	const char *bname = specPath ? strrchr(specPath,'/') : NULL;
-	if (bname) strncpy(localSpec.name, bname+1, sizeof(localSpec.name)-1);
-	else if (specPath) strncpy(localSpec.name, specPath, sizeof(localSpec.name)-1);
+	if (bname) strncpy(spec_name(localSpec), bname+1, PATH_MAX-1);
+	else if (specPath) strncpy(spec_name(localSpec), specPath, PATH_MAX-1);
 
 	if (EqualStrRes(amp->mm.mimetype,MIME_TEXT))
 		return(SendPlain(stream,spec,flags & ~FLAG_WRAP_OUT,tableID,amp));
@@ -1274,7 +1274,7 @@ short err=noErr;
 								 NewLine);
 	if (!err) err = ComposeRTrans(stream,MIME_V_FMT,
 									 InterestHeadStrn+hContentEncoding,
-									 amp->isText&&!amp->isPostScript ? MIME_QP : MIME_BASE64,
+									 amp->isText&!amp->isPostScript ? MIME_QP : MIME_BASE64,
 									 NewLine);
 	if (err) goto done;
 	
@@ -1288,12 +1288,12 @@ short err=noErr;
 	 * open it
 	 */
 	if (err = MyFSpOpenDF(spec,fsRdPerm,&refN))
-		{FileSystemError(BINHEX_OPEN,spec->name,err); goto done;}
+		{FileSystemError(BINHEX_OPEN,spec_name(spec),err); goto done;}
 	if (err = GetEOF(refN,&fileSize))
-		{FileSystemError(BINHEX_OPEN,spec->name,err); goto done;}
+		{FileSystemError(BINHEX_OPEN,spec_name(spec),err); goto done;}
 	
-	err = SendFromOpenFile(stream,amp->isText&&!amp->isPostScript ? QPEncoder : B64Encoder,refN,fileSize);
-	if (!err) BufferSend(stream,amp->isText&&!amp->isPostScript ? QPEncoder : B64Encoder,NULL,0,False);
+	err = SendFromOpenFile(stream,amp->isText&!amp->isPostScript ? QPEncoder : B64Encoder,refN,fileSize);
+	if (!err) BufferSend(stream,amp->isText&!amp->isPostScript ? QPEncoder : B64Encoder,NULL,0,False);
 
 done:
 	BufferSendRelease(stream);
@@ -1341,7 +1341,7 @@ int SendFromOpenFile(TransStream stream,DecoderFunc *encoder,short refN,long siz
 /************************************************************************
  * FindAttMap - figure the types of a file to send
  ************************************************************************/
-int FindAttMap(FSSpecPtr spec,AttMapPtr amp)
+int FindAttMap(char * spec,AttMapPtr amp)
 {
 	FInfo info;
 	short err;
@@ -1354,7 +1354,7 @@ int FindAttMap(FSSpecPtr spec,AttMapPtr amp)
 	 */
 	if (err=MyFSpGetFInfo(spec, NULL, &info)) return(err);
 
-	FigureMIMEFromApple(info.fdCreator,info.fdType,spec->name,
+	FigureMIMEFromApple(info.fdCreator,info.fdType,spec_name(spec),
 											amp->mm.mimetype,amp->mm.subtype,
 											amp->mm.suffix,&flags,&amp->mm.specialId);
 	amp->isText = (flags & mmIsText)!=0;
@@ -1383,7 +1383,7 @@ int FindAttMap(FSSpecPtr spec,AttMapPtr amp)
 	amp->isPostScript = EqualStrRes(amp->mm.subtype, POSTSCRIPT);
 
 
-	Mac2OtherName(amp->shortName, spec->name);
+	Mac2OtherName(amp->shortName, spec_name(spec));
 	GetLongName(amp->longName, spec);
 
 	if (*amp->mm.suffix && !EndsWith(amp->shortName, amp->mm.suffix))
@@ -1396,10 +1396,10 @@ int FindAttMap(FSSpecPtr spec,AttMapPtr amp)
 /************************************************************************
  * GetLongName - get a long filename from an fsspec
  ************************************************************************/
-char *GetLongName(char *longName,FSSpecPtr spec)
+char *GetLongName(char *longName,char * spec)
 {
 	// we force us-ascii here because we're too chicken to generate the *= stuff
-	if (FSpGetLongName(spec, kTextEncodingUS_ASCII, longName) || StringSame(spec->name, longName))
+	if (FSpGetLongName(spec, kTextEncodingUS_ASCII, longName) || StringSame(spec_name(spec), longName))
 		*longName = 0;
 	
 	return longName;
@@ -1418,12 +1418,12 @@ int SendUU(TransStream stream, const char *specPath, AttMapPtr amp)
 	FInfo info;
 	/* Build temporary FSSpec for internal APIs */
 	FSSpec localSpec;
-	FSSpec *spec = &localSpec;
+	char *spec = &localSpec;
 	memset(&localSpec,0,sizeof(localSpec));
-	strncpy(localSpec.path, specPath ? specPath : "", sizeof(localSpec.path)-1);
+	strncpy(localSpec, specPath ? specPath : "", sizeof(localSpec)-1);
 	const char *bname = specPath ? strrchr(specPath,'/') : NULL;
-	if (bname) strncpy(localSpec.name, bname+1, sizeof(localSpec.name)-1);
-	else if (specPath) strncpy(localSpec.name, specPath, sizeof(localSpec.name)-1);
+	if (bname) strncpy(spec_name(localSpec), bname+1, PATH_MAX-1);
+	else if (specPath) strncpy(spec_name(localSpec), specPath, PATH_MAX-1);
 
 	MyFSpGetFInfo(spec, NULL, &info);
 
@@ -1447,7 +1447,7 @@ int SendUU(TransStream stream, const char *specPath, AttMapPtr amp)
 									 ATT_MAP_NAME(amp),
 									 NewLine);
 	struct stat st_1462;
-	stat(spec->path, &st_1462);
+	stat(spec, &st_1462);
 	if (!err && *R822Date(date,st_1462.st_mtime-ZoneSecs())) err = ComposeRTrans(stream,MIME_CT_ANNOTATE,
 									 AttributeStrn+aModDate,date,NewLine);
 	if (!err) err = ComposeRTrans(stream,MIME_V_FMT,
@@ -1465,14 +1465,14 @@ int SendUU(TransStream stream, const char *specPath, AttMapPtr amp)
 	 * open it
 	 */
 	if (err = MyFSpOpenDF(spec,fsRdPerm,&refN))
-		{FileSystemError(BINHEX_OPEN,spec->name,err); goto done;}
+		{FileSystemError(BINHEX_OPEN,spec_name(spec),err); goto done;}
 	if (err = GetEOF(refN,&fileSize))
-		{FileSystemError(BINHEX_OPEN,spec->name,err); goto done;}
+		{FileSystemError(BINHEX_OPEN,spec_name(spec),err); goto done;}
 		
   /*
 	 * make sure encoder gets initialized
 	 */
-	BufferSend(stream,UUEncoder,"",0,amp->isText&&!amp->isPostScript);
+	BufferSend(stream,UUEncoder,"",0,amp->isText&!amp->isPostScript);
 	
 	/*
 	 * send file
@@ -1531,7 +1531,7 @@ void UUFileName(char *uuName,const char *inShortName)
 /************************************************************************
  * ReallyIsText - is a file really a text file?
  ************************************************************************/
-bool ReallyIsText(FSSpecPtr spec)
+bool ReallyIsText(char * spec)
 {
 	void *taste=NULL;
 	long controls = 0;

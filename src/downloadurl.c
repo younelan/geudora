@@ -156,7 +156,7 @@ static void *DownloadURLThread(void *threadParameter)
 	
 	// Call finish callback
 	if (threadData->FinishFunc) {
-		info.spec = threadData->destSpec;
+		g_strlcpy(info.spec, threadData->destSpec, sizeof(info.spec));
 		// Use extracted checksum if available, otherwise 0
 		info.checksum = threadData->checksum[0] ? atoi(threadData->checksum) : 0;
 		threadData->FinishFunc(threadData->refCon, threadData->error, &info);
@@ -181,13 +181,13 @@ static void *DownloadURLThread(void *threadParameter)
 /************************************************************************
  * DownloadURL - download file specified by URL, supports HTTP/HTTPS
  ************************************************************************/
-int DownloadURL(const char *urlString, FSSpec * destSpec,long refCon,void (*FinishFunc)(long,int,DownloadInfo*),long *pReference,HTTPinfo *pHTTPstuff)
+int DownloadURL(const char *urlString, char *destSpec,long refCon,void (*FinishFunc)(long,int,DownloadInfo*),long *pReference,HTTPinfo *pHTTPstuff)
 {
 	URLParmsHandle threadData;
 	FILE *destFile;
 	
 	// Open destination file
-	destFile = fopen((const char *)destSpec->name, "wb");
+	destFile = fopen((const char *)spec_name(destSpec), "wb");
 	if (!destFile) {
 		return -1;
 	}
@@ -201,7 +201,7 @@ int DownloadURL(const char *urlString, FSSpec * destSpec,long refCon,void (*Fini
 	
 	// Setup thread data
 	strncpy(threadData->url, urlString, sizeof(threadData->url) - 1);
-	threadData->destSpec = *destSpec;
+	g_strlcpy(threadData->destSpec, destSpec, sizeof(threadData->destSpec));
 	threadData->destFile = destFile;
 	threadData->refCon = refCon;
 	threadData->FinishFunc = FinishFunc;

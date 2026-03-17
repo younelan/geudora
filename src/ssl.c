@@ -603,7 +603,7 @@ static int ESSLConnectTrans(TransStream stream, const char *serverName, long por
     /* Set up SSL context if SSL is requested */
     if (stream->ESSLSetting > 1) {
         err = SetupSSLConnection(stream);
-        if (err && !(stream->ESSLSetting & esslOptional))
+        if (err && !(stream->ESSLSetting && esslOptional))
             return err;
 
         /* For alternate port (implicit SSL), handshake immediately */

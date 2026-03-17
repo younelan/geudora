@@ -28,7 +28,7 @@ DAMAGE. */
  ************************************************************************/
 typedef struct AttMapStruct *AttMapPtr;
 
-int SendBinHex(TransStream stream,FSSpecPtr spec,AttMapPtr amp);
+int SendBinHex(TransStream stream,char * spec,AttMapPtr amp);
 int MIMEFileHeader(TransStream stream,AttMapPtr amp,short convertID,long modDate);
 
 

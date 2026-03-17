@@ -344,7 +344,7 @@ static const StrEntry string_table[] = {
   {6014, "Couldn't create your Address Book file."}, /* CREATING_ALIAS */
   {6015, "Couldn't create the mailbox."}, /* CREATING_MAILBOX */
   {6016, "Closing the connection."}, /* CTB_CLOSING */
-  {6017, "\\015\\012"}, /* CTB_NEWLINE */
+  {6017, "\015\012"}, /* CTB_NEWLINE */
   {6018, "Communications Toolbox error."}, /* CTB_PROBLEM */
   {6019, "Cut failed."}, /* CUT_FAILED */
   {6020, "%r %p"}, /* DATE_HEADER */
@@ -373,7 +373,7 @@ static const StrEntry string_table[] = {
   {6203, ", \\t"}, /* DELIMITERS */
   {6204, "Finding"}, /* DNR_LOOKUP */
   {6205, "3"}, /* DOUBLE_TOLERANCE */
-  {6206, "The \"\\0xE9\" in \"Check for mail every \\0xE9 minute(s)\" must be a number."}, /* EXPL_INTERVAL */
+  {6206, "The \"\0xE9\" in \"Check for mail every \0xE9 minute(s)\" must be a number."}, /* EXPL_INTERVAL */
   {6207, "The \"POP Account\" should be an user name, followed by an \"@\", followed by a host name.\\nFOR EXAMPLE, \"joe@ux8.cso.uiuc.edu\"."}, /* EXPL_POP */
   {6208, "The \"SMTP Server\" must be a host name.\\nFOR EXAMPLE, \"ux8.cso.uiuc.edu\"."}, /* EXPL_SMTP */
   {6209, "Eudora cannot continue."}, /* FATAL */
@@ -451,7 +451,7 @@ static const StrEntry string_table[] = {
   {6601, "Couldn't move the mailbox."}, /* MOVE_MAILBOX */
   {6602, "Navigate In"}, /* NAVIN */
   {6603, "Navigate Out"}, /* NAVOUT */
-  {6604, "\\015\\012"}, /* NEWLINE */
+  {6604, "\015\012"}, /* NEWLINE */
   {6605, "New...<I"}, /* NEW_ITEM_TEXT */
   {6606, "Colons (\":\") are not allowed in mailbox names."}, /* NO_COLONS_HERE */
   {6607, "Couldn't add scroll bars to the window."}, /* NO_CONTROL */
@@ -551,8 +551,8 @@ static const StrEntry string_table[] = {
   {7101, "0"}, /* IN_IN_STYLE */
   {7102, "6000,6000,48000"}, /* URL_COLOR */
   {7103, "4"}, /* URL_STYLE */
-  {7104, "<[{(\"'`\\'\\\""}, /* URL_LEFT */
-  {7105, ">]})\"'\\'\\'\\\""}, /* URL_RIGHT */
+  {7104, "<[{(\"'`'\""}, /* URL_LEFT */
+  {7105, ">]})\"'''\\\""}, /* URL_RIGHT */
   {7106, "$-_.+!*'(),%;/?:@&=#~^"}, /* URL_IN_OK */
   {7107, "Empty"}, /* EMPTY_BUTTON */
   {7108, "The trash contains %d message%#.  Do you wish to empty it now?"}, /* EMPTY_TRASH_FMT */
@@ -618,7 +618,7 @@ static const StrEntry string_table[] = {
   {7408, ".toc"}, /* TOC_SUFFIX */
   {7409, "You have more than 100 subfolders in your Eudora folder.  Use the Finder to remove some folders."}, /* TOO_MANY_LEVELS */
   {7410, "Recipient names must be less than 62 characters."}, /* TO_TOO_LONG */
-  {7411, "\\0xd0>"}, /* TRANSFER_PREFIX */
+  {7411, "\0xd0>"}, /* TRANSFER_PREFIX */
   {7412, "Trash"}, /* TRASH */
   {7413, "telnet %p %d /stream\\n"}, /* TS_CONNECT_FMT */
   {7414, "Undo"}, /* UNDO */
@@ -685,15 +685,15 @@ static const StrEntry string_table[] = {
   {7715, "Disposition: %r/%r; %r%p"}, /* MDN_DISPOSITION */
   {7716, "report"}, /* MIME_REPORT */
   {7717, "disposition-notification"}, /* MDN_DISPO_NOTIFY */
-  {7718, "Your message of %p regarding ``%p''\\015has been %r by %p.\\015\\015"}, /* MDN_DESCRIP */
-  {7719, ";report-type=disposition-notification\\015"}, /* MDN_REPORT_PARAM */
+  {7718, "Your message of %p regarding ``%p''\015has been %r by %p.\015\015"}, /* MDN_DESCRIP */
+  {7719, ";report-type=disposition-notification\015"}, /* MDN_REPORT_PARAM */
   {7720, "Notification for ``%p''"}, /* MDN_SUBJECT */
   {7801, "128"}, /* BOX_SIZE_SIZE */
   {7802, "You may change the subject that appears in the mailbox window and window title by editing this text."}, /* SUB_EDIT_HELP */
   {7803, "This is the text of the message you were sent; you may only change it if you select the pencil icon above."}, /* MESS_HELP */
   {7804, "9"}, /* OLD_BOX_SIZE_FONT_SIZE */
   {7805, ":;,@<>()[]\\\""}, /* ALIAS_VERBOTEN */
-  {7806, "The characters \":;@<>()[]\\\"\\',\" are not allowed in nicknames (they can go in the Address(es) section, just not the nickname itself."}, /* WARN_VERBOTEN */
+  {7806, "The characters \":;@<>()[]\\\"\',\" are not allowed in nicknames (they can go in the Address(es) section, just not the nickname itself."}, /* WARN_VERBOTEN */
   {7807, "You have new mail."}, /* NEW_MAIL */
   {7808, "(%c%p%p)"}, /* LDAP_TERM_COMBINER */
   {7809, "The attachment is an unknown AppleSingle version:"}, /* UU_BAD_VERSION */
@@ -1585,7 +1585,7 @@ static const StrEntry string_table[] = {
   {13914, "x-eudora"}, /* X_EUDORA */
   {13915, "Registered To: %p, %p %r (%p)"}, /* ABOUT_REG_W_OLD */
   {13916, "Registered To: %p, %p %r"}, /* ABOUT_REG */
-  {13917, "%r\\000%p\\000%p"}, /* AUTHPLAIN_FMT */
+  {13917, "%r\000%p\000%p"}, /* AUTHPLAIN_FMT */
   {13918, ""}, /* ANAL_WHITE */
   {13919, "Authentication is required.\nThe SMTP server for %p wants you to authorize, but you have forbidden it, so the send will probably fail.  Do you want to allow authorization?\nTry Anyway\nCancel-\nAllow-"}, /* RECONSIDER_AUTH */
   {13920, "Refreshing IMAP Cache"}, /* IMAP_CACHE_MESSAGE */
@@ -1672,9 +1672,9 @@ static const StrEntry string_table[] = {
   {14901, "Save Address Book"}, /* NICK_SAVE_AS_TITLE */
   {14902, "There was an error while exporting nicknames.  Use the export file with extreme caution."}, /* NICK_EXPORT_FAIL */
   {14903, ","}, /* NICK_EXPORT_COMMA */
-  {14904, "\\015"}, /* NICK_EXPORT_EOL */
-  {14905, "\\004"}, /* NICK_COMMA_REPLACE_CHAR */
-  {14906, "\\003"}, /* NICK_CR_REPLACE_CHAR */
+  {14904, "\015"}, /* NICK_EXPORT_EOL */
+  {14905, "\004"}, /* NICK_COMMA_REPLACE_CHAR */
+  {14906, "\003"}, /* NICK_CR_REPLACE_CHAR */
   {14907, "Save As..."}, /* SAVE_AS_ITEXT */
   {14908, "Save Selection As..."}, /* SAVE_AS_SEL_ITEXT */
   {14909, "Exporting Nicknames..."}, /* EXPORTING_NICKNAMES */

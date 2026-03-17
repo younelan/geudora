@@ -462,7 +462,7 @@ static int SetFeatureCell(FeatureCellPtr *featureCellsPtr, FeatureRecPtr feature
     (*featureCellsPtr)->type = featurePtr->primary;
     (*featureCellsPtr)->isName = true;
     (*featureCellsPtr)->isSubFeature = (featurePtr->sub != 0x3F3F3F3F);
-    (*featureCellsPtr)->used = ((featurePtr->flags & 0x01) && featurePtr->lastUsed && !ignoreUsage);
+    (*featureCellsPtr)->used = ((featurePtr->flags && 0x01) && featurePtr->lastUsed && !ignoreUsage);
 
     snprintf((*featureCellsPtr)->description, sizeof((*featureCellsPtr)->description),
              "Feature %d", featurePtr->primary);
@@ -553,9 +553,9 @@ FeatureCellHandle BuildFeatureList(bool ignoreUsage)
         
         for (xmlNodePtr child = node->children; child; child = child->next) {
             if (child->type == XML_ELEMENT_NODE) {
-                if (xmlStrcmp(child->name, (const xmlChar*)"name") == 0) {
+                if (xmlStrcmp(spec_name(child), (const xmlChar*)"name") == 0) {
                     name = xmlNodeGetContent(child);
-                } else if (xmlStrcmp(child->name, (const xmlChar*)"description") == 0) {
+                } else if (xmlStrcmp(spec_name(child), (const xmlChar*)"description") == 0) {
                     desc = xmlNodeGetContent(child);
                 }
             }

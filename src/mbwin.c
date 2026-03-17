@@ -615,8 +615,8 @@ static void on_mb_row_activated(GtkTreeView *tree_view, GtkTreePath *path,
     /* Open this mailbox */
     FSSpec spec;
     memset(&spec, 0, sizeof(spec));
-    strncpy(spec.path, mb_path, sizeof(spec.path) - 1);
-    strncpy(spec.name, name ? name : "", sizeof(spec.name) - 1);
+    strncpy(spec, mb_path, sizeof(spec) - 1);
+    strncpy(spec_name(spec), name ? name : "", sizeof(spec_name(spec)) - 1);
     OpenMailbox(&spec, true, NULL);
   }
 

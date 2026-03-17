@@ -123,7 +123,7 @@ int ETLCanTranslate(TLMHandle translators, short context, emsMIMEHandle emsMIME,
                     tlStringHandle *errorStr, long *errCode,
                     emsHeaderDataP addrList, HeaderDHandle hdh);
 int ETLRemoveDeadTranslators(TLMHandle translators);
-int ETLInterpretFile(short context, FSSpecPtr source, short resultRefN,
+int ETLInterpretFile(short context, char * source, short resultRefN,
                      AccuPtr resultAcc, emsHeaderDataP addrList,
                      bool *dontSave);
 void ETLDoAbout(void);
@@ -142,13 +142,13 @@ void DisposeTLMIME(emsMIMEHandle emsMIME);
     DisposeTLMIME(m);                                                          \
     m = nil;                                                                   \
   } while (0)
-int RecordTLID(FSSpecPtr spec, uLong id);
+int RecordTLID(char * spec, uLong id);
 int AddTLMIME(emsMIMEHandle emsMIME, short what, char *name,
               char *value);
 int FlattenTLMIME(emsMIMEHandle emsMIME, FlatTLMIMEHandle *flat);
 int UnflattenTLMIME(FlatTLMIMEHandle flat, emsMIMEHandle *tlMIME);
 int TransRecvLine(TransStream stream, unsigned char * line, long *size);
-int ETLDisplayFile(FSSpecPtr spec, PETEHandle pte);
+int ETLDisplayFile(char * spec, PETEHandle pte);
 int ETLAddIcons(MyWindowPtr win, short startNumber);
 long ETLIconToID(short which);
 int ETLIconToDescriptions(short which, unsigned char *module,
@@ -157,12 +157,12 @@ short ETLIDToIndex(long id);
 short ETLSendMessage(TransStream stream, MessHandle messH, bool chatter,
                      bool sendDataCmd);
 int ETLCanTransOut(MessHandle messH);
-int ETLTransOut(MessHandle messH, emsMIMEHandle emsMIME, FSSpecPtr from,
-                FSSpecPtr to);
+int ETLTransOut(MessHandle messH, emsMIMEHandle emsMIME, char * from,
+                char * to);
 int ETLTransSelection(PETEHandle pte, HSPtr hs, short item);
 long ETLID(TLMHandle tl, short index);
 int ETLIDToFileIcon(long id, void ***suite);
-int ETLReadTL(FSSpecPtr spec, long *id);
+int ETLReadTL(char * spec, long *id);
 bool ETLExists(void);
 int ETLSpecial(short item);
 void ETLEnableSpecialItems();
@@ -183,7 +183,7 @@ void ETLButtonHit(MyWindowPtr win, short item);
 bool ETLClickContextMenu(MyWindowPtr win, Point pt, Rect *rSizeBox);
 bool ETLHasMBoxContextFolder(MyWindowPtr win);
 short ETLMBoxContextFolder(MyWindowPtr win, short *vRefNum, long *dirID);
-int ETLGetPluginFolderSpec(FSSpec *spec, short nameId);
+int ETLGetPluginFolderSpec(char *spec, short nameId);
 void **ETLMenu2Icon(short menu, short item);
 void ETLAddToToolbar(void);
 short ETLBoxTagWidth(MyWindowPtr win);

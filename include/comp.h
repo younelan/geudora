@@ -46,7 +46,7 @@ bool CloseMyWindow(void *winWP);
 
 /* Exported comp APIs */
 MyWindowPtr DoComposeNew(int type);
-void ApplyStationeryLo(MyWindowPtr win, FSSpecPtr spec, bool b1, bool b2,
+void ApplyStationeryLo(MyWindowPtr win, char * spec, bool b1, bool b2,
                        bool b3);
 
 /* Helpers to fill compose window fields */

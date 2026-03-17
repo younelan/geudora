@@ -315,7 +315,7 @@ void InitPersonalities(void)
 			if (!accounts[ai].enabled || !accounts[ai].name[0]) continue;
 			pers = PersNew();
 			if (!pers) break;
-			g_strlcpy(pers->name, accounts[ai].name, sizeof(pers->name));
+			spec_set_name(pers, accounts[ai].name);
 			pers->persId = Hash(pers->name);
 			pers->dirty = False;
 			pers->checkTicks = 0;
@@ -340,7 +340,7 @@ void InitPersonalities(void)
 void PushPers(PersHandle newCur)
 {
 	if (PersStack || !StackInit(sizeof(PersHandle),&PersStack))
-		StackPush(&CurPers,PersStack);
+		StackPush(&CurPers, &PersStack);
 	if (newCur) CurPers = newCur;
 }
 

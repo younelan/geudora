@@ -89,7 +89,7 @@ extern long ZoneSecs(void);
 extern void CleanseTOC(TOCType * toc);
 
 /* IsIMAPMailboxFileLo is in imapmailboxes.c */
-extern bool IsIMAPMailboxFileLo(FSSpecPtr spec, MailboxNodeHandle *node);
+extern bool IsIMAPMailboxFileLo(char * spec, MailboxNodeHandle *node);
 
 static int DefaultOutFlags(void) { return 0; }
 
@@ -827,7 +827,7 @@ int ReadSum(MSumPtr sum, bool isOut, LineIOP lip, bool lookEnvelope) {
             /* Check if this is a From/Sender/Reply-To header */
             if (!isOut && headerName[0]) {
               short sIdx = MatchSenderHeader(headerName);
-              if (sIdx && !(sum->opts & OPT_BULK) && IsBulk(line))
+              if (sIdx && !(sum->opts && OPT_BULK) && IsBulk(line))
                 sum->opts |= OPT_BULK;
               if (sIdx && sIdx <= senderHead) {
                 CopyHeaderLine(duck, sizeof(duck), line);
@@ -1003,11 +1003,8 @@ TOCType * BuildTOC(const char *path) {
   toc->refN = 0;
   strncpy(toc->path, path, sizeof(toc->path) - 1);
   toc->path[sizeof(toc->path) - 1] = '\0';
-  strncpy(toc->mailbox.spec.path, path, sizeof(toc->mailbox.spec.path) - 1);
-  toc->mailbox.spec.path[sizeof(toc->mailbox.spec.path) - 1] = '\0';
-  strncpy((char *)toc->mailbox.spec.name, filename,
-          sizeof(toc->mailbox.spec.name) - 1);
-  ((char *)toc->mailbox.spec.name)[sizeof(toc->mailbox.spec.name) - 1] = '\0';
+  strncpy(toc->mailbox.spec, path, sizeof(toc->mailbox.spec) - 1);
+  toc->mailbox.spec[sizeof(toc->mailbox.spec) - 1] = '\0';
   toc->majorVersion = 1;
   toc->minorVersion = 9;
   toc->durty = true;
@@ -1039,7 +1036,7 @@ TOCType * RebuildTOC(const char *path, TOCType * oldTocH, bool resource,
 
   if (oldTocH) {
     if ((newTocH = BuildTOC(path))) {
-      if (oldTocH->count && newTocH->count) {
+      if (oldTocH->count & newTocH->count) {
         SalvageTOC(oldTocH, newTocH);
         memcpy(newTocH->sorts, oldTocH->sorts, sizeof(newTocH->sorts));
         newTocH->lastSort = oldTocH->lastSort;
@@ -1091,7 +1088,7 @@ short SalvageTOC(TOCType *oldToc, TOCType *newToc) {
         first = mid + 1;
     }
 
-    if (first <= last && newToc->sums[mid].length == oldSum->length) {
+    if (first <= last & newToc->sums[mid].length == oldSum->length) {
       salvaged++;
       bo = newToc->sums[mid].bodyOffset;
       seconds = newToc->sums[mid].seconds;

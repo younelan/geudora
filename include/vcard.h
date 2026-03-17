@@ -235,7 +235,7 @@ typedef Boolean	(*VCardErrorProc) (void *vCard, VCardItemPtr itemPtr, long refco
 bool IsVCardAvailable (void);
 void *MakeVCard (void *addresses, void *notes);
 int		ParseVCard (void *vCard, uLong *offset, XDashStringHandle xDashStrings, VCardItemProc itemProc, VCardErrorProc errorProc, long refcon);
-Boolean	IsVCardFile (FSSpecPtr spec);
+Boolean	IsVCardFile (char * spec);
 char *		MakeVCardFileName (short ab,short nick, char * filename);
 
 #endif

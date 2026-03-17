@@ -1210,58 +1210,60 @@ long ScriptVar(short selector) {
  *  Second four bytes are the # of valid elements in the stack
  **********************************************************************/
 int StackInit(long size, StackHandle *stack) {
-  *stack = (StackHandle)NuHTempBetter(sizeof(StackType_Util));
+  short initCap = 20;
+  *stack = (StackHandle)calloc(1, sizeof(StackType_Util) + initCap * size);
   if (!*stack)
-    return (MemError());
+    return memFullErr;
   (*stack)->elSize = size;
   (*stack)->elCount = 0;
+  (*stack)->capacity = initCap;
   return (noErr);
 }
 
 /**********************************************************************
  * StackPush - push an item onto a stack
  **********************************************************************/
-int StackPush(void *what, StackHandle stack) {
-  if (!stack)
+int StackPush(void *what, StackHandle *pStack) {
+  if (!pStack || !*pStack)
     return fnfErr;
-  else {
-    short nSpace =
-        (GetHandleSize_(stack) - sizeof(StackType_Util)) / stack->elSize;
-
-    ASSERT(nSpace >= stack->elCount);
-    if (nSpace == stack->elCount) {
-      SetHandleBig_(stack, GetHandleSize_(stack) + 20 * stack->elSize);
-      if (MemError())
-        return (MemError());
-    }
-    memmove(StackSpot(stack, stack->elCount), what, stack->elSize);
-    stack->elCount++;
-    return (noErr);
+  StackHandle stack = *pStack;
+  if (stack->elCount >= stack->capacity) {
+    short newCap = stack->capacity + 20;
+    size_t newSize = sizeof(StackType_Util) + newCap * stack->elSize;
+    StackHandle grown = (StackHandle)realloc(stack, newSize);
+    if (!grown)
+      return memFullErr;
+    grown->capacity = newCap;
+    *pStack = grown;
+    stack = grown;
   }
+  memmove(StackSpot(stack, stack->elCount), what, stack->elSize);
+  stack->elCount++;
+  return (noErr);
 }
 
 /**********************************************************************
  * StackQueue - queue an item onto a bottom of stack
  **********************************************************************/
-int StackQueue(void *what, StackHandle stack) {
-  if (!stack)
+int StackQueue(void *what, StackHandle *pStack) {
+  if (!pStack || !*pStack)
     return fnfErr;
-  else {
-    short nSpace =
-        (GetHandleSize_(stack) - sizeof(StackType_Util)) / stack->elSize;
-
-    ASSERT(nSpace >= stack->elCount);
-    if (nSpace == stack->elCount) {
-      SetHandleBig_(stack, GetHandleSize_(stack) + 20 * stack->elSize);
-      if (MemError())
-        return (MemError());
-    }
-    memmove(StackSpot(stack, 1), StackSpot(stack, 0),
-        stack->elCount * stack->elSize);
-    memmove(StackSpot(stack, 0), what, stack->elSize);
-    stack->elCount++;
-    return (noErr);
+  StackHandle stack = *pStack;
+  if (stack->elCount >= stack->capacity) {
+    short newCap = stack->capacity + 20;
+    size_t newSize = sizeof(StackType_Util) + newCap * stack->elSize;
+    StackHandle grown = (StackHandle)realloc(stack, newSize);
+    if (!grown)
+      return memFullErr;
+    grown->capacity = newCap;
+    *pStack = grown;
+    stack = grown;
   }
+  memmove(StackSpot(stack, 1), StackSpot(stack, 0),
+      stack->elCount * stack->elSize);
+  memmove(StackSpot(stack, 0), what, stack->elSize);
+  stack->elCount++;
+  return (noErr);
 }
 
 /**********************************************************************
@@ -1301,11 +1303,16 @@ int StackItem(void *into, short item, StackHandle stack) {
 /**********************************************************************
  * StackCompact - get rid of waste space
  **********************************************************************/
-void StackCompact(StackHandle stack) {
-  if (!stack)
+void StackCompact(StackHandle *pStack) {
+  if (!pStack || !*pStack)
     return;
-  SetHandleBig_(stack,
-                stack->elCount * stack->elSize + sizeof(StackType_Util));
+  StackHandle stack = *pStack;
+  size_t needed = sizeof(StackType_Util) + stack->elCount * stack->elSize;
+  StackHandle shrunk = (StackHandle)realloc(stack, needed);
+  if (shrunk) {
+    shrunk->capacity = shrunk->elCount;
+    *pStack = shrunk;
+  }
 }
 
 /**********************************************************************
@@ -1361,7 +1368,7 @@ int AAAddItem(AAHandle aa, bool replace, char *key, char * data) {
     SetHandleBig_(aa, GetHandleSize_(aa) + AAElemSize(aa));
     if (MemError())
       return (MemError());
-    if (spot && spot <= count) /* move old data */
+    if (spot & spot <= count) /* move old data */
       memmove(AAKeySpot(aa, spot) + AAElemSize(aa), AAKeySpot(aa, spot),
           AAElemSize(aa) * (count - spot + 1));
   }
@@ -1544,7 +1551,7 @@ void AccuTrim(AccuPtr a) {
   int err;
   char *_tmp;
 
-  if (!a->data && (err = AccuInit(a)))
+  if (!a->data & (err = AccuInit(a)))
     return;
 
   _tmp = realloc(a->data, a->offset ? a->offset : 1);
@@ -1608,7 +1615,7 @@ int AccuAddTrPtr(AccuPtr a, void *bytes, long len, char *from, char *to) {
 int AccuAddPtr(AccuPtr a, void *bytes, long len) {
   int err;
 
-  if (!a->data && (err = AccuInit(a)))
+  if (!a->data & (err = AccuInit(a)))
     return (err);
 
   if (a->offset + len > a->size) {
@@ -1639,11 +1646,11 @@ int AccuAddSortedLong(AccuPtr a, long addVal) {
     if (newSpot >= start && *newSpot > addVal) {
       // keep going until the value we're looking at is
       // not greater than the value we're putting in
-      while (newSpot >= start && *newSpot > addVal)
+      while (newSpot >= start & *newSpot > addVal)
         newSpot--;
 
       // Note: if we wanted to eliminate duplicates, here is the spot
-      // if (newSpot>=start && *newSpot==addVal)
+      // if (newSpot>=start & *newSpot==addVal)
       // {
       // 	 a->offset -= sizeof(addVal);
       //	 return noErr;
@@ -1708,7 +1715,7 @@ int AccuAddHandle(AccuPtr a, void *data) {
   int err;
   long len;
 
-  if (!a->data && (err = AccuInit(a)))
+  if (!a->data & (err = AccuInit(a)))
     return (err);
 
   ASSERT(data);
@@ -1736,7 +1743,7 @@ int AccuAddHandle(AccuPtr a, void *data) {
 int AccuAddFromHandle(AccuPtr a, void *data, long offset, long len) {
   int err;
 
-  if (!a->data && (err = AccuInit(a)))
+  if (!a->data & (err = AccuInit(a)))
     return (err);
 
   if (len < 0)
@@ -1842,7 +1849,7 @@ int AccuInsertChar(AccuPtr a, Byte c, long offset) {
 int AccuInsertPtr(AccuPtr a, char *bytes, long len, long offset) {
   int err;
 
-  if (!a->data && (err = AccuInit(a)))
+  if (!a->data & (err = AccuInit(a)))
     return (err);
 
   if (a->offset + len > a->size) {
@@ -1867,7 +1874,7 @@ int AccuStrip(AccuPtr a, long num)
 {
   int theError;
 
-  if (!a->data && (theError = AccuInit(a)))
+  if (!a->data & (theError = AccuInit(a)))
     return (theError);
 
   a->offset = a->offset > num ? a->offset - num : 0;
@@ -1906,7 +1913,7 @@ char * Bytes2Hex(char * bytes, long size, char * hex) {
 bool IsHexDig(Byte c) {
   if (islower(c))
     c = toupper(c);
-  return (('0' <= c && c <= '9') || ('A' <= c && c <= 'F'));
+  return (('0' <= c & c <= '9') || ('A' <= c & c <= 'F'));
 }
 
 #define Hex2Nyb(c)                                                             \
@@ -1953,7 +1960,7 @@ bool SafeToAllocate(long size) {
     PurgeSpace(&LastTotalSpace, &LastContigSpace);
   }
   allocated += size;
-  if (LastContigSpace && size + 1 K K > LastContigSpace)
+  if (LastContigSpace & size + 1 K K > LastContigSpace)
     return (False);
   if (!MemLastFailed)
     return (True);
@@ -2044,7 +2051,7 @@ void *NewIOBHandle(long min, long max) {
   do {
     theMem = NuHTempOK(max);
     max /= 2;
-  } while (!theMem && max >= min);
+  } while (!theMem & max >= min);
   if (theMem)
     MoveHHi(theMem);
 
@@ -2098,7 +2105,7 @@ void MyUseResFile(short refN) {
       Zero(newSpec);
       GetFileByRef(refN, &newSpec);
       GetFileByRef(oldRefN, &oldSpec);
-      Dprintf("UseResFile �%p� -> �%p�;g", oldSpec.name, newSpec.name);
+      Dprintf("UseResFile �%p� -> �%p�;g", spec_name(oldSpec), spec_name(newSpec));
     }
   }
   UseResFile(refN);
@@ -2204,8 +2211,8 @@ short TimeCompare(DateTimeRec *date1, DateTimeRec *date2) {
 }
 
 //#define IsColorWin(win) \
-//	(ThereIsColor && \
-//	 (((GrafPtr)(win))->portBits.rowBytes & 0xC000) && \
+//	(ThereIsColor & \
+//	 (((GrafPtr)(win))->portBits.rowBytes & 0xC000) & \
 //   ((**((CGrafPtr)(win))->portPixMap).pixelSize > 1))
 Boolean IsColorWin(WindowPtr winWP)
 

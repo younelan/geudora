@@ -49,8 +49,7 @@ typedef struct mstruct *MessHandle;
 /* On non-Apple platforms provide a few legacy Mac types used by older
    code; on Apple rely on the system headers to supply these. */
 #if !defined(__APPLE__)
-typedef struct FSSpec { int32_t _dummy; } FSSpec;
-typedef FSSpec *FSSpecPtr;
+/* FSSpec is defined in mailbox.h as char[PATH_MAX] */
 typedef char Str31[32];
 #endif
 

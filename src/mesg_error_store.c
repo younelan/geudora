@@ -17,10 +17,10 @@
 
 /* GLib/json-glib based JSON sidecar writer/reader for per-mailbox mesg errors.
  */
-static void build_sidecar_path(const FSSpec *spec, char *out, size_t outlen) {
+static void build_sidecar_path(const char *spec, char *out, size_t outlen) {
   if (!spec || !out)
     return;
-  snprintf(out, outlen, "%s.mesg_errors.json", spec->path);
+  snprintf(out, outlen, "%s.mesg_errors.json", spec);
 }
 
 /* Minimal JSON escaping for strings */
@@ -65,7 +65,7 @@ static void json_unescape(const char *in, char *out, size_t outlen) {
 int mesg_error_store_save_all(TOCType * tocH) {
   if (!tocH)
     return -1;
-  FSSpec spec = GetMailboxSpec(tocH, -1);
+  FSSpec spec; GetMailboxSpec(tocH, -1, spec);
   char sidecar[PATH_MAX];
   build_sidecar_path(&spec, sidecar, sizeof(sidecar));
 
@@ -116,7 +116,7 @@ int mesg_error_store_save_all(TOCType * tocH) {
 int mesg_error_store_load(TOCType * tocH) {
   if (!tocH)
     return -1;
-  FSSpec spec = GetMailboxSpec(tocH, -1);
+  FSSpec spec; GetMailboxSpec(tocH, -1, spec);
   char sidecar[PATH_MAX];
   build_sidecar_path(&spec, sidecar, sizeof(sidecar));
 

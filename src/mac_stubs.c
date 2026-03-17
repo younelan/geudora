@@ -255,7 +255,7 @@ bool LooseTrans = false;
 void MBTickle() {}
 RootSpec MailRoot = {0};
 EventRecord MainEvent = {0};
-short MatchAlias(FSSpecPtr spec, long flags, ...) {
+short MatchAlias(char * spec, long flags, ...) {
   return 0;
 }
 /* MemCanFail — defined in globals.c */

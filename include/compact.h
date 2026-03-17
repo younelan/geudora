@@ -41,12 +41,12 @@ void WarpQueue(uLong secs);
 /* Attachment handling */
 void CompAttach(MyWindowPtr win, bool insertDefault);
 void CompAttachStd(MyWindowPtr win, bool insertDefault);
-void CompAttachSpec(MyWindowPtr win, FSSpec *spec);
+void CompAttachSpec(MyWindowPtr win, char *spec);
 void CompUnattach(MyWindowPtr win);
 void CompDelAttachment(MessHandle messH, void *hs);
 void AttachSelect(MessHandle messH);
 short CountAttachments(MessHandle messH);
-int AttachDoc(MyWindowPtr win, FSSpec *spec);
+int AttachDoc(MyWindowPtr win, char *spec);
 
 /* Composition UI */
 void CompSetFormatBarIcon(MyWindowPtr win, bool visible);
@@ -75,8 +75,8 @@ bool InTranslator(TransInfoHandle hTranslators, long id);
 uLong ApproxMessageSize(MessHandle messH);
 int SaveStationeryStuff(short refN, MessHandle messH);
 int GetStationerySum(char *text, long textLen, MSumPtr pSum);
-void ApplyStationery(MyWindowPtr win, FSSpec *spec, bool dontCleanse, bool personality);
-void ApplyStationeryLo(MyWindowPtr win, FSSpec *spec, bool dontCleanse, bool personality, bool editStationery);
+void ApplyStationery(MyWindowPtr win, char *spec, bool dontCleanse, bool personality);
+void ApplyStationeryLo(MyWindowPtr win, char *spec, bool dontCleanse, bool personality, bool editStationery);
 void ApplyStationeryHandle(MyWindowPtr win, char *text, long textLen, bool dontCleanse, bool personality, bool editStationery);
 
 /* Drawing */

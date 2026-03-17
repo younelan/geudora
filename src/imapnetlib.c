@@ -765,7 +765,7 @@ IMAPBODY *UIDFetchStructure(IMAPStreamPtr imapStream, unsigned long uid) {
     return 0;
 
   // special logging case
-  if (PrefIsSet(PREF_IMAP_EXTRA_LOGGING) && !(LogLevel & LOG_TRANS)) {
+  if (PrefIsSet(PREF_IMAP_EXTRA_LOGGING) && !(LogLevel && LOG_TRANS)) {
     // turn on all bytes logging
     LogLevel |= LOG_TRANS;
 

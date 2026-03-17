@@ -87,8 +87,8 @@ bool AttIsSelected(MyWindowPtr win, PETEHandle pte, long startWith,
                    long endWith, short what, long *start, long *stop);
 bool TransferMenuChoice(short menu, short item, TOCType * tocH, short sumNum,
                         long modifiers, bool fcc);
-int AttLine2Spec(unsigned char *line, FSSpecPtr spec, bool wantToOpen);
-int RelLine2Spec(unsigned char *line, FSSpecPtr spec, uLong *cid, uLong *relURL,
+int AttLine2Spec(unsigned char *line, char * spec, bool wantToOpen);
+int RelLine2Spec(unsigned char *line, char * spec, uLong *cid, uLong *relURL,
                  uLong *absURL);
 short AddXlateTables(bool isOut, short nowId, bool ph, void **pmh);
 void SetMessTable(TOCType * tocH, short sumNum, short tableId);
@@ -103,7 +103,7 @@ bool GetServerRect(MyWindowPtr win, short which, Rect *r);
 short EzOpenFind(TOCType * tocH, short origSum);
 void EzOpen(TOCType * tocH, short sumNum, uLong uidHash, long modifiers,
             bool hideFront, bool willDelete);
-void Fcc(MessHandle messH, FSSpecPtr box);
+void Fcc(MessHandle messH, char * box);
 short MessWi(MyWindowPtr win);
 #define IsArrowSwitch(m)                                                       \
   (((m) & (shiftKey | optionKey | cmdKey | alphaLock | controlKey)) ==         \

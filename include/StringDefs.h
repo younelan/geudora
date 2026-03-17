@@ -333,7 +333,7 @@ ADVISED OF THE POSSIBILITY OF SUCH DAMAGE. */
 #define OLD_BOX_SIZE_FONT_SIZE 7804 /*9*/ // Size of font for mailbox size box.
 #define ALIAS_VERBOTEN 7805 /*:;,@<>()[]\"*/ // Characters forbidden in aliases.
 #define WARN_VERBOTEN                                                          \
-  7806	/*The characters Ò:;@<>()[]\"\',Ó are not allowed in nicknames (they can go in the Address(es) section, just not the nickname itself.*/	//
+  7806	/*The characters Ò:;@<>()[]\"',Ó are not allowed in nicknames (they can go in the Address(es) section, just not the nickname itself.*/	//
 #define NEW_MAIL 7807 /*You have new mail.*/ //
 #define LDAP_TERM_COMBINER 7808 /*(%c%p%p)*/ //
 #define UU_BAD_VERSION                                                         \
@@ -995,8 +995,8 @@ ADVISED OF THE POSSIBILITY OF SUCH DAMAGE. */
 #define IN_IN_STYLE 7101 /*0*/ // Style for summaries of incoming messages
 #define URL_COLOR 7102 /*6000,6000,48000*/ // Color to use on recognized URLÕs
 #define URL_STYLE 7103 /*4*/               // Style to use on recognized URLÕs
-#define URL_LEFT 7104 /*<[{(ÇÒÔ`\'\"*/     // Left-side URL delimitters.
-#define URL_RIGHT 7105 /*>]})ÈÓÕ\'\'\"*/   // Right-side URL delimitters.
+#define URL_LEFT 7104 /*<[{(ÇÒÔ`'\"*/     // Left-side URL delimitters.
+#define URL_RIGHT 7105 /*>]})ÈÓÕ''\"*/   // Right-side URL delimitters.
 #define URL_IN_OK                                                              \
   7106 /*$-_.+!*'(),%;/?:@&=#~^*/ // Characters that do not terminate URLÕs, in
                                   // addition to alphanumerics.

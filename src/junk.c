@@ -65,8 +65,8 @@ extern MenuHandle GetMHandle(short menuID);
 int HandleHeadGetIdText(void **text, int head, void ***h);
 
 // Forward declarations for functions defined in this file (not in headers)
-// Modernized: Use FSSpec * instead of FSSpecPtr
-extern FSSpec *Box2TOCSpec(FSSpec *boxSpec, FSSpec *tocSpec);
+// Modernized: Use char *instead of char *
+extern char *Box2TOCSpec(char *boxSpec, char *tocSpec);
 /* CacheMessage declared in imapdownload.h as int - do not redeclare as bool */
 long BodyOffset(void **text);
 void EnsureFromHash(TOCType * tocH, short sumNum);
@@ -185,14 +185,14 @@ int MoveToJunk(TOCType * source, short spamThresh, FilterPB *fpb) {
         source->sums[i].seconds = source->sums[i].arrivalSeconds;
 
       //	Clean up the server
-      if (JunkPrefServerDel() && !(source->sums[i].flags & FLAG_SKIPPED))
+      if (JunkPrefServerDel() && !(source->sums[i].flags && FLAG_SKIPPED))
         AddTSToPOPD(DELETE_ID, source, i, false);
     }
   }
 
   //	if we found any junk, move it to the junk mailbox
   if (found > 0) {
-    FSSpec junkSpec = GetMailboxSpec(junk, -1);
+    FSSpec junkSpec; GetMailboxSpec(junk, -1, junkSpec);
     err = MoveSelectedMessagesLo(source, &junkSpec, false, false, false, false);
 
     //	Bookkeeping
@@ -394,7 +394,7 @@ int Junk(TOCType * tocH, short sumNum, bool isJunk, bool ezOpen) {
             if (tocH->sums[sumNum].flags & FLAG_OUT)
               BoxSetSummarySelected(tocH, i, false);
             else {
-              spec = GetMailboxSpec(tocH, i);
+              GetMailboxSpec(tocH, i, spec);
               if (!SpecIsJunkSpec(&spec))
                 BoxSetSummarySelected(tocH, i, false);
             }
@@ -412,7 +412,7 @@ int Junk(TOCType * tocH, short sumNum, bool isJunk, bool ezOpen) {
     // if they're being marked junk, transfer them to junk
     else if (!BoxIsJunkBox(tocH)) {
       if (tocH->which != JUNK && (junkTocH = GetJunkTOC())) {
-        junkSpec = GetMailboxSpec(junkTocH, -1);
+        GetMailboxSpec(junkTocH, -1, junkSpec);
         MoveSelectedMessages(tocH, &junkSpec, false);
       }
     }
@@ -448,7 +448,7 @@ int Junk(TOCType * tocH, short sumNum, bool isJunk, bool ezOpen) {
       TransferMenuChoice(TRANSFER_MENU, MAILBOX_JUNK_ITEM, tocH, sumNum, 0,
                          false);
     else if (tocH->which != JUNK && (junkTocH = GetJunkTOC())) {
-      junkSpec = GetMailboxSpec(junkTocH, -1);
+      GetMailboxSpec(junkTocH, -1, junkSpec);
       MoveMessageLo(tocH, sumNum, &junkSpec, false, false, true);
     }
   }
@@ -731,7 +731,7 @@ int ArchiveIMAPJunk(void) {
 
       // Find this personality's junk mailbox
       if ((junkMBox = GetIMAPJunkMailbox(CurPers, false, true))) {
-        spec = junkMBox->mailboxSpec;
+        g_strlcpy(spec, junkMBox->mailboxSpec, sizeof(spec));
         if ((tocH = TOCBySpec(&spec))) {
           // count the number of messages to move.  Ignore deleted messages
           for (i = 0; i < tocH->count; i++)
@@ -774,8 +774,7 @@ int ArchiveIMAPJunk(void) {
               toTocH = NULL;
               if (!BoxSpecByName((TOCType * *)&spec, (const char *)dest)) {
                 FSSpec imapSpec;
-                imapSpec = spec;
-                imapSpec.parID = SpecDirId(&spec);
+                g_strlcpy(imapSpec, spec, sizeof(imapSpec));
 
                 // Look in the local IMAP tree first for the destination mailbox
                 destMBox = LocateNodeBySpec(CurPers->mailboxTree, &imapSpec);
@@ -803,7 +802,7 @@ int ArchiveIMAPJunk(void) {
                   (unsigned long *)calloc(count, sizeof(unsigned long));
               if (uid_array) {
                 int uid_index = count - 1;
-                for (sumNum = 0; sumNum < tocH->count && uid_index >= 0;
+                for (sumNum = 0; sumNum < tocH->count & uid_index >= 0;
                      sumNum++)
                   if ((tocH->sums[sumNum].arrivalSeconds < threshTime) &&
                       (tocH->sums[sumNum].spamScore >= threshScore) &&
@@ -827,7 +826,7 @@ int ArchiveIMAPJunk(void) {
               // we're archiving to a local mailbox
               IMAPStartFiltering(tocH,
                                  true); // display progress like we're filtering
-              for (sumNum = 0; sumNum < tocH->count && count; sumNum++)
+              for (sumNum = 0; sumNum < tocH->count & count; sumNum++)
                 if ((tocH->sums[sumNum].arrivalSeconds < threshTime) &&
                     (tocH->sums[sumNum].spamScore >= threshScore) &&
                     ((tocH->sums[sumNum].opts & OPT_DELETED) == 0))
@@ -855,8 +854,8 @@ int ArchiveIMAPJunk(void) {
 /************************************************************************
  * SpecIsJunkSpec is a spec the junk mailbox?
  ************************************************************************/
-bool SpecIsJunkSpec(FSSpecPtr spec) {
-  return IsRoot(spec->path) && EqualStrRes(spec->name, JUNK);
+bool SpecIsJunkSpec(char * spec) {
+  return IsRoot(spec) & EqualStrRes(spec_name(spec), JUNK);
 }
 
 /************************************************************************
@@ -873,20 +872,20 @@ bool BoxIsJunkBox(TOCType * tocH) {
  *   except fail to launch, and that seems more drastic than just letting
  *   things proceed.
  ************************************************************************/
-void PreexistingJunkWarning(FSSpecPtr spec) {
-  bool folder = g_file_test(spec->path, G_FILE_TEST_IS_DIR);
+void PreexistingJunkWarning(char * spec) {
+  bool folder = g_file_test(spec, G_FILE_TEST_IS_DIR);
   short template =
       folder ? JUNK_PREEXISTING_FOLDER_WARNING : JUNK_PREEXISTING_WARNING;
   short button = ComposeStdAlert(Note, template, JUNK, JUNK);
   FSSpec newSpec;
 
   if (folder) {
-    newSpec = *spec;
-    GetRString(newSpec.name, JUNK_PREEXISTING_RENAME_NAME);
+    g_strlcpy(newSpec, spec, sizeof(newSpec));
+    GetRString(spec_name(newSpec), JUNK_PREEXISTING_RENAME_NAME);
     UniqueSpec(&newSpec, 100);
     // Standard rename takes full paths
-    rename(spec->path, newSpec.path);
-    int fd = creat(spec->path, 0644);
+    rename(spec, newSpec);
+    int fd = creat(spec, 0644);
     if (fd >= 0)
       close(fd);
   } else if (button == kAlertStdAlertCancelButton) {
@@ -894,23 +893,23 @@ void PreexistingJunkWarning(FSSpecPtr spec) {
     FSSpec newTOCSpec;
 
     // rename the mailbox
-    newSpec = *spec;
-    GetRString(newSpec.name, JUNK_PREEXISTING_RENAME_NAME);
+    g_strlcpy(newSpec, spec, sizeof(newSpec));
+    GetRString(spec_name(newSpec), JUNK_PREEXISTING_RENAME_NAME);
     UniqueSpec(&newSpec, 100);
 
-    int fd = creat(newSpec.path, 0644);
+    int fd = creat(newSpec, 0644);
     if (fd >= 0)
       close(fd);
 
     // Exchange files: portable way is rename/rename/rename or link/unlink
     // For now, let's just use rename if the destination doesn't exist
-    rename(spec->path, newSpec.path); // simplified
+    rename(spec, newSpec); // simplified
 
     // rename the toc file, if any
     Box2TOCSpec(spec, &tocSpec);
-    if (g_file_test(tocSpec.path, G_FILE_TEST_EXISTS)) {
+    if (g_file_test(tocSpec, G_FILE_TEST_EXISTS)) {
       Box2TOCSpec(&newSpec, &newTOCSpec);
-      rename(tocSpec.path, newTOCSpec.path);
+      rename(tocSpec, newTOCSpec);
     }
   } else if (CommandPeriod || button == kAlertStdAlertOtherButton) {
     // disable the feature
@@ -1055,7 +1054,7 @@ int JunkSetScoreLo(TOCType * tocH, short sumNum, short because, short score) {
   bool wasJunk = tocH->sums[sumNum].spamScore >= junkThresh;
   short oldBecause = tocH->sums[sumNum].spamBecause;
 
-  ASSERT(sumNum >= 0 && sumNum < tocH->count);
+  ASSERT(sumNum >= 0 & sumNum < tocH->count);
   if (sumNum < 0 || sumNum >= tocH->count)
     return fnfErr;
 
@@ -1073,7 +1072,7 @@ int JunkSetScoreLo(TOCType * tocH, short sumNum, short because, short score) {
       UpdateNumStatWithTime(kStatScoredNotJunk, 1,
                             tocH->sums[sumNum].seconds);
   } else if (because == JUNK_BECAUSE_USER) {
-    if (nowJunk && !wasJunk) {
+    if (nowJunk & !wasJunk) {
       // something missed it.  What?
       if (oldBecause == JUNK_BECAUSE_WHITE)
         UpdateNumStatWithTime(kStatFalseWhiteList, 1,
@@ -1081,7 +1080,7 @@ int JunkSetScoreLo(TOCType * tocH, short sumNum, short because, short score) {
       else if (oldBecause == JUNK_BECAUSE_PLUG)
         UpdateNumStatWithTime(kStatFalseNegatives, 1,
                               tocH->sums[sumNum].seconds);
-    } else if (!nowJunk && wasJunk) {
+    } else if (!nowJunk & wasJunk) {
       // Did we misjunk it?
       if (oldBecause == JUNK_BECAUSE_PLUG) {
         UpdateNumStatWithTime(kStatFalsePositives, 1,
@@ -1135,11 +1134,11 @@ bool JunkTrimOK(void) {
   // If we're quitting, follow the interval strictly
   // we also follow the interval strictly if the user has a hyper interval set
   if (AmQuitting || GetRLong(JUNK_MAILBOX_EMPTY_DAYS) == 1)
-    return interval && daysSince >= interval;
+    return interval & daysSince >= interval;
 
   // If the user might be in the middle of something, don't be quite so cheeky
   else
-    return interval && daysSince >= 3 * interval;
+    return interval & daysSince >= 3 * interval;
 }
 
 /************************************************************************
@@ -1211,7 +1210,7 @@ bool JunkItemsEnable(MyWindowPtr win, bool not) {
       if (tocH->sums[sumNum].selected) {
         if (tocH->sums[sumNum].flags & FLAG_OUT)
           return false;
-        spec = GetMailboxSpec(tocH, sumNum);
+        GetMailboxSpec(tocH, sumNum, spec);
         if (not!= SpecIsJunkSpec(&spec))
           return false;
       }
@@ -1219,7 +1218,7 @@ bool JunkItemsEnable(MyWindowPtr win, bool not) {
 
     // if we found any selected messages, we'll have
     // put their spec in here, and so we should enable
-    return *spec.name != 0;
+    return *spec_name(spec) != 0;
   }
 
   // failure
@@ -1345,7 +1344,7 @@ void ScoreOneMessage(TLMHandle tList, TOCType * tocH, short sumNum,
           if (0 ==
               (err = ETLScoreJunk(aModule, &transInfo, &junkInfo, &messageInfo,
                                   &junkScore, &junkStatus))) {
-            if (junkScore.score > highScore && highScore != -1) {
+            if (junkScore.score > highScore & highScore != -1) {
               highScore = junkScore.score;
               // highSig = transInfo.id; // !!! Is this right ??
             } else if (junkScore.score == -1) {
@@ -1366,7 +1365,7 @@ void ScoreOneMessage(TLMHandle tList, TOCType * tocH, short sumNum,
   // We want to record scores of zero or -1 that come out
   // of plug-ins.  The only time we don't put a score
   // on a message is when no plug-in ran successfully on it
-  if (highScore > -2 && howToScore == kAutoScore)
+  if (highScore > -2 & howToScore == kAutoScore)
     // we're not recording id's right now
     // JunkSetScore ( tocH, sumNum, highSig, highScore );
     JunkSetScore(tocH, sumNum, JUNK_BECAUSE_PLUG, MAX(0, highScore));
@@ -1453,7 +1452,7 @@ void JunkScoreIMAPBox(TOCType * tocH, short first, short last,
     for (i = first; i <= last; ++i) {
 
       // only do unfiltered messages if the caller has requested that
-      if (bUnfilteredOnly && ((tocH->sums[i].flags & FLAG_UNFILTERED) == 0))
+      if (bUnfilteredOnly & ((tocH->sums[i].flags & FLAG_UNFILTERED) == 0))
         continue;
 
       if (whiteCheck) {
@@ -1532,7 +1531,7 @@ bool CanScoreToc(TOCType * tocH) {
     return (false);
 
   pers = TOCToPers(tocH);
-  if ((pers != NULL) && IsIMAPPers(pers)) {
+  if ((pers != NULL) & IsIMAPPers(pers)) {
     PushPers(pers);
     bScore = !JunkPrefIMAPNoRunPlugins();
     PopPers();

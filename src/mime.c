@@ -595,7 +595,7 @@ void ExtractHDHFilename(MIMESHandle msh,HeaderDHandle hdh,char * suffix,char * f
 bool SetupDigest(MIMESHandle msh,HeaderDHandle hdh,short *refPtr);
 bool FinishDigest(short refN,short origRefN);
 int CanonNLWrite(short refN,long *size,char * buf);
-BoundaryType ReadTL(TransStream stream,short refN,MIMESHandle mimeSList,char *buf,long bSize,LineReader *lr,FSSpecPtr spec,OSType creator,OSType type);
+BoundaryType ReadTL(TransStream stream,short refN,MIMESHandle mimeSList,char *buf,long bSize,LineReader *lr,char * spec,OSType creator,OSType type);
 void NukeEnvelopes(char * buf,long *size);
 void MHTMLStuff(HeaderDHandle outerHDH, HeaderDHandle doubleHDH, HeaderDHandle hdh);
 
@@ -693,7 +693,7 @@ MIMESHandle NewMIMES(TransStream stream,HeaderDHandle hdh,bool forceMIME,short c
 	/*
 	 * Is it a multipart message?  Worry about the boundary
 	 */
-	if (EqualStrRes((unsigned char *)hdh->contentType, MIME_MULTIPART) &&	/* multipart */
+	if (EqualStrRes((unsigned char *)hdh->contentType, MIME_MULTIPART) &	/* multipart */
 			!FetchAttribute(hdh,aBoundary,scratch))
 	{
 		g_strlcpy((char *)(msh->boundary), (char *)("--"), sizeof(msh->boundary));
@@ -1336,8 +1336,8 @@ BoundaryType ReadMulti(TransStream stream,short refN,MIMESHandle mimeSList,char 
 		// we're at the top level; push the base attachment folder onto the stack
 		if (!StackInit(sizeof(FSSpec),&AttFolderStack))
 		{
-			CurrentAttFolderSpec = AttFolderSpec;
-			StackPush(&AttFolderSpec,AttFolderStack);
+			g_strlcpy(CurrentAttFolderSpec, AttFolderSpec, sizeof(CurrentAttFolderSpec));
+			StackPush(&AttFolderSpec, &AttFolderStack);
 		}
 	}
 	else
@@ -1345,31 +1345,31 @@ BoundaryType ReadMulti(TransStream stream,short refN,MIMESHandle mimeSList,char 
 		long newDirID;
 		
 		// inside.  Push the current folder spec
-		StackPush(&CurrentAttFolderSpec,AttFolderStack);
+		StackPush(&CurrentAttFolderSpec, &AttFolderStack);
 		
 		// are we enclosed by an x-folder?
 		if (StrIsItemFromRes(msh->hdh->contentSubType,X_FOLDER_ITEMS,NULL))
 		{
 			// yes.  Grab its name
-			ExtractHDHFilename(pMSH,msh->hdh,0,&spec.name);
+			{ char _fn[256]; ExtractHDHFilename(pMSH,msh->hdh,0,_fn); spec_set_name(spec, _fn); }
 			
 			// uniquify it
 			AutoWantTheFile(&spec,true,false);
 			
 			// make it
-			if (mkdir(spec.path, 0755))
+			if (mkdir(spec, 0755))
 				// failed to make it; continue with old attachment folder.  This sucks
 				StackItem(&CurrentAttFolderSpec,AttFolderStack->elCount,AttFolderStack);
 			else
 			{
 				// made it.
 				// record it
-				RecordAttachment(spec.path,msh->hdh);
+				RecordAttachment(spec,msh->hdh);
 
 				// Set CurrentAttFolderSpec to the new directory path
-				*CurrentAttFolderSpec.name = 0;
-				// parID replaced: directory identity is now in spec.path
-				snprintf((char *)CurrentAttFolderSpec.path, sizeof(CurrentAttFolderSpec.path), "%s", spec.path);
+				/* clear filename */ { char *_sn = strrchr(CurrentAttFolderSpec, '/'); if (_sn) _sn[1] = '\0'; else CurrentAttFolderSpec[0] = '\0'; }
+				// parID replaced: directory identity is now in spec
+				snprintf((char *)CurrentAttFolderSpec, sizeof(CurrentAttFolderSpec), "%s", spec);
 			}
 		}
 	}
@@ -1432,7 +1432,7 @@ BoundaryType ReadMulti(TransStream stream,short refN,MIMESHandle mimeSList,char 
 			digestTop = True;
 		reRead:
 			if (!(innerHDH = NewHeaderDesc(hdh))) {WarnUser(MEM_ERR,err=MemError()); break;}
-			hState = ReadHeader(stream,innerHDH,0,refN,msh->isDigest || isDigest&&digestTop);			
+			hState = ReadHeader(stream,innerHDH,0,refN,msh->isDigest || isDigest&digestTop);			
 			if (hState!=EndOfHeader)
 			{
 				if (hState==EndOfMessage) boundaryType = btEndOfMessage;
@@ -1480,7 +1480,7 @@ BoundaryType ReadMulti(TransStream stream,short refN,MIMESHandle mimeSList,char 
 						newtype = 0;
 					
 					
-					if (newtype==MIME_RICHTEXT || newtype==HTMLTagsStrn+htmlTag&&altSubType!=MIME_RICHTEXT || !altSubType)
+					if (newtype==MIME_RICHTEXT || newtype==HTMLTagsStrn+htmlTag&altSubType!=MIME_RICHTEXT || !altSubType)
 					{
 						/*
 						 * we like the new type better
@@ -1518,17 +1518,17 @@ BoundaryType ReadMulti(TransStream stream,short refN,MIMESHandle mimeSList,char 
 			if (wasApplefile && areDouble && LastAttPath) {
 				/* Build a temp FSSpec from LastAttPath for SingleSpec */
 				FSSpec tmpLastAtt = {0};
-				strncpy(tmpLastAtt.path, LastAttPath, sizeof(tmpLastAtt.path) - 1);
+				strncpy(tmpLastAtt, LastAttPath, sizeof(tmpLastAtt) - 1);
 				{
 					char tmpCopy[1024];
 					strncpy(tmpCopy, LastAttPath, sizeof(tmpCopy) - 1);
 					tmpCopy[sizeof(tmpCopy) - 1] = '\0';
-					strncpy(tmpLastAtt.name, basename(tmpCopy), sizeof(tmpLastAtt.name) - 1);
+					strncpy(spec_name(tmpLastAtt), basename(tmpCopy), sizeof(spec_name(tmpLastAtt)) - 1);
 				}
 				struct stat st_1530;
-				if (!(stat(tmpLastAtt.path, &st_1530) == 0 && S_ISDIR(st_1530.st_mode))) {
+				if (!(stat(tmpLastAtt, &st_1530) == 0 && S_ISDIR(st_1530.st_mode))) {
 					if (!SingleSpec) SingleSpec = NewH(FSSpec);
-					if (SingleSpec) **(FSSpec**)SingleSpec = tmpLastAtt;
+					if (SingleSpec) g_strlcpy((char *)SingleSpec, tmpLastAtt, PATH_MAX);
 				} else {
 					SingleSpec = NULL;
 				}
@@ -1550,16 +1550,16 @@ BoundaryType ReadMulti(TransStream stream,short refN,MIMESHandle mimeSList,char 
 				// Portable file date handling using stat/utime
 				struct stat fileInfo;
 				struct utimbuf times;
-				FSSpecPtr spec = (FSSpecPtr)SingleSpec;
+				char * spec = (char *)SingleSpec;
 				
 				// Get current file times
-				if (stat(spec->path, &fileInfo) == 0) {
+				if (stat(spec, &fileInfo) == 0) {
 					// Restore modification time
 					times.actime = fileInfo.st_mtime;
 					times.modtime = fileInfo.st_mtime;
 					
 					TruncOpenFile(refN,offset);
-					utime(spec->path, &times);
+					utime(spec, &times);
 				}
 				
 				//	Appledouble attachments get counted statistically for each fork.
@@ -1683,14 +1683,14 @@ bool SetupDigest(MIMESHandle msh,HeaderDHandle hdh,short *refPtr)
 	/*
 	 * fish out the filename
 	 */
-	ExtractHDHFilename(msh,hdh,NULL,spec.name);
-	*spec.name = MIN(*spec.name,24);
+	ExtractHDHFilename(msh,hdh,NULL,spec_name(spec));
+	/* truncate filename to 24 chars */ ((char*)spec_name(spec))[24] = '\0';
 	if (!AutoWantTheFile(&spec,False,hdh->relatedPart)) return(False);
 
 	/*
 	 * create the file
 	 */
-	int spec_fd = open(spec.path, O_RDWR | O_CREAT | O_TRUNC, 0644);
+	int spec_fd = open(spec, O_RDWR | O_CREAT | O_TRUNC, 0644);
 	if (spec_fd >= 0) {
 		err = noErr;
 		close(spec_fd);
@@ -1698,7 +1698,7 @@ bool SetupDigest(MIMESHandle msh,HeaderDHandle hdh,short *refPtr)
 		err = ioErr;
 	}
 	if (err) return (False);
-	refN = open(spec.path, O_RDWR);
+	refN = open(spec, O_RDWR);
 	if (refN < 0) return (False);
 	
 	/*
@@ -1718,7 +1718,7 @@ bool FinishDigest(short refN,short origRefN)
 	
 	GetFileByRef(refN,&spec);
 	close(refN);
-	err = RecordAttachment(spec.path,NULL);
+	err = RecordAttachment(spec,NULL);
 	WriteAttachNote(origRefN);
 	PopProgress(False);
 	return err == noErr;
@@ -2398,7 +2398,7 @@ BoundaryType ReadPGP(TransStream stream,short refN,MIMESHandle mimeSList,char *b
 			/*
 			 * note file
 			 */
-			spec = pgp.spec;
+			g_strlcpy(spec, pgp.spec, sizeof(spec));
 			foundFile = True;
 		}
 	}
@@ -2412,7 +2412,7 @@ BoundaryType ReadPGP(TransStream stream,short refN,MIMESHandle mimeSList,char *b
 	 * If all went well, we have a file
 	 */
 	struct stat st_2414;
-	if (foundFile && !stat(spec.path, &st_2414))
+	if (foundFile && !stat(spec, &st_2414))
 	{
 		AddUniqueExt(&spec,PGP_PROTOCOL);
 		
@@ -2431,7 +2431,7 @@ BoundaryType ReadPGP(TransStream stream,short refN,MIMESHandle mimeSList,char *b
 		 */
 		if (!err)
 		{
-			err = RecordAttachment(spec.path,NULL);
+			err = RecordAttachment(spec,NULL);
 			WriteAttachNote(refN);
 		}
 		else
@@ -2739,7 +2739,7 @@ bool FindMIMEMapPtr(char * type, char * subType,char * name,MIMEMapPtr mmp)
 			
 			// if the map specifies a suffix, it must match, UNLESS
 			// there is no suffix on the file and we want to apply one
-			if (!((maybe->flags&mmApplySuffix)&&!*suffix) && *maybe->suffix && !StringSame(suffix,maybe->suffix)) continue;
+			if (!((maybe->flags&mmApplySuffix)&!*suffix) && *maybe->suffix && !StringSame(suffix,maybe->suffix)) continue;
 			
 			if (!best) best = maybe;	// we don't have anything
 			else if (*best->mimetype && !*maybe->mimetype) continue;	// prefer explicit match to wildcard
@@ -2842,7 +2842,7 @@ BoundaryType ReadGeneric(TransStream stream,short refN,MIMESHandle mimeSList,cha
 	/*
 	 * extract filename
 	 */
-	ExtractHDHFilename(msh,hdh,(mm.flags&mmApplySuffix)?mm.suffix:0,spec.name);
+	ExtractHDHFilename(msh,hdh,(mm.flags&mmApplySuffix)?mm.suffix:0,spec_name(spec));
 		
 	/*
 	 * does the user wish to convert it?
@@ -2850,12 +2850,12 @@ BoundaryType ReadGeneric(TransStream stream,short refN,MIMESHandle mimeSList,cha
 	imapStub = StringSame(GetRString(scratch, IMAP_STUB_ENCODING), hdh->contentEnco);	
 	if (SingleSpec || AutoWantTheFileLo(&spec,False,hdh->relatedPart,imapStub)/*|| WantTheFile(&spec)*/)
 	{
-		ASSERT ( SingleSpec || spec.path[0] );
+		ASSERT ( SingleSpec || spec[0] );
 		if (SingleSpec) {
-			spec = *((FSSpecPtr)SingleSpec);
+			g_strlcpy(spec, (char *)SingleSpec, sizeof(spec));
 		}
 		else {
-			int mm_fd = open(spec.path, O_RDWR | O_CREAT | O_TRUNC, 0644);
+			int mm_fd = open(spec, O_RDWR | O_CREAT | O_TRUNC, 0644);
 			if (mm_fd >= 0) {
 				err = noErr;
 				close(mm_fd);
@@ -2865,22 +2865,22 @@ BoundaryType ReadGeneric(TransStream stream,short refN,MIMESHandle mimeSList,cha
 
 			if (err)
 			{
-				FileSystemError(BINHEX_CREATE,spec.name,err);
+				FileSystemError(BINHEX_CREATE,spec_name(spec),err);
 				return(True);
 			}
-			attachRefN = open(spec.path, O_RDWR);
+			attachRefN = open(spec, O_RDWR);
 			if (attachRefN < 0)
 			{
 				err = ioErr;
-				FileSystemError(BINHEX_OPEN,spec.name,err);
+				FileSystemError(BINHEX_OPEN,spec_name(spec),err);
 				return(True);
 			}
 		}
 		// BadBinHex = True; // This line was removed from the original snippet, but it was inside the if(err) block.
-		// decode = *spec.name = 0; // This line was removed from the original snippet, but it was inside the if(err) block.
+		// decode = /* clear filename */ { char *_sn = strrchr(spec, '/'); if (_sn) _sn[1] = '\0'; else spec[0] = '\0'; } // This line was removed from the original snippet, but it was inside the if(err) block.
 	}
-	else decode = *spec.name = 0;
-	
+	else { decode = 0; char *_sn = strrchr(spec, '/'); if (_sn) _sn[1] = '\0'; else spec[0] = '\0'; }
+
 	/*
 	 * if we are writing to a file, we record that fact and
 	 * toss the header if it was boring
@@ -2889,7 +2889,7 @@ BoundaryType ReadGeneric(TransStream stream,short refN,MIMESHandle mimeSList,cha
 	if (attachRefN)
 	{
 		if (mm.type=='euEn') AddUniqueExt(&spec,PGP_PROTOCOL);	/* hack for pgp */
-		err = RecordAttachment(spec.path,hdh);
+		err = RecordAttachment(spec,hdh);
 #ifndef SAVE_MIME
 		if (hdh->grokked && mm.type!='????') TruncOpenFile(refN,hdh->diskStart);
 #endif
@@ -2899,7 +2899,7 @@ BoundaryType ReadGeneric(TransStream stream,short refN,MIMESHandle mimeSList,cha
 		if (decode && (*msh->decoder)(kDecodeInit,&pb))
 		{
 			BadBinHex = True;
-			decode = *spec.name = 0;
+			decode = 0; { char *_sn = strrchr(spec, '/'); if (_sn) _sn[1] = '\0'; else spec[0] = '\0'; }
 		}
 		else pb.output = pb.input = buf;
 		pb.text = (mm.flags & mmIsText)!=0;
@@ -2937,7 +2937,7 @@ BoundaryType ReadGeneric(TransStream stream,short refN,MIMESHandle mimeSList,cha
 		
 		if (err = NCWrite(writeRefN,&size,buf))
 		{
-			FileSystemError(BINHEX_WRITE,spec.name,err);
+			FileSystemError(BINHEX_WRITE,spec_name(spec),err);
 			BadBinHex = True;
 			bt = btError;
 			goto done;
@@ -2952,7 +2952,7 @@ done:
 		size = pb.outlen;
 		if (size && (err = NCWrite(writeRefN,&size,buf)))
 		{
-			FileSystemError(BINHEX_WRITE,spec.name,err);
+			FileSystemError(BINHEX_WRITE,spec_name(spec),err);
 			BadBinHex = True;
 			bt = btError;
 		}
@@ -2963,7 +2963,7 @@ done:
 	{
 		close(attachRefN);
 		if (err)
-			{unlink(spec.path);ASSERT(0);}
+			{unlink(spec);ASSERT(0);}
 		/* FlushVol removed - no-op on POSIX */
 		PopProgress(False);
 	}
@@ -3009,7 +3009,7 @@ BoundaryType ReadTLNow(TransStream stream,short refN,MIMESHandle mimeSList,char 
 
 		if (!err)
 		{
-			unlink(spec.path);
+			unlink(spec);
 			return(bt);
 		}
 	}
@@ -3019,7 +3019,7 @@ BoundaryType ReadTLNow(TransStream stream,short refN,MIMESHandle mimeSList,char 
 	 */
 	if (bt!=btError)
 	{
-		if (RecordAttachment(spec.path,mimeSList->hdh)) bt=btError;
+		if (RecordAttachment(spec,mimeSList->hdh)) bt=btError;
 		WriteAttachNote(refN);
 	}
 
@@ -3051,7 +3051,7 @@ BoundaryType ReadTLNotNow(TransStream stream,short refN,MIMESHandle mimeSList,ch
 	 */
 	if (bt!=btError)
 	{
-		if (RecordAttachment(spec.path,msh->hdh)) bt = btError;
+		if (RecordAttachment(spec,msh->hdh)) bt = btError;
 		WriteAttachNote(refN);
 	}
 	return(bt);
@@ -3081,7 +3081,7 @@ BoundaryType ReadExternalMulti(TransStream stream,short refN,MIMESHandle mimeSLi
 	/*
 	 * extract filename
 	 */
-	ExtractHDHFilename(msh,msh->hdh,(mm.flags&mmApplySuffix)?mm.suffix:NULL,spec.name);
+	ExtractHDHFilename(msh,msh->hdh,(mm.flags&mmApplySuffix)?mm.suffix:NULL,spec_name(spec));
 
 	/*
 	 * read the object into a file
@@ -3093,7 +3093,7 @@ BoundaryType ReadExternalMulti(TransStream stream,short refN,MIMESHandle mimeSLi
 	 */
 	if (bt!=btError)
 	{
-		if (RecordAttachment(spec.path,msh->hdh)) bt=btError;
+		if (RecordAttachment(spec,msh->hdh)) bt=btError;
 		WriteAttachNote(refN);
 	}
 	return(bt);
@@ -3102,7 +3102,7 @@ BoundaryType ReadExternalMulti(TransStream stream,short refN,MIMESHandle mimeSLi
 /************************************************************************
  * ReadTL - body reader to put some stuff in a file
  ************************************************************************/
-BoundaryType ReadTL(TransStream stream,short refN,MIMESHandle mimeSList,char *buf,long bSize,LineReader *lr,FSSpecPtr spec,OSType creator,OSType type)
+BoundaryType ReadTL(TransStream stream,short refN,MIMESHandle mimeSList,char *buf,long bSize,LineReader *lr,char * spec,OSType creator,OSType type)
 {
 	MIMESHandle msh, parentMSH;
 	HeaderDHandle hdh;
@@ -3133,7 +3133,7 @@ BoundaryType ReadTL(TransStream stream,short refN,MIMESHandle mimeSList,char *bu
 	/*
 	 * extract filename
 	 */
-	ExtractHDHFilename(msh,hdh,NULL,spec->name);
+	ExtractHDHFilename(msh,hdh,NULL,spec_name(spec));
 		
 	/*
 	 * does the user wish to convert it?
@@ -3141,7 +3141,7 @@ BoundaryType ReadTL(TransStream stream,short refN,MIMESHandle mimeSList,char *bu
 	if (AutoWantTheFile(spec,False,hdh->relatedPart))
 	{
 		// FSpCreateResFile is no-op
-		int spec_fd = open(spec->path, O_RDWR | O_CREAT | O_TRUNC, 0644);
+		int spec_fd = open(spec, O_RDWR | O_CREAT | O_TRUNC, 0644);
 		if (spec_fd >= 0) {
 			err = noErr;
 			close(spec_fd);
@@ -3150,19 +3150,19 @@ BoundaryType ReadTL(TransStream stream,short refN,MIMESHandle mimeSList,char *bu
 		}
 		if (err)
 		{
-			FileSystemError(BINHEX_CREATE,spec->name,err);
+			FileSystemError(BINHEX_CREATE,spec_name(spec),err);
 			BadBinHex = True;
-			*spec->name = 0;
+			/* clear filename */ { char *_sn = strrchr(spec, '/'); if (_sn) _sn[1] = '\0'; else spec[0] = '\0'; }
 		}
-		attachRefN = open(spec->path, O_RDWR);
+		attachRefN = open(spec, O_RDWR);
 		if (attachRefN < 0)
 		{
 			err = ioErr;
-			FileSystemError(BINHEX_OPEN,spec->name,err);
+			FileSystemError(BINHEX_OPEN,spec_name(spec),err);
 			return(True);
 		}
 	}
-	else *spec->name = 0;
+	else /* clear filename */ { char *_sn = strrchr(spec, '/'); if (_sn) _sn[1] = '\0'; else spec[0] = '\0'; }
 	
 	/*
 	 * write the headers
@@ -3176,7 +3176,7 @@ BoundaryType ReadTL(TransStream stream,short refN,MIMESHandle mimeSList,char *bu
 #endif
 	if (err)
 	{
-		FileSystemError(BINHEX_OPEN,spec->name,err);
+		FileSystemError(BINHEX_OPEN,spec_name(spec),err);
 		BadBinHex = True;
 		bt = btError;
 		goto done;
@@ -3194,7 +3194,7 @@ BoundaryType ReadTL(TransStream stream,short refN,MIMESHandle mimeSList,char *bu
 		
 		if (err = CanonNLWrite(attachRefN,&size,buf))
 		{
-			FileSystemError(BINHEX_WRITE,spec->name,err);
+			FileSystemError(BINHEX_WRITE,spec_name(spec),err);
 			BadBinHex = True;
 			bt = btError;
 			goto done;
@@ -3207,7 +3207,7 @@ done:
 	{
 		close(attachRefN);
 		PopProgress(False);
-		if (err) {unlink(spec->path);ASSERT(0);}
+		if (err) {unlink(spec);ASSERT(0);}
 	}
 	if (!UUPCIn && msh==mimeSList) Progress(100,NoChange,NULL,NULL,NULL);
 
@@ -3217,7 +3217,7 @@ done:
 /**********************************************************************
  * RecordTLMIME - record the choice of a translator
  **********************************************************************/
-int RecordTLMIME(FSSpecPtr spec,emsMIMEHandle tlMIME)
+int RecordTLMIME(char * spec,emsMIMEHandle tlMIME)
 {
 	FlatTLMIMEHandle flat;
 	short refN;
@@ -3245,7 +3245,7 @@ int RecordTLMIME(FSSpecPtr spec,emsMIMEHandle tlMIME)
 /**********************************************************************
  * RecordTL - record the choice of a translator
  **********************************************************************/
-int RecordTL(FSSpecPtr spec,void **tl)
+int RecordTL(char * spec,void **tl)
 {
 	TLMHandle tlh = (TLMHandle)tl;
 	int err=noErr;

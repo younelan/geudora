@@ -220,7 +220,7 @@ long CountAliasExpansion(NickHandle aliases, long offset);
   ((addrs) && (addrs)[0] && (addrs)[1] ? true : false)
 
 bool SaveIndNickFile(short which, bool saveChangeBits);
-int URLStringToSpec(StringHandle urlString, FSSpec *spec);
+int URLStringToSpec(StringHandle urlString, char *spec);
 short ReplaceNicknameAddresses(short which, char *oldName,
                                TextAddrHandle text);
 short ReplaceNicknameNotes(short which, char *oldName,
@@ -238,7 +238,7 @@ long NickAddressMatchFound(NickStructHandle theNicknames, long hashAddress,
                            char *theAddress, short which);
 void MakeMessNick(MyWindowPtr win, short modifiers);
 #ifdef VCARD
-void MakeCompNick(MyWindowPtr win, FSSpec *vcardSpec);
+void MakeCompNick(MyWindowPtr win, char *vcardSpec);
 #else
 void MakeCompNick(MyWindowPtr win);
 #endif
@@ -256,7 +256,7 @@ short ChangeNameOfNick(short which, char *oldName,
                        char *newName);
 int GatherBoxAddresses(TOCType * tocH, short modifiers, short from, short to,
                        void ***addresses, bool caching);
-void ReadNickFileList(FSSpec *pSpec, AddressBookType type, bool reread);
+void ReadNickFileList(char *pSpec, AddressBookType type, bool reread);
 void ReadPluginNickFiles(bool reread);
 int RegenerateAliases(short which, bool rebuild);
 bool ExpandAliasesLow(void **h1, void *h2, int i, bool b1, void *p1, int i2);
@@ -276,7 +276,7 @@ char *ScanNameForSpaces(char *name);
 void MakeUniqueNickname(short ab, char nickname[32]);
 void SetNickname(short ab, short nick, char *name);
 
-int NickBackup(FSSpecPtr spec);
+int NickBackup(char * spec);
 
 // Prototypes for using the Nickname Tag Map
 int GetNicknameTagMap(char *service, char *server,

@@ -87,7 +87,7 @@ bool HaveAllKeys(MessHandle messH);
 bool HaveKeysFrom(void *text,char * missing,bool fromPrivate);
 short PGPSendMessage(TransStream stream,MessHandle messH,bool chatter);
 int BuildAddressList(void *addresses,AEDescList *list);
-int PGPFetchResult(AppleEvent *reply, FSSpecPtr spec);
+int PGPFetchResult(AppleEvent *reply, char * spec);
 
 int StartPGP(ProcessSerialNumber *psn);
 

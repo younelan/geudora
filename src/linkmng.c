@@ -208,7 +208,7 @@ int ReadHistTOC(short which);
 static void ZapHistoryFile(short which, bool destroy);
 int RegenerateLinkHistory(short which, bool rebuild);
 long HistMatchFound(long hashName, void *theUrl, short which);
-void ReadHistFileList(FSSpec *pSpec, bool reread);
+void ReadHistFileList(char *pSpec, bool reread);
 int AddHistoryToTOC(short which, char * name, long hashName,
                     LinkTypeEnum type, LinkLabelEnum label, bool thumb,
                     void *url, AdId adId);
@@ -245,11 +245,11 @@ int HistRemindCompare(ShortHistoryStructPtr hist1, ShortHistoryStructPtr hist2);
 void SwapHist(ShortHistoryStructPtr hist1, ShortHistoryStructPtr hist2);
 
 /* Ad preview stuff - stubs for QuickDraw GWorld which doesn't exist in GTK */
-int CreateIconFromAdGraphic(AdId adId, FSSpecPtr adGraphic);
+int CreateIconFromAdGraphic(AdId adId, char * adGraphic);
 void AdIdToName(AdId adId, URLNameStr name);
 bool NameToAdId(URLNameStr name, AdId *ad);
 int DeleteAdGraphic(AdId adId);
-int IconFromAd(FSSpecPtr iconSpec, FSSpecPtr adSpec);
+int IconFromAd(char * iconSpec, char * adSpec);
 void PurgeLinkHistoryPreviewOrphans(void);
 
 /* Icon cache management */
@@ -259,7 +259,7 @@ void RemoveIconFromPVICache(AdId adId);
 void RemovePVIFromPVICache(LHPIconCacheHandle *toRemove);
 
 /* Nickname routines we've assimilated */
-extern int KillNickTOC(FSSpecPtr spec);
+extern int KillNickTOC(char * spec);
 extern bool NeatenLine(unsigned char *line, long *len);
 
 /************************************************************************
@@ -566,9 +566,9 @@ int GenHistoriesList(void) {
    */
 
   /* GTK port: FSMakeFSSpec uses int vRef/long dirId; in GTK port use
-   * string-based FSSpec */
+   * string-based char */
   GetRString(name, LINK_HISTORY_FILE);
-  strncpy(ad.spec.name, (char *)name, sizeof(ad.spec.name) - 1);
+  strncpy(spec_name(ad.spec), (char *)name, sizeof(spec_name(ad.spec)) - 1);
   if (buf_append(gHistories, &ad, sizeof(ad)) == NULL)
     DieWithError(MEM_ERR, MemError());
   RegenerateLinkHistory(MAIN_HISTORY_FILE, true);
@@ -585,7 +585,7 @@ int GenHistoriesList(void) {
 /************************************************************************
  * ReadHistFileList - find extra link history files
  ************************************************************************/
-void ReadHistFileList(FSSpec *pSpec, bool reread) {
+void ReadHistFileList(char *pSpec, bool reread) {
   char name[32];
   CInfoPBRec hfi;
   HistoryDesc ad;
@@ -598,17 +598,17 @@ void ReadHistFileList(FSSpec *pSpec, bool reread) {
   if (SubFolderSpec(LINK_HISTORY_FOLDER, pSpec) != noErr) {
     mkdir(GetRString(name, LINK_HISTORY_FOLDER), 0755);
     /* GTK port: SimpleMakeFSSpec is Mac HFS API - just fill in name field */
-    strncpy(gLinkHistoryFolder.name, "LinkHistory",
-            sizeof(gLinkHistoryFolder.name) - 1);
+    strncpy(spec_name(gLinkHistoryFolder), "LinkHistory",
+            sizeof(spec_name(gLinkHistoryFolder)) - 1);
     return;
   } else
-    gLinkHistoryFolder = *pSpec;
+    g_strlcpy(gLinkHistoryFolder, pSpec, sizeof(gLinkHistoryFolder));
 
   /*
    * read in the history files ...
    */
 
-  /* GTK port: DirIterate now uses FSSpec* first arg, not vRefNum/parID.
+  /* GTK port: DirIterate now uses char *first arg, not vRefNum/parID.
      Use the folder spec directly. */
   Zero(ad);
   while (!DirIterate(pSpec, NULL, NULL)) {
@@ -644,8 +644,8 @@ int AddHistoryToTOC(short which, char * name, long hashName,
   HUnlock((void *)histories);
   currHistCount = HistoryCount(which);
   if (currHistCount > 0) {
-    SetHandleBig_((void *)histories,
-                  (currHistCount + 1) * sizeof(HistoryStruct));
+    { void *_r = realloc(histories, (currHistCount + 1) * sizeof(HistoryStruct));
+      if (_r) histories = _r; }
     if ((err = MemError()) != 0)
       return (WarnUser(LINK_HISTORY_NEW_HISTORY_ERR, err));
 
@@ -732,18 +732,18 @@ int SaveIndHistoryFile(short which) {
   /*
    * find the file
    */
-  spec = gHistories[which].spec;
+  g_strlcpy(spec, gHistories[which].spec, sizeof(spec));
   if (err = FSpMyResolve(&spec, &junk)) {
-    FileSystemError(SAVE_LINK_HISTORY, spec.name, err);
+    FileSystemError(SAVE_LINK_HISTORY, spec_name(spec), err);
     return (err);
   }
 
   /*
    * make && open a temp file
    */
-  if (err = NewTempSpec(spec.vRefNum, spec.parID, nil, &tmpSpec))
+  if (err = NewTempSpec(0, 0, nil, &tmpSpec))
     goto done;
-  int fd = open(tmpSpec.path, O_RDWR | O_CREAT | O_TRUNC, 0644);
+  int fd = open(tmpSpec, O_RDWR | O_CREAT | O_TRUNC, 0644);
   if (fd >= 0) {
     err = noErr;
     close(fd);
@@ -751,17 +751,17 @@ int SaveIndHistoryFile(short which) {
     err = ioErr;
   }
   if (err) {
-    FileSystemError(SAVE_LINK_HISTORY, tmpSpec.name, err);
+    FileSystemError(SAVE_LINK_HISTORY, spec_name(tmpSpec), err);
     goto done;
   }
-  refN = open(tmpSpec.path, O_RDWR);
+  refN = open(tmpSpec, O_RDWR);
   if (refN < 0) {
     err = ioErr;
   } else {
     err = noErr;
   }
   if (err) {
-    FileSystemError(OPEN_LINK_HISTORY, tmpSpec.name, err);
+    FileSystemError(OPEN_LINK_HISTORY, spec_name(tmpSpec), err);
     goto done;
   }
 
@@ -829,7 +829,7 @@ done:
   if (refN)
     close(refN);
   if (err)
-    unlink(tmpSpec.path);
+    unlink(tmpSpec);
   return (err);
 }
 
@@ -838,7 +838,7 @@ done:
  **********************************************************************/
 int WriteHistTOC(short which) {
   uLong fileModDate;
-  FSSpec spec = gHistories[which].spec;
+  FSSpec spec; g_strlcpy(spec, gHistories[which].spec, sizeof(spec));
   int err = noErr;
   short refN;
   void **theData;
@@ -865,7 +865,7 @@ int WriteHistTOC(short which) {
     KillNickTOC(&spec);
     // FSpCreateResFile is no-op on POSIX
     struct stat st_854;
-    fileModDate = (stat(spec.path, &st_854) == 0) ? st_854.st_mtime : 0;
+    fileModDate = (stat(spec, &st_854) == 0) ? st_854.st_mtime : 0;
 
     // FSpOpenResFile is no-op on POSIX
     if (-1 != (refN = -1)) {
@@ -885,7 +885,7 @@ int WriteHistTOC(short which) {
       tv[0].tv_usec = 0;
       tv[1].tv_sec = fileModDate;
       tv[1].tv_usec = 0;
-      err = (utimes(spec.path, tv) == 0) ? noErr : ioErr;
+      err = (utimes(spec, tv) == 0) ? noErr : ioErr;
     }
 
     free(newData); // Dispose of the duplicated handle
@@ -913,7 +913,7 @@ void *GetHistoryData(short which, short index, bool readFromDisk) {
   long theOffset;
   char theCmd[32];
 
-  spec = gHistories[which].spec;
+  g_strlcpy(spec, gHistories[which].spec, sizeof(spec));
 
   if (index < 0 || which < 0 || index >= HistoryCount(which) ||
       histories[index].deleted)
@@ -938,7 +938,7 @@ void *GetHistoryData(short which, short index, bool readFromDisk) {
   if (theOffset >= 0) {
     if (err = FSpOpenLine(&spec, fsRdPerm, &lid)) {
       if (err != fnfErr)
-        FileSystemError(OPEN_LINK_HISTORY, spec.name, err);
+        FileSystemError(OPEN_LINK_HISTORY, spec_name(spec), err);
       return (nil);
     }
 
@@ -1000,7 +1000,7 @@ void *GetHistoryData(short which, short index, bool readFromDisk) {
  ************************************************************************/
 int ReadHistTOC(short which) {
   int err = noErr;
-  FSSpec lSpec = gHistories[which].spec;
+  FSSpec lSpec; g_strlcpy(lSpec, gHistories[which].spec, sizeof(lSpec));
   bool sane;
   short refN = 0;
   short oldResF = CurResFile();
@@ -1580,7 +1580,7 @@ void *GetLHPreviewIcon(VLNodeID id) {
 
       // Find the icon preview file
       AdIdToName(adId, adGraphicName);
-      if (noErr == spec_for(gLinkHistoryFolder.path, adGraphicName,
+      if (noErr == spec_for(gLinkHistoryFolder, adGraphicName,
                                 &adGraphicSpec)) {
         short iconRes, oldResFile = CurResFile();
 
@@ -1640,7 +1640,7 @@ int HistTypeCompare(ShortHistoryStructPtr hist1, ShortHistoryStructPtr hist2) {
  * HistNameCompare - compare two cells based on the url itself
  **********************************************************************/
 int HistNameCompare(ShortHistoryStructPtr hist1, ShortHistoryStructPtr hist2) {
-  return (StringComp(hist1->name, hist2->name));
+  return (StringComp(spec_name(hist1), spec_name(hist2)));
 }
 
 /**********************************************************************
@@ -1913,7 +1913,7 @@ int AddAdToLinkHistory(AdId adId, char *pUrl, char adTitle[256],
     spec_make(NULL, adGraphic, &adGraphicSpec);
     // Is the ad graphic a valid graphic file?
     struct stat st_1896;
-    if (stat(adGraphicSpec.path, &st_1896) == 0 && st_1896.st_size > 0) {
+    if (stat(adGraphicSpec, &st_1896) == 0 && st_1896.st_size > 0) {
       // Make sure the history files are loaded ...
       err = GenHistoriesList();
 
@@ -2059,7 +2059,7 @@ void PurgeLinkHistoryPreviewOrphans(void) {
  * CreateIconFromAdGraphic - given an Ad, create a file with an icon
  *	representing the ad.
  **********************************************************************/
-int CreateIconFromAdGraphic(AdId adId, FSSpecPtr adGraphic) {
+int CreateIconFromAdGraphic(AdId adId, char * adGraphic) {
   int err = noErr;
   URLNameStr graphicName;
   FSSpec adIconSpec;
@@ -2068,7 +2068,7 @@ int CreateIconFromAdGraphic(AdId adId, FSSpecPtr adGraphic) {
   AdIdToName(adId, graphicName);
 
   // See if the graphic exists already;
-  if (spec_for(gLinkHistoryFolder.path, graphicName, &adIconSpec) != noErr) {
+  if (spec_for(gLinkHistoryFolder, graphicName, &adIconSpec) != noErr) {
     // the icon does not yet exist.  Create it from the adGraphic file.
     err = IconFromAd(&adIconSpec, adGraphic);
   } else
@@ -2123,10 +2123,10 @@ int DeleteAdGraphic(AdId adId) {
 
   // locate the ad file in the Link History Folder
   AdIdToName(adId, adGraphicName);
-  err = spec_for(gLinkHistoryFolder.path, adGraphicName, &adGraphicSpec);
+  err = spec_for(gLinkHistoryFolder, adGraphicName, &adGraphicSpec);
   if (err == noErr) {
     // Delete the ad preview we've found.
-    err = (unlink(adGraphicSpec.path) == 0) ? noErr : ioErr;
+    err = (unlink(adGraphicSpec) == 0) ? noErr : ioErr;
 
     // Remove the icon handle from the icon cache
     RemoveIconFromPVICache(adId);
@@ -2218,7 +2218,7 @@ void ZapPVICache(void) {
  **********************************************************************/
 /* GTK port: IconFromAd uses QuickDraw GWorld/QuickTime GraphicsImporter APIs.
    These are not available in GTK. This function is stubbed out. */
-int IconFromAd(FSSpecPtr iconSpec, FSSpecPtr adSpec) {
+int IconFromAd(char * iconSpec, char * adSpec) {
   (void)iconSpec;
   (void)adSpec;
   return -1; /* not implemented in GTK port */

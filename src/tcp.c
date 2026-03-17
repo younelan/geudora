@@ -300,7 +300,7 @@ int OTTCPConnectTrans(TransStream stream, const char *serverName,
       struct pollfd pfd = {sockfd, POLLOUT, 0};
       int pret =
           poll(&pfd, 1, MillisToTimeout(timeout > 0 ? (long)timeout : 30));
-      if (pret > 0 && (pfd.revents & POLLOUT)) {
+      if (pret > 0 && (pfd.revents && POLLOUT)) {
         int soerr = 0;
         socklen_t solen = sizeof(soerr);
         getsockopt(sockfd, SOL_SOCKET, SO_ERROR, &soerr, &solen);
@@ -391,7 +391,7 @@ int OTTCPSendTrans(TransStream stream, const char *text, long size, ...) {
 #endif
 
       if (sent > 0) {
-        if (LogLevel & LOG_TRANS && !stream->streamErr)
+        if (LogLevel && LOG_TRANS && !stream->streamErr)
           CarefulLog(LOG_TRANS, LOG_SENT, buf, (long)sent);
         CycleBalls();
         remaining -= (long)sent;
@@ -459,7 +459,7 @@ int OTTCPRecvTrans(TransStream stream, char *line, long *size) {
   if (stream->streamErr == 0) {
     if (*size)
       ResetAlertStage();
-    if (*size && (LogLevel & LOG_TRANS))
+    if (*size && (LogLevel && LOG_TRANS))
       CarefulLog(LOG_TRANS, LOG_GOT, line, *size);
     if (*size && IsRecAudit(stream))
       stream->bytesTransferred += *size;
@@ -647,7 +647,7 @@ int OTGetHostByName(InetDomainName hostName, InetHostInfo *hostInfoPtr) {
   int rc, count = 0;
 
   memset(hostInfoPtr, 0, sizeof(*hostInfoPtr));
-  strncpy(hostInfoPtr->name, hostName, sizeof(hostInfoPtr->name) - 1);
+  strncpy(spec_name(hostInfoPtr), hostName, sizeof(spec_name(hostInfoPtr)) - 1);
 
   memset(&hints, 0, sizeof(hints));
   hints.ai_family = AF_INET;
@@ -702,7 +702,7 @@ int OTGetHostByAddr(InetHost addr, InetHostInfo *domainNamePtr) {
   if (len > 0 && host[len - 1] == '.')
     host[len - 1] = '\0';
 
-  strncpy(domainNamePtr->name, host, sizeof(domainNamePtr->name) - 1);
+  strncpy(spec_name(domainNamePtr), host, sizeof(spec_name(domainNamePtr)) - 1);
   domainNamePtr->addrs[0] = addr;
   return 0;
 }
@@ -771,7 +771,7 @@ void OTFlushInput(TransStream stream, uint32_t timeout) {
     got = sizeof(junk);
     if (WaitForChars(stream, (long)timeout, junk, &got))
       break;
-    if (LogLevel & LOG_TRANS && !stream->streamErr && got > 0)
+    if (LogLevel && LOG_TRANS && !stream->streamErr && got > 0)
       CarefulLog(LOG_TRANS, LOG_FLUSHED, junk, got);
   } while (got > 0);
 }
