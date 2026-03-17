@@ -80,7 +80,7 @@ typedef enum {
 // LocalFlagChangeStruct.  Used to keep track changes to IMAP message flags in
 // the local cache.
 typedef struct LocalFlagChangeStruct LocalFlagChangeStruct, *LocalFlagChangePtr,
-    **LocalFlagChangeHandle;
+    *LocalFlagChangeHandle;
 struct LocalFlagChangeStruct {
   unsigned long uid;   // uid of affected message
   UIDVALIDITY mailbox; // UIDVALIDITY of mailbox that contains this message
@@ -145,28 +145,28 @@ struct IMAPMailboxAttributes {
 void AddMailbox(MAILSTREAM *mailStream, char *name, char delimiter,
                 long attributes);
 bool GetIMAPMailboxes(IMAPStreamPtr imapStream, bool progress);
-OSErr CreateNewPersCaches(void);
+int CreateNewPersCaches(void);
 void CreateIMAPMailFolder(void);
 void RebuildAllIMAPMailboxTrees(void);
 bool IsSpecialIMAPName(unsigned char *name, bool *bIsDir);
 bool IsIMAPSubPers(FSSpecPtr spec);
-OSErr ReadIMAPMailboxAttributes(FSSpecPtr spec, long *attributes);
-void PathToMailboxName(CStr path, Str63 mboxName, char delimiter);
-void PersNameToCacheName(PersHandle pers, UPtr cacheName);
-OSErr CreateLocalCache(void);
+int ReadIMAPMailboxAttributes(FSSpecPtr spec, long *attributes);
+void PathToMailboxName(CStr path, char mboxName[64], char delimiter);
+void PersNameToCacheName(PersHandle pers, unsigned char * cacheName);
+int CreateLocalCache(void);
 void DisposePersIMAPMailboxTrees(void);
 void DisposeMailboxTree(MailboxNodeHandle *tree);
 void ZapMailboxNode(MailboxNodeHandle *node);
 bool IsIMAPCacheName(unsigned char *name);
-OSErr WriteIMAPMailboxInfo(FSSpecPtr spec, MailboxNodeHandle node);
+int WriteIMAPMailboxInfo(FSSpecPtr spec, MailboxNodeHandle node);
 bool IMAPExists(void);
-OSErr IMAPRefreshAllCaches(void);
-OSErr IMAPRefreshPersCaches(void);
-OSErr RemoveIMAPCacheDir(FSSpec toDelete);
+int IMAPRefreshAllCaches(void);
+int IMAPRefreshPersCaches(void);
+int RemoveIMAPCacheDir(FSSpec toDelete);
 bool CanModifyMailboxTrees(void);
-OSErr UpdateLocalCache(bool progress);
+int UpdateLocalCache(bool progress);
 bool MailboxTreeGood(PersHandle pers);
-OSErr GetIMAPAttachFolder(FSSpecPtr attachSpec);
+int GetIMAPAttachFolder(FSSpecPtr attachSpec);
 MailboxNodeHandle TOCToMbox(TOCType * tocH);
 PersHandle TOCToPers(TOCType * tocH);
 PersHandle MailboxNodeToPers(MailboxNodeHandle mbox);
@@ -176,10 +176,10 @@ void UnlockMailboxNodeHandle(MailboxNodeHandle node);
 void ClosePersMailboxes(PersHandle pers);
 void IMAPCloseChildMailboxes(FSSpecPtr spec);
 bool IMAPMailboxHasUnread(TOCType * tocH, bool itDoesNow);
-void PathToMailboxName(CStr path, Str63 mboxName, char delimiter);
-OSErr UpdateIMAPMailboxInfo(TOCType * tocH);
+void PathToMailboxName(CStr path, char mboxName[64], char delimiter);
+int UpdateIMAPMailboxInfo(TOCType * tocH);
 short UIDToSumNum(unsigned long uid, TOCType * tocH);
-bool IMAPMailboxTitle(TOCType * tocH, Str255 title);
+bool IMAPMailboxTitle(TOCType * tocH, char title[256]);
 void IMAPPersIDChanged(PersHandle pers, MailboxNodeHandle tree);
 
 // Mailbox Information
@@ -209,7 +209,7 @@ long IMAPCountMailboxes(MailboxNodeHandle tree, MailboxNeedsEnum needs);
 // Mailbox Creation and Deletion
 bool IMAPAddMailbox(FSSpecPtr spec, bool folder, bool *success, bool silent);
 bool IMAPDeleteMailbox(FSSpecPtr toDelete);
-bool IMAPRenameMailbox(FSSpecPtr spec, UPtr name);
+bool IMAPRenameMailbox(FSSpecPtr spec, unsigned char * name);
 bool IMAPMoveMailbox(FSSpecPtr fromFolderSpec, FSSpecPtr toSpec,
                      bool lastToMove, bool oneMoved, bool *dontWarn);
 
@@ -232,7 +232,7 @@ bool EnsureSpecialMailboxes(PersHandle pers);
 // Delete Messages cache
 TOCType * GetHiddenCacheMailbox(MailboxNodeHandle mbox, bool bForce,
                                 bool bCreateIfNeeded);
-OSErr HideDeletedMessages(MailboxNodeHandle mbox, bool bForce, bool bShow);
+int HideDeletedMessages(MailboxNodeHandle mbox, bool bForce, bool bShow);
 short CountDeletedIMAPMessages(TOCType * tocH);
 bool HideShowSummary(TOCType * toc, TOCType * tocH, TOCType * hidTocH,
                      short sumNum);
@@ -270,7 +270,7 @@ bool SpecIsFilled(FSSpecPtr spec);
 MailboxNodeHandle LocateInboxForPers(PersHandle pers);
 bool IMAPDontAutoFccMailbox(TOCType * tocH);
 
-Handle DupHandle(Handle h);
+void *DupHandle(void *h);
 
 /* IMAPPersActive: whether this personality has active IMAP connections */
 #ifndef IMAPPersActive

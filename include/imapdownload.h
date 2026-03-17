@@ -59,7 +59,7 @@ struct LocalFlagChange;
 #ifndef PETE_H
 typedef void *PETEInst;
 #endif
-typedef void **BoxCountHandle;
+typedef void *BoxCountHandle;
 
 // resource where we put IMAP index
 #define INDEX_RES_TYPE 'IIND'
@@ -97,7 +97,7 @@ struct IndexStruct {
 // AttachmentStubStruct.  Used to save enough information to fecth an attachment
 // later
 typedef struct AttachmentStubStruct AttachmentStubStruct, *AttachmentStubPtr,
-    **AttachmentStubHandle;
+    *AttachmentStubHandle;
 struct AttachmentStubStruct {
   unsigned long persID;    // personality ID of owning personality
   unsigned long uid;       // uid of message
@@ -107,23 +107,23 @@ struct AttachmentStubStruct {
 };
 
 // IMAPSCStruct - one for each header/value pair to be searched
-typedef struct IMAPSCStruct IMAPSCStruct, *IMAPSCPtr, **IMAPSCHandle;
+typedef struct IMAPSCStruct IMAPSCStruct, *IMAPSCPtr, *IMAPSCHandle;
 struct IMAPSCStruct {
-  Str255 string;                    // String to search for
+  char string[256];                    // String to search for
   HeaderCombEnum headerCombination; // nothing special, body, or all headers
   short headerName;                 // string id of header to search
 };
 
 // IMAPSResultStruct - structure returned for each match
 typedef struct IMAPSResultStruct IMAPSResultStruct, *IMAPSResultPtr,
-    **IMAPSResultHandle;
+    *IMAPSResultHandle;
 struct IMAPSResultStruct {
   short box;    // index into BoxCount of match
   long uidHash; // the matching summary
 };
 
 // special value indicating all messages in lcoal cache need to be trashed
-#define MSUM_DELETE_ALL (Handle)(-1)
+#define MSUM_DELETE_ALL (void *)(-1)
 #define SEARCH_WINDOW (MailboxNodeHandle)(-1)
 
 // DeliveryStruct.  Used to keep track of messages to be delivered to all
@@ -137,10 +137,10 @@ struct DeliveryNode {
   bool aborted;  // set to true by the main thread to abort the download
 
   MailboxNodeHandle mailbox; // handle to the IMAP mailbox we're updating
-  Handle ta;                 // stores list of summaries to be (a)dded
-  Handle td;                 // stores list of summaries to be (d)eleted
-  Handle tu;                 // stores list of summaries to be (u)pdated
-  Handle tc;                 // stores list of summaries to be (c)opied
+  void *ta;                 // stores list of summaries to be (a)dded
+  void *td;                 // stores list of summaries to be (d)eleted
+  void *tu;                 // stores list of summaries to be (u)pdated
+  void *tc;                 // stores list of summaries to be (c)opied
 
   IMAPSResultHandle results; // stores list of IMAP search results
   short threadCount;         // number of threads adding results to this node
@@ -169,7 +169,7 @@ struct UpdateNode {
 // IMAPAppendStruct.  Contains the information necessary to upload a POP message
 // to an IMAP server
 typedef struct IMAPAppendStruct IMAPAppendStruct, *IMAPAppendPtr,
-    **IMAPAppendHandle;
+    *IMAPAppendHandle;
 struct IMAPAppendStruct {
   FSSpec spoolSpec;        // the spooled message
   StateEnum fromState;     // the state of the original message
@@ -186,8 +186,8 @@ struct IMAPAppendStruct {
 typedef struct UIDCopyStruct UIDCopyStruct, *UIDCopyPtr;
 struct UIDCopyStruct {
   FSSpec toSpec;   // destination mailbox
-  Handle hOldSums; // a copy of the summaries transferred.
-  Handle hNewUIDs; // list of new UIDs from UIDPLUS response.
+  void *hOldSums; // a copy of the summaries transferred.
+  void *hNewUIDs; // list of new UIDs from UIDPLUS response.
   bool copy;       // true if this was a copy
 };
 
@@ -225,33 +225,33 @@ MailboxNodeHandle FetchNewMessages(TOCType * tocH, bool fetchFlags,
                                    bool isAutoCheck);
 MailboxNodeHandle DoFetchNewMessages(FSSpecPtr mailboxSpec, bool fetchFlags,
                                      bool isAutoCheck);
-bool IMAPDelivery(TOCType * inToc, Handle *toAdd, Handle *toUpdate,
-                  Handle *toDelete, Handle *toCopy, bool *filter,
+bool IMAPDelivery(TOCType * inToc, void **toAdd, void **toUpdate,
+                  void **toDelete, void **toCopy, bool *filter,
                   IMAPSResultHandle *results, MailboxNodeHandle *mbox,
                   bool *checkAttachments);
 void IMAPAbortResync(TOCType * toc);
-OSErr RsyncCurPersInbox(void);
-OSErr IMAPProcessMailboxes(FSSpecHandle mailboxes, TaskKindEnum task);
+int RsyncCurPersInbox(void);
+int IMAPProcessMailboxes(FSSpecHandle mailboxes, TaskKindEnum task);
 bool DoIMAPProcessMailboxes(FSSpecHandle mailboxes, TaskKindEnum task);
 bool ResyncCurrentIMAPMailbox(void);
 bool UpdatableIMAPState(StateEnum state);
 int SaveMinimalHeader(MAILSTREAM *stream);
 
 // Message downloading routines
-bool DoDownloadMessages(TOCType * toc, Handle uids, bool attachmentsToo);
-OSErr UIDDownloadMessage(TOCType * inToc, unsigned long uid,
+bool DoDownloadMessages(TOCType * toc, void *uids, bool attachmentsToo);
+int UIDDownloadMessage(TOCType * inToc, unsigned long uid,
                          bool forceForeground, bool attachmentsToo);
-OSErr UIDDownloadMessages(TOCType * inToc, Handle uids, bool forceForeground,
+int UIDDownloadMessages(TOCType * inToc, void *uids, bool forceForeground,
                           bool attachmentsToo);
 bool EnsureMsgDownloaded(TOCType * tocH, int sumNum, bool attachmentsToo);
-OSErr CacheMessage(TOCType * tocH, short sumNum);
+int CacheMessage(TOCType * tocH, short sumNum);
 
 bool IMAPMessagesWaiting(TOCType * tocH, FSSpecPtr spoolSpec);
 void IMAPAbortMessageFetch(TOCType * tocH, short sumNum);
 void IMAPRemoveCachedContents(TOCType * tocH, short sumNum);
 void IMAPRemoveSelectedCachedContents(TOCType * tocH);
 void IMAPFetchSelectedMessages(TOCType * tocH, bool attach);
-OSErr IMAPTransferLocalCache(TOCType * fromTocH, MSumPtr pOrigSum,
+int IMAPTransferLocalCache(TOCType * fromTocH, MSumPtr pOrigSum,
                              TOCType * toTocH, long newUid, bool copy);
 
 // mailbox polling
@@ -273,7 +273,7 @@ bool FetchAllIMAPAttachments(TOCType * toc, short sumNum, bool forceForeground);
 bool FetchAllIMAPAttachmentsBySpec(FSSpecPtr spec, MailboxNodeHandle mailbox,
                                    bool forceForeground);
 bool HasStubFileAttachment(TOCType * tocH, short sumNum);
-OSErr FetchIMAPAttachment(PETEHandle pte, FSSpecPtr spec, bool forceForeground);
+int FetchIMAPAttachment(PETEHandle pte, FSSpecPtr spec, bool forceForeground);
 void RedisplayIMAPMessage(MyWindowPtr win);
 
 // functions to determine the state of a given message in an IMAP mailbox
@@ -281,34 +281,34 @@ bool IMAPMessageDownloaded(TOCType * t, short s);
 bool IMAPMessageBeingDownloaded(TOCType * t, short s);
 
 // Message transfer
-OSErr IMAPTransferMessage(TOCType * fromTocH, TOCType * toTocH,
+int IMAPTransferMessage(TOCType * fromTocH, TOCType * toTocH,
                           unsigned long uid, bool copy, bool forceForeground);
-OSErr IMAPTransferMessages(TOCType * fromTocH, TOCType * toTocH, Handle uids,
+int IMAPTransferMessages(TOCType * fromTocH, TOCType * toTocH, void *uids,
                            bool copy, bool forceForeground);
-OSErr DoTransferMessages(TOCType * fromTocH, TOCType * toTocH, Handle uids,
+int DoTransferMessages(TOCType * fromTocH, TOCType * toTocH, void *uids,
                          bool copy);
-OSErr IMAPTransferMessagesToServer(TOCType * fromTocH, TOCType * toTocH,
-                                   Handle sumNums, bool copy,
+int IMAPTransferMessagesToServer(TOCType * fromTocH, TOCType * toTocH,
+                                   void *sumNums, bool copy,
                                    bool forceForeground);
-OSErr IMAPTransferMessageToServer(TOCType * tocH, TOCType * toTocH,
+int IMAPTransferMessageToServer(TOCType * tocH, TOCType * toTocH,
                                   short sumNum, bool copy,
                                   bool forceForeground);
-OSErr DoTransferMessagesToServer(TOCType * toTocH, IMAPAppendHandle spoolData,
+int DoTransferMessagesToServer(TOCType * toTocH, IMAPAppendHandle spoolData,
                                  bool copy, bool forceForeground);
 void CleanUpAttachmentsAfterIMAPTransfer(TOCType * tocH, short sumNum);
 char *FlagsString(char **flags, bool seen, bool deleted, bool flagged,
                   bool answered, bool draft, bool recent, bool sent);
 void UpdatePOPMailboxes(void);
-OSErr IMAPTransferMessagesFromSearchWindow(TOCType * fromTocH, TOCType * toTocH,
+int IMAPTransferMessagesFromSearchWindow(TOCType * fromTocH, TOCType * toTocH,
                                            bool copy);
-OSErr IMAPMoveIMAPMessages(TOCType * fromTocH, TOCType * toTocH, bool copy);
+int IMAPMoveIMAPMessages(TOCType * fromTocH, TOCType * toTocH, bool copy);
 
 // Message deletion
 bool IMAPDeleteMessage(TOCType * tocH, unsigned long uid, bool nuke,
                        bool expunge, bool undelete);
-bool IMAPDeleteMessages(TOCType * tocH, Handle uids, bool nuke, bool expunge,
+bool IMAPDeleteMessages(TOCType * tocH, void *uids, bool nuke, bool expunge,
                         bool undelete, bool forceForeground);
-bool DoDeleteMessage(TOCType * tocH, Handle uids, bool nuke, bool expunge,
+bool DoDeleteMessage(TOCType * tocH, void *uids, bool nuke, bool expunge,
                      bool undelete);
 bool IMAPRemoveDeletedMessages(TOCType * tocH);
 bool DoExpungeMailbox(TOCType * tocH);
@@ -321,10 +321,10 @@ bool IMAPDeleteMessageDuringFiltering(TOCType * tocH, PersHandle pers,
 bool IMAPDeleteMessagesFromSearchWindow(TOCType * tocH);
 
 // offline commands
-OSErr PerformQueuedCommands(PersHandle pers, IMAPStreamPtr imapStream,
+int PerformQueuedCommands(PersHandle pers, IMAPStreamPtr imapStream,
                             bool progress);
 void ExecuteAllPendingIMAPCommands(void);
-OSErr QueueMessFlagChange(TOCType * tocH, short sumNum, StateEnum state,
+int QueueMessFlagChange(TOCType * tocH, short sumNum, StateEnum state,
                           bool bTrashed);
 bool PendingMessFlagChange(unsigned long uid, MailboxNodeHandle mbox);
 
@@ -333,7 +333,7 @@ void UID_LL_OrderedInsert(UIDNodeHandle *head, UIDNodeHandle *item, bool isNew);
 void UID_LL_Zap(UIDNodeHandle *list);
 
 // Error reporting.
-OSErr IMAPError(short operation, short explanation, OSErr err);
+int IMAPError(short operation, short explanation, int err);
 void IMAPAlert(IMAPStreamPtr stream, TaskKindEnum taskKind);
 void IMAPWarnings(void);
 void IMAPSpamWatchSupported(bool bSupported, bool bWarnIfNeeded);
@@ -343,7 +343,7 @@ void IMAPResetSpamSupportPrefs(void);
 bool IMAPSearch(TOCType * searchWin, BoxCountHandle boxesToSearch,
                 IMAPSCHandle searchCriteria, bool matchAll);
 bool DoIMAPServerSearch(TOCType * searchWin, BoxCountHandle specs,
-                        Handle specsToSeach, IMAPSCHandle searchCriteria,
+                        void *specsToSeach, IMAPSCHandle searchCriteria,
                         bool matchAll, long firstUID);
 void IMAPAbortSearch(TOCType * searchWin);
 bool IMAPSearchMailbox(TOCType * searchWin, BoxCountHandle boxesToSearch,
@@ -368,20 +368,20 @@ void FlagForExpunge(TOCType * tocH);
 void IMAPTocHBusy(TOCType * tocH, bool busy);
 void ResyncOpenMailboxes(PersHandle pers);
 void ResetFilterFlags(TOCType * tocH);
-Handle IMAPFetchMessageHeadersForFiltering(TOCType * tocH, short sumNum);
+void *IMAPFetchMessageHeadersForFiltering(TOCType * tocH, short sumNum);
 void GetNextWaitingIMAPToc(TOCType * *toc);
-OSErr IMAPMoveMessageDuringFiltering(TOCType * fromTocH, short sumNum,
+int IMAPMoveMessageDuringFiltering(TOCType * fromTocH, short sumNum,
                                      TOCType * toTocH, bool copy,
                                      FilterPBPtr fpb);
-OSErr CacheIMAPMessageForSpamWatch(TOCType * tocH, short sumNum);
-OSErr IMAPFilterProgress(TOCType * tocH);
-OSErr DoIMAPFilterProgress(void);
+int CacheIMAPMessageForSpamWatch(TOCType * tocH, short sumNum);
+int IMAPFilterProgress(TOCType * tocH);
+int DoIMAPFilterProgress(void);
 void IMAPFilteringCancelled(bool bOverride);
 
 // Miscellaneous utility functions
 // Miscellaneous utility functions
 DeliveryNodeHandle FindNodeByToc(TOCType * toc);
-int pstrincmp(UPtr ps, const char *cs, short n);
+int pstrincmp(unsigned char * ps, const char *cs, short n);
 bool IsIMAPOperationUnderway(TaskKindEnum task);
 bool IsIMAPMailboxBusy(TOCType * tocH);
 bool IMAPDoQuit(void);
@@ -407,7 +407,7 @@ static inline void UpdateNumStatWithTime(int stat, long count,
 #endif
 
 void IMAPSearchIncremental(MailboxNodeHandle mbox);
-OSErr AddTaskErrorsS(const char *error, const char *explanation,
+int AddTaskErrorsS(const char *error, const char *explanation,
                      TaskKindEnum taskKind, long persId);
 
 #endif // IMAPDOWNLOAD_H

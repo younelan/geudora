@@ -28,56 +28,56 @@ ADVISED OF THE POSSIBILITY OF SUCH DAMAGE. */
 
 #define LOG_DOMAIN "eudora.audit"
 
-OSErr AuditShutdown(long faceTime, long rearTime, long connectTime, long totalTime)
+int AuditShutdown(long faceTime, long rearTime, long connectTime, long totalTime)
 {
     g_debug(LOG_DOMAIN ": shutdown face=%ld rear=%ld connect=%ld total=%ld",
             faceTime, rearTime, connectTime, totalTime);
     return 0;
 }
 
-OSErr AuditTimestamp(long faceTime, long rearTime, long connectTime, long totalTime)
+int AuditTimestamp(long faceTime, long rearTime, long connectTime, long totalTime)
 {
     g_debug(LOG_DOMAIN ": timestamp face=%ld rear=%ld connect=%ld total=%ld",
             faceTime, rearTime, connectTime, totalTime);
     return 0;
 }
 
-OSErr AuditCheckStart(uLong sessionID, uLong personalityID, bool isAuto)
+int AuditCheckStart(uLong sessionID, uLong personalityID, bool isAuto)
 {
     g_debug(LOG_DOMAIN ": check-start session=%lu pers=%lu auto=%d",
             sessionID, personalityID, isAuto);
     return 0;
 }
 
-OSErr AuditCheckDone(uLong sessionID, long messagesRcvd, long bytesRcvd)
+int AuditCheckDone(uLong sessionID, long messagesRcvd, long bytesRcvd)
 {
     g_debug(LOG_DOMAIN ": check-done session=%lu msgs=%ld bytes=%ld",
             sessionID, messagesRcvd, bytesRcvd);
     return 0;
 }
 
-OSErr AuditSendStart(uLong sessionID, uLong personalityID, bool isAuto)
+int AuditSendStart(uLong sessionID, uLong personalityID, bool isAuto)
 {
     g_debug(LOG_DOMAIN ": send-start session=%lu pers=%lu auto=%d",
             sessionID, personalityID, isAuto);
     return 0;
 }
 
-OSErr AuditSendDone(uLong sessionID, long messagesSent, long bytesSent)
+int AuditSendDone(uLong sessionID, long messagesSent, long bytesSent)
 {
     g_debug(LOG_DOMAIN ": send-done session=%lu msgs=%ld bytes=%ld",
             sessionID, messagesSent, bytesSent);
     return 0;
 }
 
-OSErr AuditStartup(long platform, long version, long buildNumber)
+int AuditStartup(long platform, long version, long buildNumber)
 {
     g_debug(LOG_DOMAIN ": startup platform=%ld version=%ld build=%ld",
             platform, version, buildNumber);
     return 0;
 }
 
-OSErr AuditConnect(bool connectionUp)
+int AuditConnect(bool connectionUp)
 {
     g_debug(LOG_DOMAIN ": connect up=%d", connectionUp);
     return 0;

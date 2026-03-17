@@ -86,7 +86,7 @@ typedef struct
 {
 	Rect r;
 	bool zoomed;
-} PositionType, *PositionPtr, **PositionHandle;
+} PositionType, *PositionPtr, *PositionHandle;
 
 #pragma mark Printing
 /**********************************************************************

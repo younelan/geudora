@@ -33,11 +33,11 @@ ADVISED OF THE POSSIBILITY OF SUCH DAMAGE. */
  * Original used:
  *   - Mac ControlHandle for find/word/case buttons → GTK4 GtkWidget buttons
  *   - PETEHandle (Pete editor) for query text → GtkWidget* (gEditCtrl)
- *   - FindHandle (Handle to FindVars) → FindVars* (malloc'd)
- *   - Pascal strings (Str63, Str255, PStr) → C strings (char[])
+ *   - FindHandle (void *to FindVars) → FindVars* (malloc'd)
+ *   - Pascal strings (Str63, Str255, char *) → C strings (char[])
  *   - Mac window manager (FrontWindow_, GetNextWindow, etc.) → GTK4 windows
  *   - Mac controls (NewControlSmall, SetControlValue, etc.) → GtkWidget
- *   - UPtr/UHandle text → char* text
+ *   - unsigned char * text -> char* text
  *
  * PETEHandle = GtkWidget* (gEditCtrl text view widget)
  ************************************************************************/
@@ -57,14 +57,14 @@ ADVISED OF THE POSSIBILITY OF SUCH DAMAGE. */
  * FindVars — state for the find system
  *
  * Original: FindHandle FG was a Mac Handle (FindVars**) with:
- *   Str63 what — Pascal string, the search term
+ *   char what[64] — Pascal string, the search term
  *   MyWindowPtr win — the Find window
  *   bool findDone, finding
  *   short kind — which window kind we're finding in
  *   ControlHandle controls[fcLimit] — Mac controls
  *   PETEHandle queryPTE — Pete editor for query string
  *   Rect qRect
- *   Str255 whereStr
+ *   char whereStr[256]
  *
  * GTK4 port: flat struct, malloc'd. C strings. GtkWidget* for controls.
  ************************************************************************/
@@ -549,8 +549,7 @@ static void on_entry_activate(GtkEntry *entry, gpointer user_data)
  * FindOpen - open the find window
  *
  * Original:
- *   - InitFind to allocate FindVars Handle
- *   - GetNewMyWindow(FIND_WIND) from Mac window template resource
+ *   - InitFind to allocate FindVars void **   - GetNewMyWindow(FIND_WIND) from Mac window template resource
  *   - PeteCreate for query text editor
  *   - PETESetCallback for text change notification
  *   - ConfigFontSetup, MySetThemeWindowBackground
@@ -559,7 +558,7 @@ static void on_entry_activate(GtkEntry *entry, gpointer user_data)
  *   - FindDidResize to lay everything out
  *   - Set window callbacks: close, position, bgClick, button, idle,
  *     key, help
- *   - PCopy(what, What) to set query, PeteSetString to display it
+ *   - g_strlcpy((char *)(what), (char *)(What), sizeof(what)) to set query, PeteSetString to display it
  *   - SetControlValue for Case/Word from prefs
  *   - ShowMyWindow/ShowWindow, UserSelectWindow
  *   - PeteSelect to select all query text
@@ -860,7 +859,7 @@ bool FindListView(MyWindowPtr win, ViewListPtr pView, const char *what)
     /* TODO: get selection state from pView when ViewList is fully ported */
 
     for (row = startRow; !found && (row != startRow || !wrapped); row++) {
-        /* Original: if (row >= (*hList)->dataBounds.bottom) wrap.
+        /* Original: if (row >= hList->dataBounds.bottom) wrap.
            We don't have dataBounds in the GTK port yet, so we rely
            on LVGetItem returning false when past the end. */
         if (!LVGetItem(pView, row + 1, &info, false)) {
@@ -977,7 +976,7 @@ bool SetFindString(char *what, int maxLen, GtkWidget *pte)
 /************************************************************************
  * FindEnterSelection - enter a selection into the find system
  *
- * Original: PSCopy(What, what); if Win, PeteSetString(what, QueryPTE);
+ * Original: g_strlcpy((char *)(What), (char *)(what), sizeof(What)); if Win, PeteSetString(what, QueryPTE);
  * if searchToo, SearchNewFindString.
  *
  * GTK4: copy C string, set entry widget text.
@@ -1003,7 +1002,7 @@ void FindEnterSelection(const char *what, bool searchToo)
 /************************************************************************
  * GetFindString - get the current find string
  *
- * Original: PCopy(what, What) — Pascal copy.
+ * Original: g_strlcpy((char *)(what), (char *)(What), sizeof(what)) — Pascal copy.
  * GTK4: C string copy.
  ************************************************************************/
 bool GetFindString(char *what, int maxLen)
@@ -1024,11 +1023,11 @@ bool GetFindString(char *what, int maxLen)
 /************************************************************************
  * FindSub - find a substring in some text
  *
- * Original: brute force search. Appended sub to Handle text (PtrPlusHand_),
- * null-terminated both, called FindByteOffset, then restored Handle size.
+ * Original: brute force search. Appended sub to void *text (buf_append),
+ * null-terminated both, called FindByteOffset, then restored void *size.
  * Used global Sensitive for case sensitivity.
  *
- * GTK4: simple string search on flat buffers. No Handle manipulation.
+ * GTK4: simple string search on flat buffers. No void *manipulation.
  * sub and text are C strings with explicit lengths.
  ************************************************************************/
 long FindSub(const char *sub, long subLen, char *text, long textLen, long offset)

@@ -56,10 +56,10 @@ void DisposeTLMIMEParam(emsMIMEParamHandle param);
 /**********************************************************************
  * NewTLMIME - Allocate a tlMIME structure
  **********************************************************************/
-OSErr NewTLMIME(emsMIMEHandle *tlMIME)
+int NewTLMIME(emsMIMEHandle *tlMIME)
 {
 	if ((*tlMIME = NewZH(emsMIMEtype)))
-		(**tlMIME)->size = sizeof(emsMIMEtype);
+		(*(tlMIME))->size = sizeof(emsMIMEtype);
 	return(MemError());
 }
 
@@ -70,12 +70,12 @@ void DisposeTLMIME(emsMIMEHandle tlMIME)
 {
 	if (tlMIME)
 	{
-		if (*tlMIME)
+		if (tlMIME)
 		{
-			DisposeTLMIMEParam((*tlMIME)->params);
-			DisposeTLMIMEParam((*tlMIME)->contentParams);
+			DisposeTLMIMEParam(tlMIME->params);
+			DisposeTLMIMEParam(tlMIME->contentParams);
 		}
-		ZapHandle(tlMIME);
+		free(tlMIME);
 	}
 }
 
@@ -86,32 +86,32 @@ void DisposeTLMIMEParam(emsMIMEParamHandle param)
 {
 	if (param)
 	{
-		if (*param)
+		if (param)
 		{
-			if ((*param)->next) DisposeTLMIMEParam((*param)->next);
-			ZapHandle((*param)->value);
+			if (param->next) DisposeTLMIMEParam(param->next);
+			free(param->value);
 		}
-		ZapHandle(param);
+		free(param);
 	}
 }
 
 /**********************************************************************
  * AddTLMIME - add type, subtype, param, version, or content-disposition
  **********************************************************************/
-OSErr AddTLMIME(emsMIMEHandle tlMIME, short what, PStr name, PStr value)
+int AddTLMIME(emsMIMEHandle tlMIME, short what, char * name, char * value)
 {
-	UHandle h2=nil;
+	unsigned char * h2=nil;
 	emsMIMEParamHandle h3=nil;
-	OSErr err = noErr;
+	int err = noErr;
 
 	switch(what)
 	{
 		case TLMIME_TYPE:
-			g_strlcpy((*tlMIME)->mimeType, (const char *)name, sizeof((*tlMIME)->mimeType));
+			g_strlcpy(tlMIME->mimeType, (const char *)name, sizeof(tlMIME->mimeType));
 			break;
 
 		case TLMIME_SUBTYPE:
-			g_strlcpy((*tlMIME)->subType, (const char *)name, sizeof((*tlMIME)->subType));
+			g_strlcpy(tlMIME->subType, (const char *)name, sizeof(tlMIME->subType));
 			break;
 
 		case TLMIME_CONTENTDISP_PARAM:
@@ -121,19 +121,17 @@ OSErr AddTLMIME(emsMIMEHandle tlMIME, short what, PStr name, PStr value)
 			emsMIMEParamHandle scan;
 
 			/* already in the list? */
-			for (scan=(what==TLMIME_PARAM ? (*tlMIME)->params : (*tlMIME)->contentParams); scan; scan=(*scan)->next)
+			for (scan=(what==TLMIME_PARAM ? tlMIME->params : tlMIME->contentParams); scan; scan=scan->next)
 			{
-				if (StringSame(LDRef(scan)->name, (const char *)name))
+				if (StringSame(scan->name, (const char *)name))
 				{
-					UL(scan);
 					if (value && valueLen > 0)
 					{
-						PtrPlusHand(value, (Handle)(*scan)->value, (long)valueLen);
+						buf_append((void *)scan->value, value, (long)valueLen);
 						if (MemError()) return(MemError());
 					}
 					return(noErr);
 				}
-				UL(scan);
 			}
 
 			/* not in the list — make a new one */
@@ -141,22 +139,22 @@ OSErr AddTLMIME(emsMIMEHandle tlMIME, short what, PStr name, PStr value)
 			h2 = value ? NuHTempBetter((long)valueLen) : nil;
 			if (h3 && (!value || h2))
 			{
-				g_strlcpy((*h3)->name, (const char *)name, sizeof((*h3)->name));
+				g_strlcpy(h3->name, (const char *)name, sizeof(h3->name));
 				if (h2 && valueLen > 0)
 				{
-					BMD(value, *h2, valueLen);
-					(*h3)->value = (void **)h2;
+					BMD(value, h2, valueLen);
+					h3->value = h2;
 				}
 				if (what==TLMIME_PARAM)
 				{
-					emsMIMEParamHandle *tail = &(*tlMIME)->params;
-					while (*tail) tail = &(**tail)->next;
+					emsMIMEParamHandle *tail = &tlMIME->params;
+					while (*tail) tail = &(*tail)->next;
 					*tail = h3;
 				}
 				else
 				{
-					emsMIMEParamHandle *tail = &(*tlMIME)->contentParams;
-					while (*tail) tail = &(**tail)->next;
+					emsMIMEParamHandle *tail = &tlMIME->contentParams;
+					while (*tail) tail = &(*tail)->next;
 					*tail = h3;
 				}
 				h2 = nil;
@@ -168,34 +166,34 @@ OSErr AddTLMIME(emsMIMEHandle tlMIME, short what, PStr name, PStr value)
 		}
 
 		case TLMIME_VERSION:
-			g_strlcpy((*tlMIME)->mimeVersion, (const char *)name, sizeof((*tlMIME)->mimeVersion));
+			g_strlcpy(tlMIME->mimeVersion, (const char *)name, sizeof(tlMIME->mimeVersion));
 			break;
 
 		case TLMIME_CONTENTDISP:
-			g_strlcpy((*tlMIME)->contentDisp, (const char *)name, sizeof((*tlMIME)->contentDisp));
+			g_strlcpy(tlMIME->contentDisp, (const char *)name, sizeof(tlMIME->contentDisp));
 			break;
 	}
 
-	ZapHandle(h2);
-	ZapHandle(h3);
+	free(h2);
+	free(h3);
 	return(err);
 }
 
 /**********************************************************************
  * FlattenTLMIME - serialize a tlMIME structure into a single handle
  **********************************************************************/
-OSErr FlattenTLMIME(emsMIMEHandle tlMIME, FlatTLMIMEHandle *flat)
+int FlattenTLMIME(emsMIMEHandle tlMIME, FlatTLMIMEHandle *flat)
 {
 	Accumulator a;
-	OSErr err;
+	int err;
 	emsMIMEParamHandle p;
 	emsMIMEtype localType;
 	emsMIMEparam localParam;
 	short len;
 
-	if (!tlMIME || !(*tlMIME)->mimeType[0] || !(*tlMIME)->subType[0]) return(fnfErr);
+	if (!tlMIME || !tlMIME->mimeType[0] || !tlMIME->subType[0]) return(fnfErr);
 
-	localType = **tlMIME;
+	localType = *tlMIME;
 
 	if (!(err=AccuInit(&a)))
 	{
@@ -207,23 +205,23 @@ OSErr FlattenTLMIME(emsMIMEHandle tlMIME, FlatTLMIMEHandle *flat)
 			if (!(err=AccuAddPtr(&a, &subLen, 1)))
 			if (!(err=AccuAddPtr(&a, localType.subType, subLen)))
 			{
-				for (p=(*tlMIME)->params; !err && p; p=(*p)->next)
+				for (p=tlMIME->params; !err && p; p=p->next)
 				{
-					localParam = **p;
+					localParam = *p;
 					unsigned char nameLen = (unsigned char)strlen(localParam.name);
 					if (!(err=AccuAddPtr(&a, &nameLen, 1)))
 					if (!(err=AccuAddPtr(&a, localParam.name, nameLen)))
 					{
-						len = (short)GetHandleSize((Handle)(*p)->value);
+						len = (short)GetHandleSize((void *)p->value);
 						if (!(err=AccuAddPtr(&a, (void*)&len, 2)))
-							err = AccuAddHandle(&a, (UHandle)(*p)->value);
+							err = AccuAddHandle(&a, (unsigned char *)p->value);
 					}
 				}
 			}
 		}
 	}
 
-	if (err) AccuZap(&a);
+	if (err) { free(a.data); a.data = NULL; a.offset = a.size = 0; }
 	else
 	{
 		AccuTrim(&a);
@@ -236,9 +234,9 @@ OSErr FlattenTLMIME(emsMIMEHandle tlMIME, FlatTLMIMEHandle *flat)
 /**********************************************************************
  * UnflattenTLMIME - deserialize a handle back into a tlMIME structure
  **********************************************************************/
-OSErr UnflattenTLMIME(FlatTLMIMEHandle flat, emsMIMEHandle *tlMIME)
+int UnflattenTLMIME(FlatTLMIMEHandle flat, emsMIMEHandle *tlMIME)
 {
-	OSErr err = noErr;
+	int err = noErr;
 	unsigned char name[64];
 	unsigned char value[256];
 	long offset=0;
@@ -247,15 +245,15 @@ OSErr UnflattenTLMIME(FlatTLMIMEHandle flat, emsMIMEHandle *tlMIME)
 
 	if ((err = NewTLMIME(tlMIME))) return(err);
 
-	len = GetHandleSize((Handle)flat);
+	len = GetHandleSize((void *)flat);
 
 	/* type */
 	if (!err && offset<len)
 	{
-		unsigned char slen = ((unsigned char *)*flat)[offset];
+		unsigned char slen = ((unsigned char *)flat)[offset];
 		offset++;
 		if (slen > 63) slen = 63;
-		memcpy(name, (unsigned char *)*flat+offset, slen);
+		memcpy(name, (unsigned char *)flat+offset, slen);
 		name[slen] = '\0';
 		offset += slen;
 		err = AddTLMIME(*tlMIME, TLMIME_TYPE, name, nil);
@@ -265,10 +263,10 @@ OSErr UnflattenTLMIME(FlatTLMIMEHandle flat, emsMIMEHandle *tlMIME)
 	/* subtype */
 	if (!err && offset<len)
 	{
-		unsigned char slen = ((unsigned char *)*flat)[offset];
+		unsigned char slen = ((unsigned char *)flat)[offset];
 		offset++;
 		if (slen > 63) slen = 63;
-		memcpy(name, (unsigned char *)*flat+offset, slen);
+		memcpy(name, (unsigned char *)flat+offset, slen);
 		name[slen] = '\0';
 		offset += slen;
 		err = AddTLMIME(*tlMIME, TLMIME_SUBTYPE, name, nil);
@@ -278,17 +276,17 @@ OSErr UnflattenTLMIME(FlatTLMIMEHandle flat, emsMIMEHandle *tlMIME)
 	/* params */
 	while (!err && offset<len)
 	{
-		unsigned char slen = ((unsigned char *)*flat)[offset];
+		unsigned char slen = ((unsigned char *)flat)[offset];
 		offset++;
 		if (slen > 63) slen = 63;
-		memcpy(name, (unsigned char *)*flat+offset, slen);
+		memcpy(name, (unsigned char *)flat+offset, slen);
 		name[slen] = '\0';
 		offset += slen;
 		if (offset+2<=len)
 		{
-			paramLen = (((unsigned short)((unsigned char *)*flat)[offset])<<8)|((unsigned char *)*flat)[offset+1];
+			paramLen = (((unsigned short)((unsigned char *)flat)[offset])<<8)|((unsigned char *)flat)[offset+1];
 			if (paramLen > 255) paramLen = 255;
-			memcpy(value, (unsigned char *)*flat+offset+2, paramLen);
+			memcpy(value, (unsigned char *)flat+offset+2, paramLen);
 			value[paramLen] = '\0';
 			offset += paramLen+2;
 			err = AddTLMIME(*tlMIME, TLMIME_PARAM, name, value);
@@ -327,10 +325,10 @@ static void ZapAddress(emsAddressH addr)
 
 	while (addr)
 	{
-		if ((*addr)->address) DisposeHandle((Handle)(*addr)->address);
-		if ((*addr)->realname) DisposeHandle((Handle)(*addr)->realname);
-		next = (*addr)->next;
-		DisposeHandle((Handle)addr);
+		if (addr->address) free((void *)addr->address);
+		if (addr->realname) free((void *)addr->realname);
+		next = addr->next;
+		free((void *)addr);
 		addr = next;
 	}
 }
@@ -343,8 +341,8 @@ void ETLDisposeAddrList(emsHeaderDataP addrList)
 		if (addrList->from) ZapAddress(*addrList->from);
 		if (addrList->cc) ZapAddress(*addrList->cc);
 		if (addrList->bcc) ZapAddress(*addrList->bcc);
-		ZapHandle(addrList->subject);
-		ZapHandle(addrList->rawHeaders);
+		free(addrList->subject);
+		free(addrList->rawHeaders);
 	}
 }
 
@@ -442,7 +440,7 @@ int RecordTLID(FSSpecPtr spec, uLong id)
 /**********************************************************************
  * TransRecvLine - Receive a line for translator use
  **********************************************************************/
-int TransRecvLine(TransStream stream, UPtr line, long *size)
+int TransRecvLine(TransStream stream, unsigned char * line, long *size)
 {
 	return -1;
 }
@@ -552,7 +550,7 @@ int ETLTransSelection(PETEHandle pte, HSPtr hs, short item)
 }
 
 /**********************************************************************
- * ETLSpecial - Handle special translator menu item
+ * ETLSpecial - void *special translator menu item
  **********************************************************************/
 int ETLSpecial(short item)
 {
@@ -641,14 +639,14 @@ void ETLAddBoxButtons(TOCType *tocH)
 }
 
 /**********************************************************************
- * ETLButtonHit - Handle translator button click
+ * ETLButtonHit - void *translator button click
  **********************************************************************/
 void ETLButtonHit(MyWindowPtr win, short item)
 {
 }
 
 /**********************************************************************
- * ETLClickContextMenu - Handle translator context menu click
+ * ETLClickContextMenu - void *translator context menu click
  **********************************************************************/
 bool ETLClickContextMenu(MyWindowPtr win, Point pt, Rect *rSizeBox)
 {
@@ -798,7 +796,7 @@ void **GetImporterAppIcon(long id)
 	return nil;
 }
 
-void GetImporterName(long id, Str255 name)
+void GetImporterName(long id, char name[256])
 {
 	if (name) name[0] = '\0';
 }

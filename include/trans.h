@@ -51,14 +51,14 @@ typedef struct emsMIMEtype emsMIMEtype;
 typedef struct emsMIMEparam emsMIMEparam;
 
 /* Import types forward declarations */
-typedef struct ImportAccountInfo *ImportAccountInfoP, **ImportAccountInfoH;
-typedef struct ImportPersData **ImportPersDataH;
+typedef struct ImportAccountInfo *ImportAccountInfoP, *ImportAccountInfoH;
+typedef struct ImportPersData *ImportPersDataH;
 
 /*
  * Translator description structure
  */
 typedef struct TLMaster {
-  void **nameHandle;
+  void *nameHandle;
   short module;
   short id;
   long flags;
@@ -66,18 +66,18 @@ typedef struct TLMaster {
   short menuItem;
   int result;
   void **suite;
-} TLMaster, *TLMPtr, **TLMHandle;
+} TLMaster, *TLMPtr, *TLMHandle;
 
-typedef emsMIMEtype **emsMIMEHandle;
-typedef emsMIMEparam **emsMIMEParamHandle;
-typedef void **FlatTLMIMEHandle;
-typedef unsigned char **tlStringHandle;
-typedef void **tlBufferHandle;
+typedef emsMIMEtype *emsMIMEHandle;
+typedef emsMIMEparam *emsMIMEParamHandle;
+typedef void *FlatTLMIMEHandle;
+typedef unsigned char *tlStringHandle;
+typedef void *tlBufferHandle;
 typedef struct mstruct *MessHandle;
 #include "pete_portable.h"
 /* PETEHandle is defined in pete_portable.h */
 typedef struct HeadSpec *HSPtr;
-typedef struct HeaderDesc *HeaderDPtr, **HeaderDHandle;
+typedef struct HeaderDesc *HeaderDPtr, *HeaderDHandle;
 
 /* Forward declarations for EMS plugin types */
 typedef struct emsHeaderData *emsHeaderDataP;
@@ -87,7 +87,6 @@ typedef struct emsMessageInfo *emsMessageInfoP;
 typedef struct emsJunkScore *emsJunkScoreP;
 typedef struct emsResultStatus *emsResultStatusP;
 typedef unsigned long uLong;
-typedef unsigned char *UPtr;
 typedef enum {
   kModePayment,
   kModeFree,
@@ -144,11 +143,11 @@ void DisposeTLMIME(emsMIMEHandle emsMIME);
     m = nil;                                                                   \
   } while (0)
 int RecordTLID(FSSpecPtr spec, uLong id);
-int AddTLMIME(emsMIMEHandle emsMIME, short what, unsigned char *name,
-              unsigned char *value);
+int AddTLMIME(emsMIMEHandle emsMIME, short what, char *name,
+              char *value);
 int FlattenTLMIME(emsMIMEHandle emsMIME, FlatTLMIMEHandle *flat);
 int UnflattenTLMIME(FlatTLMIMEHandle flat, emsMIMEHandle *tlMIME);
-int TransRecvLine(TransStream stream, UPtr line, long *size);
+int TransRecvLine(TransStream stream, unsigned char * line, long *size);
 int ETLDisplayFile(FSSpecPtr spec, PETEHandle pte);
 int ETLAddIcons(MyWindowPtr win, short startNumber);
 long ETLIconToID(short which);
@@ -209,7 +208,7 @@ void PlugwindowUpdate(GtkWindow *theWindow);
 int ETLImport(long id, ImportOperationEnum what, void *params, void *results);
 int ETLQueryImporters(ImportAccountInfoH *results, long id, bool search);
 void **GetImporterAppIcon(long id);
-void GetImporterName(long id, Str255 name);
+void GetImporterName(long id, char name[256]);
 int ETLImportSignatures(ImportAccountInfoP account);
 int ETLImportAddresses(ImportAccountInfoP account);
 int ETLImportMail(ImportAccountInfoP account);

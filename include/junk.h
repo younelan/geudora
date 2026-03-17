@@ -139,18 +139,18 @@ ADVISED OF THE POSSIBILITY OF SUCH DAMAGE. */
 
 /* blJunk is an enum member (value 12) in StrnDefs.h — do not redefine */
 
-OSErr FilterJunk(TOCType * fromTocH);
+int FilterJunk(TOCType * fromTocH);
 #define GetJunkTOC() GetSpecialTOC(JUNK)
 
 void JunkTOCCleanse(TOCType * tocH);
-OSErr ArchiveJunk(TOCType * tocH);
+int ArchiveJunk(TOCType * tocH);
 bool SpecIsJunkSpec(FSSpecPtr spec);
 bool BoxIsJunkBox(TOCType * tocH);
 void PreexistingJunkWarning(FSSpecPtr spec);
 short JunkRescanBox(TOCType * tocH);
-OSErr JunkRescanJunkMailbox();
-OSErr Junk(TOCType * tocH, short sumNum, bool isJunk, bool ezOpen);
-OSErr JunkSetScore(TOCType * tocH, short sumNum, short because, short score);
+int JunkRescanJunkMailbox();
+int Junk(TOCType * tocH, short sumNum, bool isJunk, bool ezOpen);
+int JunkSetScore(TOCType * tocH, short sumNum, short because, short score);
 short JunkIntro(void);
 bool JunkTrimOK(void);
 bool JunkItemsEnable(MyWindowPtr win, bool shouldEnable);
@@ -160,7 +160,7 @@ Boolean CanScoreJunk();
 void JunkScoreBox(TOCType * tocH, short first, short last, bool rescore);
 void JunkScoreIMAPBox(TOCType * tocH, short first, short last, bool unfiltered);
 void JunkScoreSelected(TOCType * tocH);
-OSErr MoveToJunk(TOCType * source, short spamThresh, FilterPB *fpb);
-OSErr MoveToIMAPJunk(TOCType * source, short sumNum, short spamThresh,
+int MoveToJunk(TOCType * source, short spamThresh, FilterPB *fpb);
+int MoveToIMAPJunk(TOCType * source, short sumNum, short spamThresh,
                      FilterPB *fpb);
 #endif

@@ -25,15 +25,7 @@
 #define Boolean bool
 #endif
 
-/* Handle typedef — matches mailbox.h definition; guarded so no conflict */
-#ifndef HANDLE_DEFINED
-#define HANDLE_DEFINED
-typedef void **Handle;
-typedef unsigned char **UHandle;
-typedef char *Ptr;
-typedef unsigned char *PStr;
-typedef unsigned char *UPtr;
-#endif
+/* void *typedef — matches mailbox.h definition; guarded so no conflict */
 
 /* QuickTime placeholders */
 #ifndef GraphicsImportComponent
@@ -93,9 +85,9 @@ static inline void UseResFile(short refN) { (void)refN; }
 static inline void DetachResource(void *h) { (void)h; }
 /* Mac resource manager stubs — resources don't exist on GTK/Linux, all return
  * NULL */
-Handle Get1Resource(uint32_t type, short id);
-Handle Get1IndResource(uint32_t type, short index);
-Handle GetNamedResource(uint32_t type, const unsigned char *name);
+void *Get1Resource(uint32_t type, short id);
+void *Get1IndResource(uint32_t type, short index);
+void *GetNamedResource(uint32_t type, const unsigned char *name);
 /* SaveAbomination is defined in uudecode.h - do not stub here */
 static inline bool AnalDoIncoming(void) { return false; }
 static inline void AnalBox(void *toc, short start, short end) {}
@@ -178,9 +170,6 @@ struct EventRecord {
 };
 typedef struct EventRecord EventRecord;
 
-#ifndef Str32
-typedef unsigned char Str32[33];
-#endif
 
 #ifndef LongDateRec
 typedef struct {
@@ -228,11 +217,11 @@ typedef struct RGBColor {
 #endif
 
 #ifndef PicHandle
-typedef void **PicHandle;
+typedef void *PicHandle;
 #endif
 
 #ifndef FMBHandle
-typedef void **FMBHandle;
+typedef void *FMBHandle;
 #endif
 
 static inline void SetHandleSize(void **h, long size) {
@@ -406,7 +395,7 @@ typedef struct {
   short errorCode;
 } MesgErrorType;
 typedef MesgErrorType *mesgErrorPtr;
-typedef MesgErrorType **mesgErrorHandle;
+typedef MesgErrorType *mesgErrorHandle;
 
 /* Missing Legacy Functions */
 /* FindTOCSpot is in buildtoc.h - don't stub it */
@@ -434,7 +423,7 @@ static inline void DBNoteUIDHash(unsigned long hash, unsigned long uid) {}
 #define PREF_188 188
 #endif
 static inline bool GoOnline(void) { return true; }
-/* PtrPlusHand_: macro in mydefs.h routes to PtrAndHand() in fileutil.c */
+/* buf_append: macro in mydefs.h routes to PtrAndHand() in fileutil.c */
 /* NoteFreeSpace is provided by the project's TOC implementation; do not
   define a stub that conflicts with its signature. If a stub is required
   for standalone builds, provide it under a unique name. */
@@ -506,7 +495,7 @@ static inline void OffsetRect(Rect *r, short dh, short dv) {
  * GTK drag-and-drop provides its own highlight; these are thin no-ops. */
 #ifndef RGNHANDLE_DEFINED
 #define RGNHANDLE_DEFINED
-typedef void **RgnHandle;
+typedef void *RgnHandle;
 #endif
 #ifndef NewRgn
 #include <stdlib.h>
@@ -607,7 +596,7 @@ static inline void LongSecondsToDate(long long *secs, LongDateRec *d) {
 #endif
 
 /* NumToString is defined in stringutil.c */
-void NumToString(long n, unsigned char *s);
+void NumToString(long n, char *s);
 
 /* GTK port: Accu string wrappers deleted because they conflict with the
  * actual OS IMAP os_unix.h */
@@ -698,9 +687,9 @@ static inline void MoveHHi(void *h) {}
 #endif
 
 /* TempNewHandle: allocate from temp zone. Falls back to malloc.
- * Use void** to avoid dependency on Handle typedef ordering. */
+ * Use void** to avoid dependency on void *typedef ordering. */
 #ifndef TempNewHandle
-static inline void **TempNewHandle(long size, int *err) {
+static inline void *TempNewHandle(long size, int *err) {
   void **h = (void **)malloc(sizeof(void *));
   if (h) {
     *h = malloc((size_t)size);

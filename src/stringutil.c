@@ -27,33 +27,33 @@ ADVISED OF THE POSSIBILITY OF SUCH DAMAGE. */
 /* Copyright (c) 1995 by QUALCOMM Incorporated */
 
 #include "StringUtil.h"
+
 #include "Globals.h"
 #include "mailbox.h"
 #include "mydefs.h"
 #include "sendmail.h"
 #include "tcp.h"
 #include "util.h"
+#include "fileutil.h"
 #include "threading.h"
 #include <pango/pango.h>
 #include <stdint.h>
 #include <stdlib.h>
-unsigned char IsWordChar[256] = {0};
+char IsWordChar[256] = {0};
 #define PluralStrn 1000
 #define SQUARE_LEFT 1001
 #define SQUARE_RIGHT 1002
 
 /* Quote822 is implemented in lex822.c */
 extern unsigned char *Quote822(unsigned char *into, unsigned char *from, bool space);
-/* GetHandleSize is implemented in fileutil.c */
-extern long GetHandleSize(void **h);
 
-void NumToString(long n, PStr s) {
+void NumToString(long n, char * s) {
   if (!s)
     return;
   sprintf((char *)s, "%ld", n);
 }
 
-void NumToDot(unsigned long n, PStr s) {
+void NumToDot(unsigned long n, char * s) {
   /* Stub: minimal IP formatting */
   sprintf((char *)s, "%lu.%lu.%lu.%lu", (n >> 24) & 0xFF, (n >> 16) & 0xFF,
           (n >> 8) & 0xFF, n & 0xFF);
@@ -61,13 +61,13 @@ void NumToDot(unsigned long n, PStr s) {
 
 /* GetRString is declared in mailbox.h and implemented elsewhere */
 
-PStr FormatString(uintptr_t arg, PStr string, short format, short digits);
-bool PPtrMatchLWSPSpot(PStr look, Ptr text, uint32_t textLen, UPtr *matchEnd);
+char * FormatString(uintptr_t arg, char * string, short format, short digits);
+bool PPtrMatchLWSPSpot(char * look, char * text, uint32_t textLen, char * *matchEnd);
 
 /************************************************************************
  * AllDigits - is a string made up only of digits?
  ************************************************************************/
-bool AllDigits(UPtr s, long len) {
+bool AllDigits(char * s, long len) {
   while (len && '0' <= *s && *s <= '9') {
     s++;
     len--;
@@ -78,7 +78,7 @@ bool AllDigits(UPtr s, long len) {
 /************************************************************************
  * HighBits - count high bits in a string
  ************************************************************************/
-long HighBits(UPtr s, long len) {
+long HighBits(char * s, long len) {
   long count = 0;
   while (len-- > 0)
     if (*s++ > 127)
@@ -89,7 +89,7 @@ long HighBits(UPtr s, long len) {
 /**********************************************************************
  * BeginsWith - does one string begin with another?
  **********************************************************************/
-bool BeginsWith(PStr string, PStr prefix) {
+bool BeginsWith(char * string, char * prefix) {
   size_t slen = strlen((const char *)string);
   size_t plen = strlen((const char *)prefix);
   if (slen < plen)
@@ -100,12 +100,12 @@ bool BeginsWith(PStr string, PStr prefix) {
 /**********************************************************************
  * CaptureHex - read hex strings
  **********************************************************************/
-void CaptureHex(PStr from, PStr to) {
+void CaptureHex(char * from, char * to) {
   unsigned char scratch[256];
   long len;
 
   len = strlen((const char *)from);
-  CaptureHexPtr((Ptr)from, (Ptr)scratch, &len);
+  CaptureHexPtr((char *)from, (char *)scratch, &len);
   scratch[len] = '\0';
   g_strlcpy((char *)to, (const char *)scratch, 256);
 }
@@ -113,9 +113,9 @@ void CaptureHex(PStr from, PStr to) {
 /**********************************************************************
  * CaptureHexPtr - read hex strings
  **********************************************************************/
-void CaptureHexPtr(Ptr from, Ptr to, long *pLen) {
-  Ptr spot, end;
-  Ptr toSpot, toEnd;
+void CaptureHexPtr(char * from, char * to, long *pLen) {
+  char *spot, *end;
+  char *toSpot, *toEnd;
 
   spot = from;
   end = from + *pLen;
@@ -151,21 +151,21 @@ void CaptureHexPtr(Ptr from, Ptr to, long *pLen) {
  * %& - integer argument, prints "'s" if not 1
  * %a - AEPrint
  ************************************************************************/
-UPtr ComposeString(UPtr into, const char *format, ...) {
+char * ComposeString(char * into, const char *format, ...) {
   va_list args;
   va_start(args, format);
-  (void)VaComposeString(into, (UPtr)format, args);
+  (void)VaComposeString(into, (char *)format, args);
   va_end(args);
   return (into);
 }
-UPtr ComposeRString(UPtr into, int format, ...) {
+char * ComposeRString(char * into, int format, ...) {
   va_list args;
   va_start(args, format);
   (void)VaComposeRString(into, format, args);
   va_end(args);
   return (into);
 }
-OSErr ComposeRTrans(TransStream stream, int format, ...) {
+int ComposeRTrans(TransStream stream, int format, ...) {
   unsigned char into[256];
   va_list args;
   va_start(args, format);
@@ -173,7 +173,7 @@ OSErr ComposeRTrans(TransStream stream, int format, ...) {
   va_end(args);
   return SendTrans(stream, into, strlen((const char *)into), NULL);
 }
-OSErr AccuComposeR(AccuPtr a, int format, ...) {
+int AccuComposeR(AccuPtr a, int format, ...) {
   unsigned char into[256];
   va_list args;
   va_start(args, format);
@@ -181,7 +181,7 @@ OSErr AccuComposeR(AccuPtr a, int format, ...) {
   va_end(args);
   return (AccuAddStr(a, into));
 }
-OSErr AccuCompose(AccuPtr a, PStr format, ...) {
+int AccuCompose(AccuPtr a, char * format, ...) {
   unsigned char into[256];
   va_list args;
   va_start(args, format);
@@ -189,7 +189,7 @@ OSErr AccuCompose(AccuPtr a, PStr format, ...) {
   va_end(args);
   return (AccuAddStr(a, into));
 }
-UPtr VaComposeRString(UPtr into, short format, va_list args) {
+char * VaComposeRString(char * into, short format, va_list args) {
   unsigned char stringFormat[256];
 
   GetRString(stringFormat, format);
@@ -197,7 +197,7 @@ UPtr VaComposeRString(UPtr into, short format, va_list args) {
 }
 
 /* Helper: append char to C string, respecting max */
-static void CStrCatC(UPtr s, int maxLen, unsigned char c) {
+static void CStrCatC(char * s, int maxLen, unsigned char c) {
   size_t len = strlen((const char *)s);
   if (maxLen <= 0 || (int)len < maxLen - 1) {
     s[len] = c;
@@ -206,9 +206,9 @@ static void CStrCatC(UPtr s, int maxLen, unsigned char c) {
 }
 
 #define MAX_SUBS 5
-UPtr VaComposeStringDouble(UPtr into, int maxInto, UPtr format, va_list args,
-                           UPtr into2, int maxInto2, UPtr format2) {
-  UPtr formatP;
+char * VaComposeStringDouble(char * into, int maxInto, char * format, va_list args,
+                           char * into2, int maxInto2, char * format2) {
+  char * formatP;
   unsigned char argString[256];
   long n;
   bool suppress;
@@ -216,7 +216,7 @@ UPtr VaComposeStringDouble(UPtr into, int maxInto, UPtr format, va_list args,
   uintptr_t arg;
   short which;
   long resId;
-  UPtr formatEnd;
+  char * formatEnd;
 
 top:
   which = 0;
@@ -291,7 +291,7 @@ top:
 /************************************************************************
  * EndsWith - does one string end with another?
  ************************************************************************/
-bool EndsWith(PStr name, PStr suffix) {
+bool EndsWith(char * name, char * suffix) {
   size_t nlen = strlen((const char *)name);
   size_t slen = strlen((const char *)suffix);
   if (nlen < slen)
@@ -302,17 +302,17 @@ bool EndsWith(PStr name, PStr suffix) {
 /************************************************************************
  * HandleEndsWithR - does a handle end with a string from a resource?
  ************************************************************************/
-bool HandleEndsWithR(Handle name, short index) {
+bool HandleEndsWithR(void *name, short index) {
   unsigned char string[256];
 
-  g_strlcpy((char *)string, (const char *)*name, 256);
+  g_strlcpy((char *)string, (const char *)name, 256);
   return (EndsWithR(string, index));
 }
 
 /************************************************************************
  * EndsWithR - does a string end with a suffix in a resource?
  ************************************************************************/
-bool EndsWithR(PStr name, short resId) {
+bool EndsWithR(char * name, short resId) {
   unsigned char suffix[256];
 
   GetRString(suffix, resId);
@@ -322,7 +322,7 @@ bool EndsWithR(PStr name, short resId) {
 /************************************************************************
  * StartsWithR - does a string start with a prefix in a resource?
  ************************************************************************/
-bool StartsWithR(PStr name, short resId) {
+bool StartsWithR(char * name, short resId) {
   unsigned char prefix[256];
 
   GetRString(prefix, resId);
@@ -332,14 +332,14 @@ bool StartsWithR(PStr name, short resId) {
 /************************************************************************
  * StartsWith - does a string start with a prefix?
  ************************************************************************/
-bool StartsWith(PStr name, PStr prefix) {
+bool StartsWith(char * name, char * prefix) {
   return BeginsWith(name, prefix);
 }
 
 /************************************************************************
  * StartsWithPtr - does a string start with a prefix?
  ************************************************************************/
-bool StartsWithPtr(UPtr name, uint32_t len, PStr prefix) {
+bool StartsWithPtr(char * name, uint32_t len, char * prefix) {
   size_t plen = strlen((const char *)prefix);
   return len >= plen && !strincmp(name, prefix, plen);
 }
@@ -347,7 +347,7 @@ bool StartsWithPtr(UPtr name, uint32_t len, PStr prefix) {
 /************************************************************************
  * EqualStrRes - is a string the same as a resource?
  ************************************************************************/
-bool EqualStrRes(PStr string, short resId) {
+bool EqualStrRes(char * string, short resId) {
   unsigned char s[256];
   GetRString(s, resId);
   return (StringSame((const char *)s, (const char *)string));
@@ -356,11 +356,11 @@ bool EqualStrRes(PStr string, short resId) {
 /************************************************************************
  * EscapeChars - escape characters in a string
  ************************************************************************/
-PStr EscapeChars(PStr string, PStr toEscape) {
+char * EscapeChars(char * string, char * toEscape) {
   unsigned char scratch[256];
-  UPtr to = scratch;
-  UPtr from = string;
-  UPtr end = string + strlen((const char *)string);
+  char * to = scratch;
+  char * from = string;
+  char * end = string + strlen((const char *)string);
   bool escaped = False;
 
   while (from < end) {
@@ -390,10 +390,10 @@ PStr EscapeChars(PStr string, PStr toEscape) {
 /**********************************************************************
  * EscapeInHex - write hex strings safely
  **********************************************************************/
-void EscapeInHex(PStr from, PStr to) {
-  UPtr spot, end;
+void EscapeInHex(char * from, char * to) {
+  char *spot, *end;
   unsigned char scratch[256];
-  UPtr toSpot, toEnd;
+  char *toSpot, *toEnd;
 
   spot = from;
   end = spot + strlen((const char *)from);
@@ -418,7 +418,7 @@ void EscapeInHex(PStr from, PStr to) {
 /**********************************************************************
  * Transmogrify - change one string into another, using two STR# for xlation
  **********************************************************************/
-PStr Transmogrify(PStr toStr, short toId, PStr fromStr, short fromId) {
+char * Transmogrify(char * toStr, short toId, char * fromStr, short fromId) {
   short index;
 
   if ((index = FindSTRNIndex(fromId, fromStr)) != 0)
@@ -431,8 +431,8 @@ PStr Transmogrify(PStr toStr, short toId, PStr fromStr, short fromId) {
 /************************************************************************
  * FixNewlines - remove cr, and turn nl into cr
  ************************************************************************/
-void FixNewlines(UPtr string, long *count) {
-  UPtr from, to;
+void FixNewlines(char * string, long *count) {
+  char *from, *to;
   long n;
 
   for (to = from = string, n = *count; n; n--, from++)
@@ -446,7 +446,7 @@ void FixNewlines(UPtr string, long *count) {
 /**********************************************************************
  *
  **********************************************************************/
-PStr FormatString(uintptr_t arg, PStr string, short format, short digits) {
+char * FormatString(uintptr_t arg, char * string, short format, short digits) {
   short n;
   struct hostInfo hi;
 
@@ -514,7 +514,7 @@ PStr FormatString(uintptr_t arg, PStr string, short format, short digits) {
     }
     break;
   case 'q':
-    Quote822(string, (UPtr)(intptr_t)arg, True);
+    Quote822(string, (char *)(intptr_t)arg, True);
     break;
   case 'r':
     GetRString(string, arg);
@@ -558,18 +558,18 @@ PStr FormatString(uintptr_t arg, PStr string, short format, short digits) {
     break;
   case 'O':
     string[0] = '\'';
-    string[1] = ((Uptr)&arg)[0];
-    string[2] = ((Uptr)&arg)[1];
-    string[3] = ((Uptr)&arg)[2];
-    string[4] = ((Uptr)&arg)[3];
+    string[1] = ((unsigned char *)&arg)[0];
+    string[2] = ((unsigned char *)&arg)[1];
+    string[3] = ((unsigned char *)&arg)[2];
+    string[4] = ((unsigned char *)&arg)[3];
     string[5] = '\'';
     string[6] = '\0';
     break;
   case 'o':
-    string[0] = ((Uptr)&arg)[0];
-    string[1] = ((Uptr)&arg)[1];
-    string[2] = ((Uptr)&arg)[2];
-    string[3] = ((Uptr)&arg)[3];
+    string[0] = ((unsigned char *)&arg)[0];
+    string[1] = ((unsigned char *)&arg)[1];
+    string[2] = ((unsigned char *)&arg)[2];
+    string[3] = ((unsigned char *)&arg)[3];
     string[4] = '\0';
     break;
   case 'B':
@@ -583,7 +583,7 @@ PStr FormatString(uintptr_t arg, PStr string, short format, short digits) {
 /************************************************************************
  * LCD - find the least common denom of two strings
  ************************************************************************/
-PStr LCD(PStr s1, PStr s2) {
+char * LCD(char * s1, char * s2) {
   size_t len1 = strlen((const char *)s1);
   size_t len2 = strlen((const char *)s2);
   size_t minLen = MIN(len1, len2);
@@ -606,7 +606,7 @@ PStr LCD(PStr s1, PStr s2) {
 /**********************************************************************
  * concatenate a pascal string on the end of another
  **********************************************************************/
-UPtr PCat(PStr string, PStr suffix) {
+char * PCat(char * string, char * suffix) {
   g_strlcat((char *)string, (const char *)suffix, 256);
   return (string);
 }
@@ -614,7 +614,7 @@ UPtr PCat(PStr string, PStr suffix) {
 /**********************************************************************
  * PCatR - concatenate a string from a resource to the end of a string
  **********************************************************************/
-UPtr PCatR(PStr string, short resId) {
+char * PCatR(char * string, short resId) {
   unsigned char suffix[256];
 
   GetRString(suffix, resId);
@@ -624,7 +624,7 @@ UPtr PCatR(PStr string, short resId) {
 /************************************************************************
  * PCopyTrim - copy and trim a string
  ************************************************************************/
-PStr PCopyTrim(PStr toString, PStr fromString, short max) {
+char * PCopyTrim(char * toString, char * fromString, short max) {
   unsigned char tString[256];
   g_strlcpy((char *)tString, (const char *)fromString, 256);
   TrimWhite(tString);
@@ -639,11 +639,11 @@ PStr PCopyTrim(PStr toString, PStr fromString, short max) {
  * concatenate a pascal string on the end of another
  * escape certain chars in the string
  **********************************************************************/
-UPtr PEscCat(UPtr string, UPtr suffix, short escape, char *escapeWhat) {
+char * PEscCat(char * string, char * suffix, short escape, char *escapeWhat) {
   size_t sufLen = strlen((const char *)suffix);
-  UPtr suffSpot;
+  char * suffSpot;
   size_t slen = strlen((const char *)string);
-  UPtr stringSpot = string + slen;
+  char * stringSpot = string + slen;
 
   for (suffSpot = suffix; sufLen--; suffSpot++) {
     if (*suffSpot == (unsigned char)escape || strchr(escapeWhat, *suffSpot))
@@ -658,16 +658,16 @@ UPtr PEscCat(UPtr string, UPtr suffix, short escape, char *escapeWhat) {
 /************************************************************************
  * PIndex - find a char in a pascal string
  ************************************************************************/
-UPtr PIndex(PStr string, char c) {
-  UPtr spot = (UPtr)strchr((const char *)string, (unsigned char)c);
+char * PIndex(char * string, char c) {
+  char * spot = (char *)strchr((const char *)string, (unsigned char)c);
   return spot;
 }
 
 /************************************************************************
  * IndexPtr - find a char in a string specified by pointer and length
  ************************************************************************/
-UPtr IndexPtr(UPtr string, long stringLen, char c) {
-  UPtr spot;
+char * IndexPtr(char * string, long stringLen, char c) {
+  char * spot;
 
   for (spot = string; spot < string + stringLen; spot++)
     if (*spot == (unsigned char)c)
@@ -678,15 +678,15 @@ UPtr IndexPtr(UPtr string, long stringLen, char c) {
 /************************************************************************
  * PRIndex - find a char in a pascal string, backwards
  ************************************************************************/
-UPtr PRIndex(PStr string, char c) {
-  UPtr spot = (UPtr)strrchr((const char *)string, (unsigned char)c);
+char * PRIndex(char * string, char c) {
+  char * spot = (char *)strrchr((const char *)string, (unsigned char)c);
   return spot;
 }
 
 /**********************************************************************
  * PInsert - insert some text
  **********************************************************************/
-PStr PInsert(PStr string, short size, PStr insert, UPtr spot) {
+char * PInsert(char * string, short size, char * insert, char * spot) {
   size_t slen = strlen((const char *)string);
   size_t ilen = strlen((const char *)insert);
   short toInsert = MIN((short)ilen, (short)(size - (short)slen - 1));
@@ -702,7 +702,7 @@ PStr PInsert(PStr string, short size, PStr insert, UPtr spot) {
 /**********************************************************************
  * PInsertC - insert a single character
  **********************************************************************/
-PStr PInsertC(PStr string, short size, Byte c, UPtr spot) {
+char * PInsertC(char * string, short size, Byte c, char * spot) {
   unsigned char s[2];
   s[0] = c;
   s[1] = '\0';
@@ -718,12 +718,10 @@ void PLCat(char *dst, long num) {
   g_strlcat(dst, s, 256);
 }
 
-/* GetHandleSize is implemented in fileutil.c */
-
 /************************************************************************
  * PXCat - concat a long onto a string in hex
  ************************************************************************/
-UPtr PXCat(UPtr string, long num) {
+char * PXCat(char * string, long num) {
   unsigned char x[32];
 
   Bytes2Hex((void *)&num, sizeof(long), x);
@@ -734,7 +732,7 @@ UPtr PXCat(UPtr string, long num) {
 /************************************************************************
  * PXWCat - concat a short onto a string in hex
  ************************************************************************/
-UPtr PXWCat(UPtr string, short num) {
+char * PXWCat(char * string, short num) {
   unsigned char x[32];
 
   Bytes2Hex((void *)&num, sizeof(short), x);
@@ -745,17 +743,16 @@ UPtr PXWCat(UPtr string, short num) {
 /************************************************************************
  * Tr - translate text in a handle
  ************************************************************************/
-bool Tr(Handle text, Uptr fromS, Uptr toS) {
+bool Tr(void *text, char *fromS, char *toS) {
   long len = GetHandleSize(text);
-  return (TrLo(*text, len, fromS,
-               toS)); // no handle lock; keep in segment with TrLo
+  return TrLo((char *)text, len, fromS, toS);
 }
 
 /************************************************************************
  * TrLo - translate text in a pointer
  ************************************************************************/
-bool TrLo(UPtr text, long len, Uptr fromS, Uptr toS) {
-  UPtr end, spot;
+bool TrLo(char *text, long len, char *fromS, char *toS) {
+  char *end, *spot;
   bool did = False;
   short fromChar, toChar;
 
@@ -775,10 +772,10 @@ bool TrLo(UPtr text, long len, Uptr fromS, Uptr toS) {
 /************************************************************************
  * PPtrFindSub - is a pascal string a substring of a string
  ************************************************************************/
-UPtr PPtrFindSub(PStr sub, UPtr string, long len) {
+char * PPtrFindSub(char * sub, char * string, long len) {
   size_t subLen = strlen((const char *)sub);
-  UPtr end = string + len - subLen + 1;
-  UPtr stringSpot, subSpot, subEnd;
+  char * end = string + len - subLen + 1;
+  char *stringSpot, *subSpot, *subEnd;
   Byte c1, c2;
 
   if (subLen == 0) return string;
@@ -807,8 +804,8 @@ UPtr PPtrFindSub(PStr sub, UPtr string, long len) {
 /************************************************************************
  * PReplace - replace one string with another
  ************************************************************************/
-PStr PReplace(PStr string, PStr find, PStr replace) {
-  UPtr spot;
+char * PReplace(char * string, char * find, char * replace) {
+  char * spot;
   size_t flen = strlen((const char *)find);
   size_t rlen = strlen((const char *)replace);
 
@@ -825,31 +822,13 @@ PStr PReplace(PStr string, PStr find, PStr replace) {
   return (string);
 }
 
-/************************************************************************
- * PSCat_C - C routine to concat a string, worrying about length
- ************************************************************************/
-UPtr PSCat_C(PStr string, PStr suffix, short max) {
-  g_strlcat((char *)string, (const char *)suffix, max);
-  return (string);
-}
-
-/**********************************************************************
- * copy a pascal string into a c string
- **********************************************************************/
-/* PtoCcpy is provided as a static inline in legacy_shim.h */
-
-/**********************************************************************
- * PStrCopy - copy a pascal string
- **********************************************************************/
-PStr PStrCopy(PStr to, PStr from, short max) {
-  g_strlcpy((char *)to, (const char *)from, max);
-  return to;
-}
+/* PSCat_C removed — replaced by g_strlcat() at call sites */
+/* PStrCopy removed — replaced by g_strlcpy() at call sites */
 
 /**********************************************************************
  * InfiniteString - set string to all 0xFFs
  **********************************************************************/
-PStr InfiniteString(PStr s, short size) {
+char * InfiniteString(char * s, short size) {
   memset(s, 0xFF, size - 1);
   s[size - 1] = '\0';
   return s;
@@ -859,14 +838,14 @@ PStr InfiniteString(PStr s, short size) {
  * ItemFromResAppearsInStr - does a string contain an item from a list of
  *  items in a resource
  ************************************************************************/
-bool ItemFromResAppearsInStr(short resID, PStr string, UPtr delims) {
+bool ItemFromResAppearsInStr(short resID, char * string, char * delims) {
   unsigned char s[256];
   unsigned char token[64];
-  UPtr spot;
+  char * spot;
 
   // default delimitter is comma
   if (!delims)
-    delims = (UPtr) ",";
+    delims = (char *) ",";
 
   GetRString(s, resID);
   spot = s;
@@ -881,14 +860,14 @@ bool ItemFromResAppearsInStr(short resID, PStr string, UPtr delims) {
 /************************************************************************
  * StrIsItemFromRes - is a string one of the items in a resource?
  ************************************************************************/
-bool StrIsItemFromRes(PStr string, short resID, UPtr delims) {
+bool StrIsItemFromRes(char * string, short resID, char * delims) {
   unsigned char s[256];
   unsigned char token[64];
-  UPtr spot;
+  char * spot;
 
   // default delimitter is comma
   if (!delims)
-    delims = (UPtr) ",";
+    delims = (char *) ",";
 
   GetRString(s, resID);
   spot = s;
@@ -905,10 +884,10 @@ bool StrIsItemFromRes(PStr string, short resID, UPtr delims) {
  *  Returns pointer to token argument
  *  Saves state in spotP
  ************************************************************************/
-PStr PToken(PStr string, PStr token, UPtr *spotP, UPtr delims) {
-  UPtr spot;
-  UPtr end = string + strlen((const char *)string);
-  UPtr tSpot = token;
+char * PToken(char * string, char * token, char * *spotP, char * delims) {
+  char * spot;
+  char * end = string + strlen((const char *)string);
+  char * tSpot = token;
 
   token[0] = '\0';
   if (*spotP >= end)
@@ -928,13 +907,13 @@ PStr PToken(PStr string, PStr token, UPtr *spotP, UPtr delims) {
  *  Returns boolean indicating if token found
  *  Saves state in spotP
  ************************************************************************/
-bool TokenPtr(Ptr string, long stringLen, Ptr *token, long *tokenLen,
-              UPtr *spotP, UPtr delims) {
-  UPtr spot;
-  UPtr end = (UPtr)string + stringLen;
+bool TokenPtr(char * string, long stringLen, char * *token, long *tokenLen,
+              char * *spotP, char * delims) {
+  char * spot;
+  char * end = (char *)string + stringLen;
   long len = 0;
 
-  *token = (Ptr)*spotP;
+  *token = (char *)*spotP;
   if (*spotP >= end)
     return (false);
   for (spot = *spotP; spot < end; spot++)
@@ -953,13 +932,13 @@ bool TokenPtr(Ptr string, long stringLen, Ptr *token, long *tokenLen,
  *  Saves state in spotP
  *	Returns token in p-string
  ************************************************************************/
-bool PTokenPtr(Ptr string, long stringLen, Ptr token, UPtr *spotP,
-               UPtr delims) {
-  UPtr tokenPtr;
+bool PTokenPtr(char * string, long stringLen, char * token, char * *spotP,
+               char * delims) {
+  char * tokenPtr;
   long tokenLen;
   Boolean result;
 
-  if ((result = TokenPtr(string, stringLen, (Ptr *)&tokenPtr, &tokenLen, spotP,
+  if ((result = TokenPtr(string, stringLen, (char * *)&tokenPtr, &tokenLen, spotP,
                          delims)) != 0) {
     size_t copyLen = MIN(tokenLen, 255);
     memcpy(token, tokenPtr, copyLen);
@@ -971,9 +950,9 @@ bool PTokenPtr(Ptr string, long stringLen, Ptr token, UPtr *spotP,
 /**********************************************************************
  * ReMatch - does a string have a reply intro?
  **********************************************************************/
-bool ReMatch(PStr string, PStr re) {
-  UPtr colon;
-  UPtr reSpot;
+bool ReMatch(char * string, char * re) {
+  char * colon;
+  char * reSpot;
   unsigned char remainder[256];
   size_t reLen = strlen((const char *)re);
 
@@ -1013,9 +992,9 @@ bool ReMatch(PStr string, PStr re) {
 /************************************************************************
  * TrimSquares - trim square-bracketed stuff from start of string
  ************************************************************************/
-bool TrimSquares(PStr s, bool multiple, bool internal) {
+bool TrimSquares(char * s, bool multiple, bool internal) {
   unsigned char left[32], right[32];
-  UPtr spot;
+  char * spot;
   bool result = false;
 
   GetRString(left, SQUARE_LEFT);
@@ -1028,10 +1007,10 @@ bool TrimSquares(PStr s, bool multiple, bool internal) {
   if (!internal) {
     while (slen > 2) {
       /* find matching left delimiter for s[0] */
-      spot = (UPtr)strchr((const char *)left, s[0]);
+      spot = (char *)strchr((const char *)left, s[0]);
       if (spot != NULL) {
-        size_t idx = spot - left;
-        UPtr rspot = PIndex(s, (char)right[idx]);
+        size_t idx = spot - (char *)left;
+        char * rspot = PIndex(s, (char)right[idx]);
         if (rspot != NULL) {
           size_t cutLen = rspot - s + 1;
           memmove(s, rspot + 1, slen - cutLen + 1);
@@ -1048,8 +1027,8 @@ bool TrimSquares(PStr s, bool multiple, bool internal) {
     }
   } else {
     size_t brk;
-    UPtr lPtr;
-    UPtr rPtr;
+    char * lPtr;
+    char * rPtr;
 
     for (brk = 0; slen > 2 && brk < leftLen; brk++) {
       if ((lPtr = PIndex(s, (char)left[brk])) != NULL)
@@ -1073,8 +1052,8 @@ bool TrimSquares(PStr s, bool multiple, bool internal) {
 /************************************************************************
  * RemoveParens - remove parenthesized information
  ************************************************************************/
-void RemoveParens(UPtr string) {
-  UPtr to, from, end;
+void RemoveParens(char * string) {
+  char *to, *from, *end;
   short pLevel = 0;
 
   end = string + strlen((const char *)string);
@@ -1103,7 +1082,7 @@ void RemoveParens(UPtr string) {
 /************************************************************************
  * PStripChar - remove all occurrences of a char from a string
  ************************************************************************/
-PStr PStripChar(PStr string, Byte c) {
+char * PStripChar(char * string, Byte c) {
   size_t newLen = StripChar((char *)string, strlen((const char *)string), c);
   string[newLen] = '\0';
   return (string);
@@ -1112,7 +1091,7 @@ PStr PStripChar(PStr string, Byte c) {
 /************************************************************************
  * StripChar - remove all occurrences of a char from text, return new length
  ************************************************************************/
-long StripChar(Ptr string, long len, Byte c) {
+long StripChar(char * string, long len, Byte c) {
   char *from, *to, *end;
 
   end = string + len;
@@ -1128,7 +1107,7 @@ long StripChar(Ptr string, long len, Byte c) {
 /************************************************************************
  * strincmp - compare two strings, don't care about case
  ************************************************************************/
-int strincmp(UPtr s1, UPtr s2, short n) {
+int strincmp(char * s1, char * s2, short n) {
   register int c1, c2;
   for (c1 = *s1, c2 = *s2; n--; c1 = *++s1, c2 = *++s2) {
     if (c1 - c2) {
@@ -1147,7 +1126,7 @@ int strincmp(UPtr s1, UPtr s2, short n) {
  * striscmp - compare two strings, up to the length of the shorter string,
  * and ignoring case
  **********************************************************************/
-int striscmp(UPtr s1, UPtr s2) {
+int striscmp(char * s1, char * s2) {
   register int c1, c2;
   for (c1 = *s1, c2 = *s2; c1 && c2; c1 = *++s1, c2 = *++s2) {
     if (c1 - c2) {
@@ -1166,7 +1145,7 @@ int striscmp(UPtr s1, UPtr s2) {
  * strscmp - compare two strings, up to the length of the shorter string,
  * paying attention to case
  **********************************************************************/
-int strscmp(UPtr s1, UPtr s2) {
+int strscmp(char * s1, char * s2) {
   register int c1, c2;
   for (c1 = *s1, c2 = *s2; c1 && c2; c1 = *++s1, c2 = *++s2)
     if (c1 - c2)
@@ -1177,10 +1156,10 @@ int strscmp(UPtr s1, UPtr s2) {
 /************************************************************************
  * Tokenize - set pointers to the beginning and end of a delimited token
  ************************************************************************/
-UPtr Tokenize(UPtr string, int size, UPtr *start, UPtr *end, UPtr delims) {
-  UPtr stop = string + size;
+char * Tokenize(char * string, int size, char * *start, char * *end, char * delims) {
+  char * stop = string + size;
   char safe = (char)*stop;
-  UPtr last;
+  char * last;
 
   *stop = 0;
   while (strchr((const char *)delims, *string))
@@ -1200,8 +1179,8 @@ UPtr Tokenize(UPtr string, int size, UPtr *start, UPtr *end, UPtr delims) {
  * TrimInitialWhite - remove whitespace characters from the beginning of a
  *string
  **********************************************************************/
-PStr TrimInitialWhite(PStr s) {
-  UPtr cp = s;
+char * TrimInitialWhite(char * s) {
+  char * cp = s;
   while (*cp && IsSpace(*cp))
     cp++;
   if (cp > s)
@@ -1212,7 +1191,7 @@ PStr TrimInitialWhite(PStr s) {
 /**********************************************************************
  * TrimInternalWhite - collapse internal whitespace into single
  **********************************************************************/
-PStr TrimInternalWhite(PStr s) {
+char * TrimInternalWhite(char * s) {
   bool wasWhite = false;
   bool isWhite;
   unsigned char *spot;
@@ -1234,7 +1213,7 @@ PStr TrimInternalWhite(PStr s) {
 /************************************************************************
  * TrimPrefix - strip a prefix from a string
  ************************************************************************/
-bool TrimPrefix(UPtr string, UPtr prefix) {
+bool TrimPrefix(char * string, char * prefix) {
   size_t slen = strlen((const char *)string);
   size_t plen = strlen((const char *)prefix);
 
@@ -1258,14 +1237,14 @@ bool StringSame(const char *s1, const char *s2) {
 /**********************************************************************
  * StringComp - return whether s1<s2 (negative), s1==s2 (0), s1>s2 (positive)
  **********************************************************************/
-long StringComp(PStr s1, PStr s2) {
+long StringComp(char * s1, char * s2) {
   return strcasecmp((const char *)s1, (const char *)s2);
 }
 
 /**********************************************************************
  * MyUpperText - uppercase text with or without fancy furrin stuff
  **********************************************************************/
-void MyUpperText(UPtr buffer, long bufferSize) {
+void MyUpperText(char * buffer, long bufferSize) {
   short i;
   for (i = 0; i < bufferSize; i++)
     buffer[i] = g_ascii_toupper(buffer[i]);
@@ -1274,7 +1253,7 @@ void MyUpperText(UPtr buffer, long bufferSize) {
 /**********************************************************************
  * MyLowerText - lowercase text with or without fancy furrin stuff
  **********************************************************************/
-void MyLowerText(UPtr buffer, long bufferSize) {
+void MyLowerText(char * buffer, long bufferSize) {
   short i;
   for (i = 0; i < bufferSize; i++)
     buffer[i] = g_ascii_tolower(buffer[i]);
@@ -1283,7 +1262,7 @@ void MyLowerText(UPtr buffer, long bufferSize) {
 /**********************************************************************
  * MyLowercaseText - call lowercasetext carefully
  **********************************************************************/
-OSErr MyLowercaseText(UPtr text, long len) {
+int MyLowercaseText(char * text, long len) {
   MyLowerText(text, len);
   return (0);
 }
@@ -1291,8 +1270,8 @@ OSErr MyLowercaseText(UPtr text, long len) {
 /**********************************************************************
  * TrimReLo - remove an Re: string
  **********************************************************************/
-bool TrimReLo(PStr string, PStr re) {
-  UPtr colon;
+bool TrimReLo(char * string, char * re) {
+  char * colon;
   size_t reLen = strlen((const char *)re);
   if (ReMatch(string, re)) {
     colon = PIndex(string, re[reLen - 1]); /* last char of re */
@@ -1308,11 +1287,11 @@ bool TrimReLo(PStr string, PStr re) {
 /************************************************************************
  * TrimRe - trim Re: and Fwd: from a string
  ************************************************************************/
-bool TrimRe(PStr string, bool squares) {
+bool TrimRe(char * string, bool squares) {
   bool did = False;
 
-  while (TrimReLo(string, (PStr)Re) || TrimReLo(string, (PStr)Fwd) ||
-         TrimReLo(string, (PStr)OFwd) ||
+  while (TrimReLo(string, (char *)Re) || TrimReLo(string, (char *)Fwd) ||
+         TrimReLo(string, (char *)OFwd) ||
          (squares && TrimSquares(string, false, false)))
     did = True;
 
@@ -1322,7 +1301,7 @@ bool TrimRe(PStr string, bool squares) {
 /**********************************************************************
  * TrimWhite - remove whitespace characters from the end of a string
  **********************************************************************/
-PStr TrimWhite(PStr s) {
+char * TrimWhite(char * s) {
   size_t len = strlen((const char *)s);
   while (len > 0 && IsSpace(s[len - 1]))
     len--;
@@ -1333,8 +1312,8 @@ PStr TrimWhite(PStr s) {
 /**********************************************************************
  * CollapseLWSP - convert lwsp runs to single spaces
  **********************************************************************/
-PStr CollapseLWSP(PStr s) {
-  UPtr to, from, end;
+char * CollapseLWSP(char * s) {
+  char *to, *from, *end;
   bool space = true; // beginning of string counts as space
   bool lwsp;
 
@@ -1364,7 +1343,7 @@ PStr CollapseLWSP(PStr s) {
 /**********************************************************************
  * IsAllWhitePtr - is a string all whitespace?
  **********************************************************************/
-bool IsAllWhitePtr(UPtr s, long len) {
+bool IsAllWhitePtr(char * s, long len) {
   for (; len-- > 0; s++)
     if (!IsWhite(*s))
       return false;
@@ -1374,7 +1353,7 @@ bool IsAllWhitePtr(UPtr s, long len) {
 /**********************************************************************
  * IsAllLWSPPtr - is a string all lwsp?
  **********************************************************************/
-bool IsAllLWSPPtr(UPtr s, long len) {
+bool IsAllLWSPPtr(char * s, long len) {
   for (; len-- > 0; s++)
     if (!IsLWSP(*s))
       return false;
@@ -1384,7 +1363,7 @@ bool IsAllLWSPPtr(UPtr s, long len) {
 /**********************************************************************
  * IsAllUpper - is a string all lwsp?
  **********************************************************************/
-bool IsAllUpper(PStr s) {
+bool IsAllUpper(char * s) {
   if (!*s)
     return false;
 
@@ -1398,9 +1377,9 @@ bool IsAllUpper(PStr s) {
 /**********************************************************************
  * Uncomma - reformat a name to remove a comma
  **********************************************************************/
-PStr Uncomma(PStr name) {
+char * Uncomma(char * name) {
   unsigned char scratch[256];
-  UPtr comma;
+  char * comma;
 
   if ((comma = PIndex(name, ':')) != NULL) {
     *comma = '\0'; /* truncate at colon */
@@ -1453,7 +1432,7 @@ short CharWidthInFont(Byte c, short font, short size) {
 /************************************************************************
  * UTF8ToMac - convert utf8 to mac
  ************************************************************************/
-PStr UTF8ToMac(PStr string) {
+char * UTF8ToMac(char * string) {
   long len = strlen((const char *)string);
 
   UTF8To88591((char *)string, len, (char *)string, &len);
@@ -1464,7 +1443,7 @@ PStr UTF8ToMac(PStr string) {
 /************************************************************************
  * UTF8To88591 - convert utf8 to 8859-1
  ************************************************************************/
-void UTF8To88591(Ptr inStr, long inLen, Ptr outStr, long *outLen) {
+void UTF8To88591(char * inStr, long inLen, char * outStr, long *outLen) {
   long len;
   Byte tempChar;
 
@@ -1493,7 +1472,7 @@ void UTF8To88591(Ptr inStr, long inLen, Ptr outStr, long *outLen) {
 }
 
 #undef StringToNum
-void MyStringToNum(PStr string, long *num) {
+void MyStringToNum(char * string, long *num) {
   if (!string[0] || !(isdigit(string[0]) || string[0] == '-' || string[0] == '+'))
     *num = 0L;
   else
@@ -1503,17 +1482,17 @@ void MyStringToNum(PStr string, long *num) {
 /************************************************************************
  * PtrPtrMatchLWSP - match two strings, considering all LWSP as the same
  ************************************************************************/
-bool PtrPtrMatchLWSP(Ptr lookFor, short lookLen, Ptr text, uint32_t textLen,
+bool PtrPtrMatchLWSP(char * lookFor, short lookLen, char * text, uint32_t textLen,
                      bool atStart, bool atEnd) {
   unsigned char shortLook[256];
-  Ptr spot, end;
-  Ptr matchEnd;
+  char *spot, *end;
+  char *matchEnd;
 
   lookLen = MIN(lookLen, 250);
 
   // First, copy the string being looked for, collapsing LWSP
   end = lookFor + lookLen;
-  spot = (Ptr)shortLook;
+  spot = (char *)shortLook;
   while (lookFor < end) {
     if (IsLWSP((unsigned char)*lookFor)) {
       *spot++ = ' ';
@@ -1531,7 +1510,7 @@ bool PtrPtrMatchLWSP(Ptr lookFor, short lookLen, Ptr text, uint32_t textLen,
 
   // does match need to be at beginning?
   if (atStart) {
-    if (PPtrMatchLWSPSpot(shortLook, text, textLen, (UPtr *)&matchEnd)) {
+    if (PPtrMatchLWSPSpot(shortLook, text, textLen, (char * *)&matchEnd)) {
       if (atEnd)
         return matchEnd == text + textLen;
       else
@@ -1547,7 +1526,7 @@ bool PtrPtrMatchLWSP(Ptr lookFor, short lookLen, Ptr text, uint32_t textLen,
 
   while (spot < end) {
     if (PPtrMatchLWSPSpot(shortLook, spot, (uint32_t)textLen,
-                          (UPtr *)&matchEnd))
+                          (char * *)&matchEnd))
       if (atEnd) {
         if (matchEnd == text + textLen + 1)
           return true;
@@ -1569,10 +1548,10 @@ bool PtrPtrMatchLWSP(Ptr lookFor, short lookLen, Ptr text, uint32_t textLen,
  * PPtrMatchLWSPSpot - match two strings, considering all LWSP as the same,
  *starting at a given spot
  ************************************************************************/
-bool PPtrMatchLWSPSpot(PStr look, Ptr text, uint32_t textLen, UPtr *matchEnd) {
-  Ptr textEnd = text + textLen;
-  UPtr lookEnd = look + strlen((const char *)look);
-  UPtr lookSpot = look;
+bool PPtrMatchLWSPSpot(char * look, char * text, uint32_t textLen, char * *matchEnd) {
+  char * textEnd = text + textLen;
+  char * lookEnd = look + strlen((const char *)look);
+  char * lookSpot = look;
   Byte c1, c2;
 
   while (1) {
@@ -1611,7 +1590,7 @@ bool PPtrMatchLWSPSpot(PStr look, Ptr text, uint32_t textLen, UPtr *matchEnd) {
   }
 
   if (matchEnd)
-    *matchEnd = (UPtr)text;
+    *matchEnd = (char *)text;
 
   return true;
 }
@@ -1619,14 +1598,14 @@ bool PPtrMatchLWSPSpot(PStr look, Ptr text, uint32_t textLen, UPtr *matchEnd) {
 /************************************************************************
  * PStrToNum - StringToNum as a function
  ************************************************************************/
-long PStrToNum(PStr string) {
+long PStrToNum(char * string) {
   return strtol((const char *)string, NULL, 10);
 }
 
 /************************************************************************
  * ShortVersString - turn a short into an x.x.x.x version string
  ************************************************************************/
-UPtr ShortVersString(short vers, UPtr versionStr) {
+char * ShortVersString(short vers, char * versionStr) {
   char scratch[64];
   char hex[256];
 
@@ -1659,15 +1638,15 @@ UPtr ShortVersString(short vers, UPtr versionStr) {
 /************************************************************************
  * StripLeadingItems - strip items from the beginning of a string
  ************************************************************************/
-PStr StripLeadingItems(PStr string, short resID) {
+char * StripLeadingItems(char * string, short resID) {
   unsigned char s[256];
   unsigned char token[64];
-  UPtr spot;
+  char * spot;
 
   GetRString(s, resID);
   spot = s;
 
-  while (PToken(s, token, &spot, (UPtr) ",")) {
+  while (PToken(s, token, &spot, (char *) ",")) {
     if (BeginsWith(string, token)) {
       size_t tlen = strlen((const char *)token);
       memmove(string, string + tlen, strlen((const char *)string) - tlen + 1);
@@ -1681,15 +1660,15 @@ PStr StripLeadingItems(PStr string, short resID) {
 /************************************************************************
  * StripTrailingItems - strip items from the end of a string
  ************************************************************************/
-PStr StripTrailingITems(PStr string, short resID) {
+char * StripTrailingITems(char * string, short resID) {
   unsigned char s[256];
   unsigned char token[64];
-  UPtr spot;
+  char * spot;
 
   GetRString(s, resID);
   spot = s;
 
-  while (PToken(s, token, &spot, (UPtr) ",")) {
+  while (PToken(s, token, &spot, (char *) ",")) {
     if (EndsWith(string, token)) {
       size_t slen = strlen((const char *)string);
       size_t tlen = strlen((const char *)token);
@@ -1704,15 +1683,15 @@ PStr StripTrailingITems(PStr string, short resID) {
 /************************************************************************
  * EndsWithItem - does a string end with one of these items?
  ************************************************************************/
-bool EndsWithItem(PStr string, short resID) {
+bool EndsWithItem(char * string, short resID) {
   unsigned char s[256];
   unsigned char token[64];
-  UPtr spot;
+  char * spot;
 
   GetRString(s, resID);
   spot = s;
 
-  while (PToken(s, token, &spot, (UPtr) ","))
+  while (PToken(s, token, &spot, (char *) ","))
     if (EndsWith(string, token))
       return true;
 

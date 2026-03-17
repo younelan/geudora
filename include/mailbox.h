@@ -16,11 +16,7 @@
 #include <time.h>
 #include <unistd.h>
 
-#ifndef OSERR_DEFINED
-#define OSERR_DEFINED
-typedef int OSErr;
 typedef int OSStatus;
-#endif
 
 typedef struct mstruct *MessHandle; /* message.h */
 typedef enum {
@@ -55,21 +51,9 @@ typedef int8_t SignedByte;
 typedef unsigned char Byte;
 #endif
 
-#ifndef HANDLE_DEFINED
-#define HANDLE_DEFINED
-typedef void **Handle;
-typedef unsigned char **UHandle;
-typedef long Size;
-typedef char *Ptr;
-typedef unsigned char *PStr;
-typedef unsigned char *UPtr;
-#endif
-typedef Handle AliasHandle;
 
 #ifndef PSTR_DEFINED
 #define PSTR_DEFINED
-typedef char *StringPtr;
-typedef const char *ConstPStr;
 typedef const char *ConstStr255Param;
 typedef GMenuModel *MenuHandle;
 typedef short Style;
@@ -85,11 +69,11 @@ enum {
 #ifndef ACCUMULATOR_DEFINED
 #define ACCUMULATOR_DEFINED
 typedef struct Accumulator {
-  unsigned char **data;  /* Handle — pointer-to-pointer to byte buffer */
+  char *data;  /* plain pointer to byte buffer (no Mac void *indirection) */
   long size;
   long offset;
   int err;
-} Accumulator, *AccuPtr, **AccuHandle;
+} Accumulator, *AccuPtr, *AccuHandle;
 #endif
 
 #ifndef TEXT_ENCODING_DEFINED
@@ -113,21 +97,44 @@ typedef short ScriptCode;
 /* Priority conversion: displayed priority 0-5 → internal 0-200 */
 #define Display2Prior(p) ((p) * 40)
 
-#define FLAG_ADDRERR (1 << 28)    /* addressing error in outgoing message */
-#define FLAG_UNFILTERED (1 << 23) /* message hasn't been filtered yet */
-#define FLAG_HUE1 (1 << 14)
-#define FLAG_HUE2 (1 << 15)
-#define FLAG_HUE3 (1 << 16)
-#define FLAG_HUE4 (1 << 17)
-#define FLAG_UTF8 (1 << 31)     /* summary is UTF-8 */
+/* Message flags — single authoritative definition, canonical bit assignments */
+#define FLAG_OLD_SIG    (1 << 1)   /* add signature to this message */
+#define FLAG_BX_TEXT    (1 << 2)   /* binhex any text attachments */
+#define FLAG_WRAP_OUT   (1 << 3)   /* word-wrap when sending */
+#define FLAG_KEEP_COPY  (1 << 4)   /* keep a copy of this message */
+#define FLAG_ATYPE_LO   (1 << 6)   /* low bit of attachment type */
+#define FLAG_ATYPE_HI   (1 << 7)   /* high bit of attachment type */
+#define FLAG_ENCBOD     (1 << 8)   /* body can be encoded */
+#define FLAG_CAN_ENC    (1 << 9)   /* may we encode the body? */
+#define FLAG_RICH       (1 << 10)  /* message has richtext components */
+#define FLAG_SHOW_ALL   (1 << 11)  /* show all headers & richtext */
+#define FLAG_RR         (1 << 12)  /* want return receipt */
+#define FLAG_HAS_ATT    (1 << 13)  /* message has attachments */
+#define FLAG_HUE1       (1 << 14)
+#define FLAG_HUE2       (1 << 15)
+#define FLAG_HUE3       (1 << 16)
+#define FLAG_HUE4       (1 << 17)
+#define FLAG_FIXED_WIDTH (1 << 18) /* message uses fixed-width font */
+#define FLAG_KNOWS_ME   (1 << 20)  /* sender known to us (junk whitelist) */
+#define FLAG_SIGN       (1 << 21)  /* sign this message */
+#define FLAG_SIG        FLAG_SIGN  /* alias */
+#define FLAG_ENCRYPT    (1 << 22)  /* encrypt this message */
+#define FLAG_UNFILTERED (1 << 23)  /* message hasn't been filtered yet */
+#define FLAG_FIRST      (1 << 24)  /* first message of a split message */
+#define FLAG_SUBSEQUENT (1 << 25)  /* subsequent message of a split message */
+#define FLAG_SKIPPED    (1 << 26)  /* this was a skipped message */
+#define FLAG_SKIPWARN   1          /* dont warn user about deleting this */
+#define FLAG_OUT        (1 << 27)  /* message was outgoing */
+#define FLAG_ADDRERR    (1 << 28)  /* addressing error in outgoing message */
+#define FLAG_ICON_BAR   (1 << 30)  /* use icon bar in this message */
+#define FLAG_UTF8       (1 << 31)  /* summary is UTF-8 */
+
 #define OPT_IMAP_SENT (1 << 26) /* This is a sent IMAP message */
 #define OPT_OPEN         (1 << 0)  /* Open after transfer */
 #define OPT_AUTO_OPENED  (1 << 14) /* Was auto-opened */
 #define OPT_BULK      (1 << 10) /* Bulk/list mail */
-#define FLAG_HAS_ATT  (1 << 8)  /* Message has attachments */
-#define FLAG_SKIPWARN  (1 << 9)  /* Skip delete warning */
 #define SIG_NONE ((uint32_t)-1)
-typedef void **FSSpecHandle;
+typedef void *FSSpecHandle;
 typedef void *ControlHandle;
 typedef struct MyWindow *MyWindowPtr;
 typedef void *WindowPtr;
@@ -146,22 +153,6 @@ typedef struct Point {
   short v, h;
 } Point;
 #endif
-#ifndef STR255_DEFINED
-#define STR255_DEFINED
-typedef unsigned char Str255[256];
-#endif
-#ifndef STR31_DEFINED
-#define STR31_DEFINED
-typedef char Str31[32];
-#endif
-#ifndef STR63_DEFINED
-#define STR63_DEFINED
-typedef char Str63[64];
-#endif
-#ifndef STR15_DEFINED
-#define STR15_DEFINED
-typedef char Str15[16];
-#endif
 
 /* FSSpec: File specification structure */
 #ifndef FSSPEC_DEFINED
@@ -179,13 +170,25 @@ typedef struct {
   short vRef;      /* deprecated — use path instead */
   long dirId;      /* deprecated — use path instead */
   char path[1024]; /* POSIX path to folder */
-} VDId, *VDIdPtr, **VDIdHandle;
+} VDId, *VDIdPtr, *VDIdHandle;
 
 /* CSpec: Counted file specification for tracking file references */
 typedef struct CountedSpecStruct {
   FSSpec spec;
   short count;
-} CSpec, *CSpecPtr, **CSpecHandle;
+} CSpec, *CSpecPtr;
+
+/* Portable container for lists of CSpec using GLib's GArray. Use
+   `CSpecHandle` as the project-wide alias for a dynamic array of
+   `CSpec` instances. Callers should use `CSpecCount`, `CSpecAt`, and
+   `CSpecAppend` to manipulate the array. */
+typedef GArray *CSpecHandle;
+
+/* Helpers for working with CSpecHandle (GArray of CSpec) */
+#define CSpecCount(arr) ((arr) ? (int)((arr)->len) : 0)
+#define CSpecAt(arr, i) (((CSpec *)((arr)->data))[i])
+#define CSpecAppend(arr, val) \
+  do { if (!(arr)) (arr) = g_array_new(FALSE, FALSE, sizeof(CSpec)); g_array_append_val((arr), (val)); } while (0)
 
 typedef void *ModalFilterYDUPP;
 typedef void *DlgHookYDUPP;
@@ -211,7 +214,7 @@ typedef struct DialogTemplate {
   struct {
     short top, left, bottom, right;
   } boundsRect;
-} DialogTemplate, *DialogTemplatePtr, **DialogTemplateHandle;
+} DialogTemplate, *DialogTemplatePtr, *DialogTemplateHandle;
 
 typedef DialogTemplateHandle DialogTHndl;
 
@@ -336,7 +339,6 @@ typedef struct FSRef {
 
 /* Resource and Alert IDs */
 #define WriteZero(ptr, len) memset(ptr, 0, len)
-#define PSCopy PCopy
 #define Zero(v) memset(&(v), 0, sizeof(v))
 
 /* FS Structures */
@@ -413,7 +415,7 @@ typedef struct {
 typedef struct {
   long elSize;
   short elCount;
-} Stack, *StackPtr, **StackHandle;
+} Stack, *StackPtr, *StackHandle;
 
 typedef struct {
   void *ioCompletion;
@@ -521,7 +523,7 @@ typedef union ParamBlockRec {
 /* Pascal string utilities - moved to StringUtil.h / fileutil.h / modernized */
 void PLCat(char *dst, long n);
 short FSpOpenResFile(FSSpecPtr spec, int8_t permission);
-void AddResource(Handle h, ResType type, short id, ConstStr255Param name);
+void AddResource(void *h, ResType type, short id, ConstStr255Param name);
 short ResError(void);
 short FlushVol(unsigned char *name, short vRefNum);
 
@@ -561,7 +563,7 @@ short HGetCatInfo(short vRefNum, long dirID, const char *name, CInfoPBPtr pb);
 short HSetCatInfo(short vRefNum, long dirID, const char *name, CInfoPBPtr pb);
 short HMove(short vRef, long dirId, const char *name, long destDirId,
             const char *newName);
-OSErr AHGetFileInfo(short vRef, long dirId, const char *name, CInfoPBRec *hfi);
+int AHGetFileInfo(short vRef, long dirId, const char *name, CInfoPBRec *hfi);
 short AHSetFileInfo(short vRef, long dirId, const char *name, CInfoPBRec *hfi);
 int FSpDelete(const char *path);
 int ResolveAliasFile(FSSpecPtr spec, bool resolveAliasChains,
@@ -583,8 +585,6 @@ void *GetResource(uint32_t type, short id);
 
 /* System Services */
 int Gestalt(uint32_t selector, long *response);
-int ResolveAlias(FSSpecPtr fromFile, void **alias, FSSpecPtr target,
-                 bool *wasChanged);
 int FileSystemError(short errorId, const char *name, int err);
 void DieWithError(short errorId, int err);
 short MatchAlias(FSSpecPtr spec, long flags, ...);
@@ -607,16 +607,14 @@ int SniffAndConvertHandleToRoman(void ***h);
 uint32_t DefaultCreator(void);
 short GetResFileAttrs(short refNum);
 void UpdateResFile(short refNum);
-void TransLitRes(UPtr string, long len, short resId);
+void TransLitRes(char *string, long len, short resId);
 int FSpGetHFileInfo(FSSpecPtr spec, CInfoPBPtr hfi);
 int AFSpOpenDF(FSSpecPtr spec, FSSpecPtr newSpec, int8_t permission,
                short *refNum);
-int MyFSClose(short refN);
 short PBGetFCBInfo(FCBInfoPBPtr pb, bool async);
 short PBHRenameSync(HParmBlkPtr pb);
 short FSRead(short refNum, long *count, void *buffer);
 short FSWrite(short refNum, long *count, const void *buffer);
-void *FSClose(short refNum);
 void *NuHTempBetter(long size);
 short PBWriteAsync(IOParam *pb);
 int FSpSetFLock(FSSpecPtr spec);
@@ -642,22 +640,19 @@ int WarnUser(short stringId, int err);
 void progress_DieWithError(short stringId, int err);
 void ThirdCenterRectIn(void *r, void *in);
 void GetQDGlobalsScreenBits(void *bits);
-void **NewHandle(size_t size);
-void DisposeHandle(void **h);
-int PtrToHand(const void *srcPtr, void ***dstHndl, size_t size);
-size_t InlineGetHandleSize(void **h);
-void HLock(void **h);
-void HUnlock(void **h);
-void *ZeroHandle(void *hand);
-void **NuHandle(size_t size);
-void **NuHandleClear(size_t size);
+int PtrToHand(const void *srcPtr, void **dstHndl, size_t size);
+size_t InlineGetHandleSize(void *h);
+void HLock(void *h);
+void HUnlock(void *h);
+void *ZeroHandle(void *h);
 void *NuHTempOK(long size);
 void *NuHTempBetter(long size);
 void *NuPtr(size_t size);
-void **PtrPlusHand(const void *ptr, void **hand, long size);
+void *buf_append(void *buf, const void *data, size_t n);
+void *buf_concat(void *dst, const void *src);
 void BlockMoveData(const void *src, void *dest, size_t size);
 bool HaveOSX(void);
-Handle NewIOBHandle(long min, long max);
+void *NewIOBHandle(long min, long max);
 
 typedef struct {
   short vRef;      /* deprecated — use path instead */
@@ -712,7 +707,7 @@ void SendBehind(void *winWP, void *behindWP);
 bool CloseMyWindow(void *winWP);
 
 /* Mailbox open/close */
-int OpenMailbox(FSSpecPtr spec, bool showIt, TOCType * toc);
+int OpenMailbox(const char *path, bool showIt, TOCType * toc);
 void InitMailboxWin(MyWindowPtr win, TOCType * toc, bool showIt);
 GtkWidget *CreateMailboxPanel(TOCType *toc);
 void OpenMBWin(void);
@@ -727,10 +722,10 @@ int AddMesgError(TOCType * tocH, short sum, unsigned char *errorStr,
                  int errorCode);
 void NoteFreeSpace(TOCType * tocH);
 short CountSelectedMessages(TOCType * tocH);
-OSErr UpdateIMAPMailbox(TOCType * tocH);
+int UpdateIMAPMailbox(TOCType * tocH);
 void UsingWindow(GtkWidget *win);
 void NotUsingWindow(GtkWidget *win);
-TOCType * FindTOC(FSSpecPtr spec);
+TOCType * FindTOC(const char *path);
 
 /* IsWindowVisible: GTK4 portable check — true if widget is non-null and visible
  */
@@ -744,9 +739,8 @@ void GetSearchTOC(MyWindowPtr win, TOCType * *tocH);
 
 /* Mailbox/message utilities */
 short FindSumBySerialNum(TOCType * tocH, long serialNum);
-int GetMailbox(FSSpecPtr spec, bool showIt);
+int GetMailbox(const char *path, bool showIt);
 void DeleteMessageLo(TOCType * tocH, int sumNum, bool nuke);
-OSErr HandPlusHand(Handle h1, Handle h2);
 short FindDirLevel(short vRefNum, long dirID);
 char *MailboxMenuFile(short mid, short item, char *name);
 long CountFlaggedMessages(TOCType * tocH);
@@ -756,7 +750,7 @@ short GetSumColor(TOCType * tocH, short sumNum);
 #endif
 void SetSumColor(TOCType * tocH, short sumNum, short color);
 int DeleteMesgError(TOCType * tocH, short sum);
-void FixSpecUnread(FSSpecPtr spec, bool unread);
+void FixSpecUnread(const char *path, bool unread);
 bool SaveMessageSum(void *sum, TOCType * *tocH);
 
 #endif /* MAILBOX_H */

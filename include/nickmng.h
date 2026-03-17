@@ -91,7 +91,7 @@ typedef struct {
   void **theAddresses;  /* expansion addresses */
   void **theNotes; /* Notes for nickname; will contain other info such as real
                       name, phone, etc. */
-} NickStruct, *NickStructPtr, **NickStructHandle;
+} NickStruct, *NickStructPtr, *NickStructHandle;
 
 typedef enum {
   eudoraAddressBook,
@@ -126,18 +126,17 @@ typedef struct AliasDStruct {
   bool dirty;
   bool containsBogusNicks;
   Accumulator addressHashes;
-} AliasDesc, *AliasDPtr, **AliasDHandle;
+} AliasDesc, *AliasDPtr, *AliasDHandle;
 
 // Structure to represent the contents of a 'TGMP' (Tag Map) resource
 typedef struct {
-  Str255 service;     // Name of the service (Ph, LDAP, etc...)
-  Str255 server;      // Server (if any)
+  char service[256];     // Name of the service (Ph, LDAP, etc...)
+  char server[256];      // Server (if any)
   short count;        // Number of tags
-  void **serviceTags; // Concatenation of PStr's representing tags for this
+  void *serviceTags; // Concatenation of char *'s representing tags for this
                       // service and server
-  void **
-      nicknameTags; // Concatenation of PStr's representing mapped nickname tags
-} NicknameTagMapRec, *NicknameTagMapRecPtr, **NicknameTagMapRecHandle;
+  void *nicknameTags; // Concatenation of char *'s representing mapped nickname tags
+} NicknameTagMapRec, *NicknameTagMapRecPtr, *NicknameTagMapRecHandle;
 
 #define NAliases (GetHandleSize_(Aliases) / sizeof(AliasDesc))
 #define NNicknames (GetHandleSize_(This.theData) / sizeof(NickStruct))
@@ -159,49 +158,49 @@ typedef struct {
 #define kNickGenOptAsian 1
 #define kNickGenOptLastFirst 2
 
-unsigned char *AliasExpansion(unsigned char *data, long offset);
-void **GetTaggedFieldValue(short ab, short nick, unsigned char *tag);
-void **GetTaggedFieldValueInNotes(void **notes, unsigned char *tag);
-unsigned char *GetTaggedFieldValueStr(short ab, short nick, unsigned char *tag,
-                                      unsigned char *value);
-unsigned char *GetTaggedFieldValueStrInNotes(void **notes, unsigned char *tag,
-                                             unsigned char *value);
-int SetTaggedFieldValue(short ab, short nick, unsigned char *tag,
-                        unsigned char *value, NickFieldSetValueType setValue,
+char *AliasExpansion(char *data, long offset);
+void *GetTaggedFieldValue(short ab, short nick, char *tag);
+void *GetTaggedFieldValueInNotes(void *notes, char *tag);
+char *GetTaggedFieldValueStr(short ab, short nick, char *tag,
+                                      char *value);
+char *GetTaggedFieldValueStrInNotes(void *notes, char *tag,
+                                             char *value);
+int SetTaggedFieldValue(short ab, short nick, char *tag,
+                        char *value, NickFieldSetValueType setValue,
                         short separatorIndex, bool *ignored);
-int SetTaggedFieldValueInNotes(void **notes, unsigned char *tag, char *value,
+int SetTaggedFieldValueInNotes(void *notes, char *tag, char *value,
                                long length, NickFieldSetValueType setValue,
                                short separatorIndex, bool *ignored);
-int SetNicknameChangeBit(void **notes, ChangeBitType changeBits,
+int SetNicknameChangeBit(void *notes, ChangeBitType changeBits,
                          bool clearFirst);
-long GetNicknameChangeBits(void **notes);
-bool FindTaggedFieldValueOffsets(short ab, short nick, unsigned char *tag,
+long GetNicknameChangeBits(void *notes);
+bool FindTaggedFieldValueOffsets(short ab, short nick, char *tag,
                                  long *attributeOffset, long *attributeLength,
                                  long *valueOffset, long *valueLength);
 int RegenerateAllAliases(bool rebuild);
 int BuildAddressHashes(short which);
-void **GetNicknameData(short which, short index, bool wantAddresses,
+void *GetNicknameData(short which, short index, bool wantAddresses,
                        bool readFromDisk);
-void **GetNicknameName(short which, short index);
-unsigned char *GetNicknameNamePStr(short which, short index,
-                                   unsigned char *theName);
-void GetNicknameViewData(short which, short index, unsigned char *sViewData);
-long NickHash(unsigned char *newName);
-long NickHashString(unsigned char *string);
-long NickHashHandle(void **h);
-long NickHashRawAddresses(void **addresses, bool *group);
+void *GetNicknameName(short which, short index);
+char *GetNicknameNamePStr(short which, short index,
+                                   char *theName);
+void GetNicknameViewData(short which, short index, char *sViewData);
+long NickHash(char *newName);
+long NickHashString(char *string);
+long NickHashHandle(void *h);
+long NickHashRawAddresses(void *addresses, bool *group);
 long NickGenerateUniqueID(void);
 int PrepAllAddressBooksForSync(void);
 int PrepAddressBookForSync(short ab);
-int PrepNicknameForSync(short ab, short nick, Str255 idTag,
-                        Str255 changeBitsTag);
+int PrepNicknameForSync(short ab, short nick, char idTag[256],
+                        char changeBitsTag[256]);
 int ClearAllAddressBookChangeBits(long mask);
 int ClearAddressBookChangeBits(short ab, long mask);
 int ClearNicknameChangeBits(short ab, short nick, long mask);
 
-bool IsAnyNickname(unsigned char *name);
+bool IsAnyNickname(char *name);
 
-void CommaList(void **h);
+void CommaList(void *h);
 #ifdef NEVER
 long CountAliasTotal(NickHandle aliases, long offset);
 long CountAliasAlias(NickHandle aliases, long offset);
@@ -222,21 +221,21 @@ long CountAliasExpansion(NickHandle aliases, long offset);
 
 bool SaveIndNickFile(short which, bool saveChangeBits);
 int URLStringToSpec(StringHandle urlString, FSSpec *spec);
-short ReplaceNicknameAddresses(short which, unsigned char *oldName,
+short ReplaceNicknameAddresses(short which, char *oldName,
                                TextAddrHandle text);
-short ReplaceNicknameNotes(short which, unsigned char *oldName,
+short ReplaceNicknameNotes(short which, char *oldName,
                            TextAddrHandle text);
-static short ReplaceNicknameInfo(short which, unsigned char *theName,
+static short ReplaceNicknameInfo(short which, char *theName,
                                  TextAddrHandle text, bool fAddresses);
-void RemoveNamedNickname(short which, unsigned char *name);
-short AddNickToTOCfromName(short which, unsigned char *name, void **addresses);
-short AddNickToTOCfromNotes(short which, unsigned char *name, void **notes);
-static short AddNickToTOC(short which, unsigned char *name, void **hData,
+void RemoveNamedNickname(short which, char *name);
+short AddNickToTOCfromName(short which, char *name, void *addresses);
+short AddNickToTOCfromNotes(short which, char *name, void *notes);
+static short AddNickToTOC(short which, char *name, void *hData,
                           bool fFromAddress);
 long NickMatchFound(NickStructHandle theNicknames, long hashName,
-                    unsigned char *theName, short which);
+                    char *theName, short which);
 long NickAddressMatchFound(NickStructHandle theNicknames, long hashAddress,
-                           unsigned char *theAddress, short which);
+                           char *theAddress, short which);
 void MakeMessNick(MyWindowPtr win, short modifiers);
 #ifdef VCARD
 void MakeCompNick(MyWindowPtr win, FSSpec *vcardSpec);
@@ -245,22 +244,22 @@ void MakeCompNick(MyWindowPtr win);
 #endif
 void MakeMboxNick(MyWindowPtr win, short modifiers);
 void MakeCboxNick(MyWindowPtr win);
-void FlattenListWith(void **h, unsigned char c);
+void FlattenListWith(void *h, unsigned char c);
 bool SaveAliases(bool saveChangeBits);
-int NickUniq(TextAddrHandle addresses, unsigned char *sep, bool wantErrors);
+int NickUniq(TextAddrHandle addresses, char *sep, bool wantErrors);
 #define MAX_NICKNAME 30
 void MakeNickFromSelection(MyWindowPtr win);
 int GatherCompAddresses(MyWindowPtr win, char *addrList);
 
-int AddTextToNick(short which, unsigned char *name, void **text, bool append);
-short ChangeNameOfNick(short which, unsigned char *oldName,
-                       unsigned char *newName);
+int AddTextToNick(short which, char *name, void *text, bool append);
+short ChangeNameOfNick(short which, char *oldName,
+                       char *newName);
 int GatherBoxAddresses(TOCType * tocH, short modifiers, short from, short to,
                        void ***addresses, bool caching);
 void ReadNickFileList(FSSpec *pSpec, AddressBookType type, bool reread);
 void ReadPluginNickFiles(bool reread);
 int RegenerateAliases(short which, bool rebuild);
-bool ExpandAliasesLow(Handle *h1, Handle h2, int i, bool b1, void *p1, int i2);
+bool ExpandAliasesLow(void **h1, void *h2, int i, bool b1, void *p1, int i2);
 
 void ZapAliasHash(short which);
 void ZapAliases(void);
@@ -268,33 +267,33 @@ void ZapAliasFile(short which);
 void ZapPluginAliases(void);
 void SetAliasDirty(short which);
 
-bool MaybeApplySplittingAlgorithm(void **notes);
-unsigned char *ParseFirstLast(unsigned char *realName, unsigned char *firstName,
-                              unsigned char *lastName);
-unsigned char *JoinFirstLast(unsigned char *fullName, unsigned char *firstName,
-                             unsigned char *lastName);
-unsigned char *ScanNameForSpaces(unsigned char *name);
-void MakeUniqueNickname(short ab, Str31 nickname);
-void SetNickname(short ab, short nick, unsigned char *name);
+bool MaybeApplySplittingAlgorithm(void *notes);
+char *ParseFirstLast(char *realName, char *firstName,
+                              char *lastName);
+char *JoinFirstLast(char *fullName, char *firstName,
+                             char *lastName);
+char *ScanNameForSpaces(char *name);
+void MakeUniqueNickname(short ab, char nickname[32]);
+void SetNickname(short ab, short nick, char *name);
 
 int NickBackup(FSSpecPtr spec);
 
 // Prototypes for using the Nickname Tag Map
-int GetNicknameTagMap(unsigned char *service, unsigned char *server,
+int GetNicknameTagMap(char *service, char *server,
                       NicknameTagMapRecPtr tagMapPtr);
 void DisposeNicknameTagMap(NicknameTagMapRecPtr tagMapPtr);
-unsigned char *NicknameTag2ServiceTag(NicknameTagMapRecPtr tagMapPtr,
-                                      unsigned char *nicknameTag,
-                                      unsigned char *serviceTag);
-unsigned char *ServiceTag2NicknameTag(NicknameTagMapRecPtr tagMapPtr,
-                                      unsigned char *serviceTag,
-                                      unsigned char *nicknameTag);
-unsigned char *GetIndNicknameTag(NicknameTagMapRecPtr tagMapPtr, short index,
-                                 unsigned char *nicknameTag);
+char *NicknameTag2ServiceTag(NicknameTagMapRecPtr tagMapPtr,
+                                      char *nicknameTag,
+                                      char *serviceTag);
+char *ServiceTag2NicknameTag(NicknameTagMapRecPtr tagMapPtr,
+                                      char *serviceTag,
+                                      char *nicknameTag);
+char *GetIndNicknameTag(NicknameTagMapRecPtr tagMapPtr, short index,
+                                 char *nicknameTag);
 short FindServiceTagIndex(NicknameTagMapRecPtr tagMapPtr,
-                          unsigned char *serviceTag);
+                          char *serviceTag);
 
-PrimaryLocationType GetPrimaryLocation(void **notes);
+PrimaryLocationType GetPrimaryLocation(void *notes);
 
 short FindAddressBookType(AddressBookType type);
 int WhiteListAddr(TextAddrHandle addr);

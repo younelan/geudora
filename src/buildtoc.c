@@ -56,7 +56,7 @@ ADVISED OF THE POSSIBILITY OF SUCH DAMAGE. */
 #define IsWhite(c) ((c) == ' ' || (c) == '\t')
 #endif
 
-/* Allocate a TOCType directly with malloc (no Mac Handle indirection) */
+/* Allocate a TOCType directly with malloc (no Mac void *indirection) */
 static TOCType *AllocTOC(void) {
   TOCType *toc = calloc(1, sizeof(TOCType));
   return toc;
@@ -629,7 +629,7 @@ static short MatchSenderHeader(const char *headerName) {
  * Pass sum=NULL to reset internal state.
  * Returns noErr on success, fnfErr at EOF, or an error code.
  ************************************************************************/
-OSErr ReadSum(MSumPtr sum, bool isOut, LineIOP lip, bool lookEnvelope) {
+int ReadSum(MSumPtr sum, bool isOut, LineIOP lip, bool lookEnvelope) {
   static int type;
   unsigned char line[1024];
   static unsigned char *oldLineData = NULL;
@@ -916,7 +916,7 @@ TOCType * BuildTOC(const char *path) {
   MSumType sum;
   bool isOut;
   LineIOD lid;
-  OSErr err;
+  int err;
   short which = 0;
   const char *filename;
   short capacity = 0;

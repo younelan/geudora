@@ -67,7 +67,7 @@ char *NewMessageId(char *id);
 long BodyOffset(char *text);
 
 /* Address and identity functions - ported to standard C strings */
-bool IsMe(unsigned char *address);
+bool IsMe(const char *address);
 int WriteTranslators(short refN, void *translators);
 int AddTranslatorsFromPtr(MessHandle messH, char *text, long len);
 
@@ -166,6 +166,6 @@ bool CompSave(MessHandle messH);
 int GatherCompAddresses(MyWindowPtr win, char *addrList);
 
 /* Utility functions */
-unsigned char *CompCurAddr(MyWindowPtr win, unsigned char *addr);
+char *CompCurAddr(MyWindowPtr win, char *addr);
 
 #endif

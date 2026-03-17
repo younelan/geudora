@@ -49,10 +49,6 @@ typedef unsigned short uShort;
 #ifndef CStr
 typedef char *CStr;
 #endif
-#ifndef UPtr
-typedef unsigned char *UPtr;
-typedef UPtr Uptr;
-#endif
 #ifndef Byte
 typedef unsigned char Byte;
 #endif
@@ -169,21 +165,15 @@ typedef AppleEvent *AppleEventPtr;
 /**********************************************************************
  * make dealing with handles a little less unpleasant
  **********************************************************************/
-#define LDRef(aHandle) (HLock((void *)(aHandle)), *(aHandle))
-#define UL(aHandle) HUnlock((void *)(aHandle))
+/* Flat pointer model: Handle = void*, no double-indirection */
+#define LDRef(aHandle) (aHandle)
+#define UL(aHandle) ((void)0)
 #define New(aType) ((aType *)NuPtr(sizeof(aType)))
-#define NewH(aType) ((aType **)NuHTempOK(sizeof(aType)))
-#define NewZH(aType) ((aType **)ZeroHandle(NuHTempOK(sizeof(aType))))
-#define NewHTB(aType) ((aType **)NuHTempBetter(sizeof(aType)))
-#define NewZHTB(aType) ((aType **)ZeroHandle(NuHTempBetter(sizeof(aType))))
-#define NuHandleClear(size) (ZeroHandle(NuHandle(size)))
-#define ZapHandle(aHandle)                                                     \
-  do {                                                                         \
-    if (aHandle) {                                                             \
-      DisposeHandle((void *)(aHandle));                                        \
-      (aHandle) = nil;                                                         \
-    }                                                                          \
-  } while (0)
+#define NewH(aType) ((aType *)NuHTempOK(sizeof(aType)))
+#define NewZH(aType) ((aType *)calloc(1, sizeof(aType)))
+#define NewHTB(aType) ((aType *)NuHTempBetter(sizeof(aType)))
+#define NewZHTB(aType) ((aType *)calloc(1, sizeof(aType)))
+/* ZapHandle removed — use free() directly */
 #ifndef DisposePtr
 #define DisposePtr(p) free(p)
 #endif
@@ -192,16 +182,16 @@ typedef AppleEvent *AppleEventPtr;
     DisposePtr((void *)aPtr);                                                  \
     aPtr = nil;                                                                \
   }
-#define HandleCount(h) ((h) ? (*(h) ? GetHandleSize_(h) / sizeof(**h) : 0) : 0)
+#define HandleCount(h) ((h) ? (GetHandleSize_(h) / sizeof(*(h))) : 0)
 #define DEC_STATE(h) char h##_state;
 #define L_STATE(h)                                                             \
   do {                                                                         \
-    h##_state = HGetState((Handle)h);                                          \
+    h##_state = HGetState((void *)h);                                          \
     HLock((void *)h);                                                          \
   } while (0)
 #define U_STATE(h)                                                             \
   do {                                                                         \
-    HSetState((Handle)h, h##_state);                                           \
+    HSetState((void *)h, h##_state);                                           \
   } while (0)
 
 // (jp) Lots of casting will be evil under Carbon, for now we'll concern
@@ -213,7 +203,7 @@ typedef AppleEvent *AppleEventPtr;
 #else // FLOAT_WIN
 #define FrontWindow_ FrontWindow
 #endif // FLOAT_WIN
-#define HandToHand_(h) MyHandToHand((void *)(h))
+#define HandToHand_(h) MyHandToHand((void **)(h))
 #define AddResource_(h, t, i, n)                                               \
   AddResource((void *)(h), (ResType)(t), i, (ConstStr255Param)(n))
 #define AddMyResource_(h, t, i, n)                                             \
@@ -224,15 +214,14 @@ typedef AppleEvent *AppleEventPtr;
   AEGetParamPtr((void *)e, (AEKeyword)k, (DescType)dt, (void *)t, (void *)p,   \
                 (Size)m, (void *)a)
 #define SetPort_(p) SetPort(p)
-#define GetHandleSize_(h) InlineGetHandleSize((Handle)h)
-#define HNoPurge_(h) HNoPurge((Handle)h)
+#define GetHandleSize_(h) InlineGetHandleSize((void *)h)
+#define HNoPurge_(h) HNoPurge((void *)h)
 #define GetAuxWin_(w, h) GetAuxWin(w, h)
 #define GetNewControl_(i, w) GetNewControl(i, w)
 #define GetNewControlSmall_(i, w) GetNewControlSmall(i, w)
-#define ReleaseResource_(r) ReleaseResource((Handle)r)
-#define PtrPlusHand_(p, h, s) PtrPlusHand((void *)(p), (void *)(h), s)
-#define HandPlusHand_(h1, h2) HandPlusHand((void *)(h1), (void *)(h2))
-#define SetHandleBig_(h, s) SetHandleBig((Handle)(h), (long)(s))
+#define ReleaseResource_(r) ReleaseResource((void *)r)
+/* buf_append/buf_concat: no macros needed — use functions directly */
+#define SetHandleBig_(h, s) SetHandleBig((void *)(h), (long)(s))
 #define SetWTitle_(w, t) SetWTitle(w, t)
 #define FindWindow_(p, w) FindWindow(p, w)
 #define GetDItem_(d, i, t, h, r) GetDialogItem(d, i, t, (void *)h, r)
@@ -383,7 +372,7 @@ typedef AppleEvent *AppleEventPtr;
 #endif
 #define MEM_CRITICAL (SPARE_SIZE / 4)
 #ifdef DEBUG
-#define LOGLINE ComposeLogS(-1, nil, (UPtr)"%r:%d", FNAME_STRN + FILE_NUM, __LINE__)
+#define LOGLINE ComposeLogS(-1, nil, (unsigned char *)"%r:%d", FNAME_STRN + FILE_NUM, __LINE__)
 #else
 #define LOGLINE
 #endif
@@ -545,7 +534,6 @@ typedef enum {
 /* Use standard C types - no Mac typedefs */
 typedef uint16_t uShort;
 typedef enum { Production, Debugging, Steve } RunTypeEnum;
-typedef unsigned char Str127[128];
 #ifndef HAVE_EVENTPTR
 typedef EventRecord *EventPtr;
 #define HAVE_EVENTPTR 1
@@ -562,7 +550,7 @@ typedef AEAddressDesc *AEAddressDescPtr;
 typedef AppleEvent *AppleEventPtr;
 #define HAVE_APPLEEVENTPTR 1
 #endif
-typedef struct MIMEMapStruct **MIMEMapHandle;
+typedef struct MIMEMapStruct *MIMEMapHandle;
 typedef enum { plComplete, plPartial, plEndOfMessage, plError } POPLineType;
 /* forward-declare TransStream so it can be used in typedefs before the full
         definition/header is included later. */
@@ -573,13 +561,13 @@ typedef TransStreamStruct *TransStream;
 #endif
 typedef POPLineType LineReader(TransStream stream, unsigned char *buf,
                                long bSize, long *len);
-typedef char **TextAddrHandle;  /* C string handle for address text */
+typedef char *TextAddrHandle;  /* C string handle for address text */
 typedef const char *TextAddrPtr;
-typedef char **BinAddrHandle;   /* NULL-terminated char** array — free with g_strfreev() */
+typedef char *BinAddrHandle;   /* NULL-terminated char** array — free with g_strfreev() */
 typedef char *BinAddrPtr;
-typedef void **NickHandle;
+typedef void *NickHandle;
 typedef unsigned char *NickPtr;
-typedef void **TabFieldHandle;
+typedef void *TabFieldHandle;
 typedef unsigned char *TabFieldPtr;
 #endif
 
@@ -589,7 +577,7 @@ typedef struct {
   short flags;
   unsigned long prefSize;
   unsigned long minSize;
-} SizeRec, *SizePtr, **SizeHandle;
+} SizeRec, *SizePtr, *SizeHandle;
 
 /************************************************************************
  * transport mechanisms
@@ -673,7 +661,7 @@ typedef struct X509_st X509;
 /* When building portable, include TransStream after SSL/type setup */
 #endif
 
-#/* Now include TransStream which depends on types above (unsigned char *, UHandle, SSL typedefs) */
+/* Now include TransStream which depends on types above */
 /* Try to include the real TransStream header when available; otherwise
    provide a guarded forward-declaration so `TransStream` is defined only once.
  */

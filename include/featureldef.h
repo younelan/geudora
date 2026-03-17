@@ -34,6 +34,6 @@ typedef struct {
 	bool				isName;							// 'true' if this is a feature name as opposed to a description
 	bool				isSubFeature;				// 'true' if this is a sub feature to a primary feature
 	bool				used;								// 'true' if this feature has been used
-} FeatureCellRec, *FeatureCellPtr, **FeatureCellHandle;
+} FeatureCellRec, *FeatureCellPtr, *FeatureCellHandle;
 
 #endif

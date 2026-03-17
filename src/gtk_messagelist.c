@@ -8,16 +8,6 @@
 #include "StringUtil.h"
 #include <stdio.h>
 
-/* Flag bits from mailbox.h */
-#ifndef FLAG_HAS_ATT
-#define FLAG_HAS_ATT (1 << 8)
-#endif
-#ifndef FLAG_HUE1
-#define FLAG_HUE1 (1 << 14)
-#define FLAG_HUE2 (1 << 15)
-#define FLAG_HUE3 (1 << 16)
-#define FLAG_HUE4 (1 << 17)
-#endif
 
 struct _GtkMessageListItem {
   GObject parent_instance;

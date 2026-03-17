@@ -452,7 +452,7 @@ typedef struct emsGetMailBoxDataS {
 
 /* ----- User Address
  * ---------------------------------------------------------------- */
-typedef struct emsAddressS *emsAddressP, **emsAddressH;
+typedef struct emsAddressS *emsAddressP, *emsAddressH;
 typedef struct emsAddressS {
   long size;                /* Size of this data structure */
   unsigned char **address;  /* Actual email address */
@@ -576,7 +576,7 @@ typedef struct emsGetDirectoryDataS {
 
 /* ----- MIME Params
  * ----------------------------------------------------------------- */
-typedef struct emsMIMEparam *emsMIMEparamP, **emsMIMEparamH;
+typedef struct emsMIMEparam *emsMIMEparamP, *emsMIMEparamH;
 typedef struct emsMIMEparam {
   long size;
   char name[64]; /* Mime parameter name (e.g. charset) */
@@ -586,7 +586,7 @@ typedef struct emsMIMEparam {
 
 /* ----- MIME Info
  * ------------------------------------------------------------------- */
-typedef struct emsMIMEtype *emsMIMEtypeP, **emsMIMEtypeH;
+typedef struct emsMIMEtype *emsMIMEtypeP, *emsMIMEtypeH;
 typedef struct emsMIMEtype {
   long size;
   char mimeVersion[64]; /* The MIME-Version header */
@@ -747,7 +747,7 @@ typedef struct emsMenuS {
 
 /* ----- Translation Data
  * ------------------------------------------------------------ */
-typedef struct emsDataFileS *emsDataFileP, **emsDataFileH;
+typedef struct emsDataFileS *emsDataFileP, *emsDataFileH;
 typedef struct emsDataFileS {
   long size; /* Size of this data structure */
   long context;
@@ -891,7 +891,7 @@ typedef struct emsGDeviceRgnDataS {
 
 // start IMPORTERS
 /* ----- Importer Info -------------------------------- */
-typedef struct emsImporterS *emsImporterP, **emsImporterH;
+typedef struct emsImporterS *emsImporterP, *emsImporterH;
 typedef struct emsImporterS {
   long size;            /* Size of this data structure */
   long id;              /* ID of translator to get info for */
@@ -911,7 +911,7 @@ typedef enum {
 } ImportOperationEnum;
 
 /* ----- Importer Data ------------------------------- */
-typedef struct emsImporterDataS *emsImporterDataP, **emsImporterDataH;
+typedef struct emsImporterDataS *emsImporterDataP, *emsImporterDataH;
 typedef struct emsImporterDataS {
   long size;                /* Size of this data structure */
   ImportOperationEnum what; /* import operation selector */
@@ -920,27 +920,27 @@ typedef struct emsImporterDataS {
 } emsImporterData;
 
 /* ----- Account Data ------------------------------ */
-typedef struct ImportAccountInfoS *ImportAccountInfoP, **ImportAccountInfoH;
+typedef struct ImportAccountInfoS *ImportAccountInfoP, *ImportAccountInfoH;
 typedef struct ImportAccountInfoS {
   long size;         /* IN: Size of this data structure */
   FSSpec importSpec; /* spec pointing to folder or file to import */
-  Str63 accountName; /* name of account */
-  Str63 appName;     /* name of Application */
+  char accountName[64]; /* name of account */
+  char appName[64];     /* name of Application */
   void **icon;       /* Application icon data */
   long id;           /* The importer that will actually do the work */
 } ImportAccountInfoS;
 
 /* ----- Import Settings Data --------------------- */
-typedef struct ImportPersDataS *ImportPersDataP, **ImportPersDataH;
+typedef struct ImportPersDataS *ImportPersDataP, *ImportPersDataH;
 typedef struct ImportPersDataS {
   long size;            /* IN: Size of this data structure */
   long makeDominant;    /* Is this the main account? */
-  Str255 accountName;   /* The name of the personality to be created */
-  Str255 returnAddress; /* return address */
-  Str255 realName;      /* real name */
-  Str255 userName;      /* username */
-  Str255 mailServer;    /* mail server */
-  Str255 smtpServer;    /* smtp server */
+  char accountName[256];   /* The name of the personality to be created */
+  char returnAddress[256]; /* return address */
+  char realName[256];      /* real name */
+  char userName[256];      /* username */
+  char mailServer[256];    /* mail server */
+  char smtpServer[256];    /* smtp server */
   bool isIMAP;          /* is this an IMAP account? */
 } ImportPersData;
 
@@ -967,7 +967,7 @@ typedef struct ImportAddressDataS ImportAddressDataS, *ImportAddressDataP,
 typedef struct ImportAddressDataS {
   long size;         /* IN: Size of this data structure */
   FSSpec importSpec; /* Spec pointing to the folder or file to import */
-  Str63 accountName; /* name of the account */
+  char accountName[64]; /* name of the account */
   emsMakeAddressBook
       makeAddressBook;        /* Callback to create an address book file */
   emsMakeABEntry makeABEntry; /* Callback to create an address book entry */
@@ -996,7 +996,7 @@ typedef struct ImportMailDataS ImportMailDataS, *ImportMailDataP,
 typedef struct ImportMailDataS {
   long size;         /* IN: Size of this data structure */
   FSSpec importSpec; /* Spec pointing to the folder or file to import */
-  Str63 accountName; /* name of the account */
+  char accountName[64]; /* name of the account */
   emsMakeMailbox makeMailbox; /* Callback to create a mailbox */
   emsMakeOutMess makeOutMess; /* Callback to create an outgoing message */
   emsMakeMessage

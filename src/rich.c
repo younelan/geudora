@@ -19,7 +19,7 @@ DAMAGE. */
 //depot/projects/eudora/mac/Current/rich.c#24 - edit change 4405 (text)
 #include "rich.h"
 #include "util.h"         /* StackInit, StackPush, StackPop, AccuAddStr, AccuAddChar, AccuAddPtr, ScriptVar */
-#include "StringUtil.h"   /* ComposeRString, MakePStr */
+#include "StringUtil.h"   /* ComposeRString */
 #include "StringDefs.h"   /* MIME_RICH_ON */
 #include "StrnDefs.h"     /* EnrichedStrn, EnrichedEnum */
 #include "mime.h"         /* OffsetAndStyleHandle */
@@ -35,8 +35,7 @@ static inline void CycleBalls(void) {}
 
 /* Font globals from Globals.h — declared here to avoid pulling in the entire header */
 extern int FontID, FontSize, FixedID, FixedSize;
-/* StdSizes — handle to array of standard font sizes */
-extern short **StdSizes;
+extern short *StdSizes;
 /* Copyright (c) 1995 by QUALCOMM Incorporated */
 #define FILE_NUM 76
 
@@ -119,17 +118,17 @@ static inline void PeteConvertMarg(PETEHandle pte, long basePara, PSMPtr marg, P
 
 /* Forward declarations for functions not yet ported or in unincluded headers */
 extern void GetFontName(short fontID, unsigned char *name);
-extern int InsertHTMLLo(UHandle text, long *htmlOffset, long textLen, long *inOffset,
+extern int InsertHTMLLo(unsigned char * text, long *htmlOffset, long textLen, long *inOffset,
                         PETEHandle pte, TextEncoding encoding, long flags, StackHandle partRefStack);
 extern bool EncodingError(int err);
 extern TextEncoding CreateSystemRomanEncoding(void);
 extern int StackQueue(void *what, StackHandle stack);
 extern int StackTop(void *into, StackHandle stack);
 extern int PETEInsertTextHandle(PETEInst pi, PETEHandle pte, long offset,
-                                UHandle text, long len, long hOffset,
+                                unsigned char * text, long len, long hOffset,
                                 PETEStyleListHandle styles);
 extern int PETESelect(PETEInst pi, PETEHandle pte, long start, long stop);
-extern int PeteInsertHeader(PETEHandle pte, long *pOff, UHandle text, long len, long tOff);
+extern int PeteInsertHeader(PETEHandle pte, long *pOff, unsigned char * text, long len, long tOff);
 extern int PeteEnsureBreakLo(PETEHandle pte, long offset, bool *did);
 extern int PeteEnsureCrAndBreakLo(PETEHandle pte, long inOffset, long *newOffset, bool *did);
 #define PeteEnsureBreak(pte, offset) PeteEnsureBreakLo(pte, offset, nil)
@@ -150,16 +149,16 @@ int BuildEnrichedDirectives(PETETextStylePtr oldStyle,PETETextStylePtr newStyle,
 															PETEParaInfoPtr oldInfo,PETEParaInfoPtr newInfo,
 															StackHandle openStack,StackHandle redoStack,
 															AccuPtr enriched);
-PStr BuildRichParaParam(PStr directive,PSMPtr marg);
-PStr BuildRichFontParam(PStr directive,short fontID);
-PStr BuildRichColorParam(PStr directive,RGBColor *color);
+char * BuildRichParaParam(char * directive,PSMPtr marg);
+char * BuildRichFontParam(char * directive,short fontID);
+char * BuildRichColorParam(char * directive,RGBColor *color);
 void AddToStyle(EnrichedEnum cmd,bool neg,long offset,OffsetAndStyleHandle *styles,uLong valid);
-int EnrichedToken(UHandle enriched,long maxLen,bool headers,short *cmdId,bool *neg,long *tStart,long *tStop);
-int InsertEnriched(UHandle text, long *textOffset, long textLen, long *offset, bool unwrap, PETEHandle pte);
-int InsertEnrichedLo(UHandle text, long *textOffset, long textLen, long *inOffset, bool unwrap, PETEHandle pte, TextEncoding encoding);
-int InsertFlowed(UHandle text, long *textOffset, long textLen, long *inOffset, PETEHandle pte, bool delSP);
-int InsertFlowedLo(UHandle text, long *textOffset, long textLen, long *inOffset, PETEHandle pte, bool delSP, TextEncoding encoding);
-int InsertFixed(UHandle text, long *textOffset, long textLen, long *inOffset, PETEHandle pte, TextEncoding encoding);
+int EnrichedToken(unsigned char * enriched,long maxLen,bool headers,short *cmdId,bool *neg,long *tStart,long *tStop);
+int InsertEnriched(unsigned char * text, long *textOffset, long textLen, long *offset, bool unwrap, PETEHandle pte);
+int InsertEnrichedLo(unsigned char * text, long *textOffset, long textLen, long *inOffset, bool unwrap, PETEHandle pte, TextEncoding encoding);
+int InsertFlowed(unsigned char * text, long *textOffset, long textLen, long *inOffset, PETEHandle pte, bool delSP);
+int InsertFlowedLo(unsigned char * text, long *textOffset, long textLen, long *inOffset, PETEHandle pte, bool delSP, TextEncoding encoding);
+int InsertFixed(unsigned char * text, long *textOffset, long textLen, long *inOffset, PETEHandle pte, TextEncoding encoding);
 #define FlushIntlText(pte, offset, converter) PeteInsertIntlText(pte, offset, nil, 0L, 0L, converter, kTextEncodingUnknown, false, true);
 bool PartIsReferenced(uLong cID,uLong baseID,uLong sourceID,StackHandle partRefStack);
 int FakeAttachment(PETEHandle pte,uLong *offset,FSSpecPtr spec);
@@ -179,7 +178,7 @@ typedef struct
 		PeteSaneMargin marg;
 		short fontID;
 	} param;
-} DirectiveType,*DTPtr, **DTHandle;
+} DirectiveType,*DTPtr, *DTHandle;
 
 #define ISSUE_DIRECTIVE																										\
 	do {																																		\
@@ -191,12 +190,12 @@ typedef struct
 /**********************************************************************
  * BuildEnriched - take a block of text and turn it into text/enriched
  **********************************************************************/
-OSErr BuildEnriched(AccuPtr enriched,PETEHandle pte,UHandle text,long len,long offset,PETEStyleListHandle pslh,bool xrich)
+int BuildEnriched(AccuPtr enriched,PETEHandle pte,unsigned char * text,long len,long offset,PETEStyleListHandle pslh,bool xrich)
 {
 	long eSize = 0;
 	long eOffset = 0;
 	Byte c;
-	OSErr err = noErr;
+	int err = noErr;
 	bool cr = False;
 	PETEStyleEntry oldStyle, newStyle;
 	PETEParaInfo oldInfo, newInfo;
@@ -206,12 +205,12 @@ OSErr BuildEnriched(AccuPtr enriched,PETEHandle pte,UHandle text,long len,long o
 	StackHandle openStack=nil;
 	StackHandle redoStack=nil;
 	long runLen;
-	Str255 directive;
+	char directive[256];
 	DirectiveType pushMe;
 	bool kkk;
-	UPtr spot;
+	unsigned char * spot;
 #ifdef DEBUG
-	Str255 scratch;
+	char scratch[256];
 #endif
 #ifdef NEVER
 	EuStyleSheet ess;
@@ -255,13 +254,13 @@ OSErr BuildEnriched(AccuPtr enriched,PETEHandle pte,UHandle text,long len,long o
 #endif
 				runLen -= offset-newStyle.psStartChar;
 #ifdef DEBUG
-				MakePStr(scratch,*text+offset,runLen);
+				{ size_t _mpl = (runLen); memcpy(scratch, text+offset, _mpl); ((char*)(scratch))[_mpl] = '\0'; }
 #endif
 				/*
 				 * check for lily-white style run
 				 */
 				kkk = True;
-				for (spot=*text+offset;spot<*text+offset+runLen;spot++)
+				for (spot=text+offset;spot<text+offset+runLen;spot++)
 				{
 					if (!IsSpace(*spot)) {kkk=False;break;}
 				}
@@ -307,7 +306,7 @@ OSErr BuildEnriched(AccuPtr enriched,PETEHandle pte,UHandle text,long len,long o
 					if (RunType==Debugging)
 					{
 						Zero(ess);
-						PSCopy(ess.styleName,scratch);
+						g_strlcpy((char *)(ess.styleName), (char *)(scratch), sizeof(ess.styleName));
 						ess.textStyle = newStyle.psStyle.textStyle;
 						ess.paraInfo = newInfo;
 						ess.paraValid = peAllParaValid;
@@ -331,7 +330,7 @@ OSErr BuildEnriched(AccuPtr enriched,PETEHandle pte,UHandle text,long len,long o
 			runLen += offset;
 			while (offset<runLen)
 			{
-				c = (*text)[offset++];
+				c = text[offset++];
 				if (c=='\015' && pte)
 				{
 					if (!cr)
@@ -354,20 +353,20 @@ done:
 	if (!err)
 	{
 		// trim off one hard linebreak
-		if (enriched->offset && (*enriched->data)[enriched->offset-1]=='\015')
+		if (enriched->offset && enriched->data[enriched->offset-1]=='\015')
 			enriched->offset--;
-		if (enriched->offset && (*enriched->data)[enriched->offset-1]=='\015')
+		if (enriched->offset && enriched->data[enriched->offset-1]=='\015')
 			enriched->offset--;
 		// finish up the directives
 		err = UnwindRich(nil,openStack,nil,enriched);
 		if (err==fnfErr) err = 0;
 		// make sure we end with hard linebreak
 		while (enriched->offset<2) AccuAddChar(enriched,'\015');
-		if ((*enriched->data)[enriched->offset-1] != '\015')  AccuAddChar(enriched,'\015');
-		if ((*enriched->data)[enriched->offset-2] != '\015')  AccuAddChar(enriched,'\015');
+		if (enriched->data[enriched->offset-1] != '\015')  AccuAddChar(enriched,'\015');
+		if (enriched->data[enriched->offset-2] != '\015')  AccuAddChar(enriched,'\015');
 	}
-	ZapHandle(openStack);
-	ZapHandle(redoStack);
+	free(openStack);
+	free(redoStack);
 	if (!err) AccuTrim(enriched);
 	return(err);
 }
@@ -375,7 +374,7 @@ done:
 /**********************************************************************
  * BuildEnrichedDirectives - build directives for moving from one style to another
  **********************************************************************/
-OSErr BuildEnrichedDirectives(PETETextStylePtr oldStyle,PETETextStylePtr newStyle,
+int BuildEnrichedDirectives(PETETextStylePtr oldStyle,PETETextStylePtr newStyle,
 															PETEParaInfoPtr oldInfo,PETEParaInfoPtr newInfo,
 															StackHandle openStack,StackHandle redoStack,
 															AccuPtr enriched)
@@ -384,8 +383,8 @@ OSErr BuildEnrichedDirectives(PETETextStylePtr oldStyle,PETETextStylePtr newStyl
 	short paraDiff = oldInfo ? PeteParaInfoDiff(oldInfo,newInfo) : 0;
 	short counters[enPLeft];
 	short i;
-	OSErr err = noErr;
-	Str255 directive;
+	int err = noErr;
+	char directive[256];
 	DirectiveType pushMe;
 	short oldInc, newInc, normInc;
 	PeteSaneMargin marg;
@@ -556,9 +555,9 @@ done:
 /**********************************************************************
  * BuildRichParaParam - build the font parameter
  **********************************************************************/
-PStr BuildRichParaParam(PStr directive,PSMPtr marg)
+char * BuildRichParaParam(char * directive,PSMPtr marg)
 {
-	Str255 guts;
+	char guts[256];
 	short i;
 	
 	*guts = 0;
@@ -605,9 +604,9 @@ PStr BuildRichParaParam(PStr directive,PSMPtr marg)
 /**********************************************************************
  * BuildRichFontParam - build the font parameter
  **********************************************************************/
-PStr BuildRichFontParam(PStr directive,short fontID)
+char * BuildRichFontParam(char * directive,short fontID)
 {
-	Str255 scratch;
+	char scratch[256];
 	
 	GetFontName(fontID,scratch);
 	PTr(scratch," ","_");
@@ -618,9 +617,9 @@ PStr BuildRichFontParam(PStr directive,short fontID)
 /**********************************************************************
  * BuildRichColorParam - build the font parameter
  **********************************************************************/
-PStr BuildRichColorParam(PStr directive,RGBColor *color)
+char * BuildRichColorParam(char * directive,RGBColor *color)
 {
-	Str31 scratch;
+	char scratch[32];
 	
 	Bytes2Hex((void*)&color->red,2,scratch);
 	Bytes2Hex((void*)&color->green,2,scratch+5);
@@ -634,11 +633,11 @@ PStr BuildRichColorParam(PStr directive,RGBColor *color)
 /**********************************************************************
  * UnwindRich - unwind richtext to remove certain directives
  **********************************************************************/
-OSErr UnwindRich(short *counters,StackHandle openStack,StackHandle redoStack,AccuPtr enriched)
+int UnwindRich(short *counters,StackHandle openStack,StackHandle redoStack,AccuPtr enriched)
 {
-	OSErr err = fnfErr;
+	int err = fnfErr;
 	DirectiveType top;
-	Str31 cmd;
+	char cmd[32];
 	long counterCount=0;
 	short i;
 	
@@ -668,11 +667,11 @@ done:
 /**********************************************************************
  * RewindRich - Reissue a set of directives
  **********************************************************************/
-OSErr RewindRich(StackHandle openStack,StackHandle redoStack,AccuPtr enriched)
+int RewindRich(StackHandle openStack,StackHandle redoStack,AccuPtr enriched)
 {
-	OSErr err = noErr;
+	int err = noErr;
 	DirectiveType top;
-	Str255 cmd;
+	char cmd[256];
 	
 	while(!err && !StackPop(&top,redoStack))
 	{
@@ -710,12 +709,12 @@ done:
 /************************************************************************
  * PeteRich - interpret rich text in a PETE record
  ************************************************************************/
-OSErr PeteRich(PETEHandle pte,long start,long stop,bool unwrap)
+int PeteRich(PETEHandle pte,long start,long stop,bool unwrap)
 {
-	UHandle text=nil;
-	UHandle enriched=nil;
+	unsigned char * text=nil;
+	unsigned char * enriched=nil;
 	long len;
-	OSErr err = noErr;
+	int err = noErr;
 	
 	/*
 	 * grab the text/enriched
@@ -726,7 +725,7 @@ OSErr PeteRich(PETEHandle pte,long start,long stop,bool unwrap)
 	if (!enriched) err = MemError();
 	else
 	{
-		BMD(*text+start,*enriched,len);
+		BMD(text+start,enriched,len);
 		
 		/*
 		 * now remove the rich text from the edit record
@@ -737,7 +736,7 @@ OSErr PeteRich(PETEHandle pte,long start,long stop,bool unwrap)
 		 * now put it back, with interpretation
 		 */
 		err = InsertRich(enriched,0,-1,start,unwrap,pte,nil,false);
-		ZapHandle(enriched);
+		free(enriched);
 	}
 	return(err);
 }
@@ -745,7 +744,7 @@ OSErr PeteRich(PETEHandle pte,long start,long stop,bool unwrap)
 /************************************************************************
  * InsertRich - insert some text that contains markup
  ************************************************************************/
-OSErr InsertRich(UHandle text,long textOffset,long textLen,long offset,bool unwrap,PETEHandle pte,StackHandle partStack,bool delSP)
+int InsertRich(unsigned char * text,long textOffset,long textLen,long offset,bool unwrap,PETEHandle pte,StackHandle partStack,bool delSP)
 {
 	return InsertRichLo(text, textOffset, textLen, offset, false, unwrap, pte, partStack, nil, delSP);
 }
@@ -753,13 +752,13 @@ OSErr InsertRich(UHandle text,long textOffset,long textLen,long offset,bool unwr
 /************************************************************************
  * InsertRichLo - insert some text that contains markup
  ************************************************************************/
-OSErr InsertRichLo(UHandle text,long textOffset,long textLen,long offset,bool headers,bool unwrap,PETEHandle pte,StackHandle partStack,MessHandle messH,bool delSP)
+int InsertRichLo(unsigned char * text,long textOffset,long textLen,long offset,bool headers,bool unwrap,PETEHandle pte,StackHandle partStack,MessHandle messH,bool delSP)
 {
 	short cmdId;
 	bool neg;
 	long tStart,tStop, tempiOffset, tempoOffset, tempStart;
-	OSErr err = noErr;
-	Str255 scratch;
+	int err = noErr;
+	char scratch[256];
 	PartDesc pd;
 	bool wasRel = False;
 	bool paraMe = false;
@@ -770,7 +769,7 @@ OSErr InsertRichLo(UHandle text,long textOffset,long textLen,long offset,bool he
 	
 	if (textLen==-1) textLen = GetHandleSize(text);
 	
-	if (textLen && (*text)[textLen-1]=='\015') textLen--;	// trim one trailing newline
+	if (textLen && text[textLen-1]=='\015') textLen--;	// trim one trailing newline
 	
 	tStart = tStop = textOffset;
 	
@@ -820,7 +819,7 @@ OSErr InsertRichLo(UHandle text,long textOffset,long textLen,long offset,bool he
 		else
 		{
 		JustText :
-			MakePStr(scratch,*text+tStart,tStop-tStart);
+			{ size_t _mpl = (tStop-tStart); memcpy(scratch, text+tStart, _mpl); ((char*)(scratch))[_mpl] = '\0'; }
 			if (!RelLine2Spec(scratch,&pd.spec,&pd.cid,&pd.relURL,&pd.absURL))
 			{
 				if (partStack && PartIsReferenced(pd.cid,pd.relURL,pd.absURL,partRefStack))
@@ -846,7 +845,7 @@ OSErr InsertRichLo(UHandle text,long textOffset,long textLen,long offset,bool he
 					err = PeteInsertHeader(pte,&offset,text,tStop-tStart,tStart);
 					if(EncodingError(err)) err = noErr;
 					else if(err) break;
-					if((tStop-tStart == 2) && ((*text)[tStart] == 13) && ((*text)[tStart+1] == 13))
+					if((tStop-tStart == 2) && (text[tStart] == 13) && (text[tStart+1] == 13))
 						headers = false;
 				}
 				else
@@ -871,7 +870,7 @@ OSErr InsertRichLo(UHandle text,long textOffset,long textLen,long offset,bool he
 		}
 	}
 	
-	ZapHandle(partRefStack);
+	free(partRefStack);
 	return(err==eofErr ? noErr : err);
 }
 
@@ -884,7 +883,7 @@ bool PartIsReferenced(uLong cID,uLong baseID,uLong sourceID,StackHandle partRefS
 	short item;
 	
 	if (!partRefStack) return false;
-	for (item=0;item<(*partRefStack)->elCount;item++)
+	for (item=0;item<partRefStack->elCount;item++)
 	{
 		StackItem(&id,item,partRefStack);
 		if (id==cID || id==baseID || id==sourceID) return true;
@@ -896,10 +895,10 @@ bool PartIsReferenced(uLong cID,uLong baseID,uLong sourceID,StackHandle partRefS
  * FakeAttachment - an html part wasn't referenced by anything; pretend
  * it's an attachment
  ************************************************************************/
-OSErr FakeAttachment(PETEHandle pte,uLong *offset,FSSpecPtr spec)
+int FakeAttachment(PETEHandle pte,uLong *offset,FSSpecPtr spec)
 {
-	OSErr err;
-	Str255 scratch;
+	int err;
+	char scratch[256];
 	
 	// snide comment
 	GetRString(scratch,UNREFERENCED_PART);
@@ -919,7 +918,7 @@ OSErr FakeAttachment(PETEHandle pte,uLong *offset,FSSpecPtr spec)
 /************************************************************************
  * InsertFlowed - insert some format=flowed, until we run out
  ************************************************************************/
-OSErr InsertFlowed(UHandle text, long *textOffset, long textLen, long *inOffset, PETEHandle pte, bool delSP)
+int InsertFlowed(unsigned char * text, long *textOffset, long textLen, long *inOffset, PETEHandle pte, bool delSP)
 {
 	return InsertFlowedLo(text, textOffset, textLen, inOffset, pte, delSP, kTextEncodingUnknown);
 }
@@ -927,21 +926,21 @@ OSErr InsertFlowed(UHandle text, long *textOffset, long textLen, long *inOffset,
 /************************************************************************
  * InsertFlowed - insert some format=flowed, until we run out
  ************************************************************************/
-OSErr InsertFlowedLo(UHandle text, long *textOffset, long textLen, long *inOffset, PETEHandle pte, bool delSP, TextEncoding encoding)
+int InsertFlowedLo(unsigned char * text, long *textOffset, long textLen, long *inOffset, PETEHandle pte, bool delSP, TextEncoding encoding)
 {
 	long tStart, tStop, cStart;
-	Str31 notFlowed, testMe;
+	char notFlowed[32], testMe[32];
 	bool flowNext = false;
 	short size;
 	long offset = *inOffset;
-	OSErr err = noErr;
+	int err = noErr;
 	bool interpret = UseFlowIn;
 	bool excerpt = UseFlowInExcerpt;
 	long quoteLevel, oldQuoteLevel=0;
 	long lastCR;
-	Str15 sigSep;
+	char sigSep[16];
 #ifdef DEBUG
-	Str255 line;
+	char line[256];
 #endif
 	IntlConverter converter;
 	
@@ -959,12 +958,12 @@ OSErr InsertFlowedLo(UHandle text, long *textOffset, long textLen, long *inOffse
 	// skip token
 	for (cStart = -1, tStart = *textOffset;tStart<textLen;tStart++)
 	{
-		if ((*text)[tStart]==' ') cStart = tStart + 1;
-		if ((*text)[tStart]=='>') break;
+		if (text[tStart]==' ') cStart = tStart + 1;
+		if (text[tStart]=='>') break;
 	}
 	if((cStart > 0) && (encoding == kTextEncodingUnknown))
 	{
-		MakePStr(testMe, (*text) + cStart, tStart - cStart);
+		{ size_t _mpl = ( tStart - cStart); memcpy(testMe,  text + cStart, _mpl); ((char*)(testMe))[_mpl] = '\0'; }
 		UpdateIntlConverter(&converter, testMe);
 	}
 	tStart++;
@@ -975,16 +974,16 @@ OSErr InsertFlowedLo(UHandle text, long *textOffset, long textLen, long *inOffse
 	while(!err && tStart<textLen)
 	{
 		// gather line
-		for (tStop=tStart;tStop<textLen&&(*text)[tStop]!='\015';tStop++);
+		for (tStop=tStart;tStop<textLen&&text[tStop]!='\015';tStop++);
 		
 #ifdef DEBUG
-		MakePStr(line,*text+tStart,tStop-tStart);
+		{ size_t _mpl = (tStop-tStart); memcpy(line, text+tStart, _mpl); ((char*)(line))[_mpl] = '\0'; }
 #endif
 		
 		// is it the magic turn-off?
 		if (tStop-tStart==*notFlowed)
 		{
-			MakePStr(testMe,*text+tStart,tStop-tStart);
+			{ size_t _mpl = (tStop-tStart); memcpy(testMe, text+tStart, _mpl); ((char*)(testMe))[_mpl] = '\0'; }
 			if (StringSame(testMe,notFlowed))
 			{
 				if (flowNext)	// add back in newline we removed
@@ -1008,7 +1007,7 @@ OSErr InsertFlowedLo(UHandle text, long *textOffset, long textLen, long *inOffse
 		if (interpret)
 		{
 			// figure current quotelevel
-			for (quoteLevel=tStart;quoteLevel<tStop&&(*text)[quoteLevel]=='>';quoteLevel++);
+			for (quoteLevel=tStart;quoteLevel<tStop&&text[quoteLevel]=='>';quoteLevel++);
 			quoteLevel -= tStart;
 			
 			// if quotelevel changes, make hard newline
@@ -1030,26 +1029,24 @@ OSErr InsertFlowedLo(UHandle text, long *textOffset, long textLen, long *inOffse
 			oldQuoteLevel = quoteLevel;
 			
 			// undo space-stuffing?
-			if ((*text)[tStart]==' ') tStart++;
+			if (text[tStart]==' ') tStart++;
 			// remove quotes
-			else if ((excerpt||flowNext) && (*text)[tStart]=='>')
+			else if ((excerpt||flowNext) && text[tStart]=='>')
 			{
-				while (tStart<tStop&&(*text)[tStart]=='>') tStart++;
-				if (tStart<tStop && (*text)[tStart]==' ') tStart++;	// more space-stuffing
+				while (tStart<tStop&&text[tStart]=='>') tStart++;
+				if (tStart<tStop && text[tStart]==' ') tStart++;	// more space-stuffing
 			}
 			
 			// how about next time around?
 			flowNext = false;
 			if (tStart<tStop)
 			{
-				flowNext = (*text)[tStop-1]==' ';
+				flowNext = text[tStop-1]==' ';
 				if (flowNext && tStart<tStop-2)
-					flowNext = (*text)[tStop-3]!=' ' || (*text)[tStop-2]!=' ';
+					flowNext = text[tStop-3]!=' ' || text[tStop-2]!=' ';
 				if (flowNext && tStop-tStart==*sigSep)
 				{
-					LDRef(text);
-					flowNext = 0!=memcmp(sigSep+1,*text+tStart,*sigSep);
-					UL(text);
+					flowNext = 0!=memcmp(sigSep+1,text+tStart,*sigSep);
 				}
 			}
 		}
@@ -1061,7 +1058,7 @@ OSErr InsertFlowedLo(UHandle text, long *textOffset, long textLen, long *inOffse
 		if (!flowNext && tStop<textLen) size++; // add return
 		
 		// trim space if we're doing that sort of thing
-		if (flowNext && delSP && (*text)[tStop-1]==' ') size--;
+		if (flowNext && delSP && text[tStop-1]==' ') size--;
 		
 		// and insert
 		if (size>0)
@@ -1088,12 +1085,12 @@ OSErr InsertFlowedLo(UHandle text, long *textOffset, long textLen, long *inOffse
 	return(err);
 }
 			
-OSErr InsertFixed(UHandle text, long *textOffset, long textLen, long *inOffset, PETEHandle pte, TextEncoding encoding)
+int InsertFixed(unsigned char * text, long *textOffset, long textLen, long *inOffset, PETEHandle pte, TextEncoding encoding)
 {
 	long tStart, tStop, cStart, textStart;
-	Str31 notCharset, testMe;
+	char notCharset[32], testMe[32];
 	long offset = *inOffset;
-	OSErr err = noErr;
+	int err = noErr;
 	IntlConverter converter;
 	
 	err = CreateIntlConverter(&converter, encoding);
@@ -1108,12 +1105,12 @@ OSErr InsertFixed(UHandle text, long *textOffset, long textLen, long *inOffset, 
 	// skip token
 	for (cStart = -1, tStart = *textOffset;tStart<textLen;tStart++)
 	{
-		if ((*text)[tStart]==' ') cStart = tStart + 1;
-		if ((*text)[tStart]=='>') break;
+		if (text[tStart]==' ') cStart = tStart + 1;
+		if (text[tStart]=='>') break;
 	}
 	if((cStart > 0) && (encoding == kTextEncodingUnknown))
 	{
-		MakePStr(testMe, (*text) + cStart, tStart - cStart);
+		{ size_t _mpl = ( tStart - cStart); memcpy(testMe,  text + cStart, _mpl); ((char*)(testMe))[_mpl] = '\0'; }
 		UpdateIntlConverter(&converter, testMe);
 		if(err) goto DoDispose;
 	}
@@ -1125,12 +1122,12 @@ OSErr InsertFixed(UHandle text, long *textOffset, long textLen, long *inOffset, 
 	while(tStart<textLen)
 	{
 		// gather line
-		for (tStop=tStart;tStop<textLen&&(*text)[tStop]!='\015';tStop++);
+		for (tStop=tStart;tStop<textLen&&text[tStop]!='\015';tStop++);
 
 		// is it the magic turn-off?
 		if (tStop-tStart==*notCharset)
 		{
-			MakePStr(testMe,*text+tStart,tStop-tStart);
+			{ size_t _mpl = (tStop-tStart); memcpy(testMe, text+tStart, _mpl); ((char*)(testMe))[_mpl] = '\0'; }
 			if (StringSame(testMe,notCharset)) break;
 		}
 		tStart = tStop + 1;
@@ -1147,7 +1144,7 @@ DoDispose :
 /************************************************************************
  * InsertEnriched - insert some text/enriched, until we run out
  ************************************************************************/
-OSErr InsertEnriched(UHandle text, long *textOffset, long textLen, long *inOffset, bool unwrap, PETEHandle pte)
+int InsertEnriched(unsigned char * text, long *textOffset, long textLen, long *inOffset, bool unwrap, PETEHandle pte)
 {
 	return InsertEnrichedLo(text,textOffset,textLen,inOffset,unwrap,pte,kTextEncodingUnknown);
 }
@@ -1155,7 +1152,7 @@ OSErr InsertEnriched(UHandle text, long *textOffset, long textLen, long *inOffse
 /************************************************************************
  * InsertEnriched - insert some text/enriched, until we run out
  ************************************************************************/
-OSErr InsertEnrichedLo(UHandle text, long *textOffset, long textLen, long *inOffset, bool unwrap, PETEHandle pte, TextEncoding encoding)
+int InsertEnrichedLo(unsigned char * text, long *textOffset, long textLen, long *inOffset, bool unwrap, PETEHandle pte, TextEncoding encoding)
 {
 	//variables related to the current command
 	long origStart = *inOffset;
@@ -1174,14 +1171,14 @@ OSErr InsertEnrichedLo(UHandle text, long *textOffset, long textLen, long *inOff
 	StackHandle justStack=nil;
 	StackHandle margStack=nil;
 	StackHandle colorStack=nil;
-	Str255 paramText;
+	char paramText[256];
 	//global prefs
 	uLong validMask = ~GetPrefLong(PREF_INTERPRET_ENRICHED);
 	uLong validParaMask = ~GetPrefLong(PREF_INTERPRET_PARA);
 	//scratch variables
-	OSErr err = noErr;
+	int err = noErr;
 	PETETextStyle style;
-	Str255 scratch;
+	char scratch[256];
 	PETEParaInfo pinfo;
 	PeteSaneMargin marg, curMarg;
 	PETEStyleEntry pse;
@@ -1189,7 +1186,7 @@ OSErr InsertEnrichedLo(UHandle text, long *textOffset, long textLen, long *inOff
 	long offset;
 	bool cr, needSpace;
 	long pIndex;
-	UHandle origText;
+	unsigned char * origText;
 	IntlConverter converter;
 	
 	err = CreateIntlConverter(&converter, encoding);
@@ -1204,7 +1201,7 @@ OSErr InsertEnrichedLo(UHandle text, long *textOffset, long textLen, long *inOff
 	 */
 	PeteGetTextAndSelection(pte,&origText,(origStart==-1)?&origStart:nil,nil);
 	start = origStart;
-	cr = (!start || (*origText)[start-1]=='\015');
+	cr = (!start || origText[start-1]=='\015');
 	needSpace = false;
 	
 	styleCounters[0] = styleCounters[1] = styleCounters[2] = 0;
@@ -1239,7 +1236,7 @@ OSErr InsertEnrichedLo(UHandle text, long *textOffset, long textLen, long *inOff
 		while (!err && !(err=EnrichedToken(text,*textOffset+textLen,false,&cmdId,&neg,&tStart,&tStop)))
 		{
 #ifdef DEBUG
-			MakePStr(scratch,*text+tStart,tStop-tStart);
+			{ size_t _mpl = (tStop-tStart); memcpy(scratch, text+tStart, _mpl); ((char*)(scratch))[_mpl] = '\0'; }
 #endif				
 			CycleBalls();
 			if (!inRich && (cmdId!=enXRich || neg)) cmdId = enText;
@@ -1500,8 +1497,8 @@ DoText :
 					else inParam++;
 					break;
 				case enParamText:
-					MakePStr(scratch,*text+tStart,tStop-tStart);
-					PSCat(paramText,scratch);
+					{ size_t _mpl = (tStop-tStart); memcpy(scratch, text+tStart, _mpl); ((char*)(scratch))[_mpl] = '\0'; }
+					g_strlcat((char *)(paramText), (char *)(scratch), sizeof(paramText));
 					break;
 			}
 			if (cmdId!=enParam && cmdId!=enParamText) lastCmd=cmdId;
@@ -1511,10 +1508,10 @@ DoText :
 end:
 	*textOffset = tStart;
 	if (*inOffset!=-1) PeteGetTextAndSelection(pte,nil,inOffset,nil);
-	ZapHandle(margStack);
-	ZapHandle(fontStack);
-	ZapHandle(justStack);
-	ZapHandle(colorStack);
+	free(margStack);
+	free(fontStack);
+	free(justStack);
+	free(colorStack);
 	DisposeIntlConverter(converter);
 	return err==eofErr ? noErr : err;
 }
@@ -1522,11 +1519,11 @@ end:
 /**********************************************************************
  * ParaIndent2Margin - convert a paraindent command to one of my margin things
  **********************************************************************/
-OSErr ParaIndent2Margin(PSMPtr marg,PStr string)
+int ParaIndent2Margin(PSMPtr marg,char * string)
 {
-	Str255 token;
-	UPtr spot;
-	OSErr err = fnfErr;
+	char token[256];
+	unsigned char * spot;
+	int err = fnfErr;
 	
 	Zero(*marg);
 	for (spot=string;PToken(string,token,&spot,",");)
@@ -1547,22 +1544,21 @@ OSErr ParaIndent2Margin(PSMPtr marg,PStr string)
 /**********************************************************************
  * EnrichedToken - get the next token from a text/enriched stream
  **********************************************************************/
-OSErr EnrichedToken(UHandle enriched,long maxLen,bool headers,short *cmdId,bool *neg,long *tStart,long *tStop)
+int EnrichedToken(unsigned char * enriched,long maxLen,bool headers,short *cmdId,bool *neg,long *tStart,long *tStop)
 {
-	UPtr start,stop,end;
-	Str63 cmd;
+	unsigned char *start, *stop, *end;
+	char cmd[64];
 	long len = GetHandleSize(enriched);
 	
 	if (maxLen<len) len = maxLen;
 	
-	LDRef(enriched);
 	
 	*tStart = *tStop;
-	start = *enriched+*tStart;
-	end = *enriched+len;
+	start = enriched+*tStart;
+	end = enriched+len;
 	
 	// end of text?
-	if (*tStart>=len) {UL(enriched); return(eofErr);}
+	if (*tStart>=len) {; return(eofErr);}
 	
 	// carriage return?
 	if (*start=='\015')
@@ -1585,12 +1581,12 @@ OSErr EnrichedToken(UHandle enriched,long maxLen,bool headers,short *cmdId,bool 
 			// a <>-delimited-thing
 			else if (*stop=='>')
 			{
-				UPtr tempStop;
+				unsigned char * tempStop;
 				
 				for(tempStop=start+1;tempStop<stop&&*tempStop!=' ';tempStop++);
 				*neg = start[1]=='/';
-				if (*neg) MakePStr(cmd,start+2,tempStop-start-2);
-				else MakePStr(cmd,start+1,tempStop-start-1);
+				if (*neg) { size_t _mpl = (tempStop-start-2); memcpy(cmd, start+2, _mpl); ((char*)(cmd))[_mpl] = '\0'; }
+				else { size_t _mpl = (tempStop-start-1); memcpy(cmd, start+1, _mpl); ((char*)(cmd))[_mpl] = '\0'; }
 				stop++;
 				*cmdId = FindSTRNIndex(EnrichedStrn,cmd);
 			}
@@ -1599,8 +1595,7 @@ OSErr EnrichedToken(UHandle enriched,long maxLen,bool headers,short *cmdId,bool 
 		else
 			*cmdId = enText;
 	}
-	*tStop = stop-*enriched;
-	UL(enriched);
+	*tStop = stop-enriched;
 	return(noErr);
 }
 
@@ -1625,7 +1620,7 @@ void AddToStyle(EnrichedEnum cmd,bool neg,long offset,OffsetAndStyleHandle *styl
 		current.style.tsSize = FontSize;
 	}
 	else
-		current = (**styles)[n-1];
+		current = (*styles)[n-1];
 	
 	/*
 	 * modify
@@ -1684,12 +1679,15 @@ void AddToStyle(EnrichedEnum cmd,bool neg,long offset,OffsetAndStyleHandle *styl
 	
 	current.validBits &= valid;
 	
-	if (n && offset==current.offset) (**styles)[n-1] = current;
+	if (n && offset==current.offset) (*styles)[n-1] = current;
 	else
 	{
 		current.offset = offset;
-		if (PtrPlusHand(&current,(Handle)*styles,sizeof(current)))
-			ZapHandle(*styles);
+		void *newStyles = buf_append(*styles, &current, sizeof(current));
+		if (!newStyles)
+			free(*styles);
+		else
+			*styles = newStyles;
 	}
 }
 
@@ -1704,7 +1702,7 @@ short IncrementTextSize(short size,short increment)
 	sizeIndex += increment;
 	sizeIndex = MIN(nSizes-1,sizeIndex);
 	sizeIndex = MAX(0,sizeIndex);
-	return((*StdSizes)[sizeIndex]);
+	return(StdSizes[sizeIndex]);
 }
 
 /**********************************************************************
@@ -1721,10 +1719,10 @@ short FindSizeInc(short size)
 	if (tempSize < 0) tempSize=FontSize;
 	
 	sizeIndex = 0;
-	for (std=(*StdSizes);std<(*StdSizes)+nSizes;std++)
+	for (std=StdSizes;std<StdSizes+nSizes;std++)
 		if (tempSize>=*std)
 		{
-			sizeIndex = std-(*StdSizes);
+			sizeIndex = std-StdSizes;
 			if (tempSize==*std) break;
 		}
 		else break;
@@ -1831,9 +1829,9 @@ StyleLevelEnum HasStyles(PETEHandle pte,long from,long to,bool allowGraphics)
 /************************************************************************
  * Style2String - encode a style in a string
  ************************************************************************/
-PStr Style2String(ESSPtr ess,PStr string)
+char * Style2String(ESSPtr ess,char * string)
 {
-	Str63 s;
+	char s[64];
 	
 	*string = 0;
 	
@@ -1842,7 +1840,7 @@ PStr Style2String(ESSPtr ess,PStr string)
 	 */
 	 
 	// style name
-	PCopy(string,ess->styleName); PCatC(string,',');
+	g_strlcpy((char *)(string), (char *)(ess->styleName), sizeof(string)); PCatC(string,',');
 	
 	/*
 	 * text info
@@ -1942,7 +1940,7 @@ PStr Style2String(ESSPtr ess,PStr string)
 /************************************************************************
  * String2Style - decode a style from a string
  ************************************************************************/
-OSErr String2Style(ESSPtr ess,PStr string)
+int String2Style(ESSPtr ess,char * string)
 {
 	return unimpErr;
 }

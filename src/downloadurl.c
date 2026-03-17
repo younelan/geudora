@@ -44,7 +44,7 @@ typedef struct
 	bool completedDownload;
 	int error;
 	char checksum[256];
-} URLParms, *URLParmsPtr, **URLParmsHandle;
+} URLParms, *URLParmsPtr, *URLParmsHandle;
 
 // Active downloads list
 static URLParmsHandle activeDownloads[32] = {0};
@@ -71,10 +71,10 @@ static size_t HeaderCallback(char *buffer, size_t size, size_t nitems, void *use
 		// Copy checksum value, removing trailing CR/LF
 		size_t len = 0;
 		while (len < 255 && value[len] && value[len] != '\r' && value[len] != '\n') {
-			(*threadData)->checksum[len] = value[len];
+			threadData->checksum[len] = value[len];
 			len++;
 		}
-		(*threadData)->checksum[len] = '\0';
+		threadData->checksum[len] = '\0';
 	}
 	
 	return numbytes;
@@ -87,10 +87,10 @@ static size_t WriteCallback(void *contents, size_t size, size_t nmemb, void *use
 {
 	URLParmsHandle threadData = (URLParmsHandle)userp;
 	
-	if ((*threadData)->aborted)
+	if (threadData->aborted)
 		return 0;
 	
-	return fwrite(contents, size, nmemb, (*threadData)->destFile);
+	return fwrite(contents, size, nmemb, threadData->destFile);
 }
 
 /************************************************************************
@@ -107,7 +107,7 @@ static void *DownloadURLThread(void *threadParameter)
 	
 	curl = curl_easy_init();
 	if (curl) {
-		curl_easy_setopt(curl, CURLOPT_URL, (*threadData)->url);
+		curl_easy_setopt(curl, CURLOPT_URL, threadData->url);
 		curl_easy_setopt(curl, CURLOPT_WRITEFUNCTION, WriteCallback);
 		curl_easy_setopt(curl, CURLOPT_WRITEDATA, threadData);
 		curl_easy_setopt(curl, CURLOPT_HEADERFUNCTION, HeaderCallback);
@@ -118,16 +118,16 @@ static void *DownloadURLThread(void *threadParameter)
 		curl_easy_setopt(curl, CURLOPT_SSL_VERIFYHOST, 2L);
 		
 		// Add custom headers if specified
-		if ((*threadData)->HTTPstuff.sContentType) {
-			snprintf(headerBuf, sizeof(headerBuf), "ContentType: %c", (*threadData)->HTTPstuff.sContentType);
+		if (threadData->HTTPstuff.sContentType) {
+			snprintf(headerBuf, sizeof(headerBuf), "ContentType: %c", threadData->HTTPstuff.sContentType);
 			headers = curl_slist_append(headers, headerBuf);
 		}
-		if ((*threadData)->HTTPstuff.sMessageType) {
-			snprintf(headerBuf, sizeof(headerBuf), "MessageType: %c", (*threadData)->HTTPstuff.sMessageType);
+		if (threadData->HTTPstuff.sMessageType) {
+			snprintf(headerBuf, sizeof(headerBuf), "MessageType: %c", threadData->HTTPstuff.sMessageType);
 			headers = curl_slist_append(headers, headerBuf);
 		}
-		if ((*threadData)->HTTPstuff.sCheckSum) {
-			snprintf(headerBuf, sizeof(headerBuf), "Checksum: %c", (*threadData)->HTTPstuff.sCheckSum);
+		if (threadData->HTTPstuff.sCheckSum) {
+			snprintf(headerBuf, sizeof(headerBuf), "Checksum: %c", threadData->HTTPstuff.sCheckSum);
 			headers = curl_slist_append(headers, headerBuf);
 		}
 		if (headers) {
@@ -135,31 +135,31 @@ static void *DownloadURLThread(void *threadParameter)
 		}
 		
 		// POST support
-		if ((*threadData)->HTTPstuff.post && (*threadData)->HTTPstuff.hRequestData) {
+		if (threadData->HTTPstuff.post && threadData->HTTPstuff.hRequestData) {
 			curl_easy_setopt(curl, CURLOPT_POST, 1L);
-			curl_easy_setopt(curl, CURLOPT_POSTFIELDS, (*threadData)->HTTPstuff.hRequestData);
+			curl_easy_setopt(curl, CURLOPT_POSTFIELDS, threadData->HTTPstuff.hRequestData);
 		}
 		
 		res = curl_easy_perform(curl);
-		(*threadData)->error = (res == CURLE_OK) ? 0 : -1;
+		threadData->error = (res == CURLE_OK) ? 0 : -1;
 		
 		if (headers) {
 			curl_slist_free_all(headers);
 		}
 		curl_easy_cleanup(curl);
 	} else {
-		(*threadData)->error = -1;
+		threadData->error = -1;
 	}
 	
-	fclose((*threadData)->destFile);
-	(*threadData)->completedDownload = true;
+	fclose(threadData->destFile);
+	threadData->completedDownload = true;
 	
 	// Call finish callback
-	if ((*threadData)->FinishFunc) {
-		info.spec = (*threadData)->destSpec;
+	if (threadData->FinishFunc) {
+		info.spec = threadData->destSpec;
 		// Use extracted checksum if available, otherwise 0
-		info.checksum = (*threadData)->checksum[0] ? atoi((*threadData)->checksum) : 0;
-		(*threadData)->FinishFunc((*threadData)->refCon, (*threadData)->error, &info);
+		info.checksum = threadData->checksum[0] ? atoi(threadData->checksum) : 0;
+		threadData->FinishFunc(threadData->refCon, threadData->error, &info);
 	}
 	
 	// Unregister download
@@ -173,7 +173,6 @@ static void *DownloadURLThread(void *threadParameter)
 	pthread_mutex_unlock(&downloadsMutex);
 	
 	// Cleanup
-	free(*threadData);
 	free(threadData);
 	
 	return NULL;
@@ -194,27 +193,20 @@ int DownloadURL(const char *urlString, FSSpec * destSpec,long refCon,void (*Fini
 	}
 	
 	// Allocate thread data
-	threadData = (URLParmsHandle)calloc(1, sizeof(URLParms *));
+	threadData = (URLParmsHandle)calloc(1, sizeof(URLParms));
 	if (!threadData) {
 		fclose(destFile);
 		return -1;
 	}
 	
-	*threadData = (URLParmsPtr)calloc(1, sizeof(URLParms));
-	if (!*threadData) {
-		free(threadData);
-		fclose(destFile);
-		return -1;
-	}
-	
 	// Setup thread data
-	strncpy((*threadData)->url, urlString, sizeof((*threadData)->url) - 1);
-	(*threadData)->destSpec = *destSpec;
-	(*threadData)->destFile = destFile;
-	(*threadData)->refCon = refCon;
-	(*threadData)->FinishFunc = FinishFunc;
+	strncpy(threadData->url, urlString, sizeof(threadData->url) - 1);
+	threadData->destSpec = *destSpec;
+	threadData->destFile = destFile;
+	threadData->refCon = refCon;
+	threadData->FinishFunc = FinishFunc;
 	if (pHTTPstuff)
-		(*threadData)->HTTPstuff = *pHTTPstuff;
+		threadData->HTTPstuff = *pHTTPstuff;
 	
 	// Register download
 	pthread_mutex_lock(&downloadsMutex);
@@ -227,14 +219,13 @@ int DownloadURL(const char *urlString, FSSpec * destSpec,long refCon,void (*Fini
 	pthread_mutex_unlock(&downloadsMutex);
 	
 	// Start download thread
-	if (pthread_create(&(*threadData)->threadID, NULL, DownloadURLThread, threadData) != 0) {
+	if (pthread_create(&threadData->threadID, NULL, DownloadURLThread, threadData) != 0) {
 		fclose(destFile);
-		free(*threadData);
 		free(threadData);
 		return -1;
 	}
 	
-	pthread_detach((*threadData)->threadID);
+	pthread_detach(threadData->threadID);
 	*pReference = (long)threadData;
 	return 0;
 }
@@ -245,8 +236,8 @@ int DownloadURL(const char *urlString, FSSpec * destSpec,long refCon,void (*Fini
 void URLDownloadAbort(long urlRef)
 {
 	URLParmsHandle threadData = (URLParmsHandle)urlRef;
-	if (threadData && *threadData) {
-		(*threadData)->aborted = true;
+	if (threadData) {
+		threadData->aborted = true;
 	}
 }
 

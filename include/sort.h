@@ -29,13 +29,13 @@ ADVISED OF THE POSSIBILITY OF SUCH DAMAGE. */
 #include "mydefs.h"
 
 /* Copyright (c) 1990-1992 by the University of Illinois Board of Trustees */
-void QuickSort(UPtr array, int size, int f, int l, int (*compare)(),
+void QuickSort(char * array, int size, int f, int l, int (*compare)(),
                void (*swap)());
 void VQuickSort(short **vector, short f, short l, void *data, int (*compare)());
-void StrSwap(UPtr s1, UPtr s2);
-int CStrCompar(UPtr s1, UPtr s2);
-void CStrSwap(UPtr s1, UPtr s2);
-void PtrSwap(Ptr *win1, Ptr *win2);
-int SortStrCompare(UPtr *s1, UPtr *s2);
+void StrSwap(char * s1, char * s2);
+int CStrCompar(char * s1, char * s2);
+void CStrSwap(char * s1, char * s2);
+void PtrSwap(char * *win1, char * *win2);
+int SortStrCompare(char * *s1, char * *s2);
 
 #endif

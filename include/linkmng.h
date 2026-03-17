@@ -88,9 +88,8 @@ typedef struct ViewList_ *ViewListPtr;
 /* Link management */
 int GenHistoriesList(void);
 void ZapHistoriesList(bool destroy);
-int AddURLToMainHistory(unsigned char *url, unsigned char *name,
-                        int urlOpenErr);
-int AddAdToLinkHistory(AdId adId, char *pUrl, unsigned char adTitle[256],
+int AddURLToMainHistory(char *url, char *name, int urlOpenErr);
+int AddAdToLinkHistory(AdId adId, char *pUrl, char adTitle[256],
                        char *adGraphic);
 int SaveAllHistoryFiles(void);
 void AdWasClicked(AdId adId, int openErr);
@@ -101,9 +100,9 @@ void AddAllHistoryItems(ViewListPtr pView, bool needsSort,
                         LinkSortTypeEnum sortType);
 void DeleteHistoryEntry(VLNodeInfo *info);
 int OpenHistoryEntry(VLNodeInfo *info);
-bool GetDateString(VLNodeID id, unsigned char dateStr[256]);
-void **GetLinkURL(VLNodeInfo *info);
-void **GetLHPreviewIcon(VLNodeID id);
+bool GetDateString(VLNodeID id, char dateStr[256]);
+void *GetLinkURL(VLNodeInfo *info);
+void *GetLHPreviewIcon(VLNodeID id);
 void ZapPVICache(void);
 
 /* Offline Link Dialog related */

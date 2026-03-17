@@ -104,8 +104,7 @@ unsigned char Fwd[16] = {4, 'F', 'w', 'd', ':'};
 
 /* ---- Standard font sizes ---- */
 static short StdSizesData[] = { 9, 10, 12, 14, 18, 24, 36, 48, 64, 72 };
-static short *StdSizesPtr = StdSizesData;
-short **StdSizes = &StdSizesPtr;
+short *StdSizes = StdSizesData;
 
 /* PersList lives inside ThreadGlobals.tPersList when THREADING_ON */
 

@@ -31,7 +31,7 @@ OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE. */
  * the log file
  ***********************************************************************/
 
-#include "mailbox.h" /* PStr, Str255, etc. */
+#include "mailbox.h" /* char *, Str255, etc. */
 
 char *ComposeLogR(unsigned long level, char *into,
                            short format, ...);
@@ -82,6 +82,9 @@ void HexLog(unsigned long level, short format, const char *data,
 #define LOG_MORE (1L << 20)
 
 /* Aliases used by callers */
+#undef LOG_SENT
+#undef LOG_GOT
+#undef LOG_FLUSHED
 #define LOG_SENT LOG_TRANS
 #define LOG_GOT LOG_TRANS
 #define LOG_FLUSHED LOG_TRANS

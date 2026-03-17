@@ -180,7 +180,9 @@ DAMAGE. */
 #define DONT_CHECK_REGMONTH		// define this to allow users to use bad regcodes
 #endif
 
+#ifndef ESSL
 #define ESSL	// Do SSL
+#endif
 #define LDAP_ENABLED	// Do LDAP
 #define OFFLINE_LINK_DIALOG_ENABLED
 

@@ -34,7 +34,7 @@ DAMAGE. */
 /************************************************************************
  * ACAPLoad - load initial settings with acap (STUB)
  ************************************************************************/
-OSErr ACAPLoad(bool giveQuit) {
+int ACAPLoad(bool giveQuit) {
     // TODO: Implement ACAP settings loading
     // For now, just return success and use local settings
     return noErr;
@@ -43,7 +43,7 @@ OSErr ACAPLoad(bool giveQuit) {
 /************************************************************************
  * GetACAPLogin - get ACAP login credentials (STUB)
  ************************************************************************/
-OSErr GetACAPLogin(PStr server, PStr user, PStr password, bool giveQuit) {
+int GetACAPLogin(char *server, char *user, char *password, bool giveQuit) {
     // TODO: Implement ACAP login dialog
     // For now, return error to indicate ACAP is not available
     return -1;
@@ -52,7 +52,7 @@ OSErr GetACAPLogin(PStr server, PStr user, PStr password, bool giveQuit) {
 /************************************************************************
  * ACAPLogin - login to ACAP server (STUB)
  ************************************************************************/
-OSErr ACAPLogin(PStr server, PStr user, PStr password, ACAPStateHandle state) {
+int ACAPLogin(char *server, char *user, char *password, ACAPStateHandle state) {
     // TODO: Implement ACAP server connection and authentication
     // For now, return error to indicate ACAP is not available
     return -1;
@@ -87,14 +87,14 @@ void GetPOPInfo(void *user, void *host) {
  * Used by mail engine to identify the POP account.
  * Returns dest, which is non-empty if account is configured.
  ************************************************************************/
-PStr GetPOPPref(PStr dest) {
+char *GetPOPPref(char *dest) {
     if (!dest) return dest;
 
     gchar *username = prefs_get_string(PREFS_GROUP_CHECKING_MAIL, "pop_username", "");
     gchar *server = prefs_get_string(PREFS_GROUP_CHECKING_MAIL, "pop_server", "");
 
     if (username[0] && server[0]) {
-        snprintf((char *)dest, 256, "%s@%s", username, server);
+        snprintf(dest, 256, "%s@%s", username, server);
     } else {
         dest[0] = 0;
     }

@@ -80,7 +80,7 @@ int PeteDelete(GtkWidget *pte, long start, long stop);
 typedef struct {
   struct MyWindow *win;
   long urlScanned;   /* offset up to which URLs have been scanned */
-} PeteExtraStruct, **PeteExtraHandle;
+} PeteExtraStruct, *PeteExtraHandle;
 
 PeteExtraHandle PeteExtra(GtkWidget *ctrl);
 void PeteSetWin(GtkWidget *ctrl, struct MyWindow *win);

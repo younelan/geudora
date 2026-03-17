@@ -82,14 +82,14 @@ typedef struct ProcessSerialNumber ProcessSerialNumber;
 /**********************************************************************
  * Routines
  **********************************************************************/
-bool HaveKeyFor(PStr address,bool fromPrivate);
+bool HaveKeyFor(char * address,bool fromPrivate);
 bool HaveAllKeys(MessHandle messH);
-bool HaveKeysFrom(Handle text,PStr missing,bool fromPrivate);
+bool HaveKeysFrom(void *text,char * missing,bool fromPrivate);
 short PGPSendMessage(TransStream stream,MessHandle messH,bool chatter);
-OSErr BuildAddressList(Handle addresses,AEDescList *list);
-OSErr PGPFetchResult(AppleEvent *reply, FSSpecPtr spec);
+int BuildAddressList(void *addresses,AEDescList *list);
+int PGPFetchResult(AppleEvent *reply, FSSpecPtr spec);
 
-OSErr StartPGP(ProcessSerialNumber *psn);
+int StartPGP(ProcessSerialNumber *psn);
 
 #define kNoAsciiArmor	False
 #define kAsciiArmor	True

@@ -858,12 +858,12 @@ int PETEGetParaIndex(PETEInst pi, PETEHandle pte, long offset, long *index)
  * PETEInsertTextHandle - insert text from a handle at given offset
  ***********************************************************************/
 int PETEInsertTextHandle(PETEInst pi, PETEHandle pte, long offset,
-                         UHandle text, long len, long hOffset,
+                         unsigned char * text, long len, long hOffset,
                          PETEStyleListHandle styles)
 {
 	(void)pi; (void)styles;
-	if (!pte || !text || !*text) return -1;
-	unsigned char *src = *text + hOffset;
+	if (!pte || !text) return -1;
+	unsigned char *src = text + hOffset;
 	if (len < 0) len = strlen((const char *)src);
 	return PeteInsertPtr((GtkWidget *)pte, (int)offset, (const char *)src, (int)len);
 }
@@ -883,10 +883,10 @@ int PETESelect(PETEInst pi, PETEHandle pte, long start, long stop)
  * PeteInsertHeader - insert text from a handle as a header
  * In GTK, this is just a text insert (no special header formatting).
  ***********************************************************************/
-int PeteInsertHeader(PETEHandle pte, long *pOff, UHandle text, long len, long tOff)
+int PeteInsertHeader(PETEHandle pte, long *pOff, unsigned char * text, long len, long tOff)
 {
-	if (!pte || !text || !*text || !pOff) return -1;
-	unsigned char *src = *text + tOff;
+	if (!pte || !text || !pOff) return -1;
+	unsigned char *src = text + tOff;
 	if (len < 0) len = strlen((const char *)src);
 	int err = PeteInsertPtr((GtkWidget *)pte, (int)*pOff, (const char *)src, (int)len);
 	if (!err && *pOff >= 0) *pOff += len;
@@ -1069,16 +1069,16 @@ TextEncoding CreateSystemRomanEncoding(void)
  * Routes HTML through gedit_document_insert_markup() which parses
  * tags and applies styles via the gedit_document style API.
  ***********************************************************************/
-int InsertHTMLLo(UHandle text, long *htmlOffset, long textLen, long *inOffset,
+int InsertHTMLLo(unsigned char * text, long *htmlOffset, long textLen, long *inOffset,
                  PETEHandle pte, TextEncoding encoding, long flags, StackHandle partRefStack)
 {
 	(void)encoding; (void)flags; (void)partRefStack;
-	if (!text || !*text || !pte || !inOffset) return -1;
+	if (!text || !pte || !inOffset) return -1;
 
 	geditDocument *doc = geditctrl_get_document((GtkWidget *)pte);
 	if (!doc) return -1;
 
-	unsigned char *src = *text + *htmlOffset;
+	unsigned char *src = text + *htmlOffset;
 	long len = textLen;
 	if (len < 0)
 		len = gedit_document_get_length(doc) - *htmlOffset;

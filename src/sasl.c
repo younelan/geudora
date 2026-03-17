@@ -56,9 +56,9 @@ DAMAGE. */
 #endif
 
 /* Missing function declarations */
-extern OSErr GetSMTPInfo(PStr host);  /* Get SMTP server hostname */
-extern OSErr GetHostByName(PStr host, struct hostInfo **hip);  /* DNS lookup by name */
-extern OSErr GetHostByAddr(struct hostInfo *hi, unsigned long addr);  /* DNS lookup by address */
+extern int GetSMTPInfo(char * host);  /* Get SMTP server hostname */
+extern int GetHostByName(char * host, struct hostInfo **hip);  /* DNS lookup by name */
+extern int GetHostByAddr(struct hostInfo *hi, unsigned long addr);  /* DNS lookup by address */
 
 /* hostInfo structure for DNS lookups */
 struct hostInfo {
@@ -72,7 +72,7 @@ typedef struct
 	gss_ctx_id_t ctx;
 	gss_name_t crname;
 	short internalState;
-} SASLGSSAPIContext, *SASLGSSAPIContextPtr, **SASLGSSAPIContextHandle;
+} SASLGSSAPIContext, *SASLGSSAPIContextPtr, *SASLGSSAPIContextHandle;
 
 /* 
  * The DEBUG section with Kerberos internal structures has been removed
@@ -80,16 +80,16 @@ typedef struct
  * Modern GSS-API should be used as an opaque interface.
  */
 
-OSErr SASLGSSAPI(PStr service,short rounds,long *state,AccuPtr chalAcc,AccuPtr respAcc);
-OSErr SASLCramMD5(short rounds,AccuPtr chalAcc,AccuPtr respAcc);
-OSErr SASLPlain(short rounds,AccuPtr chalAcc,AccuPtr respAcc);
-OSErr SASLLogin(short rounds,AccuPtr chalAcc,AccuPtr respAcc);
+int SASLGSSAPI(char * service,short rounds,long *state,AccuPtr chalAcc,AccuPtr respAcc);
+int SASLCramMD5(short rounds,AccuPtr chalAcc,AccuPtr respAcc);
+int SASLPlain(short rounds,AccuPtr chalAcc,AccuPtr respAcc);
+int SASLLogin(short rounds,AccuPtr chalAcc,AccuPtr respAcc);
 void SASLGSSAPIReport(OM_uint32 err);
 
 /************************************************************************
  * SASLFind - is this a valid SASL mechanism?  0 for no, otherwise an index
  ************************************************************************/
-short SASLFind(PStr service, PStr mechStr, SASLEnum mech)
+short SASLFind(char * service, char * mechStr, SASLEnum mech)
 {
 	short foundMech = FindSTRNIndex(SASLStrn,mechStr);
 	short outMech;
@@ -112,15 +112,15 @@ short SASLFind(PStr service, PStr mechStr, SASLEnum mech)
 	
 	if (foundMech)
 	{
-		Str255 badMechs;
-		Str31 token;
-		UPtr spot = badMechs;
-		Str63 servMech;
+		char badMechs[256];
+		char token[32];
+		unsigned char * spot = badMechs;
+		char servMech[64];
 		
 		// Build a service:mech string, and look for that, too
-		PSCopy(servMech,service);
+		g_strlcpy((char *)(servMech), (char *)(service), sizeof(servMech));
 		PCatC(servMech,':');
-		PSCat(servMech,mechStr);
+		g_strlcat((char *)(servMech), (char *)(mechStr), sizeof(servMech));
 		
 		// Look through the list of mechanisms we don't like
 		GetRString(badMechs,SASL_DONT);
@@ -167,7 +167,7 @@ short SASLFind(PStr service, PStr mechStr, SASLEnum mech)
 /************************************************************************
  * SASLDo - perform a round of SASL authentication
  ************************************************************************/
-OSErr SASLDo(PStr service, SASLEnum mech, short rounds, long *state, AccuPtr chalAcc, AccuPtr respAcc)
+int SASLDo(char * service, SASLEnum mech, short rounds, long *state, AccuPtr chalAcc, AccuPtr respAcc)
 {
 	short err = 501;
 	
@@ -195,7 +195,7 @@ OSErr SASLDo(PStr service, SASLEnum mech, short rounds, long *state, AccuPtr cha
  *   should have a chance to react appropriately, possibly by invalidating
  *   or validating a password or ticket or whatever
  ************************************************************************/
-void SASLDone(PStr service, SASLEnum mech, short rounds, long *state, short err)
+void SASLDone(char * service, SASLEnum mech, short rounds, long *state, short err)
 {
 	switch (mech)
 	{
@@ -206,12 +206,11 @@ void SASLDone(PStr service, SASLEnum mech, short rounds, long *state, short err)
 				
 				if (contextH)
 				{
-					LDRef(contextH);
-					if ((*contextH)->ctx)
-						gss_delete_sec_context(&res,&(*contextH)->ctx,nil);
-					if ((*contextH)->crname)
-						gss_release_name(&res,&(*contextH)->crname);
-					ZapHandle(contextH);
+					if (contextH->ctx)
+						gss_delete_sec_context(&res,&contextH->ctx,nil);
+					if (contextH->crname)
+						gss_release_name(&res,&contextH->crname);
+					free(contextH);
 					*state = 0;
 				}
 			}
@@ -232,11 +231,11 @@ void SASLDone(PStr service, SASLEnum mech, short rounds, long *state, short err)
 /************************************************************************
  * SASLCramMD5 - perform a round of SASL authentication
  ************************************************************************/
-OSErr SASLCramMD5(short rounds,AccuPtr chalAcc,AccuPtr respAcc)
+int SASLCramMD5(short rounds,AccuPtr chalAcc,AccuPtr respAcc)
 {
-	Str63 pass;
-	Str63 user;
-	Str255 challenge;
+	char pass[64];
+	char user[64];
+	char challenge[256];
 
 	if (rounds>1) {ASSERT(0); return 501;}
 	
@@ -251,12 +250,12 @@ OSErr SASLCramMD5(short rounds,AccuPtr chalAcc,AccuPtr respAcc)
 	if (rounds==1)
 	{
 		AccuToStr(chalAcc,challenge);
-		PSCopy(pass,CurPers->password);
+		g_strlcpy((char *)(pass), (char *)(CurPers->password), sizeof(pass));
 		GetPOPInfo(user,nil);
 		if (*challenge && !DecodeB64String(challenge))
 		{
 			GenKeyedDigest(challenge,pass,GlobalTemp);
-			PCopy(challenge,user);
+			g_strlcpy((char *)(challenge), (char *)(user), sizeof(challenge));
 			PCatC(challenge,' ');
 			PCat(challenge,GlobalTemp);
 			AccuAddStrB64(respAcc,challenge);
@@ -276,11 +275,11 @@ OSErr SASLCramMD5(short rounds,AccuPtr chalAcc,AccuPtr respAcc)
 /************************************************************************
  * SASLPlain - perform a round of SASL authentication
  ************************************************************************/
-OSErr SASLPlain(short rounds,AccuPtr chalAcc,AccuPtr respAcc)
+int SASLPlain(short rounds,AccuPtr chalAcc,AccuPtr respAcc)
 {
-	Str63 pass;
-	Str63 user;
-	Str255 raw;
+	char pass[64];
+	char user[64];
+	char raw[256];
 
 	if (rounds==0) DealingWithIdiotIMail = false;
 	
@@ -306,7 +305,7 @@ OSErr SASLPlain(short rounds,AccuPtr chalAcc,AccuPtr respAcc)
 	// however, if they ignore our initial argument
 	// we can just resend it when we get a challenge, minus
 	// the actual mechanism name.
-	PSCopy(pass,CurPers->password);
+	g_strlcpy((char *)(pass), (char *)(CurPers->password), sizeof(pass));
 	GetPOPInfo(user,nil);
 	ComposeRString(raw,AUTHPLAIN_FMT,PREF_SASL_AUTHORIZE,user,pass);
 	
@@ -327,10 +326,10 @@ OSErr SASLPlain(short rounds,AccuPtr chalAcc,AccuPtr respAcc)
 /************************************************************************
  * SASLLogin - perform a round of SASL authentication
  ************************************************************************/
-OSErr SASLLogin(short rounds, AccuPtr chalAcc,AccuPtr respAcc)
+int SASLLogin(short rounds, AccuPtr chalAcc,AccuPtr respAcc)
 {
-	Str63 pass;
-	Str63 user;
+	char pass[64];
+	char user[64];
 
 	if (rounds>2) {ASSERT(0); return 501;}
 	
@@ -357,7 +356,7 @@ OSErr SASLLogin(short rounds, AccuPtr chalAcc,AccuPtr respAcc)
 	// round 2: password
 	if (rounds==2)
 	{
-		PSCopy(pass,CurPers->password);
+		g_strlcpy((char *)(pass), (char *)(CurPers->password), sizeof(pass));
 		AccuAddStrB64(respAcc,pass);
 		return 0;
 	}
@@ -375,7 +374,7 @@ static gss_OID_desc oids[] =
 };
 static gss_OID_desc * gss_nt_service_name = oids+0;
 
-OSErr SASLGSSAPIBuildServiceName(PStr fullService,PStr service);
+int SASLGSSAPIBuildServiceName(char * fullService,char * service);
 
 /*
  * DEBUG hash functions removed - they referenced Kerberos internal structures
@@ -386,15 +385,15 @@ OSErr SASLGSSAPIBuildServiceName(PStr fullService,PStr service);
 /************************************************************************
  * SASLGSSAPI - perform a round of SASL authentication
  ************************************************************************/
-OSErr SASLGSSAPI(PStr service,short rounds,long *state,AccuPtr chalAcc,AccuPtr respAcc)
+int SASLGSSAPI(char * service,short rounds,long *state,AccuPtr chalAcc,AccuPtr respAcc)
 {
-	OSErr err = noErr;
+	int err = noErr;
 	OM_uint32	min, maj;
 	gss_buffer_desc buf, chal, resp;
 	SASLGSSAPIContextHandle contextH = (SASLGSSAPIContextHandle) *state;
 	gss_name_t crname = nil;	// gssapi's idea of the service name
 	gss_ctx_id_t ctx = GSS_C_NO_CONTEXT;				// gssapi's idea of a context
-	Str255 scratch;
+	char scratch[256];
 #ifdef DEBUG
 	uLong hashBefore=0, hashAfter=0;
 #endif
@@ -467,8 +466,8 @@ OSErr SASLGSSAPI(PStr service,short rounds,long *state,AccuPtr chalAcc,AccuPtr r
     }
     
     // Save our context
-    (*contextH)->ctx = ctx;
-    (*contextH)->crname = crname;
+    contextH->ctx = ctx;
+    contextH->crname = crname;
     
     // format the response
     //HexLog(LOG_PROTO,GSSAPI_LOG_FMT,resp.value,resp.length);  
@@ -478,18 +477,18 @@ OSErr SASLGSSAPI(PStr service,short rounds,long *state,AccuPtr chalAcc,AccuPtr r
 		return err ? 501 : noErr;
 	}
 	
-	if (rounds>1 && (*contextH)->internalState==0)
+	if (rounds>1 && contextH->internalState==0)
 	{
 		// We will have a challenge.  Decode it.		
 		if (DecodeB64Accu(chalAcc,false)) return 501;
-		//HexLog(LOG_PROTO,GSSAPI_LOG_FMT,LDRef(chalAcc->data),chalAcc->offset);
-		UL(chalAcc->data);
-		
+		//HexLog(LOG_PROTO,GSSAPI_LOG_FMT,chalAcc->data,chalAcc->offset);
+		// chalAcc->data is char* (Accumulator field), not a Handle — UL() removed
+
 		// Need local copy
-		ctx = (*contextH)->ctx;
+		ctx = contextH->ctx;
 		
 		// Around we go again
-		chal.value = LDRef(chalAcc->data);
+		chal.value = chalAcc->data;
 		chal.length = chalAcc->offset;
 		Zero(resp);
 #ifdef DEBUG
@@ -499,7 +498,7 @@ OSErr SASLGSSAPI(PStr service,short rounds,long *state,AccuPtr chalAcc,AccuPtr r
 			&min,												// [output] "minor" status
 			GSS_C_NO_CREDENTIAL,				// Use default credential
 			&ctx,												// [output] our magic context
-			(*contextH)->crname,				// its idea of our service name above
+			contextH->crname,				// its idea of our service name above
 			GSS_C_NO_OID,								// Use default mechanism
       GSS_C_MUTUAL_FLAG | GSS_C_REPLAY_FLAG,	// self-authenticate & avoid replay
       0,													// Default context validity period
@@ -514,24 +513,23 @@ OSErr SASLGSSAPI(PStr service,short rounds,long *state,AccuPtr chalAcc,AccuPtr r
 		ComposeLogS(LOG_PROTO,nil,(unsigned char *)"gss_init_sec_context: maj %x resp.length %d",maj,resp.length);
 		// K5DumpContext("after gss_init_sec_context",(void*)ctx,hashBefore,hashAfter);
 #endif
-		(*contextH)->ctx = ctx;	// save our new context
+		contextH->ctx = ctx;	// save our new context
 
-		// first unlock the data...
-		UL(chalAcc->data);
+		// chalAcc->data is char* (Accumulator field), not a Handle — UL() removed
 		
 		// another round?
 		if (maj==GSS_S_CONTINUE_NEEDED || maj==GSS_S_COMPLETE)
 		{
 			if (resp.length) AccuAddPtrB64(respAcc,resp.value,resp.length);
 			gss_release_buffer(&min,&resp);
-			if (maj==GSS_S_COMPLETE) (*contextH)->internalState++;
+			if (maj==GSS_S_COMPLETE) contextH->internalState++;
 			return noErr;
 		}
 		
 		goto fail;
 	}
 	
-	if ((*contextH)->internalState==1)
+	if (contextH->internalState==1)
 	{
 		int conf;
 		gss_qop_t	qop;
@@ -544,19 +542,19 @@ OSErr SASLGSSAPI(PStr service,short rounds,long *state,AccuPtr chalAcc,AccuPtr r
 		
 		// Voodoo that means nothing to me
 		Zero(resp);
-		chal.value = LDRef(chalAcc->data);
+		chal.value = chalAcc->data;
 		chal.length = chalAcc->offset;
 #ifdef I_EVER_FIX_THIS
-		// hashBefore = HashCTX((*contextH)->ctx);
+		// hashBefore = HashCTX(contextH->ctx);
 #endif
-		maj = gss_unwrap(&min,(*contextH)->ctx,&chal,&resp,&conf,&qop);
+		maj = gss_unwrap(&min,contextH->ctx,&chal,&resp,&conf,&qop);
 #ifdef I_EVER_FIX_THIS
-		// hashAfter = HashCTX((*contextH)->ctx);
+		// hashAfter = HashCTX(contextH->ctx);
 		ComposeLogS(LOG_PROTO,nil,(unsigned char *)"gss_unwrap: maj %x conf %d qop %d",maj,conf,qop);
-		// K5DumpContext("after gss_unwrap",(*contextH)->ctx,hashBefore,hashAfter);
+		// K5DumpContext("after gss_unwrap",contextH->ctx,hashBefore,hashAfter);
 #endif
-		UL(chalAcc->data);
-		
+		// chalAcc->data is char* (Accumulator field), not a Handle — UL() removed
+
 		if (maj==GSS_S_COMPLETE && resp.length>=4 && ((*(char*)resp.value)&AUTH_GSSAPI_P_NONE))
 		{
 			// re-use the challenge buffer for some temp work
@@ -573,17 +571,17 @@ OSErr SASLGSSAPI(PStr service,short rounds,long *state,AccuPtr chalAcc,AccuPtr r
 			AccuAddStr(chalAcc,scratch);
 			
 			// more voodoo
-			buf.value = LDRef(chalAcc->data);
+			buf.value = chalAcc->data;
 			buf.length = chalAcc->offset;
-			maj = gss_wrap(&min,(*contextH)->ctx,false,qop,&buf,&conf,&resp);
-			UL(chalAcc->data);
-			
+			maj = gss_wrap(&min,contextH->ctx,false,qop,&buf,&conf,&resp);
+			// chalAcc->data is char* (Accumulator field), not a Handle — UL() removed
+
 			// did we win?
 			if (maj==GSS_S_COMPLETE)
 			{
 				AccuAddPtrB64(respAcc,resp.value,resp.length);
 				gss_release_buffer(&min,&resp);
-				(*contextH)->internalState++;
+				contextH->internalState++;
 				return noErr;
 			}
 		}
@@ -636,7 +634,7 @@ void SASLGSSAPIReport(OM_uint32 err)
 	gss_buffer_desc buf;
 	OM_uint32 message_context = 0;  /* For gss_display_status */
 	gss_ctx_id_t ctx = GSS_C_NO_CONTEXT;
-	Str255 scratch;
+	char scratch[256];
 
 	do
 	{
@@ -662,15 +660,15 @@ void SASLGSSAPIReport(OM_uint32 err)
 /************************************************************************
  * SASLGSSAPIBuildServiceName - build the service name for GSSAPI
  ************************************************************************/
-OSErr SASLGSSAPIBuildServiceName(PStr fullService,PStr service)
+int SASLGSSAPIBuildServiceName(char * fullService,char * service)
 {
-	Str127 user, host;
-	Str63 realm;
+	char user[128], host[128];
+	char realm[64];
 	struct hostInfo *hip, hi;
-	Str63 shortHost;
-	Str31 fmt;
-	UPtr spot;
-	OSErr err;
+	char shortHost[64];
+	char fmt[32];
+	unsigned char * spot;
+	int err;
 	
 	GetPref(realm,PREF_REALM);
 	GetPOPInfo(user,host);

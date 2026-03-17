@@ -85,7 +85,7 @@ void DumpCertStore ( X509_STORE *store );
 int IsCertInKeychain ( X509 *theCert );
 int ShowOpenSSLCertToUser ( X509 *theCert );
 int AddOpenSSLCertToKeychain ( X509 *theCert );
-UHandle GetOpenSSLCertText ( X509 *theCert );
+unsigned char * GetOpenSSLCertText ( X509 *theCert );
 
 /* If a system OpenSSL is available, use its declarations; otherwise
    provide the legacy declarations used by the old code. */

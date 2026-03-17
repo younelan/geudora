@@ -43,7 +43,7 @@ struct DecoderPB;
 typedef struct DecoderPB DecoderPB, *DecoderPBPtr;
 
 /* Forward declarations for plugin/translator types */
-typedef struct emsMIMEtype **emsMIMEHandle;
+typedef struct emsMIMEtype *emsMIMEHandle;
 typedef struct HeadSpec {
   long offset; /* start offset in text */
   long length; /* length of header value */
@@ -54,10 +54,10 @@ typedef struct HeadSpec {
 } HeadSpec, *HSPtr;
 /* typedef int (*DecoderFunc)(int callType, void *decPB); */
 
-OSErr AllAttachOnBoardLo(MessHandle messH, bool errReport);
-PStr MessReturnAddr(MessHandle messH, PStr buffer);
-PStr GetReturnAddr(PStr addr, bool wantDefault);
-int StartSMTP(TransStream stream, unsigned char *serverName, long Port);
+int AllAttachOnBoardLo(MessHandle messH, bool errReport);
+char * MessReturnAddr(MessHandle messH, char * buffer);
+char * GetReturnAddr(char * addr, bool wantDefault);
+int StartSMTP(TransStream stream, char *serverName, long Port);
 int MySendMessage(TransStream stream, TOCType * tocH, int sumNum,
                   CSpecHandle specList);
 int SMTPError(TransStream stream);
@@ -73,39 +73,39 @@ int TransmitMessageLo(TransStream stream, MessHandle messH, bool chatter,
 int TransmitMessage(TransStream stream, MessHandle messH, bool chatter,
                     bool mime, bool others, emsMIMEHandle *tlMIME,
                     bool sendDataCmd);
-OSErr TransmitHeaders(TransStream stream, MessHandle messH, UHandle enriched,
-                      PStr boundary, bool mime, bool others,
+int TransmitHeaders(TransStream stream, MessHandle messH, void *enriched,
+                      char * boundary, bool mime, bool others,
                       emsMIMEHandle *tlMIME, bool isRelated);
 void TimeStamp(TOCType * tocH, short sumNum, uint32_t when, long delta);
 void PtrTimeStamp(MSumPtr sum, uint32_t when, long delta);
 #define GetReply(stream, buffer, size, chatter, isEhlo)                        \
   GetReplyLo(stream, buffer, size, nil, chatter, isEhlo)
-int GetReplyLo(TransStream stream, unsigned char *buffer, int size,
+int GetReplyLo(TransStream stream, char *buffer, int size,
                AccuPtr bufAcc, bool chatter, bool isEhlo);
-int SendBodyLines(TransStream stream, UHandle text, long length, long offset,
+int SendBodyLines(TransStream stream, char *text, long length, long offset,
                   long flags, bool forceLines, short *lineStarts, short nLines,
                   bool partial, DecoderFunc *encoder);
-void BuildDateHeader(unsigned char *buffer, long seconds);
-PStr R822Date(PStr date, long seconds);
-PStr SimpleNameCharset(PStr charset, short tid);
+void BuildDateHeader(char *buffer, long seconds);
+char * R822Date(char * date, long seconds);
+char * SimpleNameCharset(char * charset, short tid);
 short SendPlain(TransStream stream, FSSpec *spec, long flags, short tableId,
                 AttMapPtr amp);
-OSErr GetIndAttachment(MessHandle messH, short index, FSSpecPtr spec,
+int GetIndAttachment(MessHandle messH, short index, FSSpecPtr spec,
                        HSPtr where);
-OSErr GetIndAttachmentLo(Handle text, short index, FSSpecPtr spec, HSPtr where,
+int GetIndAttachmentLo(void *text, short index, FSSpecPtr spec, HSPtr where,
                          HeadSpec *hs);
-void BuildBoundary(MessHandle messH, PStr boundary, PStr middle);
+void BuildBoundary(MessHandle messH, char * boundary, char * middle);
 bool IsPostScript(FSSpecPtr spec);
 short EffectiveTID(short tid);
 short TransOutTablID(void);
-PStr TransOutTablName(PStr name);
-unsigned char *PriorityHeader(unsigned char *buffer, Byte priority);
-OSErr SendRawMIME(TransStream stream, FSSpecPtr spec);
-OSErr SendTextFile(TransStream stream, FSSpecPtr spec, long flags,
+char * TransOutTablName(char * name);
+char *PriorityHeader(char *buffer, uint8_t priority);
+int SendRawMIME(TransStream stream, FSSpecPtr spec);
+int SendTextFile(TransStream stream, FSSpecPtr spec, long flags,
                    DecoderFunc *encoder);
-OSErr FinishSMTP(TransStream stream, MessHandle messH);
-OSErr AddFccToList(PStr fcc, CSpecHandle list);
-PStr BuildContentID(PStr into, PStr mid, long partID, short index);
+int FinishSMTP(TransStream stream, MessHandle messH);
+int AddFccToList(char * fcc, CSpecHandle list);
+char * BuildContentID(char * into, char * mid, long partID, short index);
 typedef enum {
   SysStatCode = 211,
   HelpCode = 214,
@@ -137,7 +137,7 @@ typedef enum {
   ReplyErr
 } SMErrEnum;
 
-OSErr BufferSend(TransStream stream, DecoderFunc *encoder, unsigned char *data,
+int BufferSend(TransStream stream, DecoderFunc *encoder, char *data,
                  long dataLen, bool text);
 #define BS(stream, x, y, z)                                                    \
   do {                                                                         \
@@ -155,11 +155,11 @@ OSErr BufferSend(TransStream stream, DecoderFunc *encoder, unsigned char *data,
   (SendTrans(stream, "--", 2, boundary, strlen((const char *)boundary),        \
              NewLine, strlen((const char *)NewLine), nil))
 #define BufferSendRelease(stream) (void)BufferSend(stream, nil, nil, -1, False)
-OSErr SendPString(TransStream stream, PStr string);
-PStr FormatZone(PStr string, long delta);
-unsigned char *GetFlatten(void);
-OSErr SendExtras(TransStream stream, Handle extras, bool allowQP, short tid);
-bool AnyFunny(Handle text, long offset);
+int SendPString(TransStream stream, char *string);
+char * FormatZone(char * string, long delta);
+char *GetFlatten(void);
+int SendExtras(TransStream stream, void *extras, bool allowQP, short tid);
+bool AnyFunny(char *text, long textLen, long offset);
 
 typedef struct {
   MessHandle messH;            // The message we are sending
@@ -182,9 +182,9 @@ typedef struct {
   TransStream stream;          // the stream to send it on
   DecoderFunc *encoder;        // and the encoder
   emsMIMEHandle *tlMIME;       // MIME headers for translators
-} TransmitPB, *TransmitPBPtr, **TransmitPBHandle;
+} TransmitPB, *TransmitPBPtr, *TransmitPBHandle;
 
-OSErr TransmitMimeVersion(TransmitPBPtr pb);
+int TransmitMimeVersion(TransmitPBPtr pb);
 
 #define IsAddrErr(c) (((c) / 10) == 55 || (c) == 503 || (c) == 543)
 

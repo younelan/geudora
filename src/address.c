@@ -284,7 +284,7 @@ parsePunt:
 }
 
 /************************************************************************
- * SuckAddresses - parse RFC 822 addresses from a text buffer (Handle)
+ * SuckAddresses - parse RFC 822 addresses from a text buffer (void *)
  *
  * Legacy wrapper: text is a Handle (char**), we dereference and call
  * SuckPtrAddresses. Callers should migrate to SuckPtrAddresses directly.

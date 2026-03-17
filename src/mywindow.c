@@ -208,7 +208,7 @@ void InvalContent(MyWindowPtr win) {
 /**********************************************************************
  * SetWTitle_ - set window title from Pascal string
  **********************************************************************/
-void SetWTitle(void *winWP, unsigned char *title) {
+void SetWTitle(void *winWP, const char *title) {
   if (!winWP || !title)
     return;
   int len = title[0];

@@ -208,23 +208,23 @@ void SetPref(int prefId, const char *value) {
   }
 }
 
-/* Helper: fill Pascal string dest from a C string, return dest */
-static unsigned char *fill_pstr(unsigned char *dest, const char *cstr) {
+/* Helper: fill dest C string from a C string, return dest */
+static char *fill_pstr(char *dest, const char *cstr) {
   if (!dest) return dest;
   if (cstr && cstr[0]) {
     size_t len = strlen(cstr);
     if (len > 255) len = 255;
-    dest[0] = (unsigned char)len;
-    memcpy(dest + 1, cstr, len);
+    memcpy(dest, cstr, len);
+    dest[len] = '\0';
   } else {
-    dest[0] = 0;
+    dest[0] = '\0';
   }
   return dest;
 }
 
 /* GetPref - fill dest with preference string, return dest.
  * Bridges critical mail pref IDs to the INI settings system. */
-unsigned char *GetPref(unsigned char *dest, short prefId) {
+char *GetPref(char *dest, short prefId) {
   if (!dest) return dest;
 
   /* Bridge critical prefs to INI settings (geudora.ini) */
@@ -252,7 +252,7 @@ unsigned char *GetPref(unsigned char *dest, short prefId) {
   if (ini_val) {
     fill_pstr(dest, ini_val);
     g_free(ini_val);
-    if (dest[0] > 0) return dest;  /* Got a value from INI */
+    if (dest[0] != '\0') return dest;  /* Got a value from INI */
   }
 
   /* Fall back to legacy preferences.ini */

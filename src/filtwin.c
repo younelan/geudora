@@ -35,7 +35,7 @@ extern short DoFordirectMessage(TOCType *tocH, short sumNum, short action,
 extern short DoReplyClosed(TOCType *tocH, short sumNum, bool all, bool self,
                            bool quote, bool redo, short item, bool vis,
                            bool station);
-extern void PlayNamedSound(unsigned char *name);
+extern void PlayNamedSound(char *name);
 extern FSSpec GetMailboxSpec(TOCType *tocH, short which);
 extern TOCType *TOCBySpec(FSSpec *spec);
 extern bool SameSpec(FSSpec *a, FSSpec *b);
@@ -57,8 +57,8 @@ extern short PrintClosedMessage(TOCType *tocH, short sumNum, bool now);
 /* Global Filters handle — the in-memory filter database */
 void *Filters = NULL;
 short FiltersRefCount = 0;
-Handle PreFilters = NULL;   /* filter rules generated externally (plugins) */
-Handle PostFilters = NULL;  /* filter rules generated externally (plugins) */
+void *PreFilters = NULL;   /* filter rules generated externally (plugins) */
+void *PostFilters = NULL;  /* filter rules generated externally (plugins) */
 
 /* Safe string copy into fixed-size buffer */
 static void sstrncpy(char *dst, const char *src, size_t dstsize) {
@@ -233,18 +233,16 @@ static void StudyFilter(FilterRecord *fr) {
 /* Append action to end of linked list */
 static void AppendAction(FActionHandle *list, FActionHandle fa) {
   FActionHandle *tail = list;
-  while (*tail) tail = &((**tail)->next);
+  while (*tail) tail = &((*tail)->next);
   *tail = fa;
 }
 
 /* Create a new FAction node */
 static FActionHandle NewAction(FilterKeywordEnum act) {
-  FActionHandle fa = (FActionHandle)calloc(1, sizeof(void *));
+  FActionHandle fa = (FActionHandle)calloc(1, sizeof(FAction));
   if (!fa) return NULL;
-  *fa = (FAction *)calloc(1, sizeof(FAction));
-  if (!*fa) { free(fa); return NULL; }
-  (*fa)->action = act;
-  (*fa)->next = NULL;
+  fa->action = act;
+  fa->next = NULL;
   return fa;
 }
 
@@ -254,7 +252,7 @@ static int AppendFilter(FilterRecord *fr) {
 
   /* Fill out actions to MAX_ACTIONS */
   int na = 0;
-  for (FActionHandle fa = fr->actions; fa; fa = (*fa)->next) na++;
+  for (FActionHandle fa = fr->actions; fa; fa = fa->next) na++;
   while (na < MAX_ACTIONS) {
     FActionHandle fa = NewAction(flkNone);
     if (!fa) break;
@@ -363,9 +361,9 @@ int ReadFilters(void) {
       break;
     case flkCopyInstead: {
       FActionHandle last = NULL;
-      for (FActionHandle a = fr.actions; a; a = (*a)->next)
-        if ((*a)->action == flkTransfer) last = a;
-      if (last) (*last)->action = flkCopy;
+      for (FActionHandle a = fr.actions; a; a = a->next)
+        if (a->action == flkTransfer) last = a;
+      if (last) last->action = flkCopy;
       break;
     }
     default:
@@ -450,50 +448,50 @@ static int WriteFilter(FILE *fp, FilterRecord *fr) {
     FWriteEnum(fp, flkVerb, fr->terms[1].verb);
     FWriteStr(fp, flkValue, fr->terms[1].value);
   }
-  for (FActionHandle fa = fr->actions; fa; fa = (*fa)->next) {
-    FilterKeywordEnum act = (*fa)->action;
+  for (FActionHandle fa = fr->actions; fa; fa = fa->next) {
+    FilterKeywordEnum act = fa->action;
     if (act == flkNone || act == flkZero) continue;
     if ((int)act >= (int)NUM_FILT_KEYWORDS || !FiltKeywords[act][0]) continue;
 
     /* Write action keyword with its data value */
     const char *val = NULL;
     char numbuf[32];
-    if ((*fa)->data) {
+    if (fa->data) {
       switch (act) {
       case flkPriority: {
-        FDPrior *d = *(FDPrior **)(*fa)->data;
+        FDPrior *d = *(FDPrior **)fa->data;
         if (d) { snprintf(numbuf, sizeof(numbuf), "%ld", d->prior); val = numbuf; }
         break;
       }
       case flkLabel: {
-        FDLabel *d = *(FDLabel **)(*fa)->data;
+        FDLabel *d = *(FDLabel **)fa->data;
         if (d) { snprintf(numbuf, sizeof(numbuf), "%ld", d->color); val = numbuf; }
         break;
       }
       case flkStatus: {
-        FDStatus *d = *(FDStatus **)(*fa)->data;
+        FDStatus *d = *(FDStatus **)fa->data;
         if (d) { snprintf(numbuf, sizeof(numbuf), "%d", d->status); val = numbuf; }
         break;
       }
       case flkSubject: {
-        FDSubject *d = *(FDSubject **)(*fa)->data;
+        FDSubject *d = *(FDSubject **)fa->data;
         if (d && d->subject[0]) val = d->subject;
         break;
       }
       case flkTransfer:
       case flkCopy: {
-        FDTransfer *d = *(FDTransfer **)(*fa)->data;
+        FDTransfer *d = *(FDTransfer **)fa->data;
         if (d && d->spec.name[0]) val = d->spec.name;
         break;
       }
       case flkForward:
       case flkRedirect: {
-        FDForward *d = *(FDForward **)(*fa)->data;
+        FDForward *d = *(FDForward **)fa->data;
         if (d && d->addresses[0]) val = d->addresses;
         break;
       }
       case flkSound: {
-        FDSound *d = *(FDSound **)(*fa)->data;
+        FDSound *d = *(FDSound **)fa->data;
         if (d && d->name[0]) val = d->name;
         break;
       }
@@ -634,11 +632,11 @@ short FAflkTransfer(FACallEnum callType, FActionHandle action, Rect *r,
                     void *dataPtr) {
   (void)r;
   int err = 0;
-  FDTransfer *data = (FDTransfer *)((*action)->data
-                                      ? *((*action)->data)
+  FDTransfer *data = (FDTransfer *)(action->data
+                                      ? *(action->data)
                                       : NULL);
   FilterPBPtr fpb = (FilterPBPtr)dataPtr;
-  bool copy = ((*action)->action == flkCopy);
+  bool copy = (action->action == flkCopy);
 
   switch (callType) {
   case faeRead: {
@@ -651,8 +649,8 @@ short FAflkTransfer(FACallEnum callType, FActionHandle action, Rect *r,
     } else {
       nd->brandNew = true;
     }
-    (*action)->data = calloc(1, sizeof(void *));
-    if ((*action)->data) *(FDTransfer **)(*action)->data = nd;
+    action->data = calloc(1, sizeof(void *));
+    if (action->data) *(FDTransfer **)action->data = nd;
     break;
   }
   case faeInit:
@@ -727,8 +725,8 @@ typedef struct {
 short FAflkMoveAttach(FACallEnum callType, FActionHandle action, Rect *r,
                       void *dataPtr) {
   (void)r;
-  FDMoveAttach *data = (FDMoveAttach *)((*action)->data
-                                          ? *((*action)->data)
+  FDMoveAttach *data = (FDMoveAttach *)(action->data
+                                          ? *(action->data)
                                           : NULL);
   FilterPBPtr fpb = (FilterPBPtr)dataPtr;
 
@@ -740,8 +738,8 @@ short FAflkMoveAttach(FACallEnum callType, FActionHandle action, Rect *r,
       const char *path = (const char *)dataPtr;
       sstrncpy(nd->spec.name, path, sizeof(nd->spec.name));
     }
-    (*action)->data = calloc(1, sizeof(void *));
-    if ((*action)->data) *(FDMoveAttach **)(*action)->data = nd;
+    action->data = calloc(1, sizeof(void *));
+    if (action->data) *(FDMoveAttach **)action->data = nd;
     break;
   }
   case faeInit:
@@ -782,8 +780,8 @@ short FAflkMoveAttach(FACallEnum callType, FActionHandle action, Rect *r,
 short FAflkStatus(FACallEnum callType, FActionHandle action, Rect *r,
                   void *dataPtr) {
   (void)r;
-  FDStatus *data = (FDStatus *)((*action)->data
-                                  ? *((*action)->data)
+  FDStatus *data = (FDStatus *)(action->data
+                                  ? *(action->data)
                                   : NULL);
   FilterPBPtr fpb = (FilterPBPtr)dataPtr;
 
@@ -792,8 +790,8 @@ short FAflkStatus(FACallEnum callType, FActionHandle action, Rect *r,
     FDStatus *nd = calloc(1, sizeof(FDStatus));
     if (!nd) return -1;
     if (dataPtr) nd->status = atoi((const char *)dataPtr);
-    (*action)->data = calloc(1, sizeof(void *));
-    if ((*action)->data) *(FDStatus **)(*action)->data = nd;
+    action->data = calloc(1, sizeof(void *));
+    if (action->data) *(FDStatus **)action->data = nd;
     break;
   }
   case faeInit:
@@ -828,8 +826,8 @@ short FAflkStatus(FACallEnum callType, FActionHandle action, Rect *r,
 short FAflkSubject(FACallEnum callType, FActionHandle action, Rect *r,
                    void *dataPtr) {
   (void)r;
-  FDSubject *data = (FDSubject *)((*action)->data
-                                    ? *((*action)->data)
+  FDSubject *data = (FDSubject *)(action->data
+                                    ? *(action->data)
                                     : NULL);
   FilterPBPtr fpb = (FilterPBPtr)dataPtr;
 
@@ -838,8 +836,8 @@ short FAflkSubject(FACallEnum callType, FActionHandle action, Rect *r,
     FDSubject *nd = calloc(1, sizeof(FDSubject));
     if (!nd) return -1;
     if (dataPtr) sstrncpy(nd->subject, (const char *)dataPtr, sizeof(nd->subject));
-    (*action)->data = calloc(1, sizeof(void *));
-    if ((*action)->data) *(FDSubject **)(*action)->data = nd;
+    action->data = calloc(1, sizeof(void *));
+    if (action->data) *(FDSubject **)action->data = nd;
     break;
   }
   case faeInit:
@@ -878,8 +876,8 @@ short FAflkSubject(FACallEnum callType, FActionHandle action, Rect *r,
 short FAflkLabel(FACallEnum callType, FActionHandle action, Rect *r,
                  void *dataPtr) {
   (void)r;
-  FDLabel *data = (FDLabel *)((*action)->data
-                                ? *((*action)->data)
+  FDLabel *data = (FDLabel *)(action->data
+                                ? *(action->data)
                                 : NULL);
   FilterPBPtr fpb = (FilterPBPtr)dataPtr;
 
@@ -888,8 +886,8 @@ short FAflkLabel(FACallEnum callType, FActionHandle action, Rect *r,
     FDLabel *nd = calloc(1, sizeof(FDLabel));
     if (!nd) return -1;
     if (dataPtr) nd->color = atol((const char *)dataPtr);
-    (*action)->data = calloc(1, sizeof(void *));
-    if ((*action)->data) *(FDLabel **)(*action)->data = nd;
+    action->data = calloc(1, sizeof(void *));
+    if (action->data) *(FDLabel **)action->data = nd;
     break;
   }
   case faeInit:
@@ -927,8 +925,8 @@ short FAflkLabel(FACallEnum callType, FActionHandle action, Rect *r,
 short FAflkPersonality(FACallEnum callType, FActionHandle action, Rect *r,
                        void *dataPtr) {
   (void)r;
-  FDPers *data = (FDPers *)((*action)->data
-                               ? *((*action)->data)
+  FDPers *data = (FDPers *)(action->data
+                               ? *(action->data)
                                : NULL);
   FilterPBPtr fpb = (FilterPBPtr)dataPtr;
 
@@ -937,8 +935,8 @@ short FAflkPersonality(FACallEnum callType, FActionHandle action, Rect *r,
     FDPers *nd = calloc(1, sizeof(FDPers));
     if (!nd) return -1;
     nd->persId = 0;
-    (*action)->data = calloc(1, sizeof(void *));
-    if ((*action)->data) *(FDPers **)(*action)->data = nd;
+    action->data = calloc(1, sizeof(void *));
+    if (action->data) *(FDPers **)action->data = nd;
     break;
   }
   case faeInit:
@@ -972,8 +970,8 @@ short FAflkPersonality(FACallEnum callType, FActionHandle action, Rect *r,
 short FAflkSound(FACallEnum callType, FActionHandle action, Rect *r,
                  void *dataPtr) {
   (void)r;
-  FDSound *data = (FDSound *)((*action)->data
-                                ? *((*action)->data)
+  FDSound *data = (FDSound *)(action->data
+                                ? *(action->data)
                                 : NULL);
 
   switch (callType) {
@@ -981,8 +979,8 @@ short FAflkSound(FACallEnum callType, FActionHandle action, Rect *r,
     FDSound *nd = calloc(1, sizeof(FDSound));
     if (!nd) return -1;
     if (dataPtr) sstrncpy(nd->name, (const char *)dataPtr, sizeof(nd->name));
-    (*action)->data = calloc(1, sizeof(void *));
-    if ((*action)->data) *(FDSound **)(*action)->data = nd;
+    action->data = calloc(1, sizeof(void *));
+    if (action->data) *(FDSound **)action->data = nd;
     break;
   }
   case faeInit:
@@ -1022,8 +1020,8 @@ short FAflkSound(FACallEnum callType, FActionHandle action, Rect *r,
 short FAflkOpenMessage(FACallEnum callType, FActionHandle action, Rect *r,
                        void *dataPtr) {
   (void)r;
-  FDOpen *data = (FDOpen *)((*action)->data
-                              ? *((*action)->data)
+  FDOpen *data = (FDOpen *)(action->data
+                              ? *(action->data)
                               : NULL);
   FilterPBPtr fpb = (FilterPBPtr)dataPtr;
 
@@ -1032,8 +1030,8 @@ short FAflkOpenMessage(FACallEnum callType, FActionHandle action, Rect *r,
     FDOpen *nd = calloc(1, sizeof(FDOpen));
     if (!nd) return -1;
     if (dataPtr) nd->flags = atol((const char *)dataPtr);
-    (*action)->data = calloc(1, sizeof(void *));
-    if ((*action)->data) *(FDOpen **)(*action)->data = nd;
+    action->data = calloc(1, sizeof(void *));
+    if (action->data) *(FDOpen **)action->data = nd;
     break;
   }
   case faeInit:
@@ -1078,8 +1076,8 @@ short FAflkOpenMessage(FACallEnum callType, FActionHandle action, Rect *r,
 short FAflkPriority(FACallEnum callType, FActionHandle action, Rect *r,
                     void *dataPtr) {
   (void)r;
-  FDPrior *data = (FDPrior *)((*action)->data
-                                ? *((*action)->data)
+  FDPrior *data = (FDPrior *)(action->data
+                                ? *(action->data)
                                 : NULL);
   FilterPBPtr fpb = (FilterPBPtr)dataPtr;
 
@@ -1088,8 +1086,8 @@ short FAflkPriority(FACallEnum callType, FActionHandle action, Rect *r,
     FDPrior *nd = calloc(1, sizeof(FDPrior));
     if (!nd) return -1;
     if (dataPtr) nd->prior = atol((const char *)dataPtr);
-    (*action)->data = calloc(1, sizeof(void *));
-    if ((*action)->data) *(FDPrior **)(*action)->data = nd;
+    action->data = calloc(1, sizeof(void *));
+    if (action->data) *(FDPrior **)action->data = nd;
     break;
   }
   case faeInit:
@@ -1135,8 +1133,8 @@ short FAflkPriority(FACallEnum callType, FActionHandle action, Rect *r,
 short FAflkForward(FACallEnum callType, FActionHandle action, Rect *r,
                    void *dataPtr) {
   (void)r;
-  FDForward *data = (FDForward *)((*action)->data
-                                    ? *((*action)->data)
+  FDForward *data = (FDForward *)(action->data
+                                    ? *(action->data)
                                     : NULL);
   FilterPBPtr fpb = (FilterPBPtr)dataPtr;
 
@@ -1145,8 +1143,8 @@ short FAflkForward(FACallEnum callType, FActionHandle action, Rect *r,
     FDForward *nd = calloc(1, sizeof(FDForward));
     if (!nd) return -1;
     if (dataPtr) sstrncpy(nd->addresses, (const char *)dataPtr, sizeof(nd->addresses));
-    (*action)->data = calloc(1, sizeof(void *));
-    if ((*action)->data) *(FDForward **)(*action)->data = nd;
+    action->data = calloc(1, sizeof(void *));
+    if (action->data) *(FDForward **)action->data = nd;
     break;
   }
   case faeInit:
@@ -1174,7 +1172,7 @@ short FAflkForward(FACallEnum callType, FActionHandle action, Rect *r,
       /* DoFordirectMessage expects Pascal string — convert at boundary */
       unsigned char ps[256];
       c_to_pascal(ps, data->addresses);
-      DoFordirectMessage(fpb->tocH, fpb->sumNum, (*action)->action, ps, true);
+      DoFordirectMessage(fpb->tocH, fpb->sumNum, action->action, ps, true);
       UseFeature(featureFilterForward);
     }
     break;
@@ -1198,8 +1196,8 @@ typedef struct {
 short FAflkReply(FACallEnum callType, FActionHandle action, Rect *r,
                  void *dataPtr) {
   (void)r;
-  FDReply *data = (FDReply *)((*action)->data
-                                ? *((*action)->data)
+  FDReply *data = (FDReply *)(action->data
+                                ? *(action->data)
                                 : NULL);
   FilterPBPtr fpb = (FilterPBPtr)dataPtr;
 
@@ -1208,8 +1206,8 @@ short FAflkReply(FACallEnum callType, FActionHandle action, Rect *r,
     FDReply *nd = calloc(1, sizeof(FDReply));
     if (!nd) return -1;
     nd->templateIdx = 0;
-    (*action)->data = calloc(1, sizeof(void *));
-    if ((*action)->data) *(FDReply **)(*action)->data = nd;
+    action->data = calloc(1, sizeof(void *));
+    if (action->data) *(FDReply **)action->data = nd;
     break;
   }
   case faeInit:
@@ -1248,8 +1246,8 @@ typedef struct {
 short FAflkNotifyUser(FACallEnum callType, FActionHandle action, Rect *r,
                       void *dataPtr) {
   (void)r;
-  FDNotify *data = (FDNotify *)((*action)->data
-                                  ? *((*action)->data)
+  FDNotify *data = (FDNotify *)(action->data
+                                  ? *(action->data)
                                   : NULL);
   FilterPBPtr fpb = (FilterPBPtr)dataPtr;
 
@@ -1258,8 +1256,8 @@ short FAflkNotifyUser(FACallEnum callType, FActionHandle action, Rect *r,
     FDNotify *nd = calloc(1, sizeof(FDNotify));
     if (!nd) return -1;
     if (dataPtr) nd->flags = atol((const char *)dataPtr);
-    (*action)->data = calloc(1, sizeof(void *));
-    if ((*action)->data) *(FDNotify **)(*action)->data = nd;
+    action->data = calloc(1, sizeof(void *));
+    if (action->data) *(FDNotify **)action->data = nd;
     break;
   }
   case faeInit:
@@ -1309,8 +1307,8 @@ typedef struct {
 short FAflkServerOpts(FACallEnum callType, FActionHandle action, Rect *r,
                       void *dataPtr) {
   (void)r;
-  FDSOpt *data = (FDSOpt *)((*action)->data
-                               ? *((*action)->data)
+  FDSOpt *data = (FDSOpt *)(action->data
+                               ? *(action->data)
                                : NULL);
   FilterPBPtr fpb = (FilterPBPtr)dataPtr;
 
@@ -1319,8 +1317,8 @@ short FAflkServerOpts(FACallEnum callType, FActionHandle action, Rect *r,
     FDSOpt *nd = calloc(1, sizeof(FDSOpt));
     if (!nd) return -1;
     if (dataPtr) nd->flags = atol((const char *)dataPtr);
-    (*action)->data = calloc(1, sizeof(void *));
-    if ((*action)->data) *(FDSOpt **)(*action)->data = nd;
+    action->data = calloc(1, sizeof(void *));
+    if (action->data) *(FDSOpt **)action->data = nd;
     break;
   }
   case faeInit:
@@ -1610,7 +1608,7 @@ static void populate_action_value(int idx) {
   FActionHandle fa = NULL;
   if (gSelectedFilter >= 0 && gSelectedFilter < gNFilters) {
     fa = gFilterArray[gSelectedFilter].actions;
-    for (int i = 0; i < idx && fa; i++) fa = (*fa)->next;
+    for (int i = 0; i < idx && fa; i++) fa = fa->next;
   }
 
   switch (fk) {
@@ -1635,8 +1633,8 @@ static void populate_action_value(int idx) {
       }
       GtkWidget *drop = markup_drop_down(markup_ptrs, 7);
       int pri_val = 2;
-      if (fa && (*fa)->data) {
-        FDPrior *d = *(FDPrior **)(*fa)->data;
+      if (fa && fa->data) {
+        FDPrior *d = *(FDPrior **)fa->data;
         if (d) {
           if (d->prior >= 1 && d->prior <= 5) pri_val = d->prior - 1;
           else if (d->prior == 7) pri_val = 5;
@@ -1664,8 +1662,8 @@ static void populate_action_value(int idx) {
       }
       GtkWidget *drop = markup_drop_down(markup_ptrs, 8);
       int lab_val = 0;
-      if (fa && (*fa)->data) {
-        FDLabel *d = *(FDLabel **)(*fa)->data;
+      if (fa && fa->data) {
+        FDLabel *d = *(FDLabel **)fa->data;
         if (d && d->color >= 0 && d->color < 8) lab_val = d->color;
       }
       gtk_drop_down_set_selected(GTK_DROP_DOWN(drop), lab_val);
@@ -1679,8 +1677,8 @@ static void populate_action_value(int idx) {
                                 "Queued", "Sent", "Unsent", NULL};
       GtkWidget *drop = gtk_drop_down_new_from_strings(statuses);
       int stat_val = 0;
-      if (fa && (*fa)->data) {
-        FDStatus *d = *(FDStatus **)(*fa)->data;
+      if (fa && fa->data) {
+        FDStatus *d = *(FDStatus **)fa->data;
         if (d && d->status >= 0 && d->status < 10) stat_val = d->status;
       }
       gtk_drop_down_set_selected(GTK_DROP_DOWN(drop), stat_val);
@@ -1691,8 +1689,8 @@ static void populate_action_value(int idx) {
     case flkSubject: {
       GtkWidget *entry = gtk_entry_new();
       gtk_entry_set_placeholder_text(GTK_ENTRY(entry), "Subject text");
-      if (fa && (*fa)->data) {
-        FDSubject *d = *(FDSubject **)(*fa)->data;
+      if (fa && fa->data) {
+        FDSubject *d = *(FDSubject **)fa->data;
         if (d && d->subject[0])
           gtk_editable_set_text(GTK_EDITABLE(entry), d->subject);
       }
@@ -1705,8 +1703,8 @@ static void populate_action_value(int idx) {
       GtkWidget *entry = gtk_entry_new();
       gtk_entry_set_placeholder_text(GTK_ENTRY(entry),
         fk == flkTransfer ? "Transfer to mailbox..." : "Copy to mailbox...");
-      if (fa && (*fa)->data) {
-        FDTransfer *d = *(FDTransfer **)(*fa)->data;
+      if (fa && fa->data) {
+        FDTransfer *d = *(FDTransfer **)fa->data;
         if (d && d->spec.name[0])
           gtk_editable_set_text(GTK_EDITABLE(entry), d->spec.name);
       }
@@ -1722,8 +1720,8 @@ static void populate_action_value(int idx) {
       GtkWidget *entry = gtk_entry_new();
       gtk_entry_set_placeholder_text(GTK_ENTRY(entry),
         fk == flkForward ? "Forward to address..." : "Redirect to address...");
-      if (fa && (*fa)->data) {
-        FDForward *d = *(FDForward **)(*fa)->data;
+      if (fa && fa->data) {
+        FDForward *d = *(FDForward **)fa->data;
         if (d && d->addresses[0])
           gtk_editable_set_text(GTK_EDITABLE(entry), d->addresses);
       }
@@ -1744,8 +1742,8 @@ static void populate_action_value(int idx) {
                               "Sosumi", "Submarine", "Tink", NULL};
       GtkWidget *drop = gtk_drop_down_new_from_strings(sounds);
       int snd_val = 0;
-      if (fa && (*fa)->data) {
-        FDSound *d = *(FDSound **)(*fa)->data;
+      if (fa && fa->data) {
+        FDSound *d = *(FDSound **)fa->data;
         if (d && d->name[0]) {
           for (int s = 0; sounds[s]; s++)
             if (g_ascii_strcasecmp(d->name, sounds[s]) == 0) { snd_val = s; break; }
@@ -1767,8 +1765,8 @@ static void populate_action_value(int idx) {
     case flkOpenMessage: {
       GtkWidget *chk_mb = gtk_check_button_new_with_label("Open Mailbox");
       GtkWidget *chk_msg = gtk_check_button_new_with_label("Open Message");
-      if (fa && (*fa)->data) {
-        FDOpen *d = *(FDOpen **)(*fa)->data;
+      if (fa && fa->data) {
+        FDOpen *d = *(FDOpen **)fa->data;
         if (d) {
           gtk_check_button_set_active(GTK_CHECK_BUTTON(chk_mb),
             0 != (d->flags & afbOpenMailbox));
@@ -1887,8 +1885,8 @@ static void on_dup_filter(GtkButton *btn, gpointer user_data) {
 
   /* Deep copy actions */
   dup.actions = NULL;
-  for (FActionHandle fa = orig.actions; fa; fa = (*fa)->next) {
-    FActionHandle newfa = NewAction((*fa)->action);
+  for (FActionHandle fa = orig.actions; fa; fa = fa->next) {
+    FActionHandle newfa = NewAction(fa->action);
     if (!newfa) break;
     AppendAction(&dup.actions, newfa);
   }
@@ -1958,56 +1956,56 @@ static void SaveCurrentFilter(void) {
 
   /* Update actions from dropdowns + value widgets */
   FActionHandle fa = fr->actions;
-  for (int i = 0; i < MAX_ACTIONS && fa; i++, fa = (*fa)->next) {
+  for (int i = 0; i < MAX_ACTIONS && fa; i++, fa = fa->next) {
     int aidx = gtk_drop_down_get_selected(GTK_DROP_DOWN(action_rows[i].type_drop));
     if (aidx >= 0 && aidx < (int)NUM_ACTION_TYPES)
-      (*fa)->action = action_idx_to_fk[aidx];
+      fa->action = action_idx_to_fk[aidx];
 
     /* Read value from value_box widget into FAction data */
     GtkWidget *val_w = gtk_widget_get_first_child(action_rows[i].value_box);
     if (!val_w) continue;
-    FilterKeywordEnum fk = (*fa)->action;
+    FilterKeywordEnum fk = fa->action;
 
     /* Allocate data struct if missing (action type was changed from None) */
-    if (!(*fa)->data && fk != flkNone && fk != flkZero) {
+    if (!fa->data && fk != flkNone && fk != flkZero) {
       if (fk == flkPriority) {
         FDPrior *nd = calloc(1, sizeof(FDPrior)); nd->prior = 3;
-        (*fa)->data = calloc(1, sizeof(void *));
-        if ((*fa)->data) *(FDPrior **)(*fa)->data = nd; else { free(nd); continue; }
+        fa->data = calloc(1, sizeof(void *));
+        if (fa->data) *(FDPrior **)fa->data = nd; else { free(nd); continue; }
       } else if (fk == flkLabel) {
         FDLabel *nd = calloc(1, sizeof(FDLabel));
-        (*fa)->data = calloc(1, sizeof(void *));
-        if ((*fa)->data) *(FDLabel **)(*fa)->data = nd; else { free(nd); continue; }
+        fa->data = calloc(1, sizeof(void *));
+        if (fa->data) *(FDLabel **)fa->data = nd; else { free(nd); continue; }
       } else if (fk == flkStatus) {
         FDStatus *nd = calloc(1, sizeof(FDStatus));
-        (*fa)->data = calloc(1, sizeof(void *));
-        if ((*fa)->data) *(FDStatus **)(*fa)->data = nd; else { free(nd); continue; }
+        fa->data = calloc(1, sizeof(void *));
+        if (fa->data) *(FDStatus **)fa->data = nd; else { free(nd); continue; }
       } else if (fk == flkSubject) {
         FDSubject *nd = calloc(1, sizeof(FDSubject));
-        (*fa)->data = calloc(1, sizeof(void *));
-        if ((*fa)->data) *(FDSubject **)(*fa)->data = nd; else { free(nd); continue; }
+        fa->data = calloc(1, sizeof(void *));
+        if (fa->data) *(FDSubject **)fa->data = nd; else { free(nd); continue; }
       } else if (fk == flkTransfer || fk == flkCopy) {
         FDTransfer *nd = calloc(1, sizeof(FDTransfer));
-        (*fa)->data = calloc(1, sizeof(void *));
-        if ((*fa)->data) *(FDTransfer **)(*fa)->data = nd; else { free(nd); continue; }
+        fa->data = calloc(1, sizeof(void *));
+        if (fa->data) *(FDTransfer **)fa->data = nd; else { free(nd); continue; }
       } else if (fk == flkForward || fk == flkRedirect) {
         FDForward *nd = calloc(1, sizeof(FDForward));
-        (*fa)->data = calloc(1, sizeof(void *));
-        if ((*fa)->data) *(FDForward **)(*fa)->data = nd; else { free(nd); continue; }
+        fa->data = calloc(1, sizeof(void *));
+        if (fa->data) *(FDForward **)fa->data = nd; else { free(nd); continue; }
       } else if (fk == flkSound) {
         FDSound *nd = calloc(1, sizeof(FDSound));
-        (*fa)->data = calloc(1, sizeof(void *));
-        if ((*fa)->data) *(FDSound **)(*fa)->data = nd; else { free(nd); continue; }
+        fa->data = calloc(1, sizeof(void *));
+        if (fa->data) *(FDSound **)fa->data = nd; else { free(nd); continue; }
       } else if (fk == flkOpenMessage) {
         FDOpen *nd = calloc(1, sizeof(FDOpen));
-        (*fa)->data = calloc(1, sizeof(void *));
-        if ((*fa)->data) *(FDOpen **)(*fa)->data = nd; else { free(nd); continue; }
+        fa->data = calloc(1, sizeof(void *));
+        if (fa->data) *(FDOpen **)fa->data = nd; else { free(nd); continue; }
       }
     }
-    if (!(*fa)->data) continue;
+    if (!fa->data) continue;
 
     if (fk == flkPriority) {
-      FDPrior *d = *(FDPrior **)(*fa)->data;
+      FDPrior *d = *(FDPrior **)fa->data;
       if (d && GTK_IS_DROP_DOWN(val_w)) {
         int sel = gtk_drop_down_get_selected(GTK_DROP_DOWN(val_w));
         if (sel <= 4) d->prior = sel + 1;
@@ -2015,32 +2013,32 @@ static void SaveCurrentFilter(void) {
         else if (sel == 6) d->prior = 8; /* Lower */
       }
     } else if (fk == flkLabel) {
-      FDLabel *d = *(FDLabel **)(*fa)->data;
+      FDLabel *d = *(FDLabel **)fa->data;
       if (d && GTK_IS_DROP_DOWN(val_w))
         d->color = gtk_drop_down_get_selected(GTK_DROP_DOWN(val_w));
     } else if (fk == flkStatus) {
-      FDStatus *d = *(FDStatus **)(*fa)->data;
+      FDStatus *d = *(FDStatus **)fa->data;
       if (d && GTK_IS_DROP_DOWN(val_w))
         d->status = gtk_drop_down_get_selected(GTK_DROP_DOWN(val_w));
     } else if (fk == flkSubject) {
-      FDSubject *d = *(FDSubject **)(*fa)->data;
+      FDSubject *d = *(FDSubject **)fa->data;
       if (d && GTK_IS_EDITABLE(val_w))
         sstrncpy(d->subject, gtk_editable_get_text(GTK_EDITABLE(val_w)),
                  sizeof(d->subject));
     } else if (fk == flkTransfer || fk == flkCopy) {
-      FDTransfer *d = *(FDTransfer **)(*fa)->data;
+      FDTransfer *d = *(FDTransfer **)fa->data;
       if (d && GTK_IS_EDITABLE(val_w)) {
         const char *path = gtk_editable_get_text(GTK_EDITABLE(val_w));
         sstrncpy(d->spec.name, path, sizeof(d->spec.name));
         sstrncpy(d->spec.path, path, sizeof(d->spec.path));
       }
     } else if (fk == flkForward || fk == flkRedirect) {
-      FDForward *d = *(FDForward **)(*fa)->data;
+      FDForward *d = *(FDForward **)fa->data;
       if (d && GTK_IS_EDITABLE(val_w))
         sstrncpy(d->addresses, gtk_editable_get_text(GTK_EDITABLE(val_w)),
                  sizeof(d->addresses));
     } else if (fk == flkSound) {
-      FDSound *d = *(FDSound **)(*fa)->data;
+      FDSound *d = *(FDSound **)fa->data;
       if (d && GTK_IS_DROP_DOWN(val_w)) {
         static const char *sounds[] = {"Default", "Glass", "Ping", "Pop", "Purr",
                                        "Sosumi", "Submarine", "Tink"};
@@ -2051,7 +2049,7 @@ static void SaveCurrentFilter(void) {
                  sizeof(d->name));
       }
     } else if (fk == flkOpenMessage) {
-      FDOpen *d = *(FDOpen **)(*fa)->data;
+      FDOpen *d = *(FDOpen **)fa->data;
       if (d) {
         d->flags = 0;
         /* First child = chk_mailbox, second = chk_message */
@@ -2113,8 +2111,8 @@ static void DisplaySelectedFilter(void) {
   for (int i = 0; i < MAX_ACTIONS; i++) {
     FilterKeywordEnum act = flkNone;
     if (fa) {
-      act = (*fa)->action;
-      fa = (*fa)->next;
+      act = fa->action;
+      fa = fa->next;
     }
     /* Block signal during programmatic change to avoid double populate */
     g_signal_handlers_block_matched(action_rows[i].type_drop,
@@ -2298,17 +2296,17 @@ static void PopulateFilterList(void) {
     FActionHandle fa = fr->actions;
     FilterKeywordEnum first_act = flkNone;
     while (fa) {
-      if ((*fa)->action == flkLabel) {
+      if (fa->action == flkLabel) {
         int lab_idx = 0;
-        if ((*fa)->data && *((char *)(*(*fa)->data)) >= '0')
-          lab_idx = *((char *)(*(*fa)->data)) - '0';
+        if (fa->data && *((char *)(*fa->data)) >= '0')
+          lab_idx = *((char *)(*fa->data)) - '0';
         if (lab_idx >= 0 && lab_idx < 8)
           dot_color = label_css_colors[lab_idx];
         has_label = true;
       }
-      if (first_act == flkNone && (*fa)->action != flkNone)
-        first_act = (*fa)->action;
-      fa = (*fa)->next;
+      if (first_act == flkNone && fa->action != flkNone)
+        first_act = fa->action;
+      fa = fa->next;
     }
     if (!has_label) {
       if (first_act == flkTransfer || first_act == flkCopy) dot_color = "#3182ce";

@@ -111,6 +111,8 @@ unsigned long MIDHash(unsigned char *s, long len);
 #include "taskProgress.h"
 #include "util.h"      /* For Accumulator functions */
 
+#include "uudecode.h"
+
 #ifndef ReallyDoAnAlert_declared
 #define ReallyDoAnAlert_declared 1
 int ReallyDoAnAlert(int templ, int which);
@@ -138,12 +140,6 @@ int ReallyDoAnAlert(int templ, int which);
 #ifndef popRUIDL
 #define popRUIDL 3
 #endif
-#ifndef FLAG_FIRST
-#define FLAG_FIRST (1 << 18)
-#endif
-#ifndef FLAG_SUBSEQUENT
-#define FLAG_SUBSEQUENT (1 << 19)
-#endif
 extern long GetPrefLong(short prefId);
 extern bool PrefIsSet(short prefId);
 extern int GetPOPInfoLo(unsigned char *server, unsigned char *s2, long *port);
@@ -154,26 +150,19 @@ extern bool TOCIsDirty(void *tocH);
 /* WriteTOC declared in toc.h */
 extern void Aprintf(short alertType, short noteType, short strn, ...);
 extern int SpecMoveAndRename(FSSpecPtr from, FSSpecPtr to);
-extern OSErr StackQueue(void *what, void **stack);
-extern OSErr StackTop(void *into, void **stack);
+extern int StackQueue(void *what, void **stack);
+extern int StackTop(void *into, void **stack);
 extern bool ValidHash(uint32_t hash);
 extern void RemoveUTF8FromSum(void *sum);
 void MakeMessTitle(unsigned char *title, TOCType * tocH, int sumNum,
                    bool useSummary);
-extern void MyParamText(PStr p1, PStr p2, PStr p3, PStr p4);
+extern void MyParamText(const char *p1, const char *p2, const char *p3, const char *p4);
 extern void BeginHexBin(HeaderDHandle hdh);
 extern void EndHexBin(void);
-bool BeginAbomination(PStr name, HeaderDHandle hdh);
-short SaveAbomination(UPtr text, long size);
-short ClearAbomination(void);
-bool ConvertHexBin(short refN, UPtr buf, long *size, POPLineType lineType,
-                   long estSize);
-bool ConvertUUSingle(short refN, UPtr buf, long *size, POPLineType lineType,
-                     long estSize, MIMEMapPtr hintMM, HeaderDHandle hdh);
 /* ZapSettingsResourceMainThread_ - don't redeclare, it's a macro */
 /* Progress functions are in progress.h - don't redeclare them */
-OSErr RecordTransAttachments(const char *path);
-extern void FixURLString(PStr url);
+int RecordTransAttachments(const char *path);
+extern void FixURLString(char *url);
 /* URLEscape - don't declare, it's defined elsewhere or is a macro */
 
 /* Missing constants */
@@ -184,12 +173,12 @@ extern void FixURLString(PStr url);
 #define kGenericFolderIcon 'fldr'
 
 /* SASL function stubs - not yet implemented */
-static inline int SASLFind(PStr service, PStr token, int mech) { return 0; }
-static inline int SASLDo(PStr service, int mech, short rounds, long *state,
+static inline int SASLFind(char * service, char * token, int mech) { return 0; }
+static inline int SASLDo(char * service, int mech, short rounds, long *state,
                          void *chalAcc, void *respAcc) {
   return -1;
 }
-static inline void SASLDone(PStr service, int mech, short rounds, long *state,
+static inline void SASLDone(char * service, int mech, short rounds, long *state,
                             int code){}
 
 /* min macro if not defined */
@@ -234,7 +223,7 @@ They access the main thread's Settings file (not the background thread's copy.)
   ((size) == 2 && (buffer)[0] == '.' && (buffer)[1] == '\015')
 
 /************************************************************************
- * POPDHandle helper functions (replaces Mac Handle operations)
+ * POPDHandle helper functions (replaces Mac void *operations)
  ************************************************************************/
 POPDHandle POPDNew(int count) {
   POPDHandle h = (POPDHandle)malloc(sizeof(POPDArray));
@@ -320,7 +309,7 @@ void GrowBuf_Free(GrowBuf *buf) {
  * private routines
  ************************************************************************/
 void POPDelDup(POPDHandle popDH);
-OSErr POPPreFetch(TransStream stream, POPDHandle popDH, short message,
+int POPPreFetch(TransStream stream, POPDHandle popDH, short message,
                   bool *capabilities);
 int POPGetReplyLo(TransStream stream, short cmd, unsigned char *buffer,
                   long *size, AccuPtr resAcc);
@@ -348,39 +337,39 @@ BoundaryType ReadPlainBody(TransStream stream, short refN, char *buf, long bSize
                           long estSize);
 short SplitMessage(short refN, long hStart, long hEnd, long msgEnd);
 void DisposePOPD(POPDHandle *popDH);
-OSErr BuildPOPD(TransStream stream, POPDHandle *popDH, short count,
+int BuildPOPD(TransStream stream, POPDHandle *popDH, short count,
                 XferFlags *flags, bool *capabilities);
 void FillPOPD(POPDPtr pdp, HeaderDHandle hdh);
 short CountFetch(POPDHandle popDH);
-PStr HeaderMsgId(HeaderDHandle hdh, PStr msgId);
+char * HeaderMsgId(HeaderDHandle hdh, char * msgId);
 uint32_t FakeMIDHash(HeaderDHandle hdh);
 void SetFetchDel(POPDHandle popDH, short from, short to, bool fetch,
                  bool delete);
 void SetFetched(POPDHandle popDH, short from, short to);
 void SetBeforeAfter(POPDHandle popDH, uint32_t gmt, short *after,
                     short *before);
-OSErr POPMsgSize(short messageNumber, long *msgsize);
+int POPMsgSize(short messageNumber, long *msgsize);
 short FindExistSpot(POPDHandle popDH, uint32_t hash);
-OSErr DeletePOPMessage(TransStream stream, short number, long uidHash);
-OSErr FillWithUidl(TransStream stream, POPDHandle popDH);
-OSErr FillWithTop(TransStream stream, POPDHandle new, POPDHandle old);
-OSErr FillSizesWithList(TransStream stream, POPDHandle popDH);
+int DeletePOPMessage(TransStream stream, short number, long uidHash);
+int FillWithUidl(TransStream stream, POPDHandle popDH);
+int FillWithTop(TransStream stream, POPDHandle new, POPDHandle old);
+int FillSizesWithList(TransStream stream, POPDHandle popDH);
 short FindUndelete(POPDHandle popDH, uint32_t gmt, uint32_t hash);
-OSErr FillPOPDFromServer(TransStream stream, POPDHandle popDH, short spot);
+int FillPOPDFromServer(TransStream stream, POPDHandle popDH, short spot);
 
-OSErr InitKerberos();
-OSErr KerbGetTicket(PStr popName, PStr host, PStr realm, PStr version,
+int InitKerberos();
+int KerbGetTicket(char * popName, char * host, char * realm, char * version,
                     unsigned char **ticket);
-OSErr SendPOPTicket(TransStream stream);
-void LogPOPD(PStr intro, POPDHandle newDH);
-void Log1POPD(PStr intro, PStr which, POPDHandle popDH);
+int SendPOPTicket(TransStream stream);
+void LogPOPD(char * intro, POPDHandle newDH);
+void Log1POPD(char * intro, char * which, POPDHandle popDH);
 bool NoClearPass(bool *capabilities, unsigned char *response, short len);
 void PrunePOPD(OSType listType, short listId, POPDHandle onServer);
-OSErr ReapCmds(TransStream stream, short cmd);
+int ReapCmds(TransStream stream, short cmd);
 void PopCapabilities(TransStream stream, bool *capabilities, SASLEnum *mechPtr);
 int POPSasl(TransStream stream, bool *capabilities, SASLEnum mech,
-            unsigned char *buffer, long *size);
-OSErr FixLongFilename(HeaderDHandle hdh, const char *path);
+                   char *buffer, long *size);
+int FixLongFilename(HeaderDHandle hdh, const char *path);
 unsigned char *Un2184Append(unsigned char *dest, short sizeofDest,
                             unsigned char *orig, unsigned char *charset,
                             bool isEncoded);
@@ -454,7 +443,7 @@ short GetMyMail(TransStream stream, bool quietly, short *gotSome,
 #endif
       if (capabilities[0] && !capabilities[pcapaUIDL]) {
         CurPers->noUIDL = true;
-        Log(LOG_LMOS, (UPtr)"CAPA says no UIDL");
+        Log(LOG_LMOS, (unsigned char *)"CAPA says no UIDL");
       } else {
         CurPers->noUIDL = false; /* CAPA found UIDL, or no CAPA — try UIDL */
       }
@@ -594,7 +583,7 @@ short GetMyMail(TransStream stream, bool quietly, short *gotSome,
   err = Prr;
   EndPOP(stream);
 
-  ZapHandle(POPCmds);
+  free(POPCmds);
   return (err);
 }
 
@@ -606,7 +595,7 @@ TOCType * RenameInTemp(TOCType * tocH) {
   FSSpec deliverSpec, inSpec, deliverFolder;
   FSSpec deliverTOCSpec, tocSpec;
   long maxFileNum = 0;
-  OSErr err;
+  int err;
 
   g_print("RenameInTemp: tocH=%p count=%d\n", (void*)tocH, tocH ? tocH->count : -1);
 
@@ -670,7 +659,7 @@ TOCType * RenameInTemp(TOCType * tocH) {
       if ((err = SpecMoveAndRename(&tocSpec, &deliverTOCSpec))) {
         Aprintf(OK_ALRT, Note, THREAD_DELIVER_CREATE_ERR, deliverTOCSpec.name,
                 err);
-        FSpDelete(&tocSpec); // hell with it.  We can rebuild it
+        unlink(tocSpec.path); // hell with it.  We can rebuild it
       }
     }
 
@@ -693,12 +682,12 @@ TOCType * RenameInTemp(TOCType * tocH) {
 /**********************************************************************
  * POPPreFetch
  **********************************************************************/
-OSErr POPPreFetch(TransStream stream, POPDHandle popDH, short message,
+int POPPreFetch(TransStream stream, POPDHandle popDH, short message,
                   bool *capabilities) {
   short messageCount = popDH->count;
   unsigned char args[64];
   unsigned char top[16];
-  OSErr err = noErr;
+  int err = noErr;
   short cmd;
 
   for (; message < messageCount; message++)
@@ -734,7 +723,7 @@ int POPrror(void) { return (Prr); }
 /************************************************************************
  * StartPOP - get connected to the POP server
  ************************************************************************/
-int StartPOP(TransStream stream, unsigned char *serverName, long port) {
+int StartPOP(TransStream stream, char *serverName, long port) {
   PopConnected = False;
   g_print("StartPOP: connecting to '%s' port=%ld timeout=%ld\n", (const char *)serverName, port, GetRLong(OPEN_TIMEOUT));
   fflush(stdout);
@@ -763,7 +752,7 @@ int EndPOP(TransStream stream) {
 /************************************************************************
  * POPIntroductions - sniff the POP server's bottom, and vice-versa
  ************************************************************************/
-int POPIntroductions(TransStream stream, PStr user, bool *capabilities) {
+int POPIntroductions(TransStream stream, char * user, bool *capabilities) {
   char buffer[256];
   char args[256];
   long size;
@@ -810,7 +799,7 @@ int POPIntroductions(TransStream stream, PStr user, bool *capabilities) {
         goto done;
       }
     } else {
-      StringPtr errStr;
+      char * errStr;
 
       errStr = buffer;
       size = sizeof(buffer) - 1;
@@ -852,7 +841,7 @@ int POPIntroductions(TransStream stream, PStr user, bool *capabilities) {
     Prr = POPSasl(stream, capabilities, mech, buffer, &size);
   } else {
     if (useAPOP) {
-      PCopy(args, CurPers->password);
+      g_strlcpy((char *)(args), (char *)(CurPers->password), sizeof(args));
       useAPOP = GenDigest(buffer, args, digest);
     }
 
@@ -861,7 +850,7 @@ int POPIntroductions(TransStream stream, PStr user, bool *capabilities) {
       if (PrefIsSet(PREF_POP_SENDHOST))
         GetPOPPref(args);
       else
-        PCopy(args, user);
+        g_strlcpy((char *)(args), (char *)(user), sizeof(args));
       PCatC(args, ' ');
       PCat(args, digest);
       Prr = POPCmdGetReply(stream, kpcApop, args, buffer, &size);
@@ -869,7 +858,7 @@ int POPIntroductions(TransStream stream, PStr user, bool *capabilities) {
       if (PrefIsSet(PREF_POP_SENDHOST))
         GetPOPPref(args);
       else
-        PCopy(args, user);
+        g_strlcpy((char *)(args), (char *)(user), sizeof(args));
       size = sizeof(buffer) - 1;
       Prr = POPCmdGetReply(stream, kpcUser, args, buffer, &size);
       if (Prr || *buffer != '+') {
@@ -882,7 +871,7 @@ int POPIntroductions(TransStream stream, PStr user, bool *capabilities) {
       if (kerb4)
         GetRString(args, KERBEROS_FAKE_PASS);
       else
-        PCopy(args, CurPers->password);
+        g_strlcpy((char *)(args), (char *)(CurPers->password), sizeof(args));
 
       size = sizeof(buffer) - 1;
       Prr = POPCmdGetReply(stream, kpcPass, args, buffer, &size);
@@ -969,7 +958,7 @@ void PopCapabilities(TransStream stream, bool *capabilities,
  * POPSasl - do SASL for POP
  **********************************************************************/
 int POPSasl(TransStream stream, bool *capabilities, SASLEnum mech,
-            unsigned char *buffer, long *size) {
+                   char *buffer, long *size) {
   Accumulator chalAcc, respAcc;
   short rounds = 0;
   long bSize = *size;
@@ -1030,26 +1019,8 @@ int POPSasl(TransStream stream, bool *capabilities, SASLEnum mech,
   // Let the sasl mechanism know how it all came out
   SASLDone(service, mech, rounds, &state, smtpEquivCode);
 
-  do {
-    void **_azh = (chalAcc).data;
-    if (_azh) {
-      if (*_azh)
-        free(*_azh);
-      free(_azh);
-    }
-    (chalAcc).data = NULL;
-    (chalAcc).offset = (chalAcc).size = 0;
-  } while (0);
-  do {
-    void **_azh = (respAcc).data;
-    if (_azh) {
-      if (*_azh)
-        free(*_azh);
-      free(_azh);
-    }
-    (respAcc).data = NULL;
-    (respAcc).offset = (respAcc).size = 0;
-  } while (0);
+  free(chalAcc.data); chalAcc.data = NULL; chalAcc.offset = chalAcc.size = 0;
+  free(respAcc.data); respAcc.data = NULL; respAcc.offset = respAcc.size = 0;
 
   return Prr;
 }
@@ -1113,7 +1084,7 @@ int POPCmdLo(TransStream stream, short cmd, unsigned char *args,
   /*
    * reap outstanding commands
    */
-  if (!CanPipeline || POPCmds && (*POPCmds)->elCount >= 15) {
+  if (!CanPipeline || POPCmds && POPCmds->elCount >= 15) {
     err = ReapCmds(stream, -1);
     if (err == fnfErr)
       err = noErr;
@@ -1148,7 +1119,7 @@ int POPCmdLo(TransStream stream, short cmd, unsigned char *args,
     AccuAddStr(argsAcc, NewLine);
 
     // send the data
-    err = SendTrans(stream, *argsAcc->data, argsAcc->offset, NULL);
+    err = SendTrans(stream, argsAcc->data, argsAcc->offset, NULL);
 
     // erase what we did to the accumulator
     argsAcc->offset -= strlen((const char *)NewLine);
@@ -1164,16 +1135,16 @@ int POPCmdLo(TransStream stream, short cmd, unsigned char *args,
  * ReapCmds - reap commands until the named command is at the top
  *            of the stack, ready to be handled
  **********************************************************************/
-OSErr ReapCmds(TransStream stream, short cmd) {
+int ReapCmds(TransStream stream, short cmd) {
   unsigned char buffer[256];
   long size;
-  OSErr err = noErr;
+  int err = noErr;
   short thisCmd = 0;
 
   if (!POPCmds)
     return (noErr);
 
-  while ((*POPCmds)->elCount) {
+  while (POPCmds->elCount) {
     if (cmd != -1) {
       StackTop(&thisCmd, POPCmds);
       if (cmd == thisCmd)
@@ -1205,8 +1176,8 @@ OSErr ReapCmds(TransStream stream, short cmd) {
 /************************************************************************
  * POPCmdGetReply - send a POP command and get a reply
  ************************************************************************/
-int POPCmdGetReply(TransStream stream, short cmd, unsigned char *args,
-                   unsigned char *buffer, long *size) {
+int POPCmdGetReply(TransStream stream, short cmd, char *args,
+                   char *buffer, long *size) {
   if (cmd >= 0 && (Prr = POPCmd(stream, cmd, args)))
     return (Prr); /* error in transmission */
 
@@ -1374,7 +1345,7 @@ int POPGetMessage(TransStream stream, long messageNumber, short *gotSome,
 /************************************************************************
  * DeletePOPMessage - delete a message from the POP server
  ************************************************************************/
-OSErr DeletePOPMessage(TransStream stream, short number, long uidHash) {
+int DeletePOPMessage(TransStream stream, short number, long uidHash) {
   unsigned char buffer[256];
   unsigned char args[64];
   long size;
@@ -1390,7 +1361,7 @@ OSErr DeletePOPMessage(TransStream stream, short number, long uidHash) {
 /************************************************************************
  * FillSizesWithList - fill message sizes with the LIST command
  ************************************************************************/
-OSErr FillSizesWithList(TransStream stream, POPDHandle popDH) {
+int FillSizesWithList(TransStream stream, POPDHandle popDH) {
   unsigned char buffer[128];
   long size = sizeof(buffer);
   short msgNum;
@@ -1444,7 +1415,7 @@ OSErr FillSizesWithList(TransStream stream, POPDHandle popDH) {
 /************************************************************************
  * POPCmdError - report an error for an POP command
  ************************************************************************/
-int POPCmdError(short cmd, unsigned char *args, unsigned char *message) {
+int POPCmdError(short cmd, char *args, char *message) {
   unsigned char theCmd[256];
   unsigned char theError[256];
   int err;
@@ -1467,7 +1438,7 @@ int POPCmdError(short cmd, unsigned char *args, unsigned char *message) {
     return 1;
   }
 
-  MyParamText(theCmd, theError, (UPtr)"POP", (UPtr)"");
+  MyParamText(theCmd, theError, (unsigned char *)"POP", (unsigned char *)"");
   err = ReallyDoAnAlert(PROTO_ERR_ALRT, Note);
   return (err);
 }
@@ -1495,9 +1466,9 @@ int FetchMessageTextLo(TransStream stream, long estSize, POPDPtr pdp,
   short count = 0, part;
   HeaderDHandle hdh = NULL;
   LineIOD lid;
-  OSErr err;
+  int err;
   FSSpec spec;
-  extern OSErr ImportErr;
+  extern int ImportErr;
   unsigned char savedSub[64];
 
   /*
@@ -1523,7 +1494,7 @@ int FetchMessageTextLo(TransStream stream, long estSize, POPDPtr pdp,
     return (0);
   }
   spec = GetMailboxSpec(tocH, -1);
-  PCopy(name, spec.name);
+  g_strlcpy((char *)(name), (char *)(spec.name), sizeof(name));
 
   // if we're adding IMAP messages or importing mail, we've taken care of
   // opening the mailbox already
@@ -1585,7 +1556,7 @@ done:
   ReadSum(NULL, False, &lid, True);
   for (part = 1; !(err = ReadSum(&sum, False, &lid, True)); part++) {
     if (!*savedSub)
-      PSCopy(savedSub, sum.subj);
+      g_strlcpy((char *)(savedSub), (char *)(sum.subj), sizeof(savedSub));
     if (part == 1 && pdp) {
       FillPOPD(pdp, hdh);
       DBNoteUIDHash(sum.uidHash, pdp->uidHash);
@@ -1594,13 +1565,13 @@ done:
       DBNoteUIDHash(sum.uidHash, kNoMessageId);
       sum.uidHash = kNoMessageId;
     }
-    if (!(*hdh)->isMIME) {
+    if (!hdh->isMIME) {
       TransLitString(sum.from);
       TransLitString(sum.subj);
     } else
       sum.tableId = ViewTable(hdh);
     if (part == 1)
-      sum.msgIdHash = (*hdh)->msgIdHash;
+      sum.msgIdHash = hdh->msgIdHash;
     if (!ValidHash(sum.uidHash))
       sum.uidHash = sum.msgIdHash;
 #ifdef BAD_ENCODING_HANDLING
@@ -1633,7 +1604,7 @@ done:
       sum.opts |= OPT_CHARSET;
     else
       sum.opts &= ~OPT_CHARSET;
-    if ((*hdh)->hasMDN)
+    if (hdh->hasMDN)
       sum.opts |= OPT_RECEIPT;
     if (LastAttPath)
       sum.flags |= FLAG_HAS_ATT;
@@ -1658,9 +1629,9 @@ done:
       newSum.msgIdHash = sum.msgIdHash;
       if (!newSum.priority)
         newSum.priority = sum.priority;
-      PSCopy(newSum.subj, sum.subj);
+      g_strlcpy((char *)(newSum.subj), (char *)(sum.subj), sizeof(newSum.subj));
       if (!(newSum.opts & OPT_IMAP_SENT))
-        PSCopy(newSum.from, sum.from);
+        g_strlcpy((char *)(newSum.from), (char *)(sum.from), sizeof(newSum.from));
       RemoveUTF8FromSum(&newSum);
       tocH->sums[messageNumber] = newSum;
     } else if (!SaveMessageSum(&sum, &tocH)) {
@@ -1680,7 +1651,7 @@ done:
 #ifdef DEBUG
   if (ETLDeleteRequest)
     ComposeLogS(LOG_PLUG, NULL,
-                (UPtr)"A plugin has requested the deletion of '%p' in '%p'",
+                (unsigned char *)"A plugin has requested the deletion of '%p' in '%p'",
                 savedSub, spec.name);
 #endif
 
@@ -1777,31 +1748,31 @@ reRead:
   }
 
   if (fromSize) {
-    (*hdh)->diskStart -=
+    hdh->diskStart -=
         fromSize; /* count the envelope as part of the header */
     fromSize = 0; /* in case we pass this way again. */
   } else
-    (*hdh)->diskStart = oldStart;
+    hdh->diskStart = oldStart;
 
   if (!Prr) {
     /*
      * I've wanted to do this for years.  say who it's from!
      */
-    PCopy(buf, (*hdh)->who);
+    g_strlcpy((char *)buf, (char *)hdh->who, sizeof(buf));
     { size_t _l = strlen((const char *)buf); if (_l > 31) buf[31] = '\0'; } // not too long here...
     PCatC(buf, ',');
     PCatC(buf, ' ');
-    PSCat(buf, (*hdh)->subj);
-    if (!(*hdh)->isMIME)
+    g_strlcat((char *)buf, (char *)hdh->subj, sizeof(buf));
+    if (!hdh->isMIME)
       TransLitString(buf);
     ProgressMessage(kpMessage, buf);
 
     // regenerate full info for comment
-    PCopy(buf, (*hdh)->who);
+    g_strlcpy((char *)buf, (char *)hdh->who, sizeof(buf));
     PCatC(buf, ',');
     PCatC(buf, ' ');
-    PSCat(buf, (*hdh)->subj);
-    PSCopy((*hdh)->summaryInfo, buf);
+    g_strlcat((char *)buf, (char *)hdh->subj, sizeof(buf));
+    g_strlcpy((char *)hdh->summaryInfo, (char *)buf, 128);
 
     /*
      * now, go save the body
@@ -1825,10 +1796,10 @@ reRead:
      * darn encapsulated stuf
      */
     if (Prr == '82') {
-      oldStart = (*hdh)->diskStart;
+      oldStart = hdh->diskStart;
       ZapHeaderDesc(hdh);
       hdh = NewHeaderDesc(NULL);
-      PSCopy((*hdh)->summaryInfo, buf);
+      g_strlcpy((char *)hdh->summaryInfo, (char *)buf, 128);
       Prr = noErr;
       goto reRead;
     }
@@ -1847,7 +1818,7 @@ reRead:
       if (elapsed_us < 1) elapsed_us = 1;
       long elapsed_ms = (long)(elapsed_us / 1000);
       long rate_10 = (estSize * 10000L) / (elapsed_ms * 1024); /* 10ths of KBps */
-      ComposeLogS(LOG_TPUT, NULL, (UPtr)"%dK in %d.%d sec; %d.%d KBps",
+      ComposeLogS(LOG_TPUT, NULL, (unsigned char *)"%dK in %d.%d sec; %d.%d KBps",
                   estSize / 1024, elapsed_ms / 1000, (elapsed_ms / 100) % 10,
                   rate_10 / 10, rate_10 % 10);
     }
@@ -1863,11 +1834,11 @@ reRead:
       TruncOpenFile(refN, end);
 #ifdef DEBUG ////////////////////////////
       if (BUG15)
-        Dprintf("%d e %d ds %d st %d;sc;g", Prr, end, (*hdh)->diskStart,
+        Dprintf("%d e %d ds %d st %d;sc;g", Prr, end, hdh->diskStart,
                 GetRLong(SPLIT_THRESH));
 #endif // DEBUG //////////////////////////
-      if (!isIMAP && (end - (*hdh)->diskStart > GetRLong(SPLIT_THRESH)))
-        count = SplitMessage(refN, (*hdh)->diskStart, (*hdh)->diskEnd, end);
+      if (!isIMAP && (end - hdh->diskStart > GetRLong(SPLIT_THRESH)))
+        count = SplitMessage(refN, hdh->diskStart, hdh->diskEnd, end);
       else
         count = 1;
 #ifdef DEBUG ////////////////////////////
@@ -1887,7 +1858,7 @@ done:
   if (Prr)
     return (0);
   return (estSize < 0 && GetPrefLong(PREF_POP_MODE) == popRStatus &&
-                  *(*hdh)->status
+                  *hdh->status
               ? 0
               : count);
 }
@@ -1967,7 +1938,7 @@ short ReadEitherBody(TransStream stream, short refN, HeaderDHandle hdh,
  * RoomForMessage - make sure there's room for a message on both the
  *  attachments folder volume and the in box volume
  **********************************************************************/
-OSErr RoomForMessage(long msgsize) {
+int RoomForMessage(long msgsize) {
   /* On POSIX, VolumeMargin checks statvfs() on the working directory.
    * Since all mail data lives on the same filesystem, one check suffices. */
   return VolumeMargin(0, msgsize);
@@ -2250,8 +2221,8 @@ bool HasBeenRead(TransStream stream, short msgNum, short count) {
         }
       }
     }
-  ComposeLogS(LOG_LMOS, NULL, (UPtr)"HasBeenRead: %d sf %d un %d %p", msgNum,
-              statFound, !unread, statFound && !unread ? (UPtr)"READ" : (UPtr)"UNREAD");
+  ComposeLogS(LOG_LMOS, NULL, (unsigned char *)"HasBeenRead: %d sf %d un %d %p", msgNum,
+              statFound, !unread, statFound && !unread ? (unsigned char *)"READ" : (unsigned char *)"UNREAD");
   return (statFound && !unread);
 }
 
@@ -2283,15 +2254,15 @@ void StampPartNumber(MSumPtr sum, short part, short count) {
 /************************************************************************
  * RecordAttachment - note that we've attached a file
  ************************************************************************/
-OSErr RecordAttachment(const char *path, HeaderDHandle hdh) {
+int RecordAttachment(const char *path, HeaderDHandle hdh) {
   unsigned char theMessage[256];
-  OSErr err;
+  int err;
   bool deleted = false;
 
   /* Registration file check removed — Mac file types don't exist on POSIX */
 
   // Long filename?
-  if (hdh && !(*hdh)->relatedPart)
+  if (hdh && !hdh->relatedPart)
     FixLongFilename(hdh, path);
 
   /*
@@ -2307,7 +2278,7 @@ OSErr RecordAttachment(const char *path, HeaderDHandle hdh) {
     return noErr;
 
   if (!deleted) {
-    if (hdh && (*hdh)->relatedPart)
+    if (hdh && hdh->relatedPart)
       RelatedNote(path, hdh, (const char *)theMessage);
     else
       AttachNoteLo(path, (const char *)theMessage);
@@ -2340,7 +2311,7 @@ OSErr RecordAttachment(const char *path, HeaderDHandle hdh) {
   /*
    * is there a date?
    */
-  if (hdh && !AAFetchResData((*hdh)->contentAttributes,
+  if (hdh && !AAFetchResData(hdh->contentAttributes,
                              AttributeStrn + aModDate, theMessage)) {
     uint32_t mod;
     long zone;
@@ -2358,7 +2329,7 @@ OSErr RecordAttachment(const char *path, HeaderDHandle hdh) {
 
   //	record for attachment received statistics
   UpdateNumStatWithTime(kStatReceivedAttach, 1,
-                        hdh ? (*hdh)->gmtSecs + ZoneSecs() : LocalDateTime());
+                        hdh ? hdh->gmtSecs + ZoneSecs() : LocalDateTime());
 
   return (noErr);
 }
@@ -2368,7 +2339,7 @@ OSErr RecordAttachment(const char *path, HeaderDHandle hdh) {
  * On POSIX, filenames can be up to 255 chars natively, so we just
  * extract the intended name from MIME headers and rename.
  ************************************************************************/
-OSErr FixLongFilename(HeaderDHandle hdh, const char *path) {
+int FixLongFilename(HeaderDHandle hdh, const char *path) {
   unsigned char longFilename[256];
   unsigned char filenameAtt[32];
   unsigned char part[256];
@@ -2377,27 +2348,27 @@ OSErr FixLongFilename(HeaderDHandle hdh, const char *path) {
   longFilename[0] = charset[0] = '\0';
 
   /* is there a filename at all? */
-  if (AAFetchData((*hdh)->contentAttributes,
+  if (AAFetchData(hdh->contentAttributes,
                   GetRString(filenameAtt, AttributeStrn + aFilename),
                   longFilename)) {
     /* no "filename".  Is there a "filename*"? */
     PCatC(filenameAtt, '*');
-    if (!AAFetchData((*hdh)->contentAttributes, filenameAtt, part))
+    if (!AAFetchData(hdh->contentAttributes, filenameAtt, part))
       Un2184Append(longFilename, sizeof(longFilename), part, charset, true);
     else {
       /* no "filename*" — try numbered parts */
       short i;
       for (i = 0;; i++) {
         if (!AAFetchData(
-                (*hdh)->contentAttributes,
+                hdh->contentAttributes,
                 ComposeRString(filenameAtt, AttributeStrn + aFilename, i),
                 part)) {
           if (i == 0)
             GetRString(charset, UNSPECIFIED_CHARSET);
           Un2184Append(longFilename, sizeof(longFilename), part, charset,
                        false);
-        } else if (!AAFetchData((*hdh)->contentAttributes,
-                                PCat(filenameAtt, (UPtr)"*"), part))
+        } else if (!AAFetchData(hdh->contentAttributes,
+                                PCat(filenameAtt, (unsigned char *)"*"), part))
           Un2184Append(longFilename, sizeof(longFilename), part, charset, true);
         else
           break;
@@ -2406,7 +2377,7 @@ OSErr FixLongFilename(HeaderDHandle hdh, const char *path) {
   }
 
   /* check for applesingle leading '%' */
-  if (EqualStrRes((*hdh)->contentSubType, MIME_APPLEFILE))
+  if (EqualStrRes(hdh->contentSubType, MIME_APPLEFILE))
     if (longFilename[0] == '%' && strlen((const char *)longFilename) > 1)
       memmove(longFilename, longFilename + 1, strlen((const char *)longFilename));
 
@@ -2605,8 +2576,8 @@ void RelatedNote(const char *path, HeaderDHandle hdh, const char *theMessage) {
 
   /* theMessage is output parameter */
   ComposeRString((unsigned char *)theMessage, RELATED_FMT, MIME_RELATED,
-                 folderName, URLEscape(quoteName), fid, (*hdh)->cidHash,
-                 (*hdh)->relURLHash, (*hdh)->absURLHash);
+                 folderName, URLEscape(quoteName), fid, hdh->cidHash,
+                 hdh->relURLHash, hdh->absURLHash);
 }
 
 /************************************************************************
@@ -2622,7 +2593,7 @@ void AddAttachInfo(short theIndex, long result) {
 /************************************************************************
  * WriteAttachNote - write the attachment note
  ************************************************************************/
-OSErr WriteAttachNote(short refN) {
+int WriteAttachNote(short refN) {
   long size;
   short err = noErr;
 
@@ -2645,7 +2616,7 @@ short POPLast(TransStream stream, short *lastRead) {
 
   if (Prr = POPCmdGetReply(stream, kpcLast, NULL, buffer, &size))
     return (Prr);
-  ComposeLogS(LOG_LMOS, NULL, (UPtr)"Last: %s", buffer);
+  ComposeLogS(LOG_LMOS, NULL, (unsigned char *)"Last: %s", buffer);
   if (*buffer != '+')
     Prr = *buffer;
   else {
@@ -3015,7 +2986,7 @@ void FillPOPD(POPDPtr pdp, HeaderDHandle hdh) {
  * -- HERE BE DRAGONS --
  *  be careful with this code.  It does things in a specific order for a reason
  ************************************************************************/
-OSErr BuildPOPD(TransStream stream, POPDHandle *popDH, short count,
+int BuildPOPD(TransStream stream, POPDHandle *popDH, short count,
                 XferFlags *flags, bool *capabilities) {
   POPDesc new, old;
   short i;
@@ -3067,7 +3038,7 @@ OSErr BuildPOPD(TransStream stream, POPDHandle *popDH, short count,
   }
 
   if (LogLevel & LOG_LMOS)
-    Log1POPD((UPtr)"BuildPOPD", (UPtr)"Old", oldDH);
+    Log1POPD((unsigned char *)"BuildPOPD", (unsigned char *)"Old", oldDH);
 
   if (CurPers->noUIDL && (Prr = FillWithTop(stream, *popDH, oldDH)))
     return (Prr);
@@ -3279,7 +3250,7 @@ OSErr BuildPOPD(TransStream stream, POPDHandle *popDH, short count,
   POPDelDup(*popDH);
 
   if (LogLevel & LOG_LMOS)
-    LogPOPD((UPtr)"BUILT", *popDH);
+    LogPOPD((unsigned char *)"BUILT", *popDH);
 
   return (noErr);
 }
@@ -3311,7 +3282,7 @@ void POPDelDup(POPDHandle popDH) {
 /************************************************************************
  * FillWithTop - fill up the descriptor without uidl.  Not fun.
  ************************************************************************/
-OSErr FillWithTop(TransStream stream, POPDHandle new, POPDHandle old) {
+int FillWithTop(TransStream stream, POPDHandle new, POPDHandle old) {
   short oldCount;
   short newCount = new->count;
   short oldSpot, newSpot;
@@ -3351,7 +3322,7 @@ OSErr FillWithTop(TransStream stream, POPDHandle new, POPDHandle old) {
          * ok, now we make the big leap of faith.  Assume that since we found
          * this one where we expected it, the others will be there, too
          */
-        ComposeLogS(LOG_LMOS, NULL, (UPtr)"Copy old to %d", oldUndelCount);
+        ComposeLogS(LOG_LMOS, NULL, (unsigned char *)"Copy old to %d", oldUndelCount);
         for (newSpot = oldSpot = 0; oldSpot < oldCount; oldSpot++) {
           if (!old->data[oldSpot].deleted) {
             new->data[newSpot].uidHash = old->data[oldSpot].uidHash;
@@ -3384,7 +3355,7 @@ OSErr FillWithTop(TransStream stream, POPDHandle new, POPDHandle old) {
 /************************************************************************
  * FillPOPDFromServer - fille the POP Descriptor block by asking the server
  ************************************************************************/
-OSErr FillPOPDFromServer(TransStream stream, POPDHandle popDH, short spot) {
+int FillPOPDFromServer(TransStream stream, POPDHandle popDH, short spot) {
   long msgSize;
   unsigned char scratch[256];
   HeaderDHandle hdh = NULL;
@@ -3434,7 +3405,7 @@ OSErr FillPOPDFromServer(TransStream stream, POPDHandle popDH, short spot) {
    * fill the descriptor
    */
   FillPOPD(&pd, hdh);
-  ComposeLogS(LOG_LMOS, NULL, (UPtr)"Fill %d: hash %x gmt %x.", spot, pd.uidHash,
+  ComposeLogS(LOG_LMOS, NULL, (unsigned char *)"Fill %d: hash %x gmt %x.", spot, pd.uidHash,
               pd.receivedGMT);
 
   popDH->data[spot] = pd;
@@ -3481,7 +3452,7 @@ short FindUndelete(POPDHandle popDH, uint32_t gmt, uint32_t hash) {
 void DisposePOPD(POPDHandle *popDH) {
   if (*popDH) {
     if (LogLevel & LOG_LMOS)
-      LogPOPD((UPtr)"AFTER", *popDH);
+      LogPOPD((unsigned char *)"AFTER", *popDH);
 
     /* Resource-based POPD persistence removed (was Mac-specific).
      * TODO: Implement GKeyFile-based POPD persistence if needed. */
@@ -3508,10 +3479,10 @@ void FixMessServerAreas(void) {
 /************************************************************************
  * HeaderMsgId - nab the message-id
  ************************************************************************/
-PStr HeaderMsgId(HeaderDHandle hdh, PStr msgId) {
+char * HeaderMsgId(HeaderDHandle hdh, char * msgId) {
   unsigned char scratch[256];
 
-  if (!AAFetchResData((*hdh)->funFields, InterestHeadStrn + hMessageId,
+  if (!AAFetchResData(hdh->funFields, InterestHeadStrn + hMessageId,
                       scratch))
     PCopyTrim(msgId, scratch, 128);
   else
@@ -3530,12 +3501,12 @@ uint32_t FakeMIDHash(HeaderDHandle hdh) {
    * and add them to our string one at a time
    */
   *scratch = 0;
-  AAFetchResData((*hdh)->funFields, InterestHeadStrn + hReceived, scratch);
+  AAFetchResData(hdh->funFields, InterestHeadStrn + hReceived, scratch);
   if (!*scratch)
-    AAFetchResData((*hdh)->funFields, InterestHeadStrn + hDate, scratch);
+    AAFetchResData(hdh->funFields, InterestHeadStrn + hDate, scratch);
 
-  PSCat(scratch, (*hdh)->who);
-  PSCat(scratch, (*hdh)->subj);
+  g_strlcat(scratch, (char *)hdh->who, sizeof(scratch));
+  g_strlcat(scratch, (char *)hdh->subj, sizeof(scratch));
 
   return (Hash(scratch));
 }
@@ -3560,7 +3531,7 @@ short CountFetch(POPDHandle popDH) {
 /************************************************************************
  * AddIdToPOPD - add a message to a POPD list
  ************************************************************************/
-OSErr AddIdToPOPD(OSType theType, short listId, uint32_t uidHash, bool dupOk) {
+int AddIdToPOPD(OSType theType, short listId, uint32_t uidHash, bool dupOk) {
   POPDHandle resH;
   short n;
   short i;
@@ -3633,8 +3604,8 @@ void PrunePOPD(OSType theType, short listId, POPDHandle onServer) {
         break;
     }
     if (i == sCount) {
-      ComposeLogS(LOG_LMOS, NULL, (UPtr)"Prune %p: %d %x",
-                  listId % 4 == DELETE_ID % 4 ? (UPtr)"DELETE" : (UPtr)"FETCH", n,
+      ComposeLogS(LOG_LMOS, NULL, (unsigned char *)"Prune %p: %d %x",
+                  listId % 4 == DELETE_ID % 4 ? (unsigned char *)"DELETE" : (unsigned char *)"FETCH", n,
                   uidHash);
       RemIdFromPOPD(theType, listId, uidHash);
     }
@@ -3667,7 +3638,7 @@ bool IdIsOnPOPD(OSType listType, short listId, uint32_t uidHash) {
 /************************************************************************
  * FillWithUidl - fill the descriptor using the uidl command
  ************************************************************************/
-OSErr FillWithUidl(TransStream stream, POPDHandle popDH) {
+int FillWithUidl(TransStream stream, POPDHandle popDH) {
   unsigned char buffer[256];
   long size = sizeof(buffer);
   unsigned char *spot, *end;
@@ -3693,7 +3664,7 @@ OSErr FillWithUidl(TransStream stream, POPDHandle popDH) {
   fflush(stdout);
   if (*buffer == '-') {
     buffer[size] = 0;
-    ComposeLogS(LOG_LMOS, NULL, (UPtr)"UIDL err: %s", buffer);
+    ComposeLogS(LOG_LMOS, NULL, (unsigned char *)"UIDL err: %s", buffer);
     CurPers->noUIDL = True;
     g_print("FillWithUidl: server doesn't support UIDL\n");
     fflush(stdout);
@@ -3718,7 +3689,7 @@ OSErr FillWithUidl(TransStream stream, POPDHandle popDH) {
 
 #ifdef DEBUG
       if (RunType != Production && ++i != msgNum)
-        AlertStr(OK_ALRT, Stop, (UPtr)"Bad UIDL!");
+        AlertStr(OK_ALRT, Stop, (unsigned char *)"Bad UIDL!");
 #endif
 
       end = buffer + size;
@@ -3736,7 +3707,7 @@ OSErr FillWithUidl(TransStream stream, POPDHandle popDH) {
         popDH->data[msgNum - 1].uidHash = uidHash;
         popDH->data[msgNum - 1].receivedGMT = GMTDateTime();
         g_print("FillWithUidl: msg %d uidl='%.*s' hash=%lu\n", msgNum, (int)(end-spot), spot, (unsigned long)uidHash);
-        ComposeLogS(LOG_LMOS, NULL, (UPtr)"UIDL %d \xC7%p\xC8 %x", msgNum, spot - 1,
+        ComposeLogS(LOG_LMOS, NULL, (unsigned char *)"UIDL %d \xC7%p\xC8 %x", msgNum, spot - 1,
                     uidHash);
       }
     }
@@ -3757,29 +3728,29 @@ OSErr FillWithUidl(TransStream stream, POPDHandle popDH) {
 /************************************************************************
  * LogPOPD - write the POPD's to the log file
  ************************************************************************/
-void LogPOPD(PStr intro, POPDHandle newDH) {
-  Log1POPD(intro, (UPtr)"Fetch", (void *)GetResource(CUR_POPD_TYPE, FETCH_ID));
-  Log1POPD(intro, (UPtr)"Delete", (void *)GetResource(CUR_POPD_TYPE, DELETE_ID));
-  Log1POPD(intro, (UPtr)"Old", (void *)GetResource(CUR_POPD_TYPE, POPD_ID));
-  Log(LOG_LMOS, (UPtr)"---");
-  Log1POPD(intro, (UPtr)"New", newDH);
+void LogPOPD(char * intro, POPDHandle newDH) {
+  Log1POPD(intro, (unsigned char *)"Fetch", (void *)GetResource(CUR_POPD_TYPE, FETCH_ID));
+  Log1POPD(intro, (unsigned char *)"Delete", (void *)GetResource(CUR_POPD_TYPE, DELETE_ID));
+  Log1POPD(intro, (unsigned char *)"Old", (void *)GetResource(CUR_POPD_TYPE, POPD_ID));
+  Log(LOG_LMOS, (unsigned char *)"---");
+  Log1POPD(intro, (unsigned char *)"New", newDH);
 }
 
 /************************************************************************
  * Log1POPD - write a POPD to the log file
  ************************************************************************/
-void Log1POPD(PStr intro, PStr which, POPDHandle popDH) {
+void Log1POPD(char * intro, char * which, POPDHandle popDH) {
   short i;
   short count;
 
   if (popDH == NULL || popDH->count == 0)
-    ComposeLogS(LOG_LMOS, NULL, (UPtr)"%p: %p: <empty>", intro, which);
+    ComposeLogS(LOG_LMOS, NULL, (unsigned char *)"%p: %p: <empty>", intro, which);
   else {
     count = popDH->count;
     for (i = 0; i < count; i++) {
       CycleBalls();
       ComposeLogS(
-          LOG_LMOS, NULL, (UPtr)"%p: %p: %d hash %x gmt %x %c%c %c%c %c%c %c%c",
+          LOG_LMOS, NULL, (unsigned char *)"%p: %p: %d hash %x gmt %x %c%c %c%c %c%c %c%c",
           intro, which, i + 1, popDH->data[i].uidHash, popDH->data[i].receivedGMT,
           popDH->data[i].retr ? 'F' : 'f', popDH->data[i].retred ? 'F' : 'f',
           popDH->data[i].stub ? 'S' : 's', popDH->data[i].stubbed ? 'S' : 's',
@@ -3792,7 +3763,7 @@ void Log1POPD(PStr intro, PStr which, POPDHandle popDH) {
 /**********************************************************************
  * KerbDestroy - destroy the user's current ticket
  **********************************************************************/
-OSErr KerbDestroy(void) {
+int KerbDestroy(void) {
   if (gPOPKerbInited) {
     KClientDisposeSessionCompat(&gSession);
     gPOPKerbInited = false;
@@ -3803,8 +3774,8 @@ OSErr KerbDestroy(void) {
 /**********************************************************************
  * KerbDestroyUser - destroy the username
  **********************************************************************/
-OSErr KerbDestroyUser(void) {
-  OSErr err = noErr;
+int KerbDestroyUser(void) {
+  int err = noErr;
 
   /* KerbDestroy does everything that it needs to */
 
@@ -3814,8 +3785,8 @@ OSErr KerbDestroyUser(void) {
 /**********************************************************************
  *
  **********************************************************************/
-OSErr KerbUsername(PStr name) {
-  OSErr err;
+int KerbUsername(char * name) {
+  int err;
   unsigned char *atSign;
 
   *name = 0;
@@ -3855,14 +3826,14 @@ OSErr KerbUsername(PStr name) {
 /**********************************************************************
  * KerbGetTicket - get our ticket
  **********************************************************************/
-OSErr KerbGetTicket(PStr serviceName, PStr inHost, PStr realm, PStr version,
+int KerbGetTicket(char * serviceName, char * inHost, char * realm, char * version,
                     unsigned char **ticket) {
   unsigned char fmt[64];
   unsigned char fullName[256];
   unsigned char scratch[256];
   unsigned char host[256];
   unsigned char shortHost[256];
-  OSErr err;
+  int err;
   unsigned char *spot;
   struct hostInfo *hip, hi;
   unsigned long bufLen;
@@ -3933,13 +3904,13 @@ OSErr KerbGetTicket(PStr serviceName, PStr inHost, PStr realm, PStr version,
 /**********************************************************************
  * InitKerberos - get ready to start making Kerberos calls
  **********************************************************************/
-OSErr InitKerberos() {
-  OSErr err = noErr;
+int InitKerberos() {
+  int err = noErr;
 
   if (!gPOPKerbInited) {
     // make sure Kerberos is present before we start calling it.
-    if ((Ptr)(KClientNewSessionCompat) ==
-        (Ptr)(kUnresolvedCFragSymbolAddress)) {
+    if ((char *)(KClientNewSessionCompat) ==
+        (char *)(kUnresolvedCFragSymbolAddress)) {
       // Kerberos is not installed.  Warn and crap out.
       WarnUser(NO_KERBEROS, err);
       err = fnfErr;
@@ -3959,11 +3930,11 @@ OSErr InitKerberos() {
 /**********************************************************************
  * SendPOPTicket - send a ticket to the Pop server
  **********************************************************************/
-OSErr SendPOPTicket(TransStream stream) {
+int SendPOPTicket(TransStream stream) {
   unsigned char popName[64], host[64], realm[64], version[64];
   unsigned char *ticket = NULL;
   unsigned long ticketLen = 0;
-  OSErr err;
+  int err;
 
   GetPOPInfo(popName, host);
   err = noErr;

@@ -27,6 +27,9 @@ DAMAGE. */
 #include "mailbox.h"
 #include "imapmailboxes.h"
 #include "threading.h"
+#include <fcntl.h>
+#include <sys/stat.h>
+#include "legacy_shim.h"
 
 #define FILE_NUM 17
 /* Copyright (c) 1990-1992 by the University of Illinois Board of Trustees */
@@ -53,8 +56,8 @@ DAMAGE. */
 	void ResetHexBin(void);
 	void comp_q_crc(unsigned short c);
 	void CrcError(void);
-	void SaveHexBin(UPtr text,long size,long estMessageSize);
-	void ForceAttachFolder(PStr volName, long *dirId);
+	void SaveHexBin(unsigned char * text,long size,long estMessageSize);
+	void ForceAttachFolder(char * volName, long *dirId);
 
 /************************************************************************
  * Private globals
@@ -68,12 +71,12 @@ typedef struct
 	long rzLength;
 	unsigned short hCrc;
 } HexBinHead;
-typedef struct HexBinGlobals_ HexBinGlobals, *HBGPtr, **HBGHandle;
+typedef struct HexBinGlobals_ HexBinGlobals, *HBGPtr, *HBGHandle;
 struct HexBinGlobals_
 {
 	short state;
 	long oSpot;
-	UHandle buffer;
+	unsigned char * buffer;
 	long bSize;
 	long bSpot;
 	short refN;
@@ -98,35 +101,35 @@ struct HexBinGlobals_
 	unsigned long calcCrc;
 	unsigned long crc;
 };
-#define Hdh (*HBG)->hdh
-#define State (*HBG)->state
-#define OSpot (*HBG)->oSpot
-#define Buffer (*HBG)->buffer
-#define BSize (*HBG)->bSize
-#define BSpot (*HBG)->bSpot
-#define RefN (*HBG)->refN
-#define Spec (*HBG)->spec
-#define Name (*HBG)->spec.name
-#define Type (*HBG)->BHHUnion.bxHead.type
-#define Author (*HBG)->BHHUnion.bxHead.author
-#define Flags (*HBG)->BHHUnion.bxHead.flags
-#define RzLength (*HBG)->BHHUnion.bxHead.rzLength
-#define DataLength (*HBG)->BHHUnion.bxHead.dataLength
-#define HCrc (*HBG)->BHHUnion.bxHead.hCrc
-#define BxhBytes (*HBG)->BHHUnion.bxhBytes
-#define LastData (*HBG)->lastData
-#define State68 (*HBG)->state68
-#define B8 (*HBG)->b8
-#define RunCount (*HBG)->runCount
-#define Run (*HBG)->run
-#define Count (*HBG)->count
-#define Size (*HBG)->size
-#define CalcCrc (*HBG)->calcCrc
-#define Crc (*HBG)->crc
-#define BinHexIntro (*HBG)->binHexIntro
-#define OrigOffset (*HBG)->origOffset
-#define GotOne (*HBG)->gotOne
-#define MailboxRefN (*HBG)->mailboxRefN
+#define Hdh HBG->hdh
+#define State HBG->state
+#define OSpot HBG->oSpot
+#define Buffer HBG->buffer
+#define BSize HBG->bSize
+#define BSpot HBG->bSpot
+#define RefN HBG->refN
+#define Spec HBG->spec
+#define Name HBG->spec.name
+#define Type HBG->BHHUnion.bxHead.type
+#define Author HBG->BHHUnion.bxHead.author
+#define Flags HBG->BHHUnion.bxHead.flags
+#define RzLength HBG->BHHUnion.bxHead.rzLength
+#define DataLength HBG->BHHUnion.bxHead.dataLength
+#define HCrc HBG->BHHUnion.bxHead.hCrc
+#define BxhBytes HBG->BHHUnion.bxhBytes
+#define LastData HBG->lastData
+#define State68 HBG->state68
+#define B8 HBG->b8
+#define RunCount HBG->runCount
+#define Run HBG->run
+#define Count HBG->count
+#define Size HBG->size
+#define CalcCrc HBG->calcCrc
+#define Crc HBG->crc
+#define BinHexIntro HBG->binHexIntro
+#define OrigOffset HBG->origOffset
+#define GotOne HBG->gotOne
+#define MailboxRefN HBG->mailboxRefN
 
 #define RUNCHAR 0x90
 
@@ -179,7 +182,7 @@ Byte HexBinTable[256] = {
  *	returns True if a BinHex file is being converted
  *	may write own data into buf (conversion note)
  ************************************************************************/
-bool ConvertHexBin(short refN,UPtr buf,long *size,POPLineType lineType,long estSize)
+bool ConvertHexBin(short refN,unsigned char * buf,long *size,POPLineType lineType,long estSize)
 {
 	long offset;
 
@@ -191,7 +194,7 @@ bool ConvertHexBin(short refN,UPtr buf,long *size,POPLineType lineType,long estS
 		 * BinHex detection
 		 */
 		case HexDone:
-			if (lineType==plComplete && *size >= *BinHexIntro && !strncmp((char *)LDRef(HBG)->binHexIntro+1,(char *)buf,*BinHexIntro))
+			if (lineType==plComplete && *size >= *BinHexIntro && !strncmp((char *)HBG->binHexIntro+1,(char *)buf,*BinHexIntro))
 			{
 				State = NotHex;
 				GetFPos(refN,&offset);  /* save binhex start */
@@ -199,7 +202,6 @@ bool ConvertHexBin(short refN,UPtr buf,long *size,POPLineType lineType,long estS
 				GotOne = False;
 				MailboxRefN = refN;
 			}
-			UL(HBG);
 			break;
 		
 		/*
@@ -236,7 +238,7 @@ bool ConvertHexBin(short refN,UPtr buf,long *size,POPLineType lineType,long estS
  * SaveHexBin - save a binhex file, if one is found.	Returns the 
  * state of the converter
  ************************************************************************/
-void SaveHexBin(UPtr text,long size,long estMessageSize)
+void SaveHexBin(unsigned char * text,long size,long estMessageSize)
 {	
 	if (State==HexDone)
 		State = NotHex; 		/* start the conversion */
@@ -254,7 +256,7 @@ void EndHexBin(void)
 	{
 		if (Spec.path[0] && !CommandPeriod) {WarnUser(BINHEX_SHORT,0);BadBinHex=True;}
 		AbortHexBin(False);
-		ZapHandle(HBG);
+		free(HBG);
 		HBG = NULL;
 	}
 	return;
@@ -269,10 +271,10 @@ void BeginHexBin(HeaderDHandle hdh)
 	HBG = NewH(HexBinGlobals);
 	if (HBG)
 	{
-		WriteZero(*HBG,sizeof(HexBinGlobals));
+		WriteZero(HBG,sizeof(HexBinGlobals));
 		State = HexDone;
 		GetRString(intro,BINHEX);
-		PCopy(BinHexIntro,intro);
+		memcpy(BinHexIntro, intro, 64);
 		Hdh = hdh;
 	}
 }
@@ -311,7 +313,7 @@ reSwitch:
 			break;
 	
 		case CollectName:
-			(*Buffer)[BSpot++] = c;
+			Buffer[BSpot++] = c;
 			/* fall-throught to default */
 		default:
 			if ((d=HexBinDecode(c,estMessageSize))>=0)
@@ -368,7 +370,7 @@ reSwitch:
 						 */
 						if ((estMessageSize<GetRLong(HEX_SIZE_THRESH) ||
 								DataLength+RzLength < (estMessageSize*100)/GetRLong(HEX_SIZE_PERCENT)) &&
-								(AutoWantTheFile(&spec,False,Hdh && (*Hdh)->relatedPart)/*|| WantTheFile(&spec)*/))
+								(AutoWantTheFile(&spec,False,Hdh && Hdh->relatedPart)/*|| WantTheFile(&spec)*/))
 						{
 							Spec = spec;
 							Crc = HCrc;
@@ -398,7 +400,7 @@ reSwitch:
 			}
 			else
 			{
-				(*Buffer)[BSpot++] = d;
+				Buffer[BSpot++] = d;
 				comp_q_crc(d);
 				OSpot--;
 				if (BSpot==BSize)
@@ -434,7 +436,7 @@ reSwitch:
 int FoundHexBin(void)
 {
 	BSize = GetRLong(BUFFER_SIZE);
-	if (!Buffer) Buffer = (UHandle)NuHTempBetter(BSize);
+	if (!Buffer) Buffer = (unsigned char *)NuHTempBetter(BSize);
 	if (!Buffer)
 	{
 		WarnUser(BINHEX_MEM,MemError());
@@ -530,14 +532,12 @@ int HexBinDecode(Byte c,long estMessageSize)
  ************************************************************************/
 void AbortHexBin(bool error)
 {
-	if (Buffer) {ZapHandle(Buffer); Buffer=0;}
-	if (RefN) {MyFSClose(RefN); RefN=0;}
+	if (Buffer) {free(Buffer); Buffer=0;}
+	if (RefN) {close(RefN); RefN=0;}
 	if (Spec.path[0])
 	{
-		LDRef(HBG);
-		FSpDelete(&Spec);
+		unlink(Spec.path);
 		ASSERT(0);
-		UL(HBG);
 		Spec.path[0] = '\0';
 	}
 	State = HexDone;
@@ -554,8 +554,14 @@ void OpenDataFork(void)
 	short refN;
 	FInfo info;
 	
-	LDRef(HBG);
-	err=FSpCreate(&Spec,Author,Type,smSystemScript);
+	int fd = open(Spec.path, O_RDWR | O_CREAT | O_TRUNC, 0644);
+	if (fd >= 0) {
+		err = noErr;
+		close(fd);
+	} else {
+		err = ioErr;
+	}
+
 	if (err == dupFNErr) err = noErr;
 	if (err)
 	{
@@ -563,30 +569,35 @@ void OpenDataFork(void)
 		Spec.path[0] = '\0';
 		AbortHexBin(True);
 	}
-	else if ((err=FSpGetFInfo(&Spec,&info)))
-	{
-		FileSystemError(BINHEX_CREATE,Name,err);
-		AbortHexBin(True);
-	}
-	else
-	{
-		info.fdFlags = Flags;
-		SafeInfo(&info,NULL);
-		if ((err=FSpSetFInfo(&Spec,&info)))
+	else {
+		struct stat st_566;
+		if (stat(Spec.path, &st_566) == 0)
 		{
-			FileSystemError(BINHEX_OPEN,Name,err);
-			AbortHexBin(True);
-		}
-		else if ((err=FSpOpenDF(&Spec,fsRdWrPerm,&refN)))
-		{
-			FileSystemError(BINHEX_OPEN,Name,err);
-			AbortHexBin(True);
+			// FSpGetFInfo was successful
+			err = noErr;
 		}
 		else
+		{
+			FileSystemError(BINHEX_CREATE,Name,ioErr);
+			AbortHexBin(True);
+			HBG; // ensure we can return safely
+			return;
+		}
+		
+		// FSpSetFInfo logic is no-op on POSIX
+		// Just open for data
+		refN = open(Spec.path, O_RDWR);
+		if (refN >= 0)
+		{
 			RefN = refN;
+		}
+		else
+		{
+			FileSystemError(BINHEX_OPEN,Name,ioErr);
+			AbortHexBin(True);
+		}
 	}
 	OSpot = DataLength;
-	UL(HBG);
 }
 
 /**********************************************************************
@@ -637,12 +648,10 @@ int ForkRoll(void)
 		else
 		{
 			if (!GetFPos(RefN,&pos)) SetEOF(RefN,pos);
-			if ((err=MyFSClose(RefN)))
+			if ((err=close(RefN)))
 			{
 				AbortHexBin(True);
-				LDRef(HBG);
 				FileSystemError(BINHEX_WRITE,Name,err);
-				UL(HBG);
 			}
 			else RefN = 0;	// successfully closed
 		}
@@ -654,25 +663,20 @@ int ForkRoll(void)
 	 */
 	if (State==RzWrite)
 	{
-		LDRef(HBG);
-		if ((err=FSpOpenRF(Spec.path,fsRdWrPerm,&refN)))
-		{
-			FileSystemError(BINHEX_OPEN,Name,err);
-			AbortHexBin(True);
-		}
-		else
-			RefN = refN;
-		UL(HBG);
+		// No resource fork on POSIX
+		refN = -1;
+		err = noErr;
+		RefN = refN;
 		OSpot = RzLength;
 		return(err ? HexDone : RzWrite);
 	}
 	else
 	{
-		Str31 fileName;
+		char fileName[32];
 		FSSpec spec = Spec;
 		GotOne = True;
-		PCopy((unsigned char *)fileName,(unsigned char *)Name);
-		if ((err=RecordAttachment(spec.path,HBG ? (*HBG)->hdh : NULL)))
+		memcpy(fileName, Name, sizeof(fileName));
+		if ((err=RecordAttachment(spec.path,HBG ? HBG->hdh : NULL)))
 		{
 			AbortHexBin(True);
 			return(HexDone);
@@ -680,7 +684,7 @@ int ForkRoll(void)
 		// If there is a long filename, the spec may have changed in RecordAttachment
 		// Make sure to copy the new spec back
 		Spec = spec;
-		ZapHandle(Buffer);
+		free(Buffer);
 		Spec.path[0] = '\0';
 		return(Excess);
 	}
@@ -694,9 +698,8 @@ int FlushBuffer(void)
 	long writeBytes = BSpot;
 	int err;
 	
-	if ((err=NCWrite(RefN,&writeBytes,LDRef(Buffer))))
-		{LDRef(HBG); FileSystemError(BINHEX_WRITE,Name,err); UL(HBG);}
-	UL(Buffer);
+	if ((err=NCWrite(RefN,&writeBytes,Buffer)))
+		{HBG; FileSystemError(BINHEX_WRITE,Name,err); ;}
 	BSpot = 0;
 	return(err);
 }
@@ -716,7 +719,7 @@ bool AutoWantTheFile(FSSpecPtr specPtr,bool ohYesYouDo,bool relatedPart)
  ************************************************************************/
 bool AutoWantTheFileLo(FSSpecPtr specPtr,bool ohYesYouDo,bool relatedPart, bool imapStub)
 {
-	Str127 message;
+	char message[128];
 	FSSpec attFSpec;
 	
 	/*
@@ -754,7 +757,7 @@ bool AutoWantTheFileLo(FSSpecPtr specPtr,bool ohYesYouDo,bool relatedPart, bool 
 /**********************************************************************
  * ForceAttachFolder - find an attachment folder, come hell or high water
  **********************************************************************/
-void ForceAttachFolder(PStr volName, long *dirId)
+void ForceAttachFolder(char * volName, long *dirId)
 {
 	unsigned char folder[32];
 	CInfoPBRec hfi;
@@ -769,7 +772,7 @@ void ForceAttachFolder(PStr volName, long *dirId)
 	 */
 	*dirId = Root.dirId;
 	GetRString(folder,ATTACH_FOLDER);
-	(void) DirCreate(Root.vRef,Root.dirId,(char *)folder,dirId);
+	mkdir((char *)folder, 0755);
 	
 	/*
 	 * is it a folder?

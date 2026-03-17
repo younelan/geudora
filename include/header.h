@@ -52,7 +52,7 @@ typedef enum
  */
 /* AssocArray may be defined in util.h; avoid duplicate typedefs */
 #ifndef AAS_TYPEDEF_DONE
-typedef struct AssocArray AssocArray, *AAPtr, **AAHandle;
+typedef struct AssocArray AssocArray, *AAPtr, *AAHandle;
 #define AAS_TYPEDEF_DONE
 #endif
 
@@ -60,14 +60,14 @@ typedef struct HeaderDesc
 {
 	HeaderStateEnum state;	/* state of header converter */
 	InterestHeadEnum hFound;/* header we're working on now */
-	Str31 contentType;			/* MIME content type */
-	Str31 contentSubType;		/* MIME content subtype */
-	Str31 contentEnco;			/* MIME content type */
-	Str15 status;						/* status header */
-	Str63 subj;							/* subject */
-	Str63 who;							/* sender */
-	Str31 attributeName;		/* name of attribute being collected */
-	Str15 mimeVersion;			/* mime version string */
+	char contentType[32];			/* MIME content type */
+	char contentSubType[32];		/* MIME content subtype */
+	char contentEnco[32];			/* MIME content type */
+	char status[16];						/* status header */
+	char subj[64];							/* subject */
+	char who[64];							/* sender */
+	char attributeName[32];		/* name of attribute being collected */
+	char mimeVersion[16];			/* mime version string */
 	AAHandle contentAttributes;	/* attributes from the content-type header */
 	AAHandle funFields;				/* fields we'd like to keep an eye on */
 	Accumulator fullHeaders;// all the headers for this message
@@ -94,17 +94,17 @@ typedef struct HeaderDesc
 	uLong absURLHash;			/* hash of absolute url for content-location */
 	uLong cidHash;	/* hash of content-id */
 	uLong gmtSecs;
-	Str127 summaryInfo;		// message summary information
+	char summaryInfo[128];		// message summary information
 	short depth;					// depth of MIME structure
-} HeaderDesc, *HeaderDPtr, **HeaderDHandle;
+} HeaderDesc, *HeaderDPtr, *HeaderDHandle;
 
-OSErr ReadHeader(TransStream stream,HeaderDHandle hdh, long estSize, short refN, bool isDigest);
-OSErr ReadHeaderLo(TransStream stream,HeaderDHandle hdh, long estSize, short refN, bool isDigest, short funFieldsID, short funFieldsLimit);
+int ReadHeader(TransStream stream,HeaderDHandle hdh, long estSize, short refN, bool isDigest);
+int ReadHeaderLo(TransStream stream,HeaderDHandle hdh, long estSize, short refN, bool isDigest, short funFieldsID, short funFieldsLimit);
 HeaderDHandle NewHeaderDesc(HeaderDHandle parentHDH);
 void DisposeHeaderDesc(HeaderDHandle hdh);
 short ViewTable(HeaderDHandle hdh);
-OSErr ParseAHeader(StringHandle h, HeaderDHandle *hdhp);
-OSErr ParseAHeaderLo(StringHandle h, HeaderDHandle *hdhp, short funFieldsID, short funFieldsLimit);
+int ParseAHeader(StringHandle h, HeaderDHandle *hdhp);
+int ParseAHeaderLo(StringHandle h, HeaderDHandle *hdhp, short funFieldsID, short funFieldsLimit);
 #define ZapHeaderDesc(hdh) do{DisposeHeaderDesc(hdh);hdh=nil;}while(0)
 bool HeaderDescInAddrBook(HeaderDHandle hdh);
 

@@ -189,7 +189,6 @@ static char *GetSelectedTextFromPTE(GtkWidget *pte)
 static char *CollectReturnAddr(void)
 {
     /* GetReturnAddr returns the user's configured return address. */
-    extern unsigned char *GetReturnAddr(unsigned char *addr, bool comments);
     unsigned char buf[256];
     GetReturnAddr(buf, false);
     if (buf[0])
@@ -678,13 +677,12 @@ int PrintOneMessage(MyWindowPtr win, bool select, bool now)
  *   - PushGWorld
  *   - PrintPreamble (one print job for all selected messages)
  *   - GetMailboxSpec to check if Out mailbox (outgoing messages)
- *   - UL(tocH) — unlock Handle
- *   - Loop through sums: if selected:
+ *   -  — unlock void **   - Loop through sums: if selected:
  *     - If IMAP, EnsureMsgDownloaded
  *     - GetAMessage to open it
  *     - PMGetGrafPtr/SetPort to printer port
  *     - PeteCalcOn
- *     - Handle print-selection from preview pane (beginSel/endSel)
+ *     - void *print-selection from preview pane (beginSel/endSel)
  *     - PrintMessage (the core page loop)
  *     - If window wasn't visible, close it; else restore selection
  *   - PrintCleanup
@@ -694,7 +692,7 @@ int PrintOneMessage(MyWindowPtr win, bool select, bool now)
  * with page breaks, run one print operation. Each message gets its own
  * header from its window title.
  *
- * Note: TOCHandle → TOCType* (no Handle indirection)
+ * Note: TOCHandle → TOCType* (no void *indirection)
  * Note: PETEHandle → GtkWidget* (printMe parameter)
  ************************************************************************/
 int PrintSelectedMessages(TOCType *tocH, bool select, bool now,
@@ -715,12 +713,12 @@ int PrintSelectedMessages(TOCType *tocH, bool select, bool now,
        For now, default to false — comp windows self-identify. */
     isOut = false;
 
-    /* Iterate through summaries — original: for(sumNum=0; !CommandPeriod && sumNum<(*tocH)->count; sumNum++) */
+    /* Iterate through summaries — original: for(sumNum=0; !CommandPeriod && sumNum<tocH->count; sumNum++) */
     for (sumNum = 0; !CommandPeriod && sumNum < tocH->count; sumNum++) {
         if (!tocH->sums[sumNum].selected)
             continue;
 
-        /* Original: if ((*tocH)->imapTOC) EnsureMsgDownloaded(tocH, sumNum, false); */
+        /* Original: if (tocH->imapTOC) EnsureMsgDownloaded(tocH, sumNum, false); */
         if (tocH->imapTOC)
             EnsureMsgDownloaded(tocH, sumNum, false);
 
@@ -792,13 +790,13 @@ int PrintSelectedMessages(TOCType *tocH, bool select, bool now,
  * PrintClosedMessage - print a message that is not currently open
  *
  * Original:
- *   - Checked if message was already open: opened = !(*tocH)->sums[sumNum].messH
+ *   - Checked if message was already open: opened = !tocH->sums[sumNum].messH
  *   - GetAMessage to open it
  *   - PrintOneMessage
  *   - If we opened it, CloseMyWindow to close it again
  *
  * Note: messH is the MessHandle — if NULL, the message isn't open.
- * TOCHandle → TOCType* (no Handle indirection).
+ * TOCHandle → TOCType* (no void *indirection).
  ************************************************************************/
 int PrintClosedMessage(TOCType *tocH, short sumNum, bool now)
 {
@@ -809,7 +807,7 @@ int PrintClosedMessage(TOCType *tocH, short sumNum, bool now)
     if (!tocH || sumNum < 0 || sumNum >= tocH->count)
         return -1;
 
-    /* Original: opened = !(*tocH)->sums[sumNum].messH;
+    /* Original: opened = !tocH->sums[sumNum].messH;
        messH is non-NULL if the message is already open in a window. */
     opened = (tocH->sums[sumNum].messH == NULL);
 

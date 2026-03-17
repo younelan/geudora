@@ -461,17 +461,15 @@ static int SetFeatureCell(FeatureCellPtr *featureCellsPtr, FeatureRecPtr feature
     // For now, set basic info
     (*featureCellsPtr)->type = featurePtr->primary;
     (*featureCellsPtr)->isName = true;
-    (*featureCellsPtr)->isSubFeature = (featurePtr->sub != 0x3F3F3F3F); // '????'
+    (*featureCellsPtr)->isSubFeature = (featurePtr->sub != 0x3F3F3F3F);
     (*featureCellsPtr)->used = ((featurePtr->flags & 0x01) && featurePtr->lastUsed && !ignoreUsage);
-    
-    // Copy feature description (stub - would load from resources)
-    snprintf((*featureCellsPtr)->description, sizeof((*featureCellsPtr)->description), 
+
+    snprintf((*featureCellsPtr)->description, sizeof((*featureCellsPtr)->description),
              "Feature %d", featurePtr->primary);
-    
-    // Next cell for description text
+
     ++(*featureCellsPtr);
     (*featureCellsPtr)->isSubFeature = (featurePtr->sub != 0x3F3F3F3F);
-    snprintf((*featureCellsPtr)->description, sizeof((*featureCellsPtr)->description), 
+    snprintf((*featureCellsPtr)->description, sizeof((*featureCellsPtr)->description),
              "Description for feature %d", featurePtr->primary);
     
     return 0;

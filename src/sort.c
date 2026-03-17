@@ -34,20 +34,20 @@ ADVISED OF THE POSSIBILITY OF SUCH DAMAGE. */
 
 
 #define ARRAY(i) (array + i * size)
-void QSort(UPtr array, int size, int f, int l, int (*compare)(),
+void QSort(char * array, int size, int f, int l, int (*compare)(),
            void (*swap)());
 /**********************************************************************
  * QuickSort - sort an array
  * Algorithms, Reingold, Nievergelt, Deo, p. 286
  **********************************************************************/
-void QuickSort(UPtr array, int size, int f, int l, int (*compare)(),
+void QuickSort(char * array, int size, int f, int l, int (*compare)(),
                void (*swap)()) {
   int i, j;
   if (f >= l)
     return;
 
 #ifdef NEVER
-  ComposeLogS(-1, NULL, (UPtr)"Sort %d %d", f, l);
+  ComposeLogS(-1, NULL, (char *)"Sort %d %d", f, l);
 #endif
   CycleBalls();
 
@@ -80,9 +80,9 @@ void QuickSort(UPtr array, int size, int f, int l, int (*compare)(),
 
 #define VectorSwap(x, y)                                                       \
   do {                                                                         \
-    M_T1 = (*vector)[x];                                                       \
-    (*vector)[x] = (*vector)[y];                                               \
-    (*vector)[y] = M_T1;                                                       \
+    short *_vt = vector[x];                                                  \
+    vector[x] = vector[y];                                               \
+    vector[y] = _vt;                                                         \
   } while (0)
 /**********************************************************************
  * VQuickSort - sort a vector into something else
@@ -95,7 +95,7 @@ void VQuickSort(short **vector, short f, short l, void *data,
     return;
 
 #ifdef NEVER
-  ComposeLogS(-1, NULL, (UPtr)"Sort %d %d", f, l);
+  ComposeLogS(-1, NULL, (char *)"Sort %d %d", f, l);
 #endif
   CycleBalls();
 
@@ -126,7 +126,7 @@ void VQuickSort(short **vector, short f, short l, void *data,
   }
 }
 
-void StrSwap(UPtr s1, UPtr s2) {
+void StrSwap(char * s1, char * s2) {
   unsigned char temp[256];
 
   strcpy((char *)temp, (const char *)s1);
@@ -134,19 +134,19 @@ void StrSwap(UPtr s1, UPtr s2) {
   strcpy((char *)s2, (const char *)temp);
 }
 
-int CStrCompar(UPtr s1, UPtr s2) {
+int CStrCompar(char * s1, char * s2) {
   (void)s1; (void)s2;
   return (0);
 }
 
-void CStrSwap(UPtr s1, UPtr s2) {
+void CStrSwap(char * s1, char * s2) {
   (void)s1; (void)s2;
 }
 
-int SortStrCompare(UPtr *s1, UPtr *s2) { return StringComp(*s1, *s2); }
+int SortStrCompare(char * *s1, char * *s2) { return StringComp(*s1, *s2); }
 
-void PtrSwap(Ptr *win1, Ptr *win2) {
-  Ptr temp = *win1;
+void PtrSwap(char * *win1, char * *win2) {
+  char * temp = *win1;
   *win1 = *win2;
   *win2 = temp;
 }

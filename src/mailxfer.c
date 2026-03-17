@@ -69,7 +69,7 @@ extern int GetMyMail(TransStream stream, bool a, short *b, XferFlags *flags);
 extern int NewTransStream(TransStream *stream);
 extern long ReportStreamAudit(TransStream stream);
 extern void StartStreamAudit(TransStream theStream, StreamAuditTypeEnum what);
-extern int StartSMTP(TransStream stream, unsigned char *server, long port);
+extern int StartSMTP(TransStream stream, char *server, long port);
 extern int StartPOP(TransStream stream, unsigned char *server, long port);
 extern int EndPOP(TransStream stream);
 extern void POPIntroductions(TransStream stream, unsigned char *s, void *p);
@@ -78,11 +78,11 @@ extern int MySendMessage(TransStream stream, TOCType *toc, int sum,
                          CSpecHandle list);
 extern short EffectiveTID(short id);
 extern short TransOutTablID(void);
-extern unsigned char *GetFlatten(void);
+extern char *GetFlatten(void);
 
 /* Personality functions */
 extern void GetPOPInfo(void *a, void *b);
-extern PStr GetPOPPref(PStr dest);
+extern char *GetPOPPref(char *dest);
 extern void PushPers(PersHandle pers);
 extern void PopPers(void);
 
@@ -909,7 +909,7 @@ bool NeedPassword(bool check, bool send) {
       // If the server says yes but the user says no,
       // better ask the user to change their mind
       if (gave530 && !authOK) {
-        PCopy(s, CurPers->name);
+        g_strlcpy(s, CurPers->name, sizeof(s));
         switch (ComposeStdAlert(Note, RECONSIDER_AUTH, s)) {
         // user will give us the password.  Yippee.
         case kAlertStdAlertOKButton:
@@ -1168,7 +1168,7 @@ short SendTheQueue(TransStream stream, XferFlags flags) {
   uint32_t lastSig = 0xffffffff;
   short stayed = 0;
   long count;
-  CSpecHandle fccList = (CSpecHandle)NuHandle(0);
+  CSpecHandle fccList = (CSpecHandle)malloc(0);
   bool openedFilters = false;
   TOCType * realTocH = NULL;
   bool inThread = InAThread();
@@ -1383,7 +1383,7 @@ done:
   UpdateNumStat(kStatSentMail, numSent);
   if (openedFilters)
     FiltersDecRef();
-  ZapHandle(fccList);
+  free(fccList);
   ProgressMessageR(kpSubTitle, CLEANUP_CONNECTION);
   if (tablePtr) {
     free(tablePtr);
@@ -1447,13 +1447,13 @@ void CompAttDel(MessHandle messH) {
  **********************************************************************/
 int DoFcc(TOCType * tocH, short sumNum, CSpecHandle list) {
   CSpec spec;
-  short n = HandleCount(list);
+  int n = CSpecCount(list);
   int err = 0;
   int oneErr;
 
   UseFeature(featureFcc);
   while (n--) {
-    spec = (*list)[n];
+    spec = CSpecAt(list, n);
     if ((oneErr = MoveMessageLo(tocH, sumNum, &spec.spec, true, false, true))) {
       tocH->sums[sumNum].flags |= FLAG_KEEP_COPY;
       TOCSetDirty(tocH, true);
@@ -1462,7 +1462,8 @@ int DoFcc(TOCType * tocH, short sumNum, CSpecHandle list) {
     }
   }
 
-  SetHandleBig_(list, 0);
+  if (list)
+    g_array_set_size(list, 0);
   return (err);
 }
 
@@ -1633,7 +1634,7 @@ void NotifyNewMailLo(short gotSome, bool noXfer, TOCType * tocH,
         // -jdboyd
         //
         if (fpb.mailbox && (GetHandleSize((void *)fpb.mailbox) == 0))
-          ZapHandle(fpb.mailbox);
+          free(fpb.mailbox);
 
         // Show NoNewMail if no mail arrived, and there's no other check
         // threads running only do this if a manual IMAP check happened
@@ -1865,7 +1866,7 @@ void GrabSignature(uint32_t fid) {
   g_free(path);
 
   /* Store as eSignature (plain text) — allocated with g_malloc via GLib,
-     but eSignature is typed as UHandle (void**) in Globals.h for legacy
+     but eSignature is typed as unsigned char * (void**) in Globals.h for legacy
      compatibility. For now, store the raw text pointer. Callers that
      use eSignature will need to treat it as a plain char* buffer. */
   eSignature = (void *)sigText;
@@ -1883,7 +1884,7 @@ bool AddSigIntro(GtkWidget *pte, void **text) {
   if (!*GetRString(sigIntro, SIG_INTRO))
     return false;
 
-  /* Handle the text block */
+  /* void *the text block */
   if (text && *text) {
     len = GetHandleSize((void *)text);
     if (len > 0) {
@@ -1902,7 +1903,7 @@ bool AddSigIntro(GtkWidget *pte, void **text) {
     }
   }
 
-  /* Handle the pte (GtkTextView) */
+  /* void *the pte (GtkTextView) */
   if (pte) {
     long textLen = PETEGetTextLen(NULL, pte);
     if (textLen > 0) {
@@ -1925,7 +1926,7 @@ bool RemoveSigIntro(GtkWidget *pte, void **text) {
   if (!*GetRString(sigIntro, SIG_INTRO))
     return false;
 
-  /* Handle the text block */
+  /* void *the text block */
   if (text && *text) {
     len = GetHandleSize((void *)text);
     if (len >= *sigIntro) {
@@ -1938,7 +1939,7 @@ bool RemoveSigIntro(GtkWidget *pte, void **text) {
     }
   }
 
-  /* Handle the pte */
+  /* void *the pte */
   if (pte) {
     void * h = NULL;
     PeteGetTextAndSelection(pte, &h, NULL, NULL);

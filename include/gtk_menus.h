@@ -136,8 +136,8 @@ void FixMenuUnread(MenuHandle mh, int item, bool unread);
 
 /* Legacy-compatible helper functions for GMenuModel */
 int CountMenuItems(GMenuModel *mh);
-unsigned char *MyGetItem(MenuHandle mh, short item, unsigned char *name);
-short FindItemByName(MenuHandle mh, unsigned char *name);
+char *MyGetItem(MenuHandle mh, short item, char *name);
+short FindItemByName(MenuHandle mh, char *name);
 void SetItemStyle(GMenuModel *mh, int item, int style);
 int GetItemStyle(GMenuModel *mh, int item);
 
@@ -149,10 +149,10 @@ void register_menu_callbacks(MenuCallback callbacks[ACTION_COUNT]);
 /* Mac Menu Manager compatibility APIs (implemented in gtk_menus.c) */
 void GetItemCmd(MenuHandle mh, short item, short *cmd);
 void GetItemMark(MenuHandle mh, short item, short *mark);
-void SetMenuItemText(MenuHandle mh, short item, unsigned char *text);
+void SetMenuItemText(MenuHandle mh, short item, char *text);
 int  GetMenuItemHierarchicalID(MenuHandle mh, short item, short *outID);
 void EnableMenuItems(int enable);
 long MenuEvent(void *event);
-void RenameItem(short menuId, unsigned char *oldName, unsigned char *newName);
-void NukeMenuItemByName(short menuId, unsigned char *itemName);
+void RenameItem(short menuId, char *oldName, char *newName);
+void NukeMenuItemByName(short menuId, char *itemName);
 void NukeMenuItem(MenuHandle mh, short item);

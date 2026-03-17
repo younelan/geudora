@@ -41,7 +41,7 @@ DAMAGE. */
  *   RgnHandle    -> void *
  *   Boolean      -> bool
  *   Byte         -> unsigned char
- *   OSErr        -> int
+ *   int        -> int
  *   ProcessSerialNumber -> void *
  *   EventRecord  -> void *  (unused in GTK)
  *   Style        -> unsigned char
@@ -90,7 +90,7 @@ extern void *MousePen;             /* RgnHandle — pen for mouse */
 extern bool TBTurnedOnBalloons;
 extern unsigned char NewLine[4];
 extern unsigned char CheckOnIdle;
-extern Str15 Type2SelString;
+extern char Type2SelString[16];
 extern uLong Type2SelTicks;
 extern short DragSumNum;
 extern TOCType *DragTOCFrom;
@@ -111,13 +111,13 @@ extern TOCType *TOCList;
 
 extern struct AliasDStruct **Aliases;
 
-extern UHandle eSignature;
-extern UHandle RichSignature;
-extern UHandle HTMLSignature;
+extern unsigned char * eSignature;
+extern unsigned char * RichSignature;
+extern unsigned char * HTMLSignature;
 extern bool SigStyled;
-extern UPtr TransIn;
-extern UPtr TransOut;
-extern UPtr Flatten;
+extern unsigned char * TransIn;
+extern unsigned char * TransOut;
+extern unsigned char * Flatten;
 extern int CTBTimeout;
 extern void *HIQ;                   /* HostInfoQHandle */
 extern bool NoPreflight;
@@ -126,10 +126,10 @@ extern short Dragging;
 extern PETEStyleListHandle Pslh;
 extern int SendQueue;
 extern uLong ForceSend;
-extern short **StdSizes;
-extern short **FixedSizes;
-extern struct BoxMapStruct **BoxMap;
-extern short **BoxWidths;
+extern short *StdSizes;
+extern short *FixedSizes;
+extern struct BoxMapStruct *BoxMap;
+extern short *BoxWidths;
 extern short AliasRefCount;
 extern short ICMPAvail;
 extern short RunType;
@@ -168,11 +168,11 @@ extern void *PostFilters;
 extern void *WordServices;         /* ProcessSerialNumber ** */
 extern short OriginalHelpCount;
 extern short EndHelpCount;
-extern Str255 IsWordChar;
+extern char IsWordChar[256];
 extern short PrefPlugEnd;
 extern long TypeToOpen;
 extern void *UglyHackFrontWindow;  /* WindowPtr */
-extern Str127 MyHostname;
+extern char MyHostname[128];
 extern TOCType *DamagedTOC;
 extern bool ThereIsColor;
 extern bool NoDominant;
@@ -182,7 +182,7 @@ extern bool BreakMe;
 extern uLong Yesterday;
 extern bool MemCanFail;
 extern short FakeTabs;
-extern void *WrapHandle;           /* Handle */
+extern void *WrapHandle;           /* void **/
 extern short ClickType;
 extern short Windex;
 extern short SysRefN;
@@ -200,9 +200,9 @@ extern long TypingTicks;
 extern long ActiveTicks;
 extern long NonNullTicks;
 extern bool OpenedMacSLIP;
-extern Str15 Re;
-extern Str15 Fwd;
-extern Str15 OFwd;
+extern char Re[16];
+extern char Fwd[16];
+extern char OFwd[16];
 extern unsigned char TOCInversionMatrix[2][16]; /* BoxLinesLimit */
 extern bool DragFxxkOff;
 extern bool Sensitive;
@@ -336,7 +336,7 @@ extern int SendThreadError;
 extern bool DFWTC;
 
 extern int TotalQueuedSize;
-extern Str255 P1, P2, P3, P4;
+extern char P1[256], P2[256], P3[256], P4[256];
 extern bool NewError;
 extern long BgYieldInterval;
 extern long FgYieldInterval;

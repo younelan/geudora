@@ -34,43 +34,43 @@ DAMAGE. */
 #define	isEscape(aChar)		((aChar) == '\\')
 	
 typedef struct {
-	Handle						data;						// Data containing the entire vCard
-	Ptr								spot;						// Spot within the vCard where we're currently reading
-	Ptr								end;						// Points to the final byte in the vCard
+	void *data;						// Data containing the entire vCard
+	char *								spot;						// Spot within the vCard where we're currently reading
+	char *								end;						// Points to the final byte in the vCard
 	VCardErrorType		error;					// Errors detected in the vCard source by the parser
-	XDashStringHandle	xdash;					// Handle to all the vCard extensions the client knows about
+	XDashStringHandle	xdash;					// void *to all the vCard extensions the client knows about
 	VCardItemRec			item;						// Information about the item currently being parsed
 	VCardItemProc			itemProc;				// Callback for each parsed item in the vCard
 	VCardErrorProc		errorProc;			// Callback for each parsing
 	long							refcon;					// Private data owned by the caller, passed back during itemProcs
-} VCardParserRec, *VCardParserPtr, **VCardParserHandle;
+} VCardParserRec, *VCardParserPtr, *VCardParserHandle;
 
 
 //
 //	Static Prototypes
 //
 
-static OSErr					VCardAccuAddValue (AccuPtr a, Handle value, bool quotedPrintable);
-static OSErr					VCardAccuAddValueQuotedPrintable (AccuPtr a, Handle value);
-static OSErr					VCardAccuMaybeQuotedPrintableSoftline (AccuPtr a, Handle value, long *offset, long *count, long maxChar);
-static Boolean				VCardValueContainsCRLFs (Handle value);
-static OSErr					VCardAccuAddProperties (AccuPtr a, short count, short *vcProp);
-static OSErr					VCardAccuAddPropertiesAndValue (AccuPtr a, short count, short *vcProp, Handle value, bool quotedPrintable);
-static OSErr					VCardAccuAddValueList (AccuPtr a, Handle notes, short count, short *abTag, bool *anyValues);
-static OSErr					VCardAccuAddAVPairStr (AccuPtr a, short attributeResIndex, PStr value);
-static OSErr 					VCardAccuAddAVPairRes (AccuPtr a, short attributeResIndex, short valueResIndex);
-static OSErr					VCardAccuAddAddress (AccuPtr a, Handle notes, bool home, bool preferred);
-static OSErr					VCardAccuAddPhone (AccuPtr a, Handle notes, short propertyID, short propertyLocation, short tagID, bool preferred);
-static OSErr					VCardAccuAddURL (AccuPtr a, Handle notes, short propertyLocation, short tagID, bool preferred);
-static OSErr					VCardAccuAddOtherEmail (AccuPtr a, Handle notes);
-static OSErr					VCardAccuAddOther (AccuPtr a, Handle notes, short propertyID, short tagID);
-static OSErr					VCardAccuAddNotes (AccuPtr a, Handle notes);
-static OSErr					VCardParserVCardFile (VCardParserPtr parserPtr);
-static OSErr					VCardParserVCard (VCardParserPtr parserPtr);
-static OSErr					VCardParserItems (VCardParserPtr parserPtr);
-static OSErr					VCardParserItem (VCardParserPtr parserPtr);
-static OSErr					VCardParserGroups (VCardParserPtr parserPtr, VCardItemPtr itemPtr, Str255 keyword);
-static OSErr					VCardParserParameters (VCardParserPtr parserPtr, VCardItemPtr itemPtr);
+static int					VCardAccuAddValue (AccuPtr a, void *value, bool quotedPrintable);
+static int					VCardAccuAddValueQuotedPrintable (AccuPtr a, void *value);
+static int					VCardAccuMaybeQuotedPrintableSoftline (AccuPtr a, void *value, long *offset, long *count, long maxChar);
+static Boolean				VCardValueContainsCRLFs (void *value);
+static int					VCardAccuAddProperties (AccuPtr a, short count, short *vcProp);
+static int					VCardAccuAddPropertiesAndValue (AccuPtr a, short count, short *vcProp, void *value, bool quotedPrintable);
+static int					VCardAccuAddValueList (AccuPtr a, void *notes, short count, short *abTag, bool *anyValues);
+static int					VCardAccuAddAVPairStr (AccuPtr a, short attributeResIndex, char * value);
+static int 					VCardAccuAddAVPairRes (AccuPtr a, short attributeResIndex, short valueResIndex);
+static int					VCardAccuAddAddress (AccuPtr a, void *notes, bool home, bool preferred);
+static int					VCardAccuAddPhone (AccuPtr a, void *notes, short propertyID, short propertyLocation, short tagID, bool preferred);
+static int					VCardAccuAddURL (AccuPtr a, void *notes, short propertyLocation, short tagID, bool preferred);
+static int					VCardAccuAddOtherEmail (AccuPtr a, void *notes);
+static int					VCardAccuAddOther (AccuPtr a, void *notes, short propertyID, short tagID);
+static int					VCardAccuAddNotes (AccuPtr a, void *notes);
+static int					VCardParserVCardFile (VCardParserPtr parserPtr);
+static int					VCardParserVCard (VCardParserPtr parserPtr);
+static int					VCardParserItems (VCardParserPtr parserPtr);
+static int					VCardParserItem (VCardParserPtr parserPtr);
+static int					VCardParserGroups (VCardParserPtr parserPtr, VCardItemPtr itemPtr, char keyword[256]);
+static int					VCardParserParameters (VCardParserPtr parserPtr, VCardItemPtr itemPtr);
 static void						VCardParserParameterTypeValue (VCardParserPtr parserPtr, VCardParamPtr paramPtr);
 static void						VCardParserParameterValueValue (VCardParserPtr parserPtr, VCardParamPtr paramPtr);
 static void						VCardParserParameterEncodingValue (VCardParserPtr parserPtr, VCardParamPtr paramPtr);
@@ -78,27 +78,27 @@ static void						VCardParserParameterCharsetValue (VCardParserPtr parserPtr, VCa
 static void						VCardParserParameterLangaugeValue (VCardParserPtr parserPtr, VCardParamPtr paramPtr);
 static void						VCardParserProcessOrphanedEncoding (VCardItemPtr itemPtr, vcKeywordType encodingValue);
 static void						VCardParserEqualSign (VCardParserPtr parserPtr);
-static OSErr					VCardParserValue (VCardParserPtr parserPtr, VCardItemPtr itemPtr);
-static OSErr					VCardParserAddress (VCardParserPtr parserPtr, VCardItemPtr itemPtr);
-static OSErr					VCardParserOrganization (VCardParserPtr parserPtr, VCardItemPtr itemPtr);
-static OSErr					VCardParserName (VCardParserPtr parserPtr, VCardItemPtr itemPtr);
-static OSErr					VCardParserPropertPartList (VCardParserPtr parserPtr, VCardItemPtr itemPtr, vcKeywordType *partList, short parts);
-static OSErr					VCardParser7BitValue (VCardParserPtr parserPtr, VCardItemPtr itemPtr, bool valueList, bool quotedPrintable);
-static OSErr					VCardParser8BitValue (VCardParserPtr parserPtr, VCardItemPtr itemPtr);
-static OSErr					VCardParserQuotedPrintableValue (VCardParserPtr parserPtr, VCardItemPtr itemPtr, char delimiter);
-static OSErr					VCardParserBase64Value (VCardParserPtr parserPtr, VCardItemPtr itemPtr);
+static int					VCardParserValue (VCardParserPtr parserPtr, VCardItemPtr itemPtr);
+static int					VCardParserAddress (VCardParserPtr parserPtr, VCardItemPtr itemPtr);
+static int					VCardParserOrganization (VCardParserPtr parserPtr, VCardItemPtr itemPtr);
+static int					VCardParserName (VCardParserPtr parserPtr, VCardItemPtr itemPtr);
+static int					VCardParserPropertPartList (VCardParserPtr parserPtr, VCardItemPtr itemPtr, vcKeywordType *partList, short parts);
+static int					VCardParser7BitValue (VCardParserPtr parserPtr, VCardItemPtr itemPtr, bool valueList, bool quotedPrintable);
+static int					VCardParser8BitValue (VCardParserPtr parserPtr, VCardItemPtr itemPtr);
+static int					VCardParserQuotedPrintableValue (VCardParserPtr parserPtr, VCardItemPtr itemPtr, char delimiter);
+static int					VCardParserBase64Value (VCardParserPtr parserPtr, VCardItemPtr itemPtr);
 static void						VCardParserSkipToNextLine (VCardParserPtr parserPtr);
 static Boolean				VCardParserWS (VCardParserPtr parserPtr, bool optional);
 static Boolean				VCardParserWSLS (VCardParserPtr parserPtr, bool optional);
-static OSErr					VCardParserStrnosemi (VCardParserPtr parserPtr, VCardItemPtr itemPtr);
-static PStr						VCardParserKeyword (VCardParserPtr parserPtr, PStr keyword);
-static OSErr					VCardParserWord (VCardParserPtr parserPtr, Handle value);
+static int					VCardParserStrnosemi (VCardParserPtr parserPtr, VCardItemPtr itemPtr);
+static char *						VCardParserKeyword (VCardParserPtr parserPtr, char * keyword);
+static int					VCardParserWord (VCardParserPtr parserPtr, void *value);
 static Boolean				VCardParserCharacter (VCardParserPtr parserPtr, char c, bool optional);
 static Boolean				VCardParseCRLFs (VCardParserPtr parserPtr, bool optional);
-static OSErr					VCardAppendKeywordToGroup (VCardItemPtr itemPtr, Str255 keyword);
-static OSErr					VCardParserAppendPropertyValueString (VCardParserPtr parserPtr, VCardParamPtr paramPtr, Handle strings);
-static vcKeywordType	VCardProcessProperty (VCardParserPtr parserPtr, Str255 keyword);
-static short					FindXDashString (XDashStringHandle xdash, PStr keyword);
+static int					VCardAppendKeywordToGroup (VCardItemPtr itemPtr, char keyword[256]);
+static int					VCardParserAppendPropertyValueString (VCardParserPtr parserPtr, VCardParamPtr paramPtr, void *strings);
+static vcKeywordType	VCardProcessProperty (VCardParserPtr parserPtr, char keyword[256]);
+static short					FindXDashString (XDashStringHandle xdash, char * keyword);
 
 
 bool IsVCardAvailable (void)
@@ -131,13 +131,13 @@ bool IsVCardAvailable (void)
 
 #define	kVCardLineMaxValues		10
 
-Handle MakeVCard (Handle addresses, Handle notes)
+void *MakeVCard (void *addresses, void *notes)
 
 {
 	Accumulator					vCard;
 	PrimaryLocationType	preferred;
-	Str255							scratch;
-	OSErr								theError;
+	char scratch[256];
+	int								theError;
 	long								oldOffset;
 	short								abTag[kVCardLineMaxValues],				// More than enough room for now
 											vcProp[kVCardLineMaxValues],			// More than enough room for now
@@ -160,7 +160,7 @@ Handle MakeVCard (Handle addresses, Handle notes)
 	
 	// VERSION:2.1
 	if (!theError)
-		theError = VCardAccuAddAVPairStr (&vCard, vcVersion, (UPtr)"2.1");
+		theError = VCardAccuAddAVPairStr (&vCard, vcVersion, (unsigned char *)"2.1");
 
 	// Add the body of the vCard
 	
@@ -287,17 +287,17 @@ Handle MakeVCard (Handle addresses, Handle notes)
 	if (!theError)
 		AccuTrim (&vCard);
 	else
-		do { void **_azh = (vCard).data; if (_azh) { if (*_azh) free(*_azh); free(_azh); } (vCard).data = NULL; (vCard).offset = (vCard).size = 0; } while(0);
+		free(vCard.data); vCard.data = NULL; vCard.offset = vCard.size = 0;
 	return (vCard.data);
 }
 
 
-static OSErr VCardAccuAddValue (AccuPtr a, Handle value, bool quotedPrintable)
+static int VCardAccuAddValue (AccuPtr a, void *value, bool quotedPrintable)
 
 {
-	Ptr		spot,
+	char *		spot,
 				end;
-	OSErr	theError;
+	int	theError;
 	long	offset;
 	
 	theError = noErr;
@@ -326,12 +326,12 @@ static OSErr VCardAccuAddValue (AccuPtr a, Handle value, bool quotedPrintable)
 }
 
 
-static OSErr VCardAccuAddValueQuotedPrintable (AccuPtr a, Handle value)
+static int VCardAccuAddValueQuotedPrintable (AccuPtr a, void *value)
 
 {
-	Ptr		spot,
+	char *		spot,
 				end;
-	OSErr	theError;
+	int	theError;
 	long	offset,
 				count;
 	
@@ -377,10 +377,10 @@ static OSErr VCardAccuAddValueQuotedPrintable (AccuPtr a, Handle value)
 }
 
 
-static OSErr VCardAccuMaybeQuotedPrintableSoftline (AccuPtr a, Handle value, long *offset, long *count, long maxChar)
+static int VCardAccuMaybeQuotedPrintableSoftline (AccuPtr a, void *value, long *offset, long *count, long maxChar)
 
 {
-	OSErr	theError;
+	int	theError;
 	
 	theError = noErr;
 	if (*count >= maxChar) {
@@ -394,10 +394,10 @@ static OSErr VCardAccuMaybeQuotedPrintableSoftline (AccuPtr a, Handle value, lon
 }
 
 
-static bool VCardValueContainsCRLFs (Handle value)
+static bool VCardValueContainsCRLFs (void *value)
 
 {
-	Ptr 	spot;
+	char * 	spot;
 	Size	length;
 	
 	if (value) {
@@ -410,11 +410,11 @@ static bool VCardValueContainsCRLFs (Handle value)
 }
 
 
-static OSErr VCardAccuAddProperties (AccuPtr a, short count, short *vcProp)
+static int VCardAccuAddProperties (AccuPtr a, short count, short *vcProp)
 
 {
-	Str255	property;
-	OSErr		theError;
+	char property[256];
+	int		theError;
 	short		i;
 
 	theError = noErr;
@@ -426,10 +426,10 @@ static OSErr VCardAccuAddProperties (AccuPtr a, short count, short *vcProp)
 	return (theError);
 }
 
-static OSErr VCardAccuAddPropertiesAndValue (AccuPtr a, short count, short *vcProp, Handle value, bool quotedPrintable)
+static int VCardAccuAddPropertiesAndValue (AccuPtr a, short count, short *vcProp, void *value, bool quotedPrintable)
 
 {
-	OSErr	theError;
+	int	theError;
 	
 	if (value) {
 		theError = VCardAccuAddProperties (a, count, vcProp);
@@ -450,14 +450,14 @@ static OSErr VCardAccuAddPropertiesAndValue (AccuPtr a, short count, short *vcPr
 //		Add a value list to the vCard data accumulator.
 //
 
-static OSErr VCardAccuAddValueList (AccuPtr a, Handle notes, short count, short *abTag, bool *anyValues)
+static int VCardAccuAddValueList (AccuPtr a, void *notes, short count, short *abTag, bool *anyValues)
 
 {
-	Str255	property,
+	char property[256],
 					tag;
-	Handle	**values,
+	void ***values,
 					*valuePtr;
-	OSErr		theError;
+	int		theError;
 	short		i;
 	Boolean	weHaveValue,
 					quotedPrintable;
@@ -465,8 +465,8 @@ static OSErr VCardAccuAddValueList (AccuPtr a, Handle notes, short count, short 
 	weHaveValue			= false;
 	quotedPrintable	= false;
 	
-	// Allocate space for one Handle per requested value
-	values = NuHandleClear (count * sizeof (Handle));
+	// Allocate space for one void *per requested value
+	values = calloc(1,count * sizeof (void *));
 	theError = MemError ();
 	
 	// Get the values
@@ -504,8 +504,8 @@ static OSErr VCardAccuAddValueList (AccuPtr a, Handle notes, short count, short 
 	if (values) {
 		valuePtr = *values;
 		for (i = 0; i < count; ++i)
-			ZapHandle (*valuePtr);
-		ZapHandle (values);
+			free(*valuePtr);
+		free(values);
 	}
 	
 	if (anyValues)
@@ -514,11 +514,11 @@ static OSErr VCardAccuAddValueList (AccuPtr a, Handle notes, short count, short 
 }
 
 
-static OSErr VCardAccuAddAVPairStr (AccuPtr a, short attributeResIndex, PStr value)
+static int VCardAccuAddAVPairStr (AccuPtr a, short attributeResIndex, char * value)
 
 {
-	Str255	scratch;
-	OSErr		theError;
+	char scratch[256];
+	int		theError;
 	
 	theError = AccuAddStr (a, GetRString (scratch, VCardKeywordStrn + attributeResIndex));
 	if (!theError)
@@ -531,19 +531,19 @@ static OSErr VCardAccuAddAVPairStr (AccuPtr a, short attributeResIndex, PStr val
 }
 
 
-static OSErr VCardAccuAddAVPairRes (AccuPtr a, short attributeResIndex, short valueResIndex)
+static int VCardAccuAddAVPairRes (AccuPtr a, short attributeResIndex, short valueResIndex)
 
 {
-	Str255	scratch;
+	char scratch[256];
 	
 	return (VCardAccuAddAVPairStr (a, attributeResIndex, GetRString (scratch, VCardKeywordStrn + valueResIndex)));
 }
 
 
-static OSErr VCardAccuAddAddress (AccuPtr a, Handle notes, bool home, bool preferred)
+static int VCardAccuAddAddress (AccuPtr a, void *notes, bool home, bool preferred)
 
 {
-	OSErr		theError;
+	int		theError;
 	long		oldOffset;
 	short		abTag[kVCardLineMaxValues],				// More than enough room for now
 					vcProp[kVCardLineMaxValues],			// More than enough room for now
@@ -581,12 +581,12 @@ static OSErr VCardAccuAddAddress (AccuPtr a, Handle notes, bool home, bool prefe
 	return (theError);
 }
 
-static OSErr VCardAccuAddPhone (AccuPtr a, Handle notes, short propertyID, short propertyLocation, short tagID, bool preferred)
+static int VCardAccuAddPhone (AccuPtr a, void *notes, short propertyID, short propertyLocation, short tagID, bool preferred)
 
 {
-	Str255	tag;
-	Handle	value;
-	OSErr		theError;
+	char tag[256];
+	void *value;
+	int		theError;
 	short		vcProp[kVCardLineMaxValues],			// More than enough room for now
 					count;
 	Boolean	quotedPrintable;
@@ -603,17 +603,17 @@ static OSErr VCardAccuAddPhone (AccuPtr a, Handle notes, short propertyID, short
 		if (quotedPrintable)
 			vcProp[count++] = vcQuotedPrintable;
 		theError = VCardAccuAddPropertiesAndValue (a, count, vcProp, value, quotedPrintable);
-		ZapHandle (value);
+		free(value);
 	}
 	return (theError);
 }
 
-static OSErr VCardAccuAddURL (AccuPtr a, Handle notes, short propertyLocation, short tagID, bool preferred)
+static int VCardAccuAddURL (AccuPtr a, void *notes, short propertyLocation, short tagID, bool preferred)
 
 {
-	Str255	tag;
-	Handle	value;
-	OSErr		theError;
+	char tag[256];
+	void *value;
+	int		theError;
 	short		vcProp[kVCardLineMaxValues],			// More than enough room for now
 					count;
 	Boolean	quotedPrintable;
@@ -629,40 +629,40 @@ static OSErr VCardAccuAddURL (AccuPtr a, Handle notes, short propertyLocation, s
 		if (quotedPrintable)
 			vcProp[count++] = vcQuotedPrintable;
 		theError = VCardAccuAddPropertiesAndValue (a, count, vcProp, value, quotedPrintable);
-		ZapHandle (value);
+		free(value);
 	}
 	return (theError);
 }
 
 
-static OSErr VCardAccuAddOtherEmail (AccuPtr a, Handle notes)
+static int VCardAccuAddOtherEmail (AccuPtr a, void *notes)
 
 {
 	char **addresses = NULL;
-	Str255				scratch;
-	Handle				value;
-	OSErr					theError;
+	char scratch[256];
+	void *value;
+	int					theError;
 
 	theError = noErr;
 	if (value = GetTaggedFieldValueInNotes (notes, GetRString (scratch, ABReservedTagsStrn + abTagOtherEmail))) {
 		if (!SuckAddresses (&addresses, value, false, true, false, nil)) {
 			// Create an 'EMAIL' line for each address we suck from the other email field
 			for (int i = 0; !theError && addresses[i]; i++)
-				theError = VCardAccuAddAVPairStr (a, vcEmail, (Ptr)addresses[i]);
+				theError = VCardAccuAddAVPairStr (a, vcEmail, (char *)addresses[i]);
 		}
 		g_strfreev (addresses); addresses = NULL;
-		ZapHandle (value);
+		free(value);
 	}
 	return (theError);
 }
 
 
-static OSErr VCardAccuAddOther (AccuPtr a, Handle notes, short propertyID, short tagID)
+static int VCardAccuAddOther (AccuPtr a, void *notes, short propertyID, short tagID)
 
 {
-	Str255	tag;
-	Handle	value;
-	OSErr		theError;
+	char tag[256];
+	void *value;
+	int		theError;
 	short		vcProp[kVCardLineMaxValues],			// More than enough room for now
 					count;
 	Boolean	quotedPrintable;
@@ -675,20 +675,20 @@ static OSErr VCardAccuAddOther (AccuPtr a, Handle notes, short propertyID, short
 		if (quotedPrintable)
 			vcProp[count++] = vcQuotedPrintable;
 		theError = VCardAccuAddPropertiesAndValue (a, count, vcProp, value, quotedPrintable);
-		ZapHandle (value);
+		free(value);
 	}
 	return (theError);
 }
 
 
-static OSErr VCardAccuAddNotes (AccuPtr a, Handle notes)
+static int VCardAccuAddNotes (AccuPtr a, void *notes)
 
 {
 	AttributeValueHandle	avPairs;
-	Str255								tag;
-	Handle								value,
+	char tag[256];
+	void *value,
 												leftovers;
-	OSErr									theError;
+	int									theError;
 	short									vcProp[kVCardLineMaxValues],			// More than enough room for now
 												count;
 	Boolean								quotedPrintable;
@@ -699,13 +699,13 @@ static OSErr VCardAccuAddNotes (AccuPtr a, Handle notes)
 	avPairs = ParseAllAttributeValuePairs (notes, &leftovers, avAllButHiddenPairs, avPairUnknown);
 	if (leftovers) {
 		if (!value) {
-			value = NuHandle (0);
+			value = malloc(0);
 			theError = MemError ();
 		}
 		else
-			theError = PtrPlusHand ("\r\n", value, 2);
+			theError = buf_append(value, "\r\n", 2));
 		if (!theError)
-			theError = HandPlusHand (leftovers, value);
+			theError = buf_concat(value, leftovers);
 	}
 	if (value && !theError) {
 		quotedPrintable = VCardValueContainsCRLFs (value);
@@ -715,9 +715,9 @@ static OSErr VCardAccuAddNotes (AccuPtr a, Handle notes)
 			vcProp[count++] = vcQuotedPrintable;
 		theError = VCardAccuAddPropertiesAndValue (a, count, vcProp, value, quotedPrintable);
 	}
-	ZapHandle (value);
-	ZapHandle (leftovers);
-	ZapHandle (avPairs);
+	free(value);
+	free(leftovers);
+	free(avPairs);
 	return (theError);
 }
 
@@ -732,10 +732,10 @@ static OSErr VCardAccuAddNotes (AccuPtr a, Handle notes)
 //		and they can call us again to suck out the rest
 //
 
-OSErr ParseVCard (Handle data, uLong *offset, XDashStringHandle xDashStrings, VCardItemProc itemProc, VCardErrorProc errorProc, long refcon)
+int ParseVCard (void *data, uLong *offset, XDashStringHandle xDashStrings, VCardItemProc itemProc, VCardErrorProc errorProc, long refcon)
 {
 	VCardParserRec	parser;
-	OSErr					theError;
+	int					theError;
 
 	if (!IsVCardAvailable ())
 		return (noErr);
@@ -774,10 +774,10 @@ OSErr ParseVCard (Handle data, uLong *offset, XDashStringHandle xDashStrings, VC
 //		vcardfile = [wsls] vcard [wsls]
 //
 
-static OSErr VCardParserVCardFile (VCardParserPtr parserPtr)
+static int VCardParserVCardFile (VCardParserPtr parserPtr)
 
 {
-	OSErr	theError;
+	int	theError;
 	
 	// Check for optional whitespace and linefeeds
 	VCardParserWSLS (parserPtr, true);
@@ -799,18 +799,18 @@ static OSErr VCardParserVCardFile (VCardParserPtr parserPtr)
 //		vcard = "BEGIN:VCARD" [ws 7bit] 1*CRLF items *CRLF "END:VCARD"
 //
 
-static OSErr VCardParserVCard (VCardParserPtr parserPtr)
+static int VCardParserVCard (VCardParserPtr parserPtr)
 
 {
-	Str255	keyword,
+	char keyword[256],
 					scratch;
-	OSErr		theError;
+	int		theError;
 	
 	// Initialize the handles we'll be needing
-	parserPtr->item.value		 = NuHandle (0);
-	parserPtr->item.group		 = NuHandle (0);
-	parserPtr->item.params	 = NuHandle (0);
-	parserPtr->item.strings	 = NuHandle (0);
+	parserPtr->item.value		 = malloc(0);
+	parserPtr->item.group		 = malloc(0);
+	parserPtr->item.params	 = malloc(0);
+	parserPtr->item.strings	 = malloc(0);
 	theError = MemError ();
 
 	// Check for "BEGIN:VCARD"
@@ -846,10 +846,10 @@ static OSErr VCardParserVCard (VCardParserPtr parserPtr)
 	}
 	
 	// Release our memory
-	ZapHandle (parserPtr->item.value);
-	ZapHandle (parserPtr->item.group);
-	ZapHandle (parserPtr->item.params);
-	ZapHandle (parserPtr->item.strings);
+	free(parserPtr->item.value);
+	free(parserPtr->item.group);
+	free(parserPtr->item.params);
+	free(parserPtr->item.strings);
 
 	return (theError);
 }
@@ -865,10 +865,10 @@ static OSErr VCardParserVCard (VCardParserPtr parserPtr)
 //		parsed "END" as the item property.
 //
 
-static OSErr VCardParserItems (VCardParserPtr parserPtr)
+static int VCardParserItems (VCardParserPtr parserPtr)
 
 {
-	OSErr	theError;
+	int	theError;
 	short	numItems;
 	
 	theError = noErr;
@@ -925,11 +925,11 @@ static OSErr VCardParserItems (VCardParserPtr parserPtr)
 //		pick values, fields, or whatever from this structure in neat, tidy keywords.
 //
 
-static OSErr VCardParserItem (VCardParserPtr parserPtr)
+static int VCardParserItem (VCardParserPtr parserPtr)
 
 {
-	Str255	keyword;
-	OSErr		theError;
+	char keyword[256];
+	int		theError;
 	
 	// Initial values for the item record
 	parserPtr->item.property = vcKeyNone;
@@ -991,10 +991,10 @@ static OSErr VCardParserItem (VCardParserPtr parserPtr)
 //		exactly a validating parser.
 //
 
-static OSErr VCardParserGroups (VCardParserPtr parserPtr, VCardItemPtr itemPtr, Str255 keyword)
+static int VCardParserGroups (VCardParserPtr parserPtr, VCardItemPtr itemPtr, char keyword[256])
 
 {
-	OSErr		theError;
+	int		theError;
 	Boolean	done;
 	
 	theError = noErr;
@@ -1033,12 +1033,12 @@ static OSErr VCardParserGroups (VCardParserPtr parserPtr, VCardItemPtr itemPtr, 
 //		On exit, 'spot' should point to the first character following the parameter list.
 //
 
-static OSErr VCardParserParameters (VCardParserPtr parserPtr, VCardItemPtr itemPtr)
+static int VCardParserParameters (VCardParserPtr parserPtr, VCardItemPtr itemPtr)
 
 {
 	VCardParamRec	param;
-	Str255				keyword;
-	OSErr					theError;
+	char keyword[256];
+	int					theError;
 	Boolean				done;
 	
 	theError = noErr;
@@ -1110,7 +1110,7 @@ static OSErr VCardParserParameters (VCardParserPtr parserPtr, VCardItemPtr itemP
 		
 		// Append the parameter record onto our Big Block of Parameters
 		if (!theError && !parserPtr->error)
-			theError = PtrPlusHand (&param, itemPtr->params, sizeof (param));
+			theError = buf_append(itemPtr->params, &param, sizeof (param)));
 		
 		done = !VCardParserCharacter (parserPtr, ';', true);
 	}
@@ -1130,7 +1130,7 @@ static OSErr VCardParserParameters (VCardParserPtr parserPtr, VCardItemPtr itemP
 static void VCardParserParameterTypeValue (VCardParserPtr parserPtr, VCardParamPtr paramPtr)
 
 {
-	Str255	keyword;
+	char keyword[256];
 	
 	paramPtr->pValue = VCardProcessProperty (parserPtr, VCardParserKeyword (parserPtr, keyword));
 }
@@ -1151,7 +1151,7 @@ static void VCardParserParameterTypeValue (VCardParserPtr parserPtr, VCardParamP
 static void VCardParserParameterValueValue (VCardParserPtr parserPtr, VCardParamPtr paramPtr)
 
 {
-	Str255	keyword;
+	char keyword[256];
 	
 	paramPtr->pValue = VCardProcessProperty (parserPtr, VCardParserKeyword (parserPtr, keyword));
 }
@@ -1170,7 +1170,7 @@ static void VCardParserParameterValueValue (VCardParserPtr parserPtr, VCardParam
 static void VCardParserParameterEncodingValue (VCardParserPtr parserPtr, VCardParamPtr paramPtr)
 
 {
-	Str255	keyword;
+	char keyword[256];
 	
 	VCardParserProcessOrphanedEncoding (&parserPtr->item, paramPtr->pValue = VCardProcessProperty (parserPtr, VCardParserKeyword (parserPtr, keyword)));
 }
@@ -1187,7 +1187,7 @@ static void VCardParserParameterEncodingValue (VCardParserPtr parserPtr, VCardPa
 static void VCardParserParameterCharsetValue (VCardParserPtr parserPtr, VCardParamPtr paramPtr)
 
 {
-	Str255	keyword,
+	char keyword[256],
 					scratch;
 	short		value,
 					i;
@@ -1300,10 +1300,10 @@ static void VCardParserEqualSign (VCardParserPtr parserPtr)
 //
 //
 
-static OSErr VCardParserValue (VCardParserPtr parserPtr, VCardItemPtr itemPtr)
+static int VCardParserValue (VCardParserPtr parserPtr, VCardItemPtr itemPtr)
 
 {
-	OSErr	theError;
+	int	theError;
 	
 	theError = noErr;
 	
@@ -1364,7 +1364,7 @@ static OSErr VCardParserValue (VCardParserPtr parserPtr, VCardItemPtr itemPtr)
 //		results to the client.
 //
 
-static OSErr VCardParserAddress (VCardParserPtr parserPtr, VCardItemPtr itemPtr)
+static int VCardParserAddress (VCardParserPtr parserPtr, VCardItemPtr itemPtr)
 
 {
 	vcKeywordType	addrParts[7] = {	vcPOBox, 	vcExtendedAddress,	vcStreet, vcLocality,
@@ -1386,7 +1386,7 @@ static OSErr VCardParserAddress (VCardParserPtr parserPtr, VCardItemPtr itemPtr)
 //		results to the client.
 //
 
-static OSErr VCardParserOrganization (VCardParserPtr parserPtr, VCardItemPtr itemPtr)
+static int VCardParserOrganization (VCardParserPtr parserPtr, VCardItemPtr itemPtr)
 
 {
 	vcKeywordType	orgParts[2] = {	vcOrganizationName, vcOrganizationUnits };
@@ -1407,7 +1407,7 @@ static OSErr VCardParserOrganization (VCardParserPtr parserPtr, VCardItemPtr ite
 //		results to the client.
 //
 
-static OSErr VCardParserName (VCardParserPtr parserPtr, VCardItemPtr itemPtr)
+static int VCardParserName (VCardParserPtr parserPtr, VCardItemPtr itemPtr)
 
 {
 	vcKeywordType	nameParts[5] = {	vcFamilyName, vcGivenName, vcMiddleName, vcNamePrefix, vcNameSuffix };
@@ -1429,10 +1429,10 @@ static OSErr VCardParserName (VCardParserPtr parserPtr, VCardItemPtr itemPtr)
 //		to hand off the results.
 //
 
-static OSErr VCardParserPropertPartList (VCardParserPtr parserPtr, VCardItemPtr itemPtr, vcKeywordType *partList, short parts)
+static int VCardParserPropertPartList (VCardParserPtr parserPtr, VCardItemPtr itemPtr, vcKeywordType *partList, short parts)
 
 {
-	OSErr	theError;
+	int	theError;
 	short	index;
 
 	theError = noErr;
@@ -1467,11 +1467,11 @@ static OSErr VCardParserPropertPartList (VCardParserPtr parserPtr, VCardItemPtr 
 //		Pass nil for the 'value' if you don't care to actually save the value
 //
 
-static OSErr VCardParser7BitValue (VCardParserPtr parserPtr, VCardItemPtr itemPtr, bool valueList, bool quotedPrintable)
+static int VCardParser7BitValue (VCardParserPtr parserPtr, VCardItemPtr itemPtr, bool valueList, bool quotedPrintable)
 
 {
-	Ptr			oldSpot;
-	OSErr		theError;
+	char *			oldSpot;
+	int		theError;
 	Boolean	done;
 
 	theError = noErr;
@@ -1486,7 +1486,7 @@ static OSErr VCardParser7BitValue (VCardParserPtr parserPtr, VCardItemPtr itemPt
 				if (parserPtr->spot + 1 <= parserPtr->end && isSEMI (*(parserPtr->spot + 1))) {
 					// Copy the value up to (but not including) the '\'
 					if (itemPtr && itemPtr->value)
-						theError = PtrPlusHand (oldSpot, itemPtr->value, parserPtr->spot - oldSpot);
+						theError = buf_append(itemPtr->value, oldSpot, parserPtr->spot - oldSpot));
 					// Move the pointer to the semicolon and save this spot
 					oldSpot = ++parserPtr->spot;
 				}
@@ -1518,7 +1518,7 @@ static OSErr VCardParser7BitValue (VCardParserPtr parserPtr, VCardItemPtr itemPt
 		if (parserPtr->spot > oldSpot) {
 			--parserPtr->spot;
 			if (itemPtr && itemPtr->value)
-				theError = PtrPlusHand (oldSpot, itemPtr->value, (long) (parserPtr->spot - oldSpot));
+				theError = buf_append(itemPtr->value, oldSpot, (long)) (parserPtr->spot - oldSpot));
 		}
 		else
 			if (!valueList)
@@ -1535,11 +1535,11 @@ static OSErr VCardParser7BitValue (VCardParserPtr parserPtr, VCardItemPtr itemPt
 //		Pass nil for the 'itemPtr' if you don't care to actually save the value
 //
 
-static OSErr VCardParser8BitValue (VCardParserPtr parserPtr, VCardItemPtr itemPtr)
+static int VCardParser8BitValue (VCardParserPtr parserPtr, VCardItemPtr itemPtr)
 
 {
-	Ptr		oldSpot;
-	OSErr	theError;
+	char *		oldSpot;
+	int	theError;
 	
 	theError = noErr;
 	
@@ -1552,7 +1552,7 @@ static OSErr VCardParser8BitValue (VCardParserPtr parserPtr, VCardItemPtr itemPt
 	// If the pointer moved, there is value to what we're doing
 	if (itemPtr)
 		if (parserPtr->spot > oldSpot)
-			theError = PtrPlusHand (oldSpot, itemPtr->value, (long) (parserPtr->spot - oldSpot));
+			theError = buf_append(itemPtr->value, oldSpot, (long)) (parserPtr->spot - oldSpot));
 		else
 			parserPtr->error = vcErrorExpectingValue;
 
@@ -1570,7 +1570,7 @@ static OSErr VCardParser8BitValue (VCardParserPtr parserPtr, VCardItemPtr itemPt
 //			� If we hit and end of line and the last character is an '=' we've hit a soft return and keep scanning
 //
 
-static OSErr VCardParserQuotedPrintableValue (VCardParserPtr parserPtr, VCardItemPtr itemPtr, char delimiter)
+static int VCardParserQuotedPrintableValue (VCardParserPtr parserPtr, VCardItemPtr itemPtr, char delimiter)
 
 {
 	return (VCardParser7BitValue (parserPtr, itemPtr, false, true));
@@ -1589,11 +1589,11 @@ static OSErr VCardParserQuotedPrintableValue (VCardParserPtr parserPtr, VCardIte
 //		equipped to validate the value when it attempts to decode the value.
 //
 
-static OSErr VCardParserBase64Value (VCardParserPtr parserPtr, VCardItemPtr itemPtr)
+static int VCardParserBase64Value (VCardParserPtr parserPtr, VCardItemPtr itemPtr)
 
 {
-	Ptr			oldSpot;
-	OSErr		theError;
+	char *			oldSpot;
+	int		theError;
 	Boolean	done;
 	
 	theError = noErr;
@@ -1610,7 +1610,7 @@ static OSErr VCardParserBase64Value (VCardParserPtr parserPtr, VCardItemPtr item
 					
 	// Copy the value -- which does NOT include either terminating CRLF (and we give one of them back)
 	if (parserPtr->spot - 1 > oldSpot) {
-		theError = PtrPlusHand (oldSpot, itemPtr->value, (long) (parserPtr->spot - oldSpot - 2));
+		theError = buf_append(itemPtr->value, oldSpot, (long)) (parserPtr->spot - oldSpot - 2));
 		--parserPtr->spot;
 	}
 	else
@@ -1649,7 +1649,7 @@ static void VCardParserSkipToNextLine (VCardParserPtr parserPtr)
 static bool VCardParserWS (VCardParserPtr parserPtr, bool optional)
 
 {
-	Ptr			oldSpot;
+	char *			oldSpot;
 	Boolean	wsPresent;
 	
 	oldSpot = parserPtr->spot;
@@ -1678,7 +1678,7 @@ static bool VCardParserWS (VCardParserPtr parserPtr, bool optional)
 static bool VCardParserWSLS (VCardParserPtr parserPtr, bool optional)
 
 {
-	Ptr			oldSpot;
+	char *			oldSpot;
 	Boolean	wsPresent;
 
 	oldSpot = parserPtr->spot;
@@ -1706,7 +1706,7 @@ static bool VCardParserWSLS (VCardParserPtr parserPtr, bool optional)
 //		At the conclusion of this function, 'spot' points to the first non-strnosemi character.
 //
 
-static OSErr VCardParserStrnosemi (VCardParserPtr parserPtr, VCardItemPtr itemPtr)
+static int VCardParserStrnosemi (VCardParserPtr parserPtr, VCardItemPtr itemPtr)
 
 {
 	return (VCardParser7BitValue (parserPtr, itemPtr, true, itemPtr->encoding == vcValueQuotedPrintable));
@@ -1725,13 +1725,13 @@ static OSErr VCardParserStrnosemi (VCardParserPtr parserPtr, VCardItemPtr itemPt
 //		pointing to the first character that follows the keyword.
 //
 
-static PStr VCardParserKeyword (VCardParserPtr parserPtr, PStr keyword)
+static char * VCardParserKeyword (VCardParserPtr parserPtr, char * keyword)
 
 {
 	*keyword = 0;
 	
 	// copy alpha characters into the keyword
-	while (*keyword < sizeof (Str255) && parserPtr->spot <= parserPtr->end && (isalpha (*parserPtr->spot) || isdigit (*parserPtr->spot) || isDASH (*parserPtr->spot)))
+	while (*keyword < 256 && parserPtr->spot <= parserPtr->end && (isalpha (*parserPtr->spot) || isdigit (*parserPtr->spot) || isDASH (*parserPtr->spot)))
 		keyword[++keyword[0]] = *parserPtr->spot++;
 	return (keyword);
 }
@@ -1750,11 +1750,11 @@ static PStr VCardParserKeyword (VCardParserPtr parserPtr, PStr keyword)
 //		either terminate the scan?  For now, we're doing the latter.
 //
 
-static OSErr VCardParserWord (VCardParserPtr parserPtr, Handle value)
+static int VCardParserWord (VCardParserPtr parserPtr, void *value)
 
 {
-	Ptr		oldSpot;
-	OSErr	theError;
+	char *		oldSpot;
+	int	theError;
 	
 	theError = noErr;
 	
@@ -1766,7 +1766,7 @@ static OSErr VCardParserWord (VCardParserPtr parserPtr, Handle value)
 
 	// If the pointer moved, there is value to what we're doing
 	if (parserPtr->spot > oldSpot)
-		theError = PtrPlusHand (oldSpot, value, (long) (parserPtr->spot - oldSpot));
+		theError = buf_append(value, oldSpot, (long)) (parserPtr->spot - oldSpot));
 	else
 		parserPtr->error = vcErrorExpectingValue;
 
@@ -1817,7 +1817,7 @@ static bool VCardParserCharacter (VCardParserPtr parserPtr, char c, bool optiona
 static bool VCardParseCRLFs (VCardParserPtr parserPtr, bool optional)
 
 {
-	Ptr			oldSpot;
+	char *			oldSpot;
 	Boolean	crlfPresent;
 	
 	oldSpot = parserPtr->spot;
@@ -1834,24 +1834,24 @@ static bool VCardParseCRLFs (VCardParserPtr parserPtr, bool optional)
 }
 
 
-static OSErr VCardAppendKeywordToGroup (VCardItemPtr itemPtr, Str255 keyword)
+static int VCardAppendKeywordToGroup (VCardItemPtr itemPtr, char keyword[256])
 
 {
-	OSErr	theError;
+	int	theError;
 	
 	theError = noErr;
 	if (GetHandleSize (itemPtr->group))
-		theError = PtrPlusHand (".", itemPtr->group, 1);
+		theError = buf_append(itemPtr->group, ".", 1));
 	if (!theError)
-		theError = PtrPlusHand (&keyword[1], itemPtr->group, *keyword);
+		theError = buf_append(itemPtr->group, &keyword[1], *keyword));
 	return (theError);
 }
 
 
-static OSErr VCardParserAppendPropertyValueString (VCardParserPtr parserPtr, VCardParamPtr paramPtr, Handle strings)
+static int VCardParserAppendPropertyValueString (VCardParserPtr parserPtr, VCardParamPtr paramPtr, void *strings)
 
 {
-	OSErr	theError;
+	int	theError;
 	
 	paramPtr->pValue = vcKeyString;
 	paramPtr->offset = GetHandleSize (strings);
@@ -1869,11 +1869,11 @@ static OSErr VCardParserAppendPropertyValueString (VCardParserPtr parserPtr, VCa
 //		the ID for that keyword.  If the keywword is unknown, return 'vcKeyNone'.
 //
 
-static vcKeywordType VCardProcessProperty (VCardParserPtr parserPtr, Str255 keyword)
+static vcKeywordType VCardProcessProperty (VCardParserPtr parserPtr, char keyword[256])
 
 {
 	vcKeywordType	keywordID;
-	Str15					xDash;
+	char xDash[16];
 	short					index;
 	
 	keywordID = vcKeyNone;
@@ -1899,10 +1899,10 @@ static vcKeywordType VCardProcessProperty (VCardParserPtr parserPtr, Str255 keyw
 //		found string, or -1 if the keyword was not present.
 //
 
-static short FindXDashString (XDashStringHandle xdash, PStr keyword)
+static short FindXDashString (XDashStringHandle xdash, char * keyword)
 
 {
-  UPtr		spot,
+  unsigned char *		spot,
   				end;
   short		index;
   Boolean	found;
@@ -1929,7 +1929,7 @@ static short FindXDashString (XDashStringHandle xdash, PStr keyword)
 bool IsVCardFile (FSSpecPtr spec)
 
 {
-	Str32		extension,
+	char extension[33],
 					vcardExtension;
 	short		i;
 	Boolean	result;
@@ -1952,7 +1952,7 @@ bool IsVCardFile (FSSpecPtr spec)
 				break;
 	
 		if (i) {
-			MakePStr (extension, &spec->name[i + 1], spec->name[0] - i);
+			{ size_t _mpl = (spec->name[0] - i); memcpy(extension, &spec->name[i + 1], _mpl); ((char*)(extension))[_mpl] = '\0'; }
 			
 			result = striscmp (extension, GetRString (vcardExtension, VCARD_FILE_EXTENSION)) == 0;
 		}
@@ -1977,15 +1977,15 @@ bool IsVCardFile (FSSpecPtr spec)
 //		itself with ".vcf" appended.
 //
 
-PStr MakeVCardFileName (short ab,short nick, PStr filename)
+char * MakeVCardFileName (short ab,short nick, char * filename)
 
 {
-	Str31	extension;
+	char extension[32];
 	
 	GetNicknameNamePStr (ab, nick, filename);
 	filename[++filename[0]] = '.';
 	PCat (filename, GetRString (extension, VCARD_FILE_EXTENSION));
-	*filename = MIN (*filename, sizeof (Str31) - 1);
+	*filename = MIN (*filename, 32 - 1);
 	return (filename);
 }
 

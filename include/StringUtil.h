@@ -37,44 +37,36 @@ ADVISED OF THE POSSIBILITY OF SUCH DAMAGE. */
 #include <string.h>
 #include <glib.h>
 
-/* MakePPtr: copy ptr+len into a C string buffer */
-#define MakePPtr(pstr, ptr, len)                                               \
-  do {                                                                         \
-    size_t _mpl = (size_t)(len);                                               \
-    if (_mpl > 255) _mpl = 255;                                                \
-    memmove(pstr, ptr, _mpl);                                                  \
-    (pstr)[_mpl] = '\0';                                                       \
-  } while (false)
 /* CtoPPtrCpy: C string copy (was C-to-Pascal, now just copy) */
 #define CtoPPtrCpy(p, c) g_strlcpy((char *)(p), (c), sizeof(p))
 #define StringToNum(a, b) MyStringToNum(a, b)
-void MyStringToNum(PStr string, long *num);
-bool AllDigits(UPtr chars, long len);
-bool BeginsWith(PStr string, PStr prefix);
-void CaptureHex(PStr from, PStr to);
-void CaptureHexPtr(Ptr from, Ptr to, long *pLen);
-bool EqualStrRes(PStr string, short resId);
-UPtr ComposeRString(UPtr into, int format, ...);
+void MyStringToNum(char *string, long *num);
+bool AllDigits(char *chars, long len);
+bool BeginsWith(char *string, char *prefix);
+void CaptureHex(char *from, char *to);
+void CaptureHexPtr(char * from, char * to, long *pLen);
+bool EqualStrRes(char *string, short resId);
+char *ComposeRString(char *into, int format, ...);
 bool StringSame(const char *s1, const char *s2);
-unsigned char *ComposeString(unsigned char *dst, const char *fmt, ...);
+char *ComposeString(char *dst, const char *fmt, ...);
 /* CtoPCpy: C string copy (was C-to-Pascal, now just copy) */
 #define CtoPCpy(p, c) g_strlcpy((char *)(p), (c), sizeof(p))
-bool HandleEndsWithR(Handle name, short resId);
-bool EndsWith(PStr name, PStr suffix);
-bool EndsWithR(PStr name, short resId);
-bool StartsWithR(PStr name, short resId);
-bool StartsWith(PStr name, PStr prefix);
-bool StartsWithPtr(UPtr name, uint32_t len, PStr prefix);
-OSErr AccuComposeR(AccuPtr a, int format, ...);
-OSErr AccuCompose(AccuPtr a, PStr format, ...);
-long HighBits(UPtr s, long len);
+bool HandleEndsWithR(void *name, short resId);
+bool EndsWith(char *name, char *suffix);
+bool EndsWithR(char *name, short resId);
+bool StartsWithR(char *name, short resId);
+bool StartsWith(char *name, char *prefix);
+bool StartsWithPtr(char *name, uint32_t len, char *prefix);
+int AccuComposeR(AccuPtr a, int format, ...);
+int AccuCompose(AccuPtr a, char *format, ...);
+long HighBits(char *s, long len);
 #define MixedHighBits(s, len) ((M_T1 = HighBits(s, len)), M_T1 && M_T1 < len)
 #define AnyHighBits(s, len) (HighBits(s, len) > 0)
 #define AllHighBits(s, len) (HighBits(s, len) == len)
-void MyLowerText(UPtr buffer, long bufferSize);
-void MyUpperText(UPtr buffer, long bufferSize);
-#define MyLowerStr(s) MyLowerText((UPtr)(s), strlen((const char *)(s)))
-#define MyUpperStr(s) MyUpperText((UPtr)(s), strlen((const char *)(s)))
+void MyLowerText(char *buffer, long bufferSize);
+void MyUpperText(char *buffer, long bufferSize);
+#define MyLowerStr(s) MyLowerText((char *)(s), strlen((const char *)(s)))
+#define MyUpperStr(s) MyUpperText((char *)(s), strlen((const char *)(s)))
 /* BMD is BlockMoveData: (src, dst, len) -> memmove(dst, src, len) */
 #ifndef BMD
 #define BMD(src, dst, len) memmove(dst, src, len)
@@ -83,119 +75,106 @@ void MyUpperText(UPtr buffer, long bufferSize);
 /* Use standard ctype.h functions - don't redefine them */
 #include <ctype.h>
 #define IsWordOrDigit(c) (IsWordChar[c] || isdigit(c))
-bool IsAllUpper(PStr s);
-PStr EscapeChars(PStr string, PStr toEscape);
-void EscapeInHex(PStr from, PStr to);
-void FixNewlines(UPtr string, long *count);
-PStr LCD(PStr s1, PStr s2);
-/* MakePStr: copy ptr+len into a C string buffer (was Pascal, now C) */
-#define MakePStr(dst, ptr, l)                                                  \
-  do {                                                                         \
-    size_t _msl = (size_t)(l);                                                 \
-    if (_msl > sizeof(dst) - 1) _msl = sizeof(dst) - 1;                       \
-    memmove(dst, ptr, _msl);                                                   \
-    (dst)[_msl] = '\0';                                                        \
-  } while (0)
-UPtr PCat(PStr string, PStr suffix);
+bool IsAllUpper(char *s);
+char *EscapeChars(char *string, char *toEscape);
+void EscapeInHex(char *from, char *to);
+void FixNewlines(char *string, long *count);
+char *LCD(char *s1, char *s2);
+char *PCat(char *string, char *suffix);
 /* PCatC: append a single character to C string */
 #define PCatC(string, c)                                                       \
   do {                                                                         \
-    unsigned char *__pstr = (unsigned char *)(string);                          \
-    size_t __plen = strlen((const char *)__pstr);                              \
+    char *__pstr = (char *)(string);                                           \
+    size_t __plen = strlen(__pstr);                                            \
     if (__plen < 255) {                                                        \
-      __pstr[__plen] = (unsigned char)(c);                                     \
+      __pstr[__plen] = (c);                                                    \
       __pstr[__plen + 1] = '\0';                                              \
     }                                                                          \
   } while (0)
 #define PSCatC(string, c) PCatC(string, c)
 #define PMaxCatC(string, max, c) PCatC(string, c)
-UPtr PCatR(PStr string, short resId);
-#define PCopy(to, from) PStrCopy(to, from, 256)
-PStr PStrCopy(PStr to, PStr from, short max);
-PStr PCopyTrim(PStr toString, PStr fromString, short max);
+char *PCatR(char *string, short resId);
+char *PCopyTrim(char *toString, char *fromString, short max);
 #define PCSTrim(t, f) PCopyTrim(t, f, sizeof(t))
-UPtr PEscCat(UPtr string, UPtr suffix, short escape, char *escapeWhat);
+char *PEscCat(char *string, char *suffix, short escape, char *escapeWhat);
 /* PFindSub: find sub in string (both C strings now) */
 #define PFindSub(sub, string) PPtrFindSub(sub, (string), strlen((const char *)(string)))
-bool TrimSquares(PStr s, bool multiple, bool internal);
-UPtr PIndex(PStr string, char c);
-UPtr IndexPtr(UPtr string, long stringLen, char c);
-UPtr PRIndex(PStr string, char c);
-PStr PInsert(PStr string, short size, PStr insert, UPtr spot);
-PStr PInsertC(PStr string, short size, uint8_t c, UPtr spot);
+bool TrimSquares(char *s, bool multiple, bool internal);
+char *PIndex(char *string, char c);
+char *IndexPtr(char *string, long stringLen, char c);
+char *PRIndex(char *string, char c);
+char *PInsert(char *string, short size, char *insert, char *spot);
+char *PInsertC(char *string, short size, uint8_t c, char *spot);
 void PLCat(char *dst, long num);
-UPtr PXCat(UPtr string, long num);
-UPtr PXWCat(UPtr string, short num);
-UPtr PPtrFindSub(PStr sub, UPtr string, long len);
-#define PSCat(string, suffix) PSCat_C(string, suffix, sizeof(string))
-UPtr PSCat_C(PStr string, PStr suffix, short max);
-#define PSCopy PCopy
+char *PXCat(char *string, long num);
+char *PXWCat(char *string, short num);
+char *PPtrFindSub(char *sub, char *string, long len);
 /* PTerminate: no-op for C strings (already null-terminated) */
 #define PTerminate(s) ((void)0)
-PStr PToken(PStr string, PStr token, UPtr *spotP, UPtr delims);
-bool TokenPtr(Ptr string, long stringLen, Ptr *token, long *tokenLen,
-              UPtr *spotP, UPtr delims);
-bool PTokenPtr(Ptr string, long stringLen, Ptr token, UPtr *spotP, UPtr delims);
-PStr Transmogrify(PStr toStr, short toId, PStr fromStr, short fromId);
-PStr PReplace(PStr string, PStr find, PStr replace);
-long PStrToNum(PStr string);
-bool ReMatch(PStr string, PStr Re);
-void RemoveParens(UPtr string);
-int strincmp(UPtr s1, UPtr s2, short n);
-int striscmp(UPtr s1, UPtr s2);
-int strscmp(UPtr s1, UPtr s2);
+char *PToken(char *string, char *token, char **spotP, char *delims);
+bool TokenPtr(char * string, long stringLen, char * *token, long *tokenLen,
+              char **spotP, char *delims);
+bool PTokenPtr(char * string, long stringLen, char * token, char **spotP, char *delims);
+char *Transmogrify(char *toStr, short toId, char *fromStr, short fromId);
+char *PReplace(char *string, char *find, char *replace);
+long PStrToNum(char *string);
+bool ReMatch(char *string, char *Re);
+void RemoveParens(char *string);
+int strincmp(char *s1, char *s2, short n);
+int striscmp(char *s1, char *s2);
+int strscmp(char *s1, char *s2);
 #define ExactlyEqualString(s1, s2) (strcmp((const char *)(s1), (const char *)(s2)) == 0)
-UPtr Tokenize(UPtr string, int size, UPtr *start, UPtr *end, UPtr delims);
-PStr TrimInitialWhite(PStr s);
-PStr TrimInternalWhite(PStr s);
+char *Tokenize(char *string, int size, char **start, char **end, char *delims);
+char *TrimInitialWhite(char *s);
+char *TrimInternalWhite(char *s);
 #define TrimAllWhite(s) TrimInitialWhite(TrimWhite(s))
-bool TrimPrefix(UPtr string, UPtr prefix);
-bool TrimReLo(PStr string, PStr re);
-bool TrimRe(PStr string, bool squares);
-PStr TrimWhite(PStr s);
-PStr CollapseLWSP(PStr s);
-UPtr VaComposeRString(UPtr into, short format, va_list args);
+bool TrimPrefix(char *string, char *prefix);
+bool TrimReLo(char *string, char *re);
+bool TrimRe(char *string, bool squares);
+char *TrimWhite(char *s);
+char *CollapseLWSP(char *s);
+char *VaComposeRString(char *into, short format, va_list args);
 #ifndef VaComposeStringDouble
-UPtr VaComposeStringDouble(UPtr into, int maxInto, UPtr format, va_list args,
-                           UPtr into2, int maxInto2, UPtr format2);
+char *VaComposeStringDouble(char *into, int maxInto, char *format, va_list args,
+                            char *into2, int maxInto2, char *format2);
 #endif
 #define VaComposeString(i, f, a)                                               \
   VaComposeStringDouble((i), -1, (f), (a), nil, -1, nil)
-long StringComp(PStr s1, PStr s2);
-bool Tr(Handle text, UPtr fromS, UPtr toS);
-bool TrLo(UPtr text, long len, UPtr fromS, UPtr toS);
-#define PTr(string, from, to) TrLo((UPtr)(string), strlen((const char *)(string)), from, to)
-PStr PStripChar(PStr string, uint8_t c);
-long StripChar(Ptr string, long len, uint8_t c);
-PStr Uncomma(PStr name);
-OSErr MyLowercaseText(UPtr text, long len);
-void UTF8To88591(Ptr inStr, long inLen, Ptr outStr, long *outLen);
-PStr UTF8ToMac(PStr str);
+long StringComp(char *s1, char *s2);
+bool Tr(void *text, char *fromS, char *toS);
+bool TrLo(char *text, long len, char *fromS, char *toS);
+#define PTr(string, from, to) TrLo((char *)(string), strlen((const char *)(string)), from, to)
+char *PStripChar(char *string, uint8_t c);
+long StripChar(char * string, long len, uint8_t c);
+char *Uncomma(char *name);
+int MyLowercaseText(char *text, long len);
+void UTF8To88591(char * inStr, long inLen, char * outStr, long *outLen);
+char *UTF8ToMac(char *str);
 short CharWidthInFont(uint8_t c, short font, short size);
-bool IsAllWhitePtr(UPtr s, long len);
-#define IsAllWhite(s) IsAllWhitePtr((UPtr)(s), strlen((const char *)(s)))
-bool IsAllLWSPPtr(UPtr s, long len);
-#define IsAllLWSP(s) IsAllLWSPPtr((UPtr)(s), strlen((const char *)(s)))
-bool PtrPtrMatchLWSP(Ptr lookFor, short lookLen, Ptr text, uint32_t textLen,
+bool IsAllWhitePtr(char *s, long len);
+#define IsAllWhite(s) IsAllWhitePtr((char *)(s), strlen((const char *)(s)))
+bool IsAllLWSPPtr(char *s, long len);
+#define IsAllLWSP(s) IsAllLWSPPtr((char *)(s), strlen((const char *)(s)))
+bool PtrPtrMatchLWSP(char * lookFor, short lookLen, char * text, uint32_t textLen,
                      bool atStart, bool atEnd);
 #define PPMatchLWSP(lf, tx, s, e)                                              \
-  PtrPtrMatchLWSP((Ptr)(lf), strlen((const char *)(lf)), (Ptr)(tx), strlen((const char *)(tx)), s, e)
+  PtrPtrMatchLWSP((char *)(lf), strlen((const char *)(lf)), (char *)(tx), strlen((const char *)(tx)), s, e)
 #define PPtrMatchLWSP(lf, tx, txLen, s, e)                                     \
-  PtrPtrMatchLWSP((Ptr)(lf), strlen((const char *)(lf)), tx, txLen, s, e)
+  PtrPtrMatchLWSP((char *)(lf), strlen((const char *)(lf)), tx, txLen, s, e)
 
 char *ensure_utf8(const char *text);
 
-UPtr ShortVersString(short vers, UPtr versionStr);
-PStr InfiniteString(PStr s, short size);
-bool ItemFromResAppearsInStr(short resID, PStr string, UPtr delims);
-bool StrIsItemFromRes(PStr string, short resID, UPtr delims);
-PStr StripLeadingItems(PStr string, short resID);
-PStr StripTrailingITems(PStr string, short resID);
-bool EndsWithItem(PStr string, short resID);
+char *ShortVersString(short vers, char *versionStr);
+char *InfiniteString(char *s, short size);
+bool ItemFromResAppearsInStr(short resID, char *string, char *delims);
+bool StrIsItemFromRes(char *string, short resID, char *delims);
+char *StripLeadingItems(char *string, short resID);
+char *StripTrailingITems(char *string, short resID);
+bool EndsWithItem(char *string, short resID);
 
 /* pstr_to_c: identity for C strings (backward compat) */
-static inline const char *pstr_to_c(const unsigned char *pstr) {
-  return (const char *)pstr;
+static inline const char *pstr_to_c(const char *pstr) {
+  return pstr;
 }
 
 #endif /* STRINGUTIL_H */

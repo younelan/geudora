@@ -34,7 +34,7 @@ ADVISED OF THE POSSIBILITY OF SUCH DAMAGE. */
 #include <stdbool.h>
 #include <stdint.h>
 
-typedef struct FAction *FActionPtr, **FActionHandle;
+typedef struct FAction *FActionPtr, *FActionHandle;
 typedef struct FAction {
   void **data;
   FActionHandle next;
@@ -68,7 +68,7 @@ typedef enum {
 typedef short FActionProc(FACallEnum callType, FActionHandle action, Rect *r,
                           void *dataPtr);
 #define CallAction(callType, act, r, dataPtr)                                  \
-  (*(FActionProc *)FATable((*act)->action))(callType, act, r, dataPtr)
+  (*(FActionProc *)FATable((act)->action))(callType, act, r, dataPtr)
 
 #define MAX_ACTIONS 5
 
@@ -101,12 +101,12 @@ typedef struct {
   void **nickExpanded;
   void **nickAddresses;
   regex_t *regex;
-} MatchTerm, *MTPtr, **MTHandle;
+} MatchTerm, *MTPtr, *MTHandle;
 
 typedef struct {
   long id;
   uint32_t lastMatch;
-} FilterUse, *FUPtr, **FUHandle;
+} FilterUse, *FUPtr, *FUHandle;
 
 typedef struct {
   char name[32];
@@ -119,7 +119,7 @@ typedef struct {
   FActionHandle actions;
   FilterUse fu;
   bool kill;
-} FilterRecord, *FRPtr, **FRHandle;
+} FilterRecord, *FRPtr, *FRHandle;
 
 #define NFilters (Filters ? GetHandleSize_(Filters) / sizeof(FilterRecord) : 0)
 #define FR (*(FRHandle)Filters)
@@ -140,7 +140,7 @@ typedef struct {
   CSpecHandle report;
   CSpecHandle mailbox;
   CSpecHandle message;
-  short **sounds;
+  short *sounds;
   short notify;
   char to[16];
   char cc[16];
@@ -148,7 +148,7 @@ typedef struct {
   BinAddrHandle toAddresses;
   BinAddrHandle ccAddresses;
   BinAddrHandle bccAddresses;
-} FilterPB, *FilterPBPtr, **FilterPBHandle;
+} FilterPB, *FilterPBPtr, *FilterPBHandle;
 
 #define afbOpenMailbox 1
 #define afbOpenMessage 2

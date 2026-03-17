@@ -81,16 +81,16 @@ short FindTOCSpot(TOCType * tocH, long serialNum);
 
 char *FindHeaderString(char *text, char *headerName, long *size, bool bodyToo);
 void BeautifyFrom(unsigned char *fromStr);
-PStr GrabAttribution(short attrId, MyWindowPtr win, PStr attribution);
-OSErr EnsureMessNewline(MessHandle messH);
+char * GrabAttribution(short attrId, MyWindowPtr win, char * attribution);
+int EnsureMessNewline(MessHandle messH);
 int LastMsgSelected(TOCType * tocH);
-OSErr RedirectAnnotation(MessHandle messH);
+int RedirectAnnotation(MessHandle messH);
 void CacheRecentNickname(unsigned char *name);
 int QueueMessage(TOCType * tocH, short sumNum, int when, int flags, bool b1,
                  bool b2);
 int InsertCommaIfNeedBe(GtkWidget *pte, HeadSpec *hs);
 void CompAttachSpec(MyWindowPtr win, FSSpec *spec);
-void NumToString(long num, unsigned char *str);
+/* NumToString declared in legacy_shim.h */
 void CompDelAttachment(MessHandle messH, HeadSpec *where);
 void AttachSelect(MessHandle messH);
 int SigValidate(short sigId);
@@ -101,11 +101,11 @@ int ConConMess(MessHandle messH, GtkWidget *pte, void *profile, void *a,
                void *b);
 void *BoxPreviewProfile(void *name, TOCType * tocH, int which);
 /* BeenThereDoneThat declared in boxact.h */
-OSErr MakeAttSubFolder(MessHandle messH, unsigned long uidHash,
+int MakeAttSubFolder(MessHandle messH, unsigned long uidHash,
                        FSSpecPtr folder);
 void ConConMultiple(TOCType * tocH, GtkWidget *pte, void *profile, int rule,
                     void *a, void *b);
-long Munger(Handle h, long offset, void *ptr1, long len1, void *ptr2,
+long Munger(void *h, long offset, void *ptr1, long len1, void *ptr2,
             long len2);
 int StackQueue(void *stack, void *elem);
 long BeautifyDate(unsigned char *dateStr, long *zoneSecs);
@@ -133,26 +133,26 @@ void ComputeLocalDate(void *sum, unsigned char *dateStr) {
 /**********************************************************************
  * MakeMessTitle - make a reasonable message title from a summary
  **********************************************************************/
-void MakeMessTitle(unsigned char *title, TOCType * tocH, int sumNum,
+void MakeMessTitle(char *title, TOCType * tocH, int sumNum,
                    bool useSummary) {
-  unsigned char from[64], date[64], time[64], mailbox[64], subject[64];
-  unsigned char pattern[64];
-  unsigned char datetime[64];
+  char from[64], date[64], time[64], mailbox[64], subject[64];
+  char pattern[64];
+  char datetime[64];
   long secs;
   unsigned char zoneStr[32];
   long zone;
 
   strcpy(from, (const char *)tocH->sums[sumNum].from);
   if (useSummary) {
-    int maxW = (*BoxWidths)[blFrom - 1];
+    int maxW = BoxWidths[blFrom - 1];
     if ((int)strlen((char *)from) > maxW)
       from[maxW] = '\0';
   }
 
   if (useSummary) {
-    if ((*BoxWidths)[blDate - 1] > 1) {
+    if (BoxWidths[blDate - 1] > 1) {
       ComputeLocalDate(tocH->sums + sumNum, (unsigned char *)datetime);
-      int maxDW = (*BoxWidths)[blDate - 1];
+      int maxDW = BoxWidths[blDate - 1];
       if ((int)strlen((char *)datetime) > maxDW)
         datetime[maxDW] = '\0';
     } else
@@ -171,7 +171,7 @@ void MakeMessTitle(unsigned char *title, TOCType * tocH, int sumNum,
       datetime[0] = '\0';
   }
 
-  GetMailboxName(tocH, sumNum, (unsigned char *)mailbox);
+  GetMailboxName(tocH, sumNum, mailbox);
   strcpy(subject, (const char *)tocH->sums[sumNum].subj);
 
   utl_PlugParams((unsigned char *)GetRString((char *)pattern, MESS_TITLE_PLUG),
@@ -185,7 +185,7 @@ void MakeMessTitle(unsigned char *title, TOCType * tocH, int sumNum,
 /* FindAttPtr will be the pointer to the struct defined below. */
 
 typedef struct {
-  Handle text;
+  void *text;
   bool outgoing;
   bool attach;
   HeadSpec hs;
@@ -202,7 +202,6 @@ typedef struct {
 #define peSelectLock 2
 #define peClickBeforeLock 4
 #define peColorValid 0
-#define SIG_NONE 0
 #define kEuSendNow 1
 #define kEuSendNext 0
 #define OPT_HAS_SPOOL 1
@@ -213,11 +212,8 @@ typedef struct {
 #define fgAttachment 1
 #define EAL_VARS_DECL int _eal_dummy = 0
 #define EAL_VARS _eal_dummy
-#define kPETECurrentStyle -1L
 #define OPT_DELSP 0
-#define OPT_BULK 0
 #define OPT_WEIRD_REPLY 0
-#define FLAG_ENCRYPT 0
 #define kAlertNoteAlert 1
 bool UseFlowOutExcerpt = false;
 
@@ -262,7 +258,7 @@ long StripTrailingNewlines(char **buf, size_t *bufSize, long stop);
 MyWindowPtr OpenMessage(TOCType * tocH, short sumNum, GtkWidget *winWP,
                         MyWindowPtr win, bool showIt, bool preview);
 int RemoveSelf(MessHandle messH, short head, bool wantErrors);
-void FindFrom(unsigned char *who, GtkWidget *pte);
+void FindFrom(char *who, GtkWidget *pte);
 void Attribute(short attrId, MessHandle origMessH, MessHandle newMessH,
                bool atEnd);
 void XferCustomTable(MessHandle origMessH, MessHandle newMessH);
@@ -272,7 +268,7 @@ void PeteApplyStyles(GtkWidget *pte, void *styles);
 int CopyToOut(TOCType * fromTocH, short sumNum, TOCType * toTocH);
 int UniqueHeader(MessHandle messH, short head, bool wantErrors);
 int FindMessageByMID(unsigned long mid, TOCType * *tocH, short *sumNum);
-OSErr TOCFindMessByMID(unsigned long mid, TOCType * tocH, long *sumNum);
+int TOCFindMessByMID(unsigned long mid, TOCType * tocH, long *sumNum);
 int WipeMessage(TOCType * tocH, short sumNum);
 int MessageWarnings(TOCType * tocH, short sumNum, bool toTrash, bool nuke,
                     bool *queuedWarning, bool *unsentWarning,
@@ -284,25 +280,25 @@ long CompBodyOffset(MessHandle messH);
 int SpoolAttachments(MessHandle messH);
 int CopyAttachments(MessHandle messH);
 TOCType * GetRealTOC(TOCType * tocH, short sumN, short *realSumNum);
-int ReadMessage(TOCType * tocH, int sumN, UPtr buffer);
+int ReadMessage(TOCType * tocH, int sumN, unsigned char * buffer);
 unsigned long GetMessageLength(TOCType * tocH, short sumNum);
 void FixSourceStatus(TOCType * tocH, short sumNum);
 int AppendMessage(TOCType * fromTocH, int fromN, TOCType ** toTocHP, bool copy,
                   bool toTemp, bool isIMAPtoPopTransfer);
 void DeleteSum(TOCType * tocH, int sumNum);
-void Rehash(TOCType * tocH, int sumNum, UPtr buffer);
+void Rehash(TOCType * tocH, int sumNum, unsigned char * buffer);
 
 /* NOTE: using geditDocument APIs directly per request; no helpers here */
 
 int ReplyReferences(MessHandle origMessH, MessHandle newMessH);
 // void HTMLifyText(MyWindowPtr win, char *, long modifiers, bool nuke, Handle
 // text);
-void HTMLifyText(MyWindowPtr win, Handle text);
+void HTMLifyText(MyWindowPtr win, void *text);
 
 /* Missing Prototypes */
-OSErr SubFolderSpec(short nameId, FSSpecPtr spec);
+int SubFolderSpec(short nameId, FSSpecPtr spec);
 
-OSErr RemoveDir(FSSpecPtr spec);
+int RemoveDir(FSSpecPtr spec);
 bool PrefIsSetOrNot(int pref, int modifiers, int mask);
 long SizeSelectedMessages(TOCType * tocH, bool includeText);
 bool MemoryPreflight(long size);
@@ -319,10 +315,10 @@ int Menu2Label(short menu);
 MyWindowPtr GetAMessage(TOCType * tocH, short sumNum, void *u1, void *u2,
                         bool b1);
 void NotUsingWindow(GtkWidget *win);
-OSErr SavePtrAsMessage(UPtr preText, long preSize, UPtr text, long size,
+int SavePtrAsMessage(unsigned char * preText, long preSize, unsigned char * text, long size,
                        TOCType * tocH, long *fromLen);
-OSErr PutOutFromLine(short refN, long *len);
-OSErr TruncAtMark(short refN);
+int PutOutFromLine(short refN, long *len);
+int TruncAtMark(short refN);
 int ReadSum(void *u1, bool b1, LineIOP lip, bool b2);
 void NicknameWatcherFocusChange(GtkWidget *pte);
 MyWindowPtr DoComposeNew(int type);
@@ -331,15 +327,15 @@ MyWindowPtr DoComposeNew(int type);
 #define mLoPlain 1
 int CopyNewsgroups(MessHandle origMH, MessHandle newMH);
 bool AttStillInFolder(FSSpecPtr att, FSSpecPtr folder);
-unsigned char *MessCurAddr(MyWindowPtr win, unsigned char *addr);
-void MakeMessTitle(unsigned char *title, TOCType * tocH, int sumNum,
+char *MessCurAddr(MyWindowPtr win, char *addr);
+void MakeMessTitle(char *title, TOCType * tocH, int sumNum,
                    bool useSummary);
 
 void DoGStringGlobalReplace(GString *theString, const char *stringToFind,
                             const char *replacement);
 
 /* PeteExtra declared in peteglue.h */
-void RehashLo(TOCType * tocH, short sumNum, UHandle text, bool soft);
+void RehashLo(TOCType * tocH, short sumNum, unsigned char * text, bool soft);
 bool IsIMAPMessageProcessed(TOCType * tocH, short sumNum);
 void ShowBoxSizes(MyWindowPtr win);
 bool Mom(short button, short item, short pref, short warning, short verb);
@@ -348,8 +344,8 @@ bool IsQueued(TOCType * tocH, short sumNum);
 #define SetHandleBig SetHandleSize
 void MovingAttachments(TOCType * tocH, short sumNum, bool a, bool b, bool c,
                        bool d);
-OSErr WipeDiskArea(short refN, long offset, long len);
-void PlayNamedSound(unsigned char *name);
+int WipeDiskArea(short refN, long offset, long len);
+void PlayNamedSound(char *name);
 MyWindowPtr DoRedistributeMessage(MyWindowPtr win, void *toWhom, bool turbo,
                                   bool andDelete, bool showIt);
 MyWindowPtr DoForwardMessage(MyWindowPtr win, void *toWhom, bool turbo);
@@ -359,10 +355,9 @@ MyWindowPtr DoReplyMessage(MyWindowPtr win, bool all, bool self, bool quote,
                            bool caching);
 
 unsigned char *PeteSelectedString(void *res, GtkWidget *pte);
-unsigned char *GetRealname(unsigned char *addr);
 int TextFindAndCopyHeader(char *body, long size, MessHandle newMH,
                           char *fromHead, short toHead, short label);
-OSErr SpoolIndAttachment(MessHandle messH, short i);
+int SpoolIndAttachment(MessHandle messH, short i);
 void SumInfoCpy(MSumPtr newSum, MSumPtr oldSum);
 void Preview(TOCType * tocH, short sumNum);
 void ReplyDefaults(short modifiers, bool *all, bool *self, bool *quote);
@@ -611,7 +606,7 @@ MyWindowPtr OpenMessage(TOCType * tocH, short sumNum, GtkWidget *winWP,
   } else {
     char title[256];
     title[0] = '\0';
-    MakeMessTitle((unsigned char *)title, tocH, sumNum, true);
+    MakeMessTitle(title, tocH, sumNum, true);
 
     /* Ensure title is valid UTF-8 for GTK */
     if (title[0] && !g_utf8_validate(title, -1, NULL)) {
@@ -713,9 +708,9 @@ MyWindowPtr OpenMessage(TOCType * tocH, short sumNum, GtkWidget *winWP,
 /**********************************************************************
  * MessCurAddr - return the address most closely associated with this message
  **********************************************************************/
-PStr MessCurAddr(MyWindowPtr win, PStr addr) {
+char * MessCurAddr(MyWindowPtr win, char * addr) {
   MessHandle messH = Win2MessH(win);
-  /* extern PStr CompCurAddr(MyWindowPtr win, PStr addr); */
+  /* extern char * CompCurAddr(MyWindowPtr win, char * addr); */
 
   *addr = 0;
 
@@ -738,13 +733,13 @@ PStr MessCurAddr(MyWindowPtr win, PStr addr) {
 /**********************************************************************
  * EnsureMID - make sure a message has an id
  **********************************************************************/
-OSErr EnsureMID(TOCType * tocH, short sumNum) {
-  OSErr err = noErr;
+int EnsureMID(TOCType * tocH, short sumNum) {
+  int err = noErr;
 
   if (tocH->sums[sumNum].uidHash == kNeverHashed ||
       tocH->sums[sumNum].msgIdHash == kNeverHashed) {
     if (!(err = CacheMessage(tocH, sumNum)))
-      RehashLo(tocH, sumNum, (UHandle)tocH->sums[sumNum].cache, true);
+      RehashLo(tocH, sumNum, (unsigned char *)tocH->sums[sumNum].cache, true);
   }
   return (err);
 }
@@ -752,15 +747,15 @@ OSErr EnsureMID(TOCType * tocH, short sumNum) {
 /**********************************************************************
  * EnsureFromHash - make sure a message has a from id
  **********************************************************************/
-OSErr EnsureFromHash(TOCType * tocH, short sumNum) {
-  OSErr err = noErr;
+int EnsureFromHash(TOCType * tocH, short sumNum) {
+  int err = noErr;
   unsigned char scratch[256], shortAddr[256];
   unsigned long addrHash;
 
   if (tocH->sums[sumNum].fromHash == kNeverHashed) {
     if (!(err = CacheMessage(tocH, sumNum))) {
       HeaderName(FROM_HEAD); // weird--goes into scratch
-      TrimWhite((unsigned char *)scratch);
+      TrimWhite(scratch);
       if (*HandleHeadGetPStr((char *)tocH->sums[sumNum].cache,
                              HEADER_STRN + FROM_HEAD, (char *)scratch)) {
         ShortAddr(shortAddr, scratch);
@@ -779,9 +774,9 @@ OSErr EnsureFromHash(TOCType * tocH, short sumNum) {
 /**********************************************************************
  * CacheMessage - put a message into the cache
  **********************************************************************/
-OSErr CacheMessage(TOCType * tocH, short sumNum) {
-  Handle cache;
-  OSErr err = noErr;
+int CacheMessage(TOCType * tocH, short sumNum) {
+  void *cache;
+  int err = noErr;
 
   if (0 > sumNum || sumNum >= tocH->count)
     return (fnfErr);
@@ -794,10 +789,7 @@ OSErr CacheMessage(TOCType * tocH, short sumNum) {
    * is it there?
    */
   if (tocH->sums[sumNum].cache) {
-    if (*tocH->sums[sumNum].cache)
-      return (noErr); /* in the cache */
-    else
-      ZapHandle(tocH->sums[sumNum].cache); /* wipe out remnant */
+    return (noErr); /* in the cache */
   }
 
   /*
@@ -807,9 +799,9 @@ OSErr CacheMessage(TOCType * tocH, short sumNum) {
     /*
      * read it
      */
-    err = ReadMessage(tocH, sumNum, (UPtr)(*(cache)));
+    err = ReadMessage(tocH, sumNum, (unsigned char *)cache);
     if (err)
-      ZapHandle(cache);
+      free(cache);
     else {
       tocH->sums[sumNum].cache = cache;
       /*
@@ -817,10 +809,10 @@ OSErr CacheMessage(TOCType * tocH, short sumNum) {
        * Normalize to a trailing CR so older code that expects '\015'
        * continues to work.
        */
-      unsigned char *bufp = (unsigned char *)(*(cache));
+      unsigned char *bufp = (unsigned char *)cache;
       long hsz = GetHandleSize(cache);
       if (hsz <= 0) {
-        ZapHandle(cache);
+        free(cache);
         err = MemError();
       } else {
         unsigned char last = bufp[hsz - 1];
@@ -838,7 +830,7 @@ OSErr CacheMessage(TOCType * tocH, short sumNum) {
         } else {
           /* no newline terminator -> append CR */
             SetHandleSize(cache, hsz + 1);
-            bufp = (unsigned char *)(*(cache));
+            bufp = (unsigned char *)cache;
             bufp[hsz] = '\015';
         }
       }
@@ -866,11 +858,10 @@ char *GetMessText(MessHandle messH) {
   /*
    * grab cached text, if any
    */
-  Handle cache = NULL;
-  if (tocH->sums[sumNum].cache && (*(tocH->sums[sumNum].cache))) {
+  void *cache = NULL;
+  if (tocH->sums[sumNum].cache) {
     cache = tocH->sums[sumNum].cache;
-  } else
-    ZapHandle(tocH->sums[sumNum].cache);
+  }
 
   /*
    * allocate buffer
@@ -891,30 +882,27 @@ char *GetMessText(MessHandle messH) {
     if (buf) {
       size_t cacheSize = GetHandleSize(cache);
       if (cacheSize > bufSize) cacheSize = bufSize;
-      memmove(buf, (*(cache)), cacheSize);
+      memmove(buf, cache, cacheSize);
       bufSize = cacheSize;
     } else {
       /* use cache directly — take ownership */
       bufSize = GetHandleSize(cache);
       buf = (char *)g_malloc(bufSize + 1);
-      if (buf) memmove(buf, (*(cache)), bufSize);
-      ZapHandle(cache);
+      if (buf) memmove(buf, cache, bufSize);
+      free(cache);
       tocH->sums[sumNum].cache = NULL;
     }
   } else {
-    if ((MessErr = ReadMessage(tocH, sumNum, (UPtr)buf)))
+    if ((MessErr = ReadMessage(tocH, sumNum, (unsigned char *)buf)))
       goto failure;
 
     /* create cache copy */
     size_t cacheSize = bufSize;
-    unsigned char *cacheData = (unsigned char *)g_malloc(cacheSize);
-    Handle newCache = (Handle)g_malloc(sizeof(unsigned char *));
-    if (cacheData && newCache) {
-      *(unsigned char **)newCache = cacheData;
-      memmove(cacheData, buf, cacheSize);
+    void *newCache = g_malloc(cacheSize);
+    if (newCache) {
+      memmove(newCache, buf, cacheSize);
       tocH->sums[sumNum].cache = newCache;
     } else {
-      g_free(cacheData);
       g_free(newCache);
     }
   }
@@ -924,7 +912,7 @@ char *GetMessText(MessHandle messH) {
    * set hash, if we haven't already
    */
   if (tocH->sums[sumNum].uidHash == kNeverHashed)
-    Rehash(tocH, sumNum, (UPtr)buf);
+    Rehash(tocH, sumNum, (unsigned char *)buf);
 
   /*
    * detect content-type before weeding removes the header
@@ -980,7 +968,7 @@ failure:
 /**********************************************************************
  * ReadMessage - read a given message into a preallocated buffer
  **********************************************************************/
-int ReadMessage(TOCType * tocH, int sumN, UPtr buffer) {
+int ReadMessage(TOCType * tocH, int sumN, unsigned char * buffer) {
   long count;
   char name[256];
   short sumNum;
@@ -988,7 +976,7 @@ int ReadMessage(TOCType * tocH, int sumN, UPtr buffer) {
   tocH = GetRealTOC(tocH, sumN, &sumNum);
   if (!tocH)
     return fnfErr; // unable to find real TOC from virtual TOC
-  GetMailboxName(tocH, sumNum, (unsigned char *)name);
+  GetMailboxName(tocH, sumNum, name);
   count = tocH->sums[sumNum].length;
 
   if (!(MessErr = BoxFOpenLo(tocH, sumNum)))
@@ -1041,10 +1029,10 @@ int MoveMessageLo(TOCType * tocH, int sumNum, FSSpecPtr toSpec, bool copy,
     return (-1);
   if (LogLevel & LOG_MOVE)
     ComposeLogS(
-        LOG_MOVE, NULL, (unsigned char *)"%s \"%s,%s\"  \"%s\"->\"%s\"\r",
+        LOG_MOVE, NULL, "%s \"%s,%s\"  \"%s\"->\"%s\"\r",
         copy ? "Copy" : "Transfer", tocH->sums[sumNum].from,
         tocH->sums[sumNum].subj,
-        GetMailboxName(tocH, sumNum, (unsigned char *)name), toSpec->name);
+        GetMailboxName(tocH, sumNum, name), toSpec->name);
 
 
   if ((toTocH = TOCBySpec(toSpec)) == NULL)
@@ -1055,7 +1043,7 @@ int MoveMessageLo(TOCType * tocH, int sumNum, FSSpecPtr toSpec, bool copy,
 
   // handle special transfer cases for IMAP mailbox transfers
   if (toTocH->imapTOC) {
-    OSErr err = noErr;
+    int err = noErr;
 
     // IMAP to IMAP. Do an IMAP transfer.
     if (toTocH->imapTOC && tocH->imapTOC) {
@@ -1089,7 +1077,7 @@ int MoveMessageLo(TOCType * tocH, int sumNum, FSSpecPtr toSpec, bool copy,
           OPT_ORPHAN_ATT; // be real sure the attachments are left alone
       ComposeLogS(
           LOG_PLUG, NULL,
-          (unsigned char *)"A plugin has deleted an IMAP message: '%s' in '%s'",
+          "A plugin has deleted an IMAP message: '%s' in '%s'",
           tocH->sums[sumNum].subj, tocH->mailbox.spec.name);
       return (noErr);
     } else if (!downloaded)
@@ -1158,7 +1146,7 @@ int MoveMessageLo(TOCType * tocH, int sumNum, FSSpecPtr toSpec, bool copy,
 int AppendMessage(TOCType * fromTocH, int fromN, TOCType ** toTocHP, bool copy,
                   bool toTemp, bool destHasAtt) {
   TOCType *toTocH = *toTocHP;
-  // UHandle buffer = NULL; // Unused variable removed
+  // unsigned char * buffer = NULL; // Unused variable removed
   MSumType sum;
   long eof;
   long count;
@@ -1223,16 +1211,16 @@ int AppendMessage(TOCType * fromTocH, int fromN, TOCType ** toTocHP, bool copy,
     if ((MessErr = CopyToOut(fromTocH, fromN, toTocH)))
       return (MessErr);
   } else {
-    if (fromTocH->sums[fromN].cache && (*(fromTocH->sums[fromN].cache))) {
+    if (fromTocH->sums[fromN].cache) {
       count = fromTocH->sums[fromN].length;
       MessErr = SetFPos(toTocH->refN, fsFromStart, eof);
       if (!MessErr)
         MessErr = AWrite(toTocH->refN, &count,
-             (*(fromTocH->sums[fromN].cache)));
+             (unsigned char *)fromTocH->sums[fromN].cache);
       if (RunType != Production) {
         long controls = 0;
-        UPtr dbspot = (UPtr)(*(fromTocH->sums[fromN].cache));
-        UPtr dbend = dbspot + fromTocH->sums[fromN].length;
+        unsigned char * dbspot = (unsigned char *)fromTocH->sums[fromN].cache;
+        unsigned char * dbend = dbspot + fromTocH->sums[fromN].length;
         for (; dbspot < dbend; dbspot++)
           if (*dbspot != '\015' && *dbspot < ' ' && *dbspot != '\t')
             controls++;
@@ -1305,7 +1293,7 @@ int AppendMessage(TOCType * fromTocH, int fromN, TOCType ** toTocHP, bool copy,
       TOCType *oldPtr = toTocH;
       TOCType *grown = (TOCType *)g_realloc(toTocH, newSize);
       if (!grown) {
-        ZapHandle(sum.cache);
+        free(sum.cache);
         return (MessErr = memFullErr);
       }
       /* Update TOCList if realloc moved the block */
@@ -1339,8 +1327,8 @@ int AppendMessage(TOCType * fromTocH, int fromN, TOCType ** toTocHP, bool copy,
   if ((mesgErrH = (mesgErrorHandle)fromTocH->sums[fromN].mesgErrH)) {
     unsigned char errorStr[256];
     AddMesgError(toTocH, toTocH->count - 1,
-                 strcpy((char *)errorStr, (const char *)(*mesgErrH)->errorStr),
-                 (*mesgErrH)->errorCode);
+                 strcpy((char *)errorStr, (const char *)mesgErrH->errorStr),
+                 mesgErrH->errorCode);
   }
 
   /*
@@ -1372,14 +1360,14 @@ int MoveSelectedMessagesLo(TOCType * tocH, FSSpecPtr toSpec, bool copy,
   int lastSelected = -1;
   unsigned char trashName[32];
   short oldCount;
-  bool toTrash =
-      IsRoot(toSpec) && StringSame(toSpec->name, GetRString(trashName, TRASH));
+    bool toTrash =
+      IsRoot(toSpec->path) && StringSame(toSpec->name, GetRString(trashName, TRASH));
   long needRoom = 0;
   bool outWarning;
   long count;
   gint64 pTicks = g_get_monotonic_time();
-  Handle uidsH = NULL;
-  OSErr err = noErr;
+  void *uidsH = NULL;
+  int err = noErr;
   TOCType * realTocH;
   short realSum;
   unsigned char name[256];
@@ -1409,7 +1397,7 @@ int MoveSelectedMessagesLo(TOCType * tocH, FSSpecPtr toSpec, bool copy,
   }
 
   //
-  //	Handle the rest of the messages that have not been transferred yet.
+  //	void *the rest of the messages that have not been transferred yet.
   //
 
   if (!copy && warnings && SelectedWarnings(tocH, toTrash, false))
@@ -1468,7 +1456,7 @@ int MoveSelectedMessagesLo(TOCType * tocH, FSSpecPtr toSpec, bool copy,
 
       // Make a handle big enough for them
       if (totalToDownload > 0) {
-        uidsH = NuHandleClear(totalToDownload * sizeof(unsigned long));
+        uidsH = calloc(1,totalToDownload * sizeof(unsigned long));
         if (uidsH) {
           // and stick them in the handle
           c = totalToDownload;
@@ -1476,7 +1464,7 @@ int MoveSelectedMessagesLo(TOCType * tocH, FSSpecPtr toSpec, bool copy,
             if (tocH->sums[sumNum].selected)
               if (!IMAPMessageBeingDownloaded(tocH, sumNum) &&
                   !IMAPMessageDownloaded(tocH, sumNum))
-                memcpy(&((unsigned long *)(*(uidsH)))[--c],
+                memcpy(&((unsigned long *)(uidsH))[--c],
                   &(tocH->sums[sumNum].uidHash), sizeof(unsigned long));
 
           // fetch them all in the foreground
@@ -1498,7 +1486,7 @@ int MoveSelectedMessagesLo(TOCType * tocH, FSSpecPtr toSpec, bool copy,
     if (err == noErr) {
       // make a new handle to store uids of deleted messages.  We'll build this
       // on the fly.
-      uidsH = NuHandleClear(0);
+      uidsH = calloc(1,0);
       if (!uidsH)
         err = MemError();
     }
@@ -1554,7 +1542,7 @@ int MoveSelectedMessagesLo(TOCType * tocH, FSSpecPtr toSpec, bool copy,
       // Log the transfer
       if (LogLevel & LOG_MOVE)
         ComposeLogS(LOG_MOVE, NULL,
-                    (unsigned char *)"%s \"%s,%s\"  \"%s\"->\"%s\"\r",
+                    "%s \"%s,%s\"  \"%s\"->\"%s\"\r",
                     copy ? "Copy" : "Transfer", realTocH->sums[realSum].from,
                     realTocH->sums[realSum].subj,
                     GetMailboxName(realTocH, realSum, name), toSpec->name);
@@ -1574,7 +1562,7 @@ int MoveSelectedMessagesLo(TOCType * tocH, FSSpecPtr toSpec, bool copy,
               err = PtrAndHand(&uid, uidsH, sizeof(uid));
               if (err != noErr) {
                 WarnUser(err, MEM_ERR);
-                ZapHandle(uidsH);
+                free(uidsH);
                 return (err);
               }
             }
@@ -1624,9 +1612,9 @@ int MoveSelectedMessagesLo(TOCType * tocH, FSSpecPtr toSpec, bool copy,
 /**********************************************************************
  * SelectedWarnings - Warnings for the selected message
  **********************************************************************/
-OSErr SelectedWarnings(TOCType * tocH, bool toTrash, bool nuke) {
+int SelectedWarnings(TOCType * tocH, bool toTrash, bool nuke) {
   bool queuedWarning, unsentWarning, unreadWarning, busyWarning;
-  OSErr err = noErr;
+  int err = noErr;
   short i;
 
   MessageWarnings(tocH, -1, toTrash, nuke, &queuedWarning, &unsentWarning,
@@ -1643,7 +1631,7 @@ OSErr SelectedWarnings(TOCType * tocH, bool toTrash, bool nuke) {
 /**********************************************************************
  * SingleWarnings - Give warnings for a single message
  **********************************************************************/
-OSErr SingleWarnings(TOCType * tocH, short sumNum, bool toTrash, bool nuke) {
+int SingleWarnings(TOCType * tocH, short sumNum, bool toTrash, bool nuke) {
   bool queuedWarning, unsentWarning, unreadWarning, busyWarning;
 
   MessageWarnings(tocH, -1, toTrash, nuke, &queuedWarning, &unsentWarning,
@@ -1656,7 +1644,7 @@ OSErr SingleWarnings(TOCType * tocH, short sumNum, bool toTrash, bool nuke) {
 /**********************************************************************
  *
  **********************************************************************/
-OSErr MessageWarnings(TOCType * tocH, short sumNum, bool toTrash, bool nuke,
+int MessageWarnings(TOCType * tocH, short sumNum, bool toTrash, bool nuke,
                       bool *queuedWarning, bool *unsentWarning,
                       bool *unreadWarning, bool *busyWarning) {
   if (sumNum < 0) {
@@ -1715,7 +1703,7 @@ void FixSourceStatus(TOCType * tocH, short sumNum) {
   MessHandle messH = tocH->sums[sumNum].messH;
   TOCType * sourceTocH;
   short sourceNum;
-  unsigned long **midList;
+  unsigned long *midList;
   short i;
 
   if (tocH->which == OUT && messH && SumOf(messH)->state != SENT &&
@@ -1723,9 +1711,9 @@ void FixSourceStatus(TOCType * tocH, short sumNum) {
     midList = (unsigned long **)messH->aSourceMID.data;
     for (i = messH->aSourceMID.offset / (3 * sizeof(long)) - 1; i >= 0;
          i--) {
-      unsigned long sourceMID = (*midList)[i * 3];
-      short sourceOrigState = (*midList)[i * 3 + 1];
-      short sourceNewState = (*midList)[i * 3 + 2];
+      unsigned long sourceMID = midList[i * 3];
+      short sourceOrigState = midList[i * 3 + 1];
+      short sourceNewState = midList[i * 3 + 2];
       if (sourceMID && sourceMID != kNeverHashed &&
           sourceOrigState != sourceNewState) {
         if (!FindMessageByMID(sourceMID, &sourceTocH, &sourceNum)) {
@@ -1747,7 +1735,7 @@ void FixSourceStatus(TOCType * tocH, short sumNum) {
  * FindMessageByMID - find a message by mid.  Works only on open toc's at the
  *moment
  **********************************************************************/
-OSErr FindMessageByMID(unsigned long mid, TOCType * *tocH, short *sumNum) {
+int FindMessageByMID(unsigned long mid, TOCType * *tocH, short *sumNum) {
   TOCType * lTocH;
   long lsum;
 
@@ -1763,7 +1751,7 @@ OSErr FindMessageByMID(unsigned long mid, TOCType * *tocH, short *sumNum) {
 /**********************************************************************
  * TOCFindMessByMID - find a message in a toc by uid hash
  **********************************************************************/
-OSErr TOCFindMessByMID(unsigned long mid, TOCType * tocH, long *sumNum) {
+int TOCFindMessByMID(unsigned long mid, TOCType * tocH, long *sumNum) {
   short lSumNum;
 
   for (lSumNum = tocH->count - 1; lSumNum >= 0; lSumNum--)
@@ -1777,7 +1765,7 @@ OSErr TOCFindMessByMID(unsigned long mid, TOCType * tocH, long *sumNum) {
 /**********************************************************************
  * TOCFindMessByMsgID - find a message in a toc by message id
  **********************************************************************/
-OSErr TOCFindMessByMsgID(unsigned long mid, TOCType * tocH, long *sumNum) {
+int TOCFindMessByMsgID(unsigned long mid, TOCType * tocH, long *sumNum) {
   short lSumNum;
 
   for (lSumNum = tocH->count - 1; lSumNum >= 0; lSumNum--)
@@ -1792,14 +1780,14 @@ OSErr TOCFindMessByMsgID(unsigned long mid, TOCType * tocH, long *sumNum) {
 /************************************************************************
  * FindAnAttachment - find an attachment from a line of text
  ************************************************************************/
-long FindAnAttachment(Handle text, long offset, FSSpecPtr spec, bool attach,
+long FindAnAttachment(void *text, long offset, FSSpecPtr spec, bool attach,
                       unsigned long *cid, unsigned long *relURL, unsigned long *absURL) {
-  UPtr spot, newLine, end;
+  unsigned char *spot, *newLine, *end;
   bool result = false;
   unsigned char line[256];
 
-  end = *text + GetHandleSize_(text);
-  spot = *text + offset;
+  end = (unsigned char *)text + GetHandleSize_(text);
+  spot = (unsigned char *)text + offset;
   while (spot < end && *spot++ != '\015')
     ;
 
@@ -1819,7 +1807,7 @@ long FindAnAttachment(Handle text, long offset, FSSpecPtr spec, bool attach,
       }
     }
   }
-  offset = result ? spot - (UPtr)*text : -1;
+  offset = result ? spot - (unsigned char *)text : -1;
   return (offset);
 }
 
@@ -1827,7 +1815,7 @@ long FindAnAttachment(Handle text, long offset, FSSpecPtr spec, bool attach,
  * InitAttachmentFinder - initialize data for finding attachments in
  *    outgoing or received messages
  **********************************************************************/
-void InitAttachmentFinder(FindAttPtr pData, Handle text, bool attach,
+void InitAttachmentFinder(FindAttPtr pData, void *text, bool attach,
                           TOCType * tocH, MSumPtr sum) {
   pData->text = text;
   pData->outgoing = tocH->which == OUT || sum->state == SENT ||
@@ -1838,7 +1826,7 @@ void InitAttachmentFinder(FindAttPtr pData, Handle text, bool attach,
     unsigned char hdrName[64];
 
     GetRString(hdrName, HeaderStrn + ATTACH_HEAD);
-    HandleHeadFindStr((char *)(*text), hdrName, &pData->hs);
+    HandleHeadFindStr((char *)text, hdrName, &pData->hs);
   } else {
     // Received message. Start at beginning of message body
     pData->offset = sum->bodyOffset - 1;
@@ -1916,8 +1904,8 @@ void DeleteMessageLo(TOCType * tocH, int sumNum, bool nuke) {
 /**********************************************************************
  * WipeMessage - clear the contents of a message, really
  **********************************************************************/
-OSErr WipeMessage(TOCType * tocH, short sumNum) {
-  OSErr err;
+int WipeMessage(TOCType * tocH, short sumNum) {
+  int err;
 
   MovingAttachments(tocH, sumNum, true, true, false, false);
   MovingAttachments(tocH, sumNum, false, true, false, false);
@@ -1947,7 +1935,7 @@ long StripTrailingNewlines(char **buf, size_t *bufSize, long stop) {
 
   long newSize = spot - *buf;
   *bufSize = newSize;
-  (*buf)[newSize] = '\0';
+  buf[newSize] = '\0';
   return (size - newSize);
 }
 
@@ -2065,13 +2053,13 @@ void WeedHeaders(char **buf, size_t *bufSize, long *weeded, short toWeed, AccuPt
   if (weeded)
     *weeded = (long)*bufSize - newSize;
   *bufSize = newSize;
-  (*buf)[newSize] = '\0';
+  buf[newSize] = '\0';
 }
 
 /************************************************************************
  * SetMessText - stick some text into one of the fields of a message.
  ************************************************************************/
-OSErr SetMessText(MessHandle messH, short whichTXE, UPtr string, long size) {
+int SetMessText(MessHandle messH, short whichTXE, char *string, long size) {
   HeadSpec hs;
 
   if (CompHeadFind(messH, whichTXE, &hs))
@@ -2133,13 +2121,13 @@ void Fix1MessServerArea(MyWindowPtr win) {
  * RecordTransAttachments - record the fact that we have attachments from a
  *translator
  **********************************************************************/
-OSErr RecordTransAttachments(const char *path) {
+int RecordTransAttachments(const char *path) {
   WindowPtr InsertWinWP = GetMyWindowWindowPtr(InsertWin);
   MessHandle messH;
   FSSpecHandle h;
   FSSpec tmpSpec = {0};
 
-  /* Build a temporary FSSpec from the path for PtrPlusHand_ storage */
+  /* Build a temporary FSSpec from the path for buf_append storage */
   if (path) {
     strncpy(tmpSpec.path, path, sizeof(tmpSpec.path) - 1);
     {
@@ -2159,7 +2147,7 @@ OSErr RecordTransAttachments(const char *path) {
         return (MemError());
       messH->etlFiles = h;
     }
-    return (PtrPlusHand_(&tmpSpec, messH->etlFiles, sizeof(tmpSpec)) != NULL)
+    return (buf_append(messH->etlFiles, &tmpSpec, sizeof(tmpSpec)) != NULL)
                ? 0
                : -1;
   }
@@ -2176,7 +2164,7 @@ static bool CleanSpoolCallback(DirIterateInfo *info) {
   MiniEvents();
 
   if (info->isDir &&
-      AllDigits((unsigned char *)info->spec.name, strlen(info->spec.name))) {
+      AllDigits(info->spec.name, strlen(info->spec.name))) {
     if (info->modifyDate < spoolAge) {
       RemoveDir(&info->spec);
     }
@@ -2184,7 +2172,7 @@ static bool CleanSpoolCallback(DirIterateInfo *info) {
   return true; /* Continue iteration */
 }
 
-OSErr CleanSpoolFolder(unsigned long age) {
+int CleanSpoolFolder(unsigned long age) {
   FSSpec spec;
 
   if (SubFolderSpec(SPOOL_FOLDER, &spec))
@@ -2197,7 +2185,7 @@ OSErr CleanSpoolFolder(unsigned long age) {
 /************************************************************************
  * AppendMessText - stick some text after one of the fields of a message.
  ************************************************************************/
-OSErr AppendMessText(MessHandle messH, short whichTXE, UPtr string, long size) {
+int AppendMessText(MessHandle messH, short whichTXE, unsigned char * string, long size) {
   HeadSpec hs;
 
   if (CompHeadFind(messH, whichTXE, &hs)) {
@@ -2209,8 +2197,8 @@ OSErr AppendMessText(MessHandle messH, short whichTXE, UPtr string, long size) {
 /************************************************************************
  * MessPlainBytes - make sure bytes are plain
  ************************************************************************/
-OSErr MessPlainBytes(MessHandle messH, short whichTXE, short bytes) {
-  OSErr err = noErr;
+int MessPlainBytes(MessHandle messH, short whichTXE, short bytes) {
+  int err = noErr;
   HeadSpec hs;
   long start, stop __attribute__((unused));
 
@@ -2263,14 +2251,14 @@ void DoIterativeThingyLo(TOCType * tocH, int item, long modifiers,
 
 
   if (item == MESSAGE_DELETE_ITEM && tocH->imapTOC && !nuke) {
-    Handle uids = NULL;
+    void *uids = NULL;
     long c = CountSelectedMessages(tocH);
     long sumNum;
 
     // only do something if there are some selected messages
     if (c) {
       // build a list of uids to be deleted
-      uids = NuHandleClear(c * sizeof(unsigned long));
+      uids = calloc(1,c * sizeof(unsigned long));
       if (uids) {
         for (sumNum = 0; sumNum < tocH->count && c; sumNum++)
           if (tocH->sums[sumNum].selected) {
@@ -2279,7 +2267,7 @@ void DoIterativeThingyLo(TOCType * tocH, int item, long modifiers,
               CloseMyWindow(
                   GetMyWindowWindowPtr(tocH->sums[sumNum].messH->win));
 
-            memcpy(&((unsigned long *)(*(uids)))[--c],
+            memcpy(&((unsigned long *)(uids))[--c],
               &(tocH->sums[sumNum].uidHash), sizeof(unsigned long));
           }
 
@@ -2547,18 +2535,18 @@ short BoxNextSelected(TOCType * tocH, short afterNum) {
 /**********************************************************************
  * SaveTextAsMessage - save a text block as a message
  **********************************************************************/
-OSErr SaveTextAsMessage(Handle preText, Handle text, TOCType * tocH,
+int SaveTextAsMessage(void *preText, void *text, TOCType * tocH,
                         long *fromLen) {
   long size = GetHandleSize(text);
-  OSErr err;
+  int err;
 
-  if (size && ((char *)(*(text)))[size - 1] != '\015') {
-    PtrPlusHand("\015", text, 1);
+  if (size && ((char *)text)[size - 1] != '\015') {
+    buf_append(text, "\015", 1);
     size++;
   }
-  err = SavePtrAsMessage(preText ? (*(preText)) : NULL,
+  err = SavePtrAsMessage(preText ? preText : NULL,
                          preText ? GetHandleSize(preText) : 0,
-                         (*(text)), size, tocH, fromLen);
+                         text, size, tocH, fromLen);
 
   return (err);
 }
@@ -2566,16 +2554,16 @@ OSErr SaveTextAsMessage(Handle preText, Handle text, TOCType * tocH,
 /**********************************************************************
  * SavePtrAsMessage - save a text block as a message
  **********************************************************************/
-OSErr SavePtrAsMessage(UPtr preText, long preSize, UPtr text, long size,
+int SavePtrAsMessage(unsigned char * preText, long preSize, unsigned char * text, long size,
                        TOCType * tocH, long *fromLen) {
-  OSErr err;
+  int err;
   long eof;
   char name[256];
   LineIOD lid;
   MSumType sum;
   FSSpec spec;
 
-  GetMailboxName(tocH, -1, (unsigned char *)name);
+  GetMailboxName(tocH, -1, name);
 
   /*
    * open mailbox and write the bytes
@@ -2640,8 +2628,8 @@ MyWindowPtr DoSalvageMessageLo(MyWindowPtr win, bool forXfer, bool forIMAP) {
   unsigned char scratch[256];
   short field;
   HeadSpec oldHS, newHS;
-  OSErr err = noErr;
-  UHandle text;
+  int err = noErr;
+  unsigned char * text;
   long newBo;
   bool html = !PrefIsSet(PREF_SEND_ENRICHED_NEW);
 
@@ -2732,15 +2720,15 @@ MyWindowPtr DoSalvageMessageLo(MyWindowPtr win, bool forXfer, bool forIMAP) {
 
     if (GetWindowKind(winWP) == COMP_WIN && origMessH->hTranslators) {
       /* Duplicate the translator handle */
-      Handle origH = (Handle)origMessH->hTranslators;
+      void *origH = (void *)origMessH->hTranslators;
       long hSize = GetHandleSize(origH);
-      Handle dup = NuHTempBetter(hSize);
-      if (dup) memcpy(*dup, *origH, hSize);
+      void *dup = NuHTempBetter(hSize);
+      if (dup) memcpy(dup, origH, hSize);
       newMessH->hTranslators = (void *)dup;
     } else if (!GetRHeaderAnywhere(origMessH, HEADER_STRN + TRANSLATOR_HEAD,
                                    (char **)&text)) {
       /* Translator info from headers — not critical for GTK port */
-      ZapHandle(text);
+      free(text);
     }
   } else {
 
@@ -2766,7 +2754,7 @@ MyWindowPtr DoSalvageMessageLo(MyWindowPtr win, bool forXfer, bool forIMAP) {
        * find the last "Received:" header
        */
       GetRString(received, RECEIVED_HEAD);
-      TrimWhite((unsigned char *)received);
+      TrimWhite(received);
       oldSpot = NULL;
       while ((spot = (unsigned char *)FindHeaderString((char *)spot, received, &size, true))) {
         oldSpot = spot;
@@ -2854,19 +2842,19 @@ MyWindowPtr DoSalvageMessageLo(MyWindowPtr win, bool forXfer, bool forIMAP) {
 /************************************************************************
  * UniqueHeader - make sure the addresses in a header are unique
  ************************************************************************/
-OSErr UniqueHeader(MessHandle messH, short head, bool wantErrors) {
-  Handle addresses = NULL;
+int UniqueHeader(MessHandle messH, short head, bool wantErrors) {
+  void *addresses = NULL;
   short oldSize;
   HeadSpec hs;
-  OSErr err = noErr;
+  int err = noErr;
 
   if (CompHeadFind(messH, head, &hs) &&
       !CompHeadGetText(TheBody, &hs, (char **)&addresses)) {
     oldSize = GetHandleSize_(addresses);
-    err = NickUniq(addresses, (unsigned char *)", ", wantErrors);
+    err = NickUniq(addresses, ", ", wantErrors);
     if (oldSize != GetHandleSize_(addresses))
-      CompHeadSet(TheBody, &hs, (char *)(*addresses));
-    ZapHandle(addresses);
+      CompHeadSet(TheBody, &hs, (char *)addresses);
+    free(addresses);
   }
   return err;
 }
@@ -2875,7 +2863,7 @@ OSErr UniqueHeader(MessHandle messH, short head, bool wantErrors) {
  * RemoveSelf - Remove "me" from a list of addresses
  *	Ray Davison, SFU
  ************************************************************************/
-OSErr RemoveSelf(MessHandle messH, short head, bool wantErrors) {
+int RemoveSelf(MessHandle messH, short head, bool wantErrors) {
   unsigned char temp[256];
   EAL_VARS_DECL;
   char **rawMyself = NULL, **cookedMyself = NULL;
@@ -2883,11 +2871,11 @@ OSErr RemoveSelf(MessHandle messH, short head, bool wantErrors) {
   GString *myselfStr = g_string_new("");
   bool removed = false;
   GString *text = NULL;
-  Handle oldText = NULL;
+  void *oldText = NULL;
   HeadSpec hs;
   bool group;
   bool groupWas = false;
-  OSErr err = noErr;
+  int err = noErr;
 
   /* Get a definition of who I am */
 
@@ -2900,10 +2888,10 @@ OSErr RemoveSelf(MessHandle messH, short head, bool wantErrors) {
   /* Parse "myself" string into address array */
   {
     char *myselfPtr = myselfStr->str;
-    char **myselfHandle = &myselfPtr;
+    char *myselfHandle = &myselfPtr;
     if (!(err = SuckAddresses(&rawMyself, myselfHandle, false,
                               wantErrors, false, NULL)) &&
-        !(err = ExpandAliasesLow((Handle *)&cookedMyself, (Handle)rawMyself, 0,
+        !(err = ExpandAliasesLow((void **)&cookedMyself, (void *)rawMyself, 0,
                                  false, "",
                                  EAL_VARS))) // no autoqual
     {
@@ -2954,7 +2942,7 @@ OSErr RemoveSelf(MessHandle messH, short head, bool wantErrors) {
     }
   }
 
-  ZapHandle(oldText);
+  free(oldText);
   if (rawMyself) { g_strfreev(rawMyself); rawMyself = NULL; }
   if (cookedMyself) { g_strfreev(cookedMyself); cookedMyself = NULL; }
   if (rawAddress) { g_strfreev(rawAddress); rawAddress = NULL; }
@@ -2973,8 +2961,8 @@ OSErr RemoveSelf(MessHandle messH, short head, bool wantErrors) {
 /**********************************************************************
  * MessText - get the text of a message
  **********************************************************************/
-UHandle MessText(MessHandle messH) {
-  UHandle text = NULL;
+unsigned char * MessText(MessHandle messH) {
+  unsigned char * text = NULL;
   PeteGetRawText(TheBody, (void **)&text);
   return (text);
 }
@@ -2982,7 +2970,7 @@ UHandle MessText(MessHandle messH) {
 /**********************************************************************
  * MessVisibleText - get only the visible text of a message
  **********************************************************************/
-UHandle MessVisibleText(MessHandle messH) {
+unsigned char * MessVisibleText(MessHandle messH) {
   geditDocument *doc = geditctrl_get_document(TheBody);
   gchar *rawText = gedit_document_get_text(doc);
   if (!rawText)
@@ -2990,12 +2978,12 @@ UHandle MessVisibleText(MessHandle messH) {
 
   /* Return a Handle (void **) wrapping the text string */
   long len = (long)strlen(rawText);
-  Handle h = NuHTempBetter(len);
+  void *h = NuHTempBetter(len);
   if (h) {
-    memcpy(*h, rawText, len);
+    memcpy(h, rawText, len);
   }
   g_free(rawText);
-  return (UHandle)h;
+  return (unsigned char *)h;
 }
 
 /* MessHasGraphic Stub Removed from here */
@@ -3007,7 +2995,7 @@ MyWindowPtr ReopenMessage(MyWindowPtr win) {
   WindowPtr winWP = GetMyWindowWindowPtr(win);
   char *text;
   MessHandle messH = Win2MessH(win);
-  OSErr err = noErr;
+  int err = noErr;
 
   text = GetMessText(Win2MessH(win));
 
@@ -3099,14 +3087,14 @@ MyWindowPtr ReopenMessage(MyWindowPtr win) {
 /************************************************************************
  * FindFrom - find a (nicely formatted) From address
  ************************************************************************/
-void FindFrom(unsigned char *who, GtkWidget *pte) {
+void FindFrom(char *who, GtkWidget *pte) {
   char *found;
   char header[32];
   long len;
 
   char *text = gedit_document_get_text(geditctrl_get_document(pte));
   len = text ? (long)strlen(text) : 0;
-  GetRString((unsigned char *)header, FROM_HEAD + HEADER_STRN);
+  GetRString(header, FROM_HEAD + HEADER_STRN);
   if ((found = FindHeaderString(text, header, &len, false))) {
     long copyLen = MIN(62, len);
     memcpy(who, found, copyLen);
@@ -3123,7 +3111,7 @@ void FindFrom(unsigned char *who, GtkWidget *pte) {
 void QuoteLines(GtkWidget *pte, long from, long to, short pfid, long *qEnd) {
   long this;
   unsigned char prefix[16];
-  UHandle text;
+  unsigned char * text;
   long count = 0;
   bool first = true;
   PETEStyleEntry pse;
@@ -3177,7 +3165,7 @@ void QuoteLines(GtkWidget *pte, long from, long to, short pfid, long *qEnd) {
 /************************************************************************
  * PrependMessText - stick some text before one of the fields of a message.
  ************************************************************************/
-OSErr PrependMessText(MessHandle messH, short whichTXE, UPtr string,
+int PrependMessText(MessHandle messH, short whichTXE, unsigned char * string,
                       long size) {
   HeadSpec hs;
 
@@ -3273,7 +3261,7 @@ MyWindowPtr DoReplyMessage(MyWindowPtr win, bool all, bool self, bool quote,
   unsigned char soundName[256];
   bool doSound;
   HeadSpec hs;
-  OSErr err = noErr;
+  int err = noErr;
   geditStyleRun style;
   long newBo;
   bool rich;
@@ -3600,9 +3588,9 @@ MyWindowPtr DoReplyMessage(MyWindowPtr win, bool all, bool self, bool quote,
 /**********************************************************************
  * ReplyReferences
  **********************************************************************/
-OSErr ReplyReferences(MessHandle origMessH, MessHandle newMessH) {
-  OSErr err = noErr;
-  UHandle /*t1=NULL, */ t2 = NULL, t3 = NULL;
+int ReplyReferences(MessHandle origMessH, MessHandle newMessH) {
+  int err = noErr;
+  char * /*t1=NULL,*/ *t2 = NULL, *t3 = NULL;
   Accumulator extras = newMessH->extras;
   long origLen = extras.offset;
 
@@ -3616,14 +3604,14 @@ OSErr ReplyReferences(MessHandle origMessH, MessHandle newMessH) {
   /* Should probably strip anything that's not an MID (like phrases) */
   //	if (t1)
   //	{
-  //		SetHandleSize(t1,RemoveChar('\015',LDRef(t1),GetHandleSize(t1)));
-  //		UL(t1);
+  //		SetHandleSize(t1,RemoveChar('\015',t1,GetHandleSize(t1)));
+  //		;
   //	}
   if (t2) {
-    SetHandleSize(t2, RemoveChar('\015', (*(t2)), GetHandleSize(t2)));
+    SetHandleSize((void **)&t2, RemoveChar('\015', t2, GetHandleSize(t2)));
   }
   if (t3) {
-    SetHandleSize(t3, RemoveChar('\015', (*(t3)), GetHandleSize(t3)));
+    SetHandleSize((void **)&t3, RemoveChar('\015', t3, GetHandleSize(t3)));
   }
 
   /* If there's a message ID, add IRT header */
@@ -3671,20 +3659,20 @@ OSErr ReplyReferences(MessHandle origMessH, MessHandle newMessH) {
     extras.offset = origLen;
   AccuTrim(&extras);
   newMessH->extras = extras;
-  //	ZapHandle(t1);
-  ZapHandle(t2);
-  ZapHandle(t3);
+  //	free(t1);
+  free(t2);
+  free(t3);
   return (err);
 }
 /************************************************************************
  * EnsureMessNewline - make sure a message ends in a newline
  ************************************************************************/
-OSErr EnsureMessNewline(MessHandle messH) {
-  Handle text;
+int EnsureMessNewline(MessHandle messH) {
+  void *text;
   long size;
-  OSErr err;
+  int err;
 
-  text = (Handle)gedit_document_get_text(geditctrl_get_document(TheBody));
+  text = (void *)gedit_document_get_text(geditctrl_get_document(TheBody));
   err = noErr;
   if (text) {
     size = strlen((char *)text);
@@ -3735,7 +3723,7 @@ void Attribute(short attrId, MessHandle origMessH, MessHandle newMessH,
 /************************************************************************
  * GrabAttribution - compute the attribution for a message
  ************************************************************************/
-PStr GrabAttribution(short attrId, MyWindowPtr win, PStr attribution) {
+char * GrabAttribution(short attrId, MyWindowPtr win, char * attribution) {
   WindowPtr winWP = GetMyWindowWindowPtr(win);
   unsigned char template[256];
   unsigned char date[64], time[64];
@@ -3787,7 +3775,7 @@ MyWindowPtr DoRedistributeMessage(MyWindowPtr win, void *toWhom, bool turbo,
   int bodyOffset;
   MyWindowPtr newWin;
   long newBo;
-  OSErr err;
+  int err;
   PETETextStyle style;
   bool html = !PrefIsSet(PREF_SEND_ENRICHED_NEW);
 
@@ -3881,15 +3869,15 @@ MyWindowPtr DoRedistributeMessage(MyWindowPtr win, void *toWhom, bool turbo,
 /**********************************************************************
  * RedirectAnnotation - add proper annotation to redirect
  **********************************************************************/
-OSErr RedirectAnnotation(MessHandle messH) {
+int RedirectAnnotation(MessHandle messH) {
   unsigned char scratch[256], who[256], orig[256];
-  OSErr err = noErr;
+  int err = noErr;
 
   CompHeadGetStr(messH, FROM_HEAD, orig);
   if (!IsMe(orig)) {
     // Trim the trailing comment
     long origLen = strlen((char *)orig);
-    UPtr spot = orig + origLen;
+    unsigned char * spot = orig + origLen;
     if (origLen > 0 && spot[-1] == ')') {
       spot--;
       while (spot > orig && *spot != '(' && *spot != '<')
@@ -3915,7 +3903,7 @@ OSErr RedirectAnnotation(MessHandle messH) {
  * CopyAttachments - copy attachments out of the message body and into
  *  the attachments line
  **********************************************************************/
-OSErr CopyAttachments(MessHandle messH) {
+int CopyAttachments(MessHandle messH) {
   long offset, absOffset;
   FSSpec attSpec;
   HeadSpec hs;
@@ -3924,14 +3912,14 @@ OSErr CopyAttachments(MessHandle messH) {
   gchar *_rawText = gedit_document_get_text(_doc);
   if (_rawText) {
     /* Work with the text as a simple C string for attachment scanning */
-    UPtr textPtr = (UPtr)_rawText;
+    unsigned char * textPtr = (unsigned char *)_rawText;
     long textLen = (long)strlen(_rawText);
     CompHeadFind(messH, 0, &hs);
     for (offset = 0; 0 <= (absOffset = FindAnAttachment(
-                               (UHandle)&textPtr, offset + hs.offset, &attSpec,
+                               (unsigned char *)&textPtr, offset + hs.offset, &attSpec,
                                false, NULL, NULL, NULL));) {
       offset = absOffset - hs.offset - 1;
-      UPtr spot;
+      unsigned char * spot;
       for (spot = textPtr + absOffset;
            *spot != '\n' && spot < textPtr + hs.offset + hs.length; spot++)
         ;
@@ -3941,14 +3929,14 @@ OSErr CopyAttachments(MessHandle messH) {
       /* Re-fetch text after deletion */
       g_free(_rawText);
       _rawText = gedit_document_get_text(_doc);
-      textPtr = (UPtr)_rawText;
+      textPtr = (unsigned char *)_rawText;
       CompHeadFind(messH, 0, &hs);
     }
     for (offset = 0; 0 <= (absOffset = FindAnAttachment(
-                               (UHandle)&textPtr, offset + hs.offset, &attSpec,
+                               (unsigned char *)&textPtr, offset + hs.offset, &attSpec,
                                true, NULL, NULL, NULL));) {
       offset = absOffset - hs.offset - 1;
-      UPtr spot;
+      unsigned char * spot;
       for (spot = textPtr + absOffset;
            spot < textPtr + hs.offset + hs.length && *spot != '\n'; spot++)
         ;
@@ -3956,7 +3944,7 @@ OSErr CopyAttachments(MessHandle messH) {
                                   (spot - textPtr) - absOffset);
       g_free(_rawText);
       _rawText = gedit_document_get_text(_doc);
-      textPtr = (UPtr)_rawText;
+      textPtr = (unsigned char *)_rawText;
       CompHeadFind(messH, 0, &hs);
     }
     g_free(_rawText);
@@ -4070,13 +4058,13 @@ MyWindowPtr DoForwardMessage(MyWindowPtr win, void *toWhom, bool turbo) {
      */
     if (SumOf(origMessH)->flags & FLAG_OUT) {
       HeadSpec hs;
-      UHandle text = NULL;
+      unsigned char * text = NULL;
       if (CompHeadFind(origMessH, ATTACH_HEAD, &hs) &&
           !CompHeadGetText(origMessH->bodyPTE, &hs, (char **)&text) &&
           CompHeadFind(newMessH, ATTACH_HEAD, &hs)) {
         CompHeadSet(newMessH->bodyPTE, &hs, (char *)(*text));
       }
-      ZapHandle(text);
+      free(text);
     } else {
       if (MessFlagIsSet(origMessH, FLAG_HAS_ATT))
         CopyAttachments(newMessH);
@@ -4141,12 +4129,12 @@ long CompBodyOffset(MessHandle messH) {
 /**********************************************************************
  * DoFordirectMessage - forward or redirect a message, silently
  **********************************************************************/
-OSErr DoFordirectMessage(TOCType * tocH, short sumNum, short flk,
-                         PStr addresses, bool bulk) {
+int DoFordirectMessage(TOCType * tocH, short sumNum, short flk,
+                         char * addresses, bool bulk) {
   bool iOpened = !tocH->sums[sumNum].messH;
   MyWindowPtr origWin = GetAMessage(tocH, sumNum, NULL, NULL, false);
   MessHandle newMessH;
-  OSErr err;
+  int err;
   MyWindowPtr win;
 
   // Enhanced Filters	no such filter functionality in Light
@@ -4182,13 +4170,13 @@ OSErr DoFordirectMessage(TOCType * tocH, short sumNum, short flk,
 /**********************************************************************
  * DoReplyClosed - reply to a closed message, silently
  **********************************************************************/
-OSErr DoReplyClosed(TOCType * tocH, short sumNum, bool all, bool self,
+int DoReplyClosed(TOCType * tocH, short sumNum, bool all, bool self,
                     bool quote, bool doFcc, short withWhich, bool vis,
                     bool station) {
   bool iOpened = !tocH->sums[sumNum].messH;
   MyWindowPtr origWin = GetAMessage(tocH, sumNum, NULL, NULL, false);
   MessHandle newMessH;
-  OSErr err;
+  int err;
   MyWindowPtr win;
 
   if (!origWin)
@@ -4233,12 +4221,12 @@ int FindAndCopyHeader(MessHandle origMH, MessHandle newMH, char *fromHead,
 /************************************************************************
  * CopyNewsgroups - copy newsgroups into new message
  ************************************************************************/
-OSErr CopyNewsgroups(MessHandle origMH, MessHandle newMH) {
+int CopyNewsgroups(MessHandle origMH, MessHandle newMH) {
   unsigned char s[256];
   HeadSpec hs, origHS;
-  UHandle text = NULL;
+  unsigned char * text = NULL;
   char **addresses = NULL;
-  OSErr err = fnfErr;
+  int err = fnfErr;
   bool first = true;
 
   GetRString(s, NEWSGROUPS);
@@ -4404,10 +4392,10 @@ void WeedXAttachments(MessHandle messH, bool errReport) {
 /**********************************************************************
  * SpoolAttachments - copy attachments to the spool area
  **********************************************************************/
-OSErr SpoolAttachments(MessHandle messH) {
+int SpoolAttachments(MessHandle messH) {
   short n;
   short i;
-  OSErr err = noErr;
+  int err = noErr;
   FSSpec spec;
 
   /*
@@ -4426,9 +4414,9 @@ OSErr SpoolAttachments(MessHandle messH) {
 /**********************************************************************
  * SpoolIndAttachment - spool a single attachment
  **********************************************************************/
-OSErr SpoolIndAttachment(MessHandle messH, short i) {
+int SpoolIndAttachment(MessHandle messH, short i) {
   FSSpec spec, newSpec;
-  OSErr err = noErr;
+  int err = noErr;
 
   /*
    * make the folder
@@ -4465,8 +4453,8 @@ OSErr SpoolIndAttachment(MessHandle messH, short i) {
 /**********************************************************************
  * MakeAttSubFolder - make the subfolder for attachment spooling
  **********************************************************************/
-OSErr MakeAttSubFolder(MessHandle messH, unsigned long uidHash, FSSpecPtr folder) {
-  OSErr err;
+int MakeAttSubFolder(MessHandle messH, unsigned long uidHash, FSSpecPtr folder) {
+  int err;
   FSSpec spool;
   unsigned char scratch[256];
   long dirID;
@@ -4517,7 +4505,7 @@ OSErr MakeAttSubFolder(MessHandle messH, unsigned long uidHash, FSSpecPtr folder
 void RemoveIndAttachment(MessHandle messH, short index) {
   HeadSpec where;
   FSSpec spec;
-  OSErr err = GetIndAttachment(messH, index, &spec, &where);
+  int err = GetIndAttachment(messH, index, &spec, &where);
 
   if (err != 1) {
     CompDelAttachment(messH, &where);
@@ -4528,7 +4516,7 @@ void RemoveIndAttachment(MessHandle messH, short index) {
 /************************************************************************
  * CopyToOut - copy a message to the Out mailbox
  ************************************************************************/
-OSErr CopyToOut(TOCType * fromTocH, short sumNum, TOCType * toTocH) {
+int CopyToOut(TOCType * fromTocH, short sumNum, TOCType * toTocH) {
   MessHandle messH;
   short err = 1;
   MyWindowPtr win = NULL, newWin = NULL;
@@ -4590,7 +4578,7 @@ void SumInfoCpy(MSumPtr newSum, MSumPtr oldSum) {
 /************************************************************************
  * HashWithSeed - generate a hash from a string and a seed.
  ************************************************************************/
-unsigned long HashWithSeedLo(unsigned char *s, unsigned long n, unsigned long seed) {
+unsigned long HashWithSeedLo(char *s, unsigned long n, unsigned long seed) {
   unsigned long sum = seed - 1;
   int Bit;
 
@@ -4611,7 +4599,7 @@ unsigned long HashWithSeedLo(unsigned char *s, unsigned long n, unsigned long se
 /************************************************************************
  * MIDHash - hash a message id, stripping <>'s first
  ************************************************************************/
-unsigned long MIDHash(UPtr text, long size) {
+unsigned long MIDHash(unsigned char * text, long size) {
   unsigned char scratch[256];
   char **addresses = NULL;
 
@@ -4642,9 +4630,9 @@ void SetHashLo(TOCType * tocH, short sumNum, unsigned long hash, bool soft) {
 /************************************************************************
  * Rehash - recompute the hash for a message
  ************************************************************************/
-void RehashLo(TOCType * tocH, short sumNum, UHandle text, bool soft) {
+void RehashLo(TOCType * tocH, short sumNum, unsigned char * text, bool soft) {
   unsigned char scratch[256];
-  UPtr spot;
+  unsigned char * spot;
   long size = GetHandleSize_(text);
   unsigned long hash;
 
@@ -4662,8 +4650,8 @@ void RehashLo(TOCType * tocH, short sumNum, UHandle text, bool soft) {
   TOCSetDirty(tocH, true);
 }
 
-void Rehash(TOCType * tocH, int sumNum, UPtr buffer) {
-  RehashLo(tocH, sumNum, (UHandle)buffer, true);
+void Rehash(TOCType * tocH, int sumNum, unsigned char * buffer) {
+  RehashLo(tocH, sumNum, (unsigned char *)buffer, true);
 }
 
 #define PREVIEW_ID_MULT_REDO (-3)
@@ -4679,7 +4667,7 @@ void Preview(TOCType * tocH, short sumNum) {
   MyWindowPtr messWin = NULL;
   bool active = false;
   short ezOpenSum;
-  OSErr err;
+  int err;
   unsigned char profileName[64];
   short oldPreview;
 
@@ -4808,7 +4796,7 @@ void Preview(TOCType * tocH, short sumNum) {
         long body = SumOf(messH)->bodyOffset - messH->weeded;
         long len;
         long scanned;
-        UHandle text;
+        unsigned char * text;
         long oldID;
         long para;
         PETEParaInfo pinfo;
@@ -4902,9 +4890,9 @@ void Preview(TOCType * tocH, short sumNum) {
  * HTMLifyText - insert appropriate BR's, process and remove "related:" lines,
  *etc.
  ************************************************************************/
-void HTMLifyText(MyWindowPtr win, Handle text) {
+void HTMLifyText(MyWindowPtr win, void *text) {
   Accumulator a;
-  Ptr spot, end, lastSpot;
+  char *spot, *end, *lastSpot;
   long len;
   unsigned char sBR[32];
   char lastChar;
@@ -4918,7 +4906,7 @@ void HTMLifyText(MyWindowPtr win, Handle text) {
     GetRString(sBR, HTMLTagsStrn + htmlBR);
 
     len = 0;
-    spot = *text;
+    spot = (char *)text;
     lastChar = 0;
     lastSpot = spot;
     for (end = spot + GetHandleSize(text); spot < end; spot++) {
@@ -4934,7 +4922,7 @@ void HTMLifyText(MyWindowPtr win, Handle text) {
       lastChar = *spot;
     }
 
-    Munger(text, 0, NULL, (char *)spot - (char *)*text, (const void *)a.data,
+    Munger(text, 0, NULL, (char *)spot - (char *)text, (const void *)a.data,
            a.offset);
     offset = a.offset;
     /* data is char* flat buffer — just free once */
@@ -4949,20 +4937,20 @@ void HTMLifyText(MyWindowPtr win, Handle text) {
   StackInit(sizeof(PartDesc), &stack);
   while (0 <= (offset = FindAnAttachment(text, offset, &pd.spec, false, &pd.cid,
                                          &pd.relURL, &pd.absURL))) {
-    Ptr lineEnd, end;
+    char *lineEnd, *lineEnd2;
     long len;
 
     StackQueue(&pd, stack);
     //	Remove related line
-    end = *text + GetHandleSize_(text);
-    for (lineEnd = *text + offset; lineEnd < end && *lineEnd != '\015';
+    lineEnd2 = (char *)text + GetHandleSize_(text);
+    for (lineEnd = (char *)text + offset; lineEnd < lineEnd2 && *lineEnd != '\015';
          lineEnd++)
       ;
-    len = (char *)lineEnd - (char *)*text;
-    if (lineEnd < end)
+    len = (char *)lineEnd - (char *)text;
+    if (lineEnd < lineEnd2)
       len++; //	Get past CR
-    Munger(text, (char *)lineEnd - (char *)*text, NULL,
-           (char *)lineEnd - (char *)*text + 1, (Ptr) "",
+    Munger(text, (char *)lineEnd - (char *)text, NULL,
+           (char *)lineEnd - (char *)text + 1, (char *) "",
            0); //	Delete the line
   }
   // (*PeteExtra(win->pte))->partStack = stack;
@@ -5049,10 +5037,10 @@ void RedateTS(TOCType * tocH, short sumNum) {
   unsigned char dateStr[256];
   unsigned long secs;
   unsigned long zoneSecs;
-  OSErr err = CacheMessage(tocH, sumNum);
+  int err = CacheMessage(tocH, sumNum);
 
   if (!err && tocH->sums[sumNum].cache) {
-    HandleHeadGetPStr((char *)(*(tocH->sums[sumNum].cache)), HeaderStrn + DATE_HEAD,
+    HandleHeadGetPStr((char *)tocH->sums[sumNum].cache, HeaderStrn + DATE_HEAD,
               dateStr);
     if (!*dateStr)
       return;
@@ -5065,7 +5053,7 @@ void RedateTS(TOCType * tocH, short sumNum) {
 /************************************************************************
  * CurAddr - extract the current address from a window, if we have one
  ************************************************************************/
-PStr CurAddr(MyWindowPtr win, PStr addr) {
+char * CurAddr(MyWindowPtr win, char * addr) {
   if (win->curAddr)
     return win->curAddr(win, addr);
   else
@@ -5075,7 +5063,7 @@ PStr CurAddr(MyWindowPtr win, PStr addr) {
 /************************************************************************
  * CurAddrSel - extract the current address from the selection, if we have one
  ************************************************************************/
-PStr CurAddrSel(MyWindowPtr win, PStr addr) {
+char * CurAddrSel(MyWindowPtr win, char * addr) {
   if (win->pte && *PeteSelectedString(addr, win->pte)) {
     ShortAddr(addr, addr);
     if (*addr)
@@ -5089,7 +5077,7 @@ PStr CurAddrSel(MyWindowPtr win, PStr addr) {
  * Portable POSIX implementation: copies raw message bytes from the mailbox
  * to the destination file.
  ************************************************************************/
-OSErr SpoolMessage(MessHandle messH, FSSpecPtr theSpec, short refN) {
+int SpoolMessage(MessHandle messH, FSSpecPtr theSpec, short refN) {
   if (!messH)
     return -1;
   TOCType * tocH = messH->tocH;
@@ -5138,7 +5126,7 @@ OSErr SpoolMessage(MessHandle messH, FSSpecPtr theSpec, short refN) {
  * FileGraphicChangeGraphic - update an inline graphic in the gEditCtrl
  * widget at the given text offset with the image from spec.
  ************************************************************************/
-OSErr FileGraphicChangeGraphic(GtkWidget *pte, long offset, FSSpecPtr spec) {
+int FileGraphicChangeGraphic(GtkWidget *pte, long offset, FSSpecPtr spec) {
   if (!pte || !spec || !spec->path[0])
     return -1;
   GError *err = NULL;

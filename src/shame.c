@@ -100,7 +100,7 @@ short ReallyStandardAlert(int alertType, const char *error, const char *explanat
 /************************************************************************
  * MyStandardAlert - wrapper around ReallyStandardAlert
  ************************************************************************/
-OSErr MyStandardAlert(int inAlertType, const char *inError, const char *inExplanation,
+int MyStandardAlert(int inAlertType, const char *inError, const char *inExplanation,
                       void *inAlertParam, short *outItemHit)
 {
 	(void)inAlertParam;
@@ -124,7 +124,7 @@ int WarnUser(short stringId, int err)
 /************************************************************************
  * GoGetHelp - open help URL (stub)
  ************************************************************************/
-OSErr GoGetHelp(const char *error, const char *explanation)
+int GoGetHelp(const char *error, const char *explanation)
 {
 	(void)error; (void)explanation;
 	return 0;
@@ -133,7 +133,7 @@ OSErr GoGetHelp(const char *error, const char *explanation)
 /************************************************************************
  * MemoryPreflight - on Linux malloc doesn't fail this way; always OK
  ************************************************************************/
-OSErr MemoryPreflight(long size)
+int MemoryPreflight(long size)
 {
 	(void)size;
 	return 0;
@@ -169,16 +169,16 @@ bool Switch(void)
 /************************************************************************
  * MyHandToHand - replace *inHandle with a freshly allocated copy
  ************************************************************************/
-OSErr MyHandToHand(Handle *inHandle)
+int MyHandToHand(void **inHandle)
 {
 	if (!inHandle || !*inHandle)
 		return -108;
 	long len = GetHandleSize(*inHandle);
-	Handle result = NewHandle(len);
+	void *result = malloc(len);
 	if (!result)
 		return -108;
 	if (len)
-		memcpy(*result, **inHandle, (size_t)len);
+		memcpy(result, *inHandle, (size_t)len);
 	*inHandle = result;
 	return 0;
 }

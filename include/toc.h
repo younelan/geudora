@@ -49,7 +49,7 @@ typedef struct {
   unsigned long spamBecause:3; /* where the spam score came from */
   long spare21:21;          /* spare bits */
   unsigned long arrivalSeconds; /* when the message arrived at this machine */
-  void **mesgErrH;          /* mesgErrorHandle — message error handle */
+  void *mesgErrH;           /* mesgErrorHandle — message error handle */
   unsigned long fromHash;   /* hash of the from address */
   unsigned long spare[3];
   long serialNum;           /* unique message serial number */
@@ -78,7 +78,7 @@ typedef struct {
   char subj[60];            /* subject */
   unsigned long opts;
   unsigned long uidHash;    /* hash of message id */
-  Handle cache;             /* cache of message text */
+  void *cache;             /* cache of message text */
   bool selected;            /* is it selected? */
   MessHandle messH;         /* message structure (and window) if any */
 } MSumType, *MSumPtr;
@@ -192,11 +192,9 @@ typedef struct TOCType {
 #define MBX_IN_TEMP 11
 #define MBX_OUT_TEMP 12
 
-/* Message flags */
+/* Message flags — defined in mailbox.h */
 #define FLAG_READ 0x0001
 #define MSG_FLAG_DELETED 0x0002
-#define FLAG_SKIPPED (1 << 24)
-#define FLAG_OUT (1 << 5)
 
 /* Message options */
 #define OPT_DELETED 0x0001
@@ -206,19 +204,6 @@ typedef struct TOCType {
 #define OPT_FLOW 0x0004
 #define OPT_CHARSET 0x0008
 #define OPT_ATT_DEL (1 << 6)
-
-/* Message flags */
-#define FLAG_READ 0x0001
-#define MSG_FLAG_DELETED 0x0002
-#define FLAG_SKIPPED (1 << 24)
-#define FLAG_OUT (1 << 5)
-#define FLAG_FIXED_WIDTH (1 << 16)
-#define FLAG_RICH (1 << 17)
-#define FLAG_SHOW_ALL (1 << 30)
-#define FLAG_KEEP_COPY (1 << 4)
-#define FLAG_RR (1 << 12)
-/* FLAG_WRAP_OUT defined in uudecode.h */
-/* FLAG_HAS_ATT defined in mailbox.h */
 
 /* Global preferences/settings stubs */
 #define UseFlowInExcerpt 0
@@ -280,7 +265,7 @@ uint32_t toc_get_message_count(TOCType * toc);
 int toc_get_unread_count(TOCType * toc);
 
 void TOCSetDirty(TOCType * tocH, bool dirty);
-OSErr TOCDates(FSSpecPtr spec, uLong *box, uLong *res, uLong *file);
+int TOCDates(FSSpecPtr spec, uLong *box, uLong *res, uLong *file);
 
 #define OPT_INLINE_SIG 0x0100 /* Dummy value */
 

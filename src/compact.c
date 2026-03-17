@@ -41,7 +41,7 @@ DAMAGE. */
 #include "gtk_dialogs.h"
 #include "prefdefs.h"
 #include "util.h"
-#include "StringUtil.h"   /* TrimWhite, ComposeRString, MakePStr */
+#include "StringUtil.h"   /* TrimWhite, ComposeRString */
 #include "threading.h"    /* Must be before schizo.h for PersList/CurPers macros */
 #include "schizo.h"       /* PushPers, PopPers, FindPersById, SetPers */
 #include "nickmng.h"      /* historyAddressBook enum, FindAddressBookType */
@@ -60,20 +60,6 @@ DAMAGE. */
 
 #define FILE_NUM 8
 
-/*
- * Message flag bits — from original Mac mailbox.h
- * These control per-message options in the composition window icon bar.
- */
-#ifndef FLAG_CAN_ENC
-#define FLAG_CAN_ENC   (1L<<9)
-#define FLAG_BX_TEXT   (1L<<2)
-#define FLAG_WRAP_OUT  (1L<<3)
-#define FLAG_KEEP_COPY (1L<<4)
-#define FLAG_RR        (1L<<12)
-#define FLAG_SIG       (1L<<21)
-#define FLAG_OLD_SIG   (1L<<1)
-#define FLAG_ICON_BAR  (1L<<30)
-#endif
 
 #ifndef OPT_COMP_TOOLBAR_VISIBLE
 #define OPT_COMP_TOOLBAR_VISIBLE (1L<<13)
@@ -123,17 +109,17 @@ extern uLong GMTDateTime(void);
 extern long ZoneSecs(void);
 /* FindAddressBookType, SaveIndNickFile declared in nickmng.h */
 extern void EnableTxtFmtBarIfOK(MyWindowPtr win);
-extern void AppendMessText(MessHandle messH, long offset, unsigned char *text, long len);
+extern void AppendMessText(MessHandle messH, long offset, char *text, long len);
 extern void InvalTopMargin(MyWindowPtr win);
 extern void PlaceMessErrNote(MessHandle messH);
 extern bool AnalWarning(MessHandle messH);
 extern bool AnalDelayOutgoing(void);
 extern void SumInfoCpy(MSumPtr dst, MSumPtr src);
-extern void TextFindAndCopyHeader(unsigned char *text, long bodySpot, MessHandle messH, unsigned char *header, short head, short label);
+extern void TextFindAndCopyHeader(char *text, long bodySpot, MessHandle messH, char *header, short head, short label);
 extern int Snarf(FSSpec *spec, void **textH, long flags);
 extern void NicknameCachingScan(GtkWidget *pte, void *raw);
 extern int ExpandAliases(void **h, void *raw, int n, bool deep);
-extern void CommaList(Handle h);
+extern void CommaList(void *h);
 extern int FSpIsItAFolder(FSSpec *spec);
 extern long FSpFileSize(FSSpec *spec);
 extern void FolderSizeHi(const char *dir, uint32_t *cumSize);
@@ -142,7 +128,7 @@ extern void RefreshSigButton(MessHandle messH);
 extern void CompSwitchFields(MessHandle messH, bool forward);
 extern void MakeAttSubFolder(MessHandle messH, uLong hash, FSSpec *spec);
 extern int FSpDupFolder(FSSpec *toSpec, FSSpec *fromSpec, bool replace, bool deep);
-extern UPtr FindHeaderString(UPtr text, UPtr headerName, long *size, bool bodyToo);
+extern char *FindHeaderString(char *text, char *headerName, long *size, bool bodyToo);
 extern bool UseInlineSig;
 extern short pStationeryLabel;
 /* historyAddressBook is an enum in nickmng.h */
@@ -180,7 +166,7 @@ static const char *CompHeaderNameStr(short num)
 	return "";
 }
 #undef HeaderName
-#define HeaderName(num) ((unsigned char *)CompHeaderNameStr(num))
+#define HeaderName(num) ((char *)CompHeaderNameStr(num))
 
 #ifndef PREF_NICK_CACHE
 #define PREF_NICK_CACHE 300
@@ -533,7 +519,7 @@ uLong ApproxMessageSize(MessHandle messH)
 	long size = (SumOf(messH)->length * 41) / 40;
 	FSSpec spec;
 	short index;
-	long oneSize;
+	uint32_t oneSize;
 
 	for (index = 1; ; index++) {
 		if (GetIndAttachment(messH, index, &spec, NULL))
@@ -688,10 +674,10 @@ bool InTranslator(TransInfoHandle translators, long id)
 	if (!translators)
 		return false;
 
-	long size = GetHandleSize_((Handle)translators);
+	long size = GetHandleSize_((void *)translators);
 	short count = size / sizeof(TransInfo);
 	for (short i = 0; i < count; i++) {
-		if ((*translators)[i].id == id)
+		if (translators[i].id == id)
 			return true;
 	}
 	return false;
@@ -712,21 +698,21 @@ int AddMessTranslator(MessHandle messH, long which, void *properties)
 		return -1;
 
 	if (messH->hTranslators)
-		n = GetHandleSize_((Handle)messH->hTranslators) / sizeof(TransInfo);
+		n = GetHandleSize_((void *)messH->hTranslators) / sizeof(TransInfo);
 	else
 		n = 0;
 
 	if (!n) {
-		TransInfoHandle localHandle = (TransInfoHandle)NewHandle(sizeof(TransInfo));
+		TransInfoHandle localHandle = (TransInfoHandle)malloc(sizeof(TransInfo));
 		if (!localHandle)
 			return -1;
 		messH->hTranslators = localHandle;
 	} else {
-		SetHandleSize((Handle)messH->hTranslators, (n + 1) * sizeof(TransInfo));
+		SetHandleSize((void *)messH->hTranslators, (n + 1) * sizeof(TransInfo));
 	}
 
-	(*messH->hTranslators)[n].id = id;
-	(*messH->hTranslators)[n].properties = (Handle)properties;
+	messH->hTranslators[n].id = id;
+	messH->hTranslators[n].properties = (void *)properties;
 
 	ControlHandle theCtl = FindControlByRefCon(messH->win, 0xff000000 | (which + ICON_BAR_NUM));
 	if (theCtl)
@@ -747,23 +733,23 @@ int RemoveMessTranslator(MessHandle messH, long which)
 	long id = ETLIconToID(which);
 
 	if (messH->hTranslators)
-		n = GetHandleSize_((Handle)messH->hTranslators) / sizeof(TransInfo);
+		n = GetHandleSize_((void *)messH->hTranslators) / sizeof(TransInfo);
 	else
 		n = 0;
 
 	for (i = 0; i < n; i++) {
-		if ((*messH->hTranslators)[i].id == id) {
-			if ((*messH->hTranslators)[i].properties)
-				DisposeHandle((*messH->hTranslators)[i].properties);
+		if (messH->hTranslators[i].id == id) {
+			if (messH->hTranslators[i].properties)
+				free(messH->hTranslators[i].properties);
 			if (n == 1) {
-				DisposeHandle((Handle)messH->hTranslators);
+				free((void *)messH->hTranslators);
 				messH->hTranslators = NULL;
 			} else {
 				if (i != n - 1)
-					memmove(&(*messH->hTranslators)[i],
-						&(*messH->hTranslators)[i + 1],
+					memmove(&messH->hTranslators[i],
+						&messH->hTranslators[i + 1],
 						(n - i - 1) * sizeof(TransInfo));
-				SetHandleSize((Handle)messH->hTranslators, (n - 1) * sizeof(TransInfo));
+				SetHandleSize((void *)messH->hTranslators, (n - 1) * sizeof(TransInfo));
 			}
 			break;
 		}
@@ -846,25 +832,21 @@ void ApplyStationery(MyWindowPtr win, FSSpec *spec, bool dontCleanse, bool perso
  ************************************************************************/
 void ApplyStationeryLo(MyWindowPtr win, FSSpec *spec, bool dontCleanse, bool personality, bool editStationery)
 {
-	Handle textH = NULL;
+	void *textH = NULL;
 
 	if (HasFeature(featureStationery))
 		;  /* UseFeature call in original — feature gate */
 
 	/* Read stationery file */
-	if (Snarf(spec, (void **)&textH, 0))
+	if (Snarf(spec, &textH, 0))
 		return;
-	if (!textH || !*textH) {
-		if (textH) DisposeHandle(textH);
-		return;
-	}
+	if (!textH) return;
 
-	/* Apply — dereference handle to get raw pointer + length per compact.h signature */
-	unsigned char *text = (unsigned char *)*textH;
-	long textLen = GetHandleSize_(textH);
+	char *text = (char *)textH;
+	long textLen = InlineGetHandleSize(textH);
 	ApplyStationeryHandle(win, text, textLen, dontCleanse, personality, editStationery);
 
-	DisposeHandle(textH);
+	free(textH);
 }
 
 /************************************************************************
@@ -873,14 +855,14 @@ void ApplyStationeryLo(MyWindowPtr win, FSSpec *spec, bool dontCleanse, bool per
  * Original: compact.c:672-690
  * Signature matches compact.h: (unsigned char *text, long textLen, MSumPtr pSum)
  ************************************************************************/
-int GetStationerySum(unsigned char *text, long textLen, MSumPtr pSum)
+int GetStationerySum(char *text, long textLen, MSumPtr pSum)
 {
 	if (!text || textLen <= 0)
 		return -1;
 
-	unsigned char *spot = text;
-	unsigned char *end = text + textLen;
-	unsigned char *nl;
+	char *spot = text;
+	char *end = text + textLen;
+	char *nl;
 
 	/* Skip to first space (past "X-Eudora-Stationery:" prefix) */
 	while (spot < end && *spot != ' ')
@@ -896,7 +878,7 @@ int GetStationerySum(unsigned char *text, long textLen, MSumPtr pSum)
 		return -1;
 	}
 
-	Hex2Bytes(spot, nl - spot, (unsigned char *)pSum);
+	Hex2Bytes((unsigned char *)spot, nl - spot, (unsigned char *)pSum);
 	return 0;
 }
 
@@ -913,16 +895,16 @@ int GetStationerySum(unsigned char *text, long textLen, MSumPtr pSum)
  *
  * Signature matches compact.h: (win, text, textLen, dontCleanse, personality, editStationery)
  ************************************************************************/
-void ApplyStationeryHandle(MyWindowPtr win, unsigned char *text, long textLen, bool dontCleanse, bool personality, bool editStationery)
+void ApplyStationeryHandle(MyWindowPtr win, char *text, long textLen, bool dontCleanse, bool personality, bool editStationery)
 {
 	MessageSummary oldSum, newSum;
 	MessHandle messH;
-	unsigned char scratch[256];
-	unsigned char origSubj[256];
-	unsigned char *spot, *end;
+	char scratch[256];
+	char origSubj[256];
+	char *spot, *end;
 	long bodySpot;
 	long size;
-	unsigned char *subj;
+	char *subj;
 	HeadSpec hs;
 	PersHandle pers = NULL;
 	short label = editStationery ? 0 : pStationeryLabel;
@@ -954,7 +936,7 @@ void ApplyStationeryHandle(MyWindowPtr win, unsigned char *text, long textLen, b
 		newSum.sigId = SIG_NONE;
 	*SumOf(messH) = newSum;
 
-	/* Handle personality */
+	/* void *personality */
 	if (personality && (pers = FindPersById(oldSum.persId))) {
 		SetPers(messH->tocH, messH->sumNum, pers, false);
 		PushPers(pers);
@@ -972,16 +954,16 @@ void ApplyStationeryHandle(MyWindowPtr win, unsigned char *text, long textLen, b
 
 	/* From header — if it's "me", set the From field */
 	size = bodySpot;
-	subj = (unsigned char *)FindHeaderString((UPtr)spot, HeaderName(FROM_HEAD), &size, false);
+	subj = FindHeaderString(spot, HeaderName(FROM_HEAD), &size, false);
 	if (subj && size) {
-		MakePStr(scratch, subj, size);
-		if (IsMe((char *)scratch))
-			SetMessText(messH, FROM_HEAD, scratch, strlen((const char *)scratch));
+		memcpy(scratch, subj, size); scratch[size] = '\0';
+		if (IsMe(scratch))
+			SetMessText(messH, FROM_HEAD, scratch, size);
 	}
 
 	/* Translator header */
 	size = bodySpot;
-	subj = (unsigned char *)FindHeaderString((UPtr)spot, HeaderName(TRANSLATOR_HEAD), &size, false);
+	subj = FindHeaderString(spot, HeaderName(TRANSLATOR_HEAD), &size, false);
 	if (subj && size) {
 		AddTranslatorsFromPtr(messH, (char *)subj, size);
 	}
@@ -996,15 +978,15 @@ void ApplyStationeryHandle(MyWindowPtr win, unsigned char *text, long textLen, b
 	CompHeadGetStr(messH, SUBJ_HEAD, (char *)origSubj);
 	if (*origSubj) {
 		size = bodySpot;
-		subj = (unsigned char *)FindHeaderString((UPtr)spot, HeaderName(SUBJ_HEAD), &size, false);
+		subj = FindHeaderString(spot, HeaderName(SUBJ_HEAD), &size, false);
 		if (subj && size) {
-			unsigned char sub[256];
-			MakePStr(sub, subj, size);
+			char sub[256];
+			memcpy(sub, subj, size); sub[size] = '\0';
 			TrimWhite(sub);
 			if (*sub) {
-				unsigned char into[512];
+				char into[512];
 				ComposeRString(into, R_FMT, sub, origSubj);
-				SetMessText(messH, SUBJ_HEAD, into + 1, *into);
+				SetMessText(messH, SUBJ_HEAD, into, strlen(into));
 				if (CompHeadFind(messH, SUBJ_HEAD, &hs)) {
 					geditctrl_set_label(TheBody, hs.value, hs.stop, label);
 				}
@@ -1018,7 +1000,7 @@ void ApplyStationeryHandle(MyWindowPtr win, unsigned char *text, long textLen, b
 	if (!*origSubj)
 		TextFindAndCopyHeader(spot, bodySpot, messH, HeaderName(SUBJ_HEAD), SUBJ_HEAD, label);
 
-	/* Handle spool folder copy for stationery with attachments */
+	/* void *spool folder copy for stationery with attachments */
 	if (!editStationery && (oldSum.opts & OPT_HAS_SPOOL)) {
 		FSSpec toSpec, fromSpec;
 		MakeAttSubFolder(messH, oldSum.uidHash, &fromSpec);
@@ -1032,11 +1014,11 @@ void ApplyStationeryHandle(MyWindowPtr win, unsigned char *text, long textLen, b
 		if (oldSum.opts & OPT_HTML) {
 			/* For HTML stationery, use InsertRich to parse markup */
 			/* Need to create a temporary handle for InsertRich */
-			Handle bodyH = NewHandle(textLen - bodySpot);
+			void *bodyH = malloc(textLen - bodySpot);
 			if (bodyH) {
-				memcpy(*bodyH, text + bodySpot, textLen - bodySpot);
-				InsertRich((UHandle)bodyH, 0, textLen - bodySpot, newBodySpot, false, TheBody, NULL, false);
-				DisposeHandle(bodyH);
+				memcpy(bodyH, text + bodySpot, textLen - bodySpot);
+				InsertRich((unsigned char *)bodyH, 0, textLen - bodySpot, newBodySpot, false, TheBody, NULL, false);
+				free(bodyH);
 			}
 			SetMessOpt(messH, OPT_HTML);
 		} else {
@@ -1166,7 +1148,7 @@ int NickExpandAndCacheHead(MessHandle messH, short head, bool cacheOnly)
 				NicknameCachingScan(pte, (void *)raw);
 
 				if (PrefIsSet(PREF_NICK_AUTO_EXPAND) && !cacheOnly) {
-					Handle expanded = NULL;
+					void *expanded = NULL;
 					if (ExpandAliases((void **)&expanded, (void *)raw, 0, true) == 0 && expanded) {
 						g_strfreev(raw);
 						raw = NULL;
@@ -1182,7 +1164,7 @@ int NickExpandAndCacheHead(MessHandle messH, short head, bool cacheOnly)
 							long fieldLen = hs.stop - hs.value;
 							bool changed = false;
 							if (fieldTextH) {
-								if (fieldLen != len || memcmp(*expanded, (char *)*(Handle)fieldTextH + hs.value, fieldLen))
+								if (fieldLen != len || memcmp(expanded, (char *)fieldTextH + hs.value, fieldLen))
 									changed = true;
 							} else {
 								changed = true;
@@ -1192,7 +1174,7 @@ int NickExpandAndCacheHead(MessHandle messH, short head, bool cacheOnly)
 								/* Text has changed — replace field contents */
 								PetePrepareUndo(pte, 0/*peCantUndo*/, hs.value, hs.stop, NULL, NULL);
 								if (PeteDelete(pte, hs.value, hs.stop) == 0) {
-									if (PeteInsertPtr(pte, hs.value, *expanded, len) == 0) {
+									if (PeteInsertPtr(pte, hs.value, expanded, len) == 0) {
 										/* If previous selection was entire field, reselect entire field */
 										bool selectAll = (selStart == hs.value && selEnd == hs.stop);
 										if (CompHeadCurrent(pte) == head && CompHeadFind(messH, head, &hs))
@@ -1203,7 +1185,7 @@ int NickExpandAndCacheHead(MessHandle messH, short head, bool cacheOnly)
 							}
 						}
 						CompGatherRecipientAddresses(messH, true);
-						DisposeHandle(expanded);
+						free(expanded);
 					}
 				} else {
 					/* Just cache, no expand */
@@ -1243,7 +1225,7 @@ void SetSig(TOCType *tocH, short sumNum, int sigId)
 		if (messH->hStationerySpec)
 			messH->win->isDirty = true;
 
-		/* Handle inline signature replacement */
+		/* void *inline signature replacement */
 		if (MessOptIsSet(messH, OPT_INLINE_SIG))
 			RemoveInlineSig(messH);
 		if (UseInlineSig)
@@ -1701,9 +1683,9 @@ int SaveStationeryStuff(short refN, MessHandle messH)
 	long hexLen = sizeof(MessageSummary) * 2;
 
 	/* Write "X-Eudora-Stationery: " prefix */
-	unsigned char scratch[64];
+	char scratch[64];
 	GetRString(scratch, HEADER_STRN);  /* X-Stuff header prefix */
-	long prefixLen = strlen((char *)scratch);
+	long prefixLen = strlen(scratch);
 	if (write(refN, scratch, prefixLen) != prefixLen)
 		return -1;
 

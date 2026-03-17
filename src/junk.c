@@ -59,9 +59,6 @@ extern MenuHandle GetMHandle(short menuID);
 /* MenuHandle defined as GMenuModel* in mailbox.h - do not redefine */
 
 // Constants and Macros
-#ifndef FLAG_KNOWS_ME
-#define FLAG_KNOWS_ME (1L << 30) // Define locally if missing
-#endif
 
 // Hash is now a macro in message.h: #define Hash(s) HashWithSeed(s, 1)
 /* HNoPurge/HPurge provided by legacy_shim.h as static inline */
@@ -70,7 +67,7 @@ int HandleHeadGetIdText(void **text, int head, void ***h);
 // Forward declarations for functions defined in this file (not in headers)
 // Modernized: Use FSSpec * instead of FSSpecPtr
 extern FSSpec *Box2TOCSpec(FSSpec *boxSpec, FSSpec *tocSpec);
-/* CacheMessage declared in imapdownload.h as OSErr - do not redeclare as bool */
+/* CacheMessage declared in imapdownload.h as int - do not redeclare as bool */
 long BodyOffset(void **text);
 void EnsureFromHash(TOCType * tocH, short sumNum);
 bool WhiteListByMID(TOCType * tocH, short sumNum);
@@ -158,10 +155,9 @@ int DoIterativeThingyLo(TOCType * tocH, int item, int mods, int p4, bool p5);
 int JunkIMAP(TOCType * tocH, short sumNum, bool isJunk, bool dontMove);
 int ArchiveIMAPJunk(void);
 void JunkMoveIMAPMessages(TOCType * tocH, bool isJunk);
-/* CacheMessage declared as OSErr in imapdownload.h - not bool */
+/* CacheMessage declared as int in imapdownload.h - not bool */
 
 long BodyOffset(void **text);
-size_t GetHandleSize(void **h);
 void **NewHandleClear(size_t size);
 
 /************************************************************************
@@ -458,7 +454,7 @@ int Junk(TOCType * tocH, short sumNum, bool isJunk, bool ezOpen) {
   }
   // lies, lies, lies
   if (tList != NULL)
-    DisposeHandle((void **)tList);
+    free((void **)tList);
   return 0;
 }
 
@@ -526,7 +522,7 @@ int JunkIMAP(TOCType * tocH, short sumNum, bool isJunk, bool dontMove) {
         if (!uid_array) {
           // Clean up and return error
           if (tList)
-            DisposeHandle((void **)tList);
+            free((void **)tList);
           return memFullErr;
         }
 
@@ -611,7 +607,7 @@ int JunkIMAP(TOCType * tocH, short sumNum, bool isJunk, bool dontMove) {
   }
   // lies, lies, lies
   if (tList != NULL)
-    DisposeHandle((void **)tList);
+    free((void **)tList);
   return 0;
 }
 
@@ -625,7 +621,7 @@ int ArchiveJunk(TOCType * tocH) {
   uLong threshScore = GetRLong(JUNK_MAILBOX_EMPTY_THRESH);
   long count = 0;
   short button;
-  Str255 dest;
+  char dest[256];
   bool trash;
   bool nuke;
   FSSpec spec;
@@ -711,7 +707,7 @@ int ArchiveIMAPJunk(void) {
   uLong threshScore;
   long count = 0;
   short button;
-  Str255 dest;
+  char dest[256];
   bool trash;
   bool nuke;
   bool archiveIMAP;
@@ -823,7 +819,7 @@ int ArchiveIMAPJunk(void) {
                   else
                     IMAPDeleteMessages(tocH, uid_handle, nuke, true, false,
                                        true);
-                  DisposeHandle(uid_handle);
+                  free(uid_handle);
                 }
                 free(uid_array);
               }
@@ -860,7 +856,7 @@ int ArchiveIMAPJunk(void) {
  * SpecIsJunkSpec is a spec the junk mailbox?
  ************************************************************************/
 bool SpecIsJunkSpec(FSSpecPtr spec) {
-  return IsRoot(spec) && EqualStrRes(spec->name, JUNK);
+  return IsRoot(spec->path) && EqualStrRes(spec->name, JUNK);
 }
 
 /************************************************************************
@@ -976,7 +972,7 @@ short JunkRescanBox(TOCType * tocH) {
     for (sumNum = tocH->count; sumNum--;)
       BoxSetSummarySelected(tocH, sumNum, tocH->sums[sumNum].spareShort);
 
-    DisposeHandle((void **)tList);
+    free((void **)tList);
   }
 
   return err;
@@ -1023,7 +1019,7 @@ int JunkRescanJunkMailbox() {
     for (sumNum = tocH->count; sumNum--;)
       BoxSetSummarySelected(tocH, sumNum, tocH->sums[sumNum].spareShort);
 
-    DisposeHandle((void **)tList);
+    free((void **)tList);
   }
 
   return 0;
@@ -1326,7 +1322,7 @@ void ScoreOneMessage(TLMHandle tList, TOCType * tocH, short sumNum,
 
       numPlugins = HandleCount(tList) - 1; // don't call the sentinel!
       for (i = 0; i < numPlugins; ++i) {
-        aModule = &(*tList)[i];
+        aModule = &tList[i];
         Zero(junkScore);
         junkScore.size = sizeof(junkScore);
         Zero(junkStatus);
@@ -1362,9 +1358,9 @@ void ScoreOneMessage(TLMHandle tList, TOCType * tocH, short sumNum,
     }
 
     if (body != NULL)
-      DisposeHandle(body);
+      free(body);
     if (headers != NULL)
-      DisposeHandle(headers);
+      free(headers);
   }
 
   // We want to record scores of zero or -1 that come out
@@ -1379,7 +1375,7 @@ void ScoreOneMessage(TLMHandle tList, TOCType * tocH, short sumNum,
   // Zap the cache, unless this message still needs to be filtered.
   if (tocH->imapTOC)
     if ((tocH->sums[sumNum].flags & FLAG_UNFILTERED) == 0)
-      ZapHandle(tocH->sums[sumNum].cache);
+      free(tocH->sums[sumNum].cache);
 }
 
 /************************************************************************
@@ -1425,7 +1421,7 @@ void JunkScoreBox(TOCType * tocH, short first, short last, bool rescore) {
     }
 
   if (tList != NULL)
-    DisposeHandle((void **)tList);
+    free((void **)tList);
 }
 
 /************************************************************************
@@ -1473,7 +1469,7 @@ void JunkScoreIMAPBox(TOCType * tocH, short first, short last,
       ScoreOneMessage(tList, tocH, i, false);
     }
 
-    DisposeHandle((void **)tList);
+    free((void **)tList);
   }
 }
 
@@ -1509,7 +1505,7 @@ void JunkScoreSelected(TOCType * tocH) {
   }
 
   if (tList != NULL)
-    DisposeHandle((void **)tList);
+    free((void **)tList);
 }
 
 //	Can we actually score mail?
@@ -1519,7 +1515,7 @@ bool CanScoreJunk() {
   TLMHandle tList = NULL;
   int err = ETLListAllTranslators(&tList, EMSF_JUNK_MAIL);
   if (tList != NULL)
-    DisposeHandle((void **)tList);
+    free((void **)tList);
   return err == 0;
 }
 
@@ -1565,7 +1561,7 @@ void JunkMoveIMAPMessages(TOCType * tocH, bool isJunk) {
   MailboxNodeHandle dest;
   PersHandle pers;
   Accumulator a;
-  // Ptr uids; // Unused
+  // char * uids; // Unused
 
   for (i = 0; i < tocH->count; i++) {
     if ((tocH->sums[i].selected) &&
@@ -1632,13 +1628,13 @@ void JunkMoveIMAPMessages(TOCType * tocH, bool isJunk) {
       // move the messages if they're going anywhere.
       if (destTocH) {
         AccuTrim(&a);
-        Handle uidsH = NULL;
+        void *uidsH = NULL;
         if (PtrToHand(a.data, &uidsH, a.offset) == noErr) {
           IMAPTransferMessages(realToc, destTocH, uidsH, false, false);
-          DisposeHandle(uidsH);
+          free(uidsH);
         }
       }
-      do { void **_azh = (a).data; if (_azh) { if (*_azh) free(*_azh); free(_azh); } (a).data = NULL; (a).offset = (a).size = 0; } while(0);
+      free(a.data); a.data = NULL; a.offset = a.size = 0;
     }
   }
 }
@@ -1668,7 +1664,7 @@ bool WhiteListByMID(TOCType * tocH, short sumNum) {
         guint midCount = OutgoingMIDList->len;
 
         for (int i = 0; addresses[i]; i++) {
-          uint32_t h = Hash((UPtr)addresses[i]);
+          uint32_t h = Hash((unsigned char *)addresses[i]);
           bool found = false;
           for (guint mi = 0; mi < midCount; mi++) {
             if (mids[mi] == h) { found = true; break; }
@@ -1680,7 +1676,7 @@ bool WhiteListByMID(TOCType * tocH, short sumNum) {
         }
         g_strfreev(addresses); addresses = NULL;
       }
-      ZapHandle(references);
+      free(references);
     }
     HPurge(text);
   }

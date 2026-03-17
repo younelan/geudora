@@ -28,7 +28,7 @@ ADVISED OF THE POSSIBILITY OF SUCH DAMAGE. */
 
 #include <stdint.h>   /* For uint32_t */
 #include <stdbool.h>  /* For bool */
-#include "mydefs.h"   /* For OSErr, TransStream, POPLineType */
+#include "mydefs.h"   /* For int, TransStream, POPLineType */
 #include "trans.h"    /* For HeaderDHandle */
 #include "mailxfer.h" /* For XferFlags */
 
@@ -61,7 +61,7 @@ typedef struct POPDArray {
 } POPDArray;
 typedef POPDArray *POPDHandle;
 
-/* Helper functions for POPDHandle (replaces Mac Handle operations) */
+/* Helper functions for POPDHandle (replaces Mac void *operations) */
 POPDHandle POPDNew(int count);
 void POPDFree(POPDHandle *pH);
 int POPDAppend(POPDHandle h, const POPDesc *item);
@@ -72,7 +72,7 @@ bool GenKeyedDigest(unsigned char *banner, unsigned char *secret,
 bool GenDigest(unsigned char *banner, unsigned char *secret,
                unsigned char *digest);
 void FixMessServerAreas(void);
-OSErr RoomForMessage(long msgsize);
+int RoomForMessage(long msgsize);
 short ReadEitherBody(TransStream stream, short refN, HeaderDHandle hdh,
                      char *buf, long bSize, long estSize, long context);
 POPLineType ReadPOPLine(TransStream stream, unsigned char *buf, long bSize,
@@ -80,28 +80,28 @@ POPLineType ReadPOPLine(TransStream stream, unsigned char *buf, long bSize,
 short GetMyMail(TransStream stream, bool quietly, short *gotSome,
                 XferFlags *flags);
 int POPError(void);
-OSErr RecordAttachment(const char *path, HeaderDHandle hdh);
+int RecordAttachment(const char *path, HeaderDHandle hdh);
 void AddAttachInfo(short theIndex, long result);
-OSErr WriteAttachNote(short refN);
+int WriteAttachNote(short refN);
 int FetchMessageText(TransStream stream, long estSize, POPDPtr pd,
                      short messageNumber, TOCType * useTocH);
 int FetchMessageTextLo(TransStream stream, long estSize, POPDPtr pd,
                        short messageNumber, TOCType * useTocH, bool imap,
                        bool import);
 int POPrror(void);
-int POPIntroductions(TransStream stream, PStr user, bool *capabilities);
-int POPCmdGetReply(TransStream stream, short cmd, unsigned char *args,
-                   unsigned char *buffer, long *size);
-int POPCmdError(short cmd, unsigned char *args, unsigned char *message);
+int POPIntroductions(TransStream stream, char *user, bool *capabilities);
+int POPCmdGetReply(TransStream stream, short cmd, char *args,
+                   char *buffer, long *size);
+int POPCmdError(short cmd, char *args, char *message);
 int EndPOP(TransStream stream);
-int StartPOP(TransStream stream, unsigned char *serverName, long port);
+int StartPOP(TransStream stream, char *serverName, long port);
 void AttachNoteLo(const char *path, const char *theMessage);
 TOCType * RenameInTemp(TOCType * tocH);
 
 /*
  * POPD manipulation stuff
  */
-OSErr AddIdToPOPD(OSType listType, short listId, uint32_t uidHash, bool dupOK);
+int AddIdToPOPD(OSType listType, short listId, uint32_t uidHash, bool dupOK);
 void RemIdFromPOPD(uint32_t popdType, short deleteId, uint32_t uidHash);
 bool IdIsOnPOPD(OSType listType, short listId, uint32_t uidHash);
 
@@ -147,10 +147,10 @@ bool IdIsOnPOPD(OSType listType, short listId, uint32_t uidHash);
   (AddIdToPOPD(PERS_POPD_TYPE(TS_TO_PPERS(tocH, sumNum)), list,                \
                (tocH)->sums[sumNum].uidHash, dupOk))
 
-OSErr KerbDestroy(void);
-OSErr KerbDestroyUser(void);
+int KerbDestroy(void);
+int KerbDestroyUser(void);
 int PutOutFromLine(short refN, long *fromLen);
-OSErr KerbUsername(PStr name);
+int KerbUsername(char *name);
 
 #ifdef POPSECURE
 short VetPOP(void);

@@ -39,14 +39,11 @@ ADVISED OF THE POSSIBILITY OF SUCH DAMAGE. */
 #include "threading.h"
 #include <stdlib.h>
 #include <string.h>
-#define PSCopy(d,s) strcpy((char*)d,(char*)s+1)
-#ifndef PCopy
-#define PCopy(d,s) memmove(d,s,(size_t)((unsigned char*)(s))[0]+1)
-#endif
+#include <unistd.h>
 #define WarnUser(c,e)
 #define MEM_ERR 0
 #define nil 0
-#define MyFSClose(f) 0
+/* MyFSClose is implemented in fileutil.c */
 #define IMAP_PORT 0
 #define GetPOPInfoLo(u,h,p)
 #define Zero(x)
@@ -106,9 +103,9 @@ static char *buffer_gets(readfn_t readfn, void *read_data, unsigned long size,
 /**********************************************************************
  *	NewImapStream - initialize an IMAPStream.
  **********************************************************************/
-OSErr NewImapStream(IMAPStreamPtr *imapStream, UPtr ServerName,
+int NewImapStream(IMAPStreamPtr *imapStream, unsigned char * ServerName,
                     unsigned long PortNum) {
-  OSErr err = noErr;
+  int err = noErr;
 
   *imapStream = (IMAPStreamStruct *)malloc(sizeof(IMAPStreamStruct));
   if (*imapStream)
@@ -121,7 +118,7 @@ OSErr NewImapStream(IMAPStreamPtr *imapStream, UPtr ServerName,
 
     // IMAP Server identification:
     if (ServerName)
-      PSCopy((*imapStream)->pServerName, ServerName);
+      g_strlcpy((char *)(*imapStream)->pServerName, (char *)ServerName, 256);
     else
       (*imapStream)->pServerName[0] = 0;
 
@@ -147,11 +144,11 @@ void ZapImapStream(IMAPStreamPtr *imapStream) {
   if ((*imapStream)->mailStream != nil) {
     // close the spool file if there's one open.
     if ((*imapStream)->mailStream->refN > 0)
-      MyFSClose((*imapStream)->mailStream->refN);
+      close((*imapStream)->mailStream->refN);
 
 #ifdef DEBUG
     if ((*imapStream)->mailStream->flagsRefN > 0)
-      MyFSClose((*imapStream)->mailStream->flagsRefN);
+      close((*imapStream)->mailStream->flagsRefN);
 #endif
 
     // If still connected, close.
@@ -252,7 +249,7 @@ bool OpenStream(IMAPStreamPtr imapStream, char *Mailbox, bool readOnly) {
             return (true);
           } else {
             char tmp[MAILTMPLEN];
-            Str255 pUser, user, pHost, host;
+            char pUser[256], user[256], pHost[256], host[256];
             unsigned long port;
 
             // the name of the mailbox stored in the mailStream might be in the
@@ -626,7 +623,7 @@ bool IMAPListUnSubscribed(IMAPStreamPtr imapStream, const char *pReference,
                           bool includeMailbox) {
   bool result = false;
   char pattern[2048];
-  Str255 pInbox, cInbox;
+  char pInbox[256], cInbox[256];
 
   // must have an imapStream
   if (!imapStream)
@@ -1260,7 +1257,7 @@ bool UIDFetchTrailer(IMAPStreamPtr imapStream, unsigned long uid,
 bool UIDSaveFlags(IMAPStreamPtr imapStream, unsigned long uid, char *uidList,
                   IMAPFLAGS *Flags, bool Set, bool Silent) {
   bool result = false;
-  Str255 cUidStr;
+  char cUidStr[256];
   char *flagsStr = nil;
 
   // Must have a MAILSTREAM ...
@@ -1366,7 +1363,7 @@ bool UIDCopy(IMAPStreamPtr imapStream, char *pUidlist, char *pDestMailbox) {
     return (false);
 
   // clear old response
-  do { void **_azh = (imapStream->mailStream->UIDPLUSResponse).data; if (_azh) { if (*_azh) free(*_azh); free(_azh); } (imapStream->mailStream->UIDPLUSResponse).data = NULL; (imapStream->mailStream->UIDPLUSResponse).offset = (imapStream->mailStream->UIDPLUSResponse).size = 0; } while(0);
+  free(imapStream->mailStream->UIDPLUSResponse.data); imapStream->mailStream->UIDPLUSResponse.data = NULL; imapStream->mailStream->UIDPLUSResponse.offset = imapStream->mailStream->UIDPLUSResponse.size = 0;
   AccuInit(&imapStream->mailStream->UIDPLUSResponse);
   imapStream->mailStream->UIDPLUSuv = 0;
 
@@ -2074,16 +2071,14 @@ bool UIDFetchPartialContentsToBuffer(IMAPStreamPtr imapStream,
       if ((length = strlen(*(imapStream->mailStream->fNetData))) == nBytes) {
         // copy it to the buffer we were passed
         memset(buffer, 0, bufferSize);
-        LDRef(imapStream->mailStream->fNetData);
         strncpy(buffer, *(imapStream->mailStream->fNetData), length);
-        UL(imapStream->mailStream->fNetData);
       } else
         // we didn't get the amount of data we asked for, most likely because
         // the server doesn't support partial fetches correctly.
         result = false;
 
       // destroy the stream's buffer
-      ZapHandle(imapStream->mailStream->fNetData);
+      free(imapStream->mailStream->fNetData);
     }
   }
 
@@ -2120,12 +2115,12 @@ static char *buffer_gets(readfn_t readfn, void *read_data, unsigned long size,
 
   // is there an existing buffer?  Trash it.
   if (mailStream->fNetData)
-    ZapHandle(mailStream->fNetData);
+    free(mailStream->fNetData);
 
   // Allocate our MAILSTREAM buffer.  Add a char 'cause it's gonna get NULL
   // terminated.
   if (!mailStream->fNetData)
-    mailStream->fNetData = NuHandle(size + 1);
+    mailStream->fNetData = malloc(size + 1);
 
   // Did we get a buffer??
   if (!mailStream->fNetData || !*(mailStream->fNetData))
@@ -2135,13 +2130,11 @@ static char *buffer_gets(readfn_t readfn, void *read_data, unsigned long size,
   **((char **)mailStream->fNetData) = 0;
 
   // read the data into the buffer
-  LDRef(mailStream->fNetData);
   result = (*readfn)(read_data, size, *(mailStream->fNetData));
-  UL(mailStream->fNetData);
 
   // throw away what we got if there's a problem
   if (!result)
-    ZapHandle(mailStream->fNetData);
+    free(mailStream->fNetData);
 
   return (nil);
 }
@@ -2154,9 +2147,9 @@ static char *file_gets(readfn_t readfn, void *read_data, unsigned long size,
                        GETS_DATA *md) {
   MAILSTREAM *mailStream = NULL;
   bool result;
-  Str255 buffer;
+  char buffer[256];
   long readSize, totalSize;
-  OSErr err = noErr;
+  int err = noErr;
 
   // must have been passed a function to read bytes
   if (!readfn || !read_data)
@@ -2365,8 +2358,8 @@ void mm_fatal(char *string)
  **********************************************************************/
 long LoMemCheck(void) {
   long ret = 0;
-  static Str255 lastTwenty;
-  Str255 last;
+  static char lastTwenty[256];
+  char last[256];
   char *c;
   short i;
   const short goodBit = 20;
@@ -2378,7 +2371,7 @@ long LoMemCheck(void) {
 
   ASSERT(StringSame(last, lastTwenty));
 
-  PCopy(lastTwenty, last);
+  g_strlcpy((char *)(lastTwenty), (char *)(last), sizeof(lastTwenty));
 
   ret = TickCount();
 

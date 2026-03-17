@@ -83,7 +83,7 @@ void PressStop(void);
 void ByteProgressExcess(int excess);
 int GetProgressBytes(void);
 
-typedef struct ProgressBlock ProgressBlock, *ProgressBPtr, **ProgressBHandle;
+typedef struct ProgressBlock ProgressBlock, *ProgressBPtr, *ProgressBHandle;
 struct ProgressBlock {
   short percent;
   int on, total,

@@ -7,7 +7,7 @@
 
 #include <glib.h>
 
-/* Compiled regex object - replaces the old regexp struct + Handle */
+/* Compiled regex object - replaces the old regexp struct + void **/
 typedef struct {
     GRegex *re;         /* compiled GRegex */
     char *pattern;      /* original pattern string */

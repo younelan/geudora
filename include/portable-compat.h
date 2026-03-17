@@ -9,7 +9,7 @@
 /* Basic Mac/Eudora types for portability - Rely on mailbox.h */
 #ifndef STRING_HANDLE_DEFINED
 #define STRING_HANDLE_DEFINED
-typedef char **StringHandle;
+typedef char *StringHandle;
 #endif
 
 typedef unsigned char Byte;
@@ -30,9 +30,6 @@ typedef int8_t SInt8;
 typedef uint8_t UInt8;
 typedef uint32_t ID;
 
-#ifndef OSErr
-typedef int OSErr;
-#endif
 
 #ifndef OSStatus
 typedef int OSStatus;
@@ -93,14 +90,14 @@ typedef struct {
 typedef pthread_t ThreadID;
 
 /* Eudora-specific stubs for compilation */
-typedef Handle FMBHandle;
-typedef Handle ICacheHandle;
+typedef void *FMBHandle;
+typedef void *ICacheHandle;
 /* MyOTTCPStreamHandle is defined in tcp.h - use that definition */
-typedef Handle NagStateHandle;
-typedef Handle FeatureRecHandle;
+typedef void *NagStateHandle;
+typedef void *FeatureRecHandle;
 
 /* PGPRecvContextPtr is defined in pgpin.h - do not redefine here */
-typedef Handle ProxyHandle;
+typedef void *ProxyHandle;
 
 /* Forward declare Personality for PersHandle */
 struct Personality;

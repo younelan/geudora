@@ -14,6 +14,8 @@ int AddInlineSig(void* messH) {
 void AddXfUndo(void* tocH, void* trashTOC, int unused) {
 }
 void AdjustSpecialMenuItem() {}
+/* DisposeHandle - needed by CrispinIMAP, just free */
+void DisposeHandle(void *h) { free(h); }
 short AliasRefCount = 0;
 struct AliasDStruct **Aliases = NULL;
 long AnyTOCDirty = 0;
@@ -35,13 +37,13 @@ void AuditPersRename(uint32_t oldId, uint32_t newHash) {
 void BeginPGP(void* pgpc) {
 }
 /* BoxCenterSelection — real implementation elsewhere */
-void *BoxCount = NULL; /* void ** Handle */
+void *BoxCount = NULL; /* void ** void **/
 /* BoxFOpen — real implementation in mailbox.c */
-struct BoxMapStruct **BoxMap = NULL;
+struct BoxMapStruct *BoxMap = NULL;
 void BoxPreviewProfile() {}
 /* BoxSelectAfter — real implementation elsewhere */
 /* BoxSetSummarySelected — real implementation elsewhere */
-short **BoxWidths = NULL;
+short *BoxWidths = NULL;
 short BugFlags = 0;
 /* BuildEnriched — real implementation elsewhere */
 void BuildHTML() {}
@@ -169,7 +171,7 @@ void GetResInfo(void **res, short *id, unsigned int *type, unsigned char *name) 
 void GetResName() {}
 void *GetResource(uint32_t type, short id) { return NULL; }
 /* GetReturnAddr — real implementation in address.c */
-OSErr GetSMTPInfo(unsigned char *host) {
+int GetSMTPInfo(unsigned char *host) {
   if (!host) return -1;
   gchar *server = prefs_get_string(PREFS_GROUP_SENDING_MAIL, "smtp_server", "");
   size_t len = strlen(server);
@@ -285,19 +287,12 @@ bool MultiMessageOpOK(int warnType, int count) {
   return false;
 }
 void MyBalloon() {}
-void MyCloseResFile(short refN) {
-}
-int MyDirCreate(short vRefNum, long parentDirID, const char *directoryName, long *createdDirID) {
-  return 0;
-}
+/* MyCloseResFile — real impl in fileutil.c */
+/* MyDirCreate — real impl in fileutil.c */
 void MyDisposeDialog() {}
 /* MyDisposeWindow - real impl in mywindow.c */
-int MyFSClose(short refN) {
-  return 0;
-}
-int MyFSpDirCreate(void* spec, void* scriptTag, long *createdDirID) {
-  return 0;
-}
+/* MyFSClose — real impl in fileutil.c */
+/* MyFSpDirCreate — real impl in fileutil.c */
 void MyGetWTitle() {}
 unsigned char MyHostname[128] = {0};
 void MyNMRec() {}

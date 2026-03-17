@@ -651,7 +651,7 @@ static void load_directory_lb(GtkWidget *listbox, const gchar *dir_path,
 
     if (!is_f && !is_d) { g_free(full_path); continue; }
 
-    /* Handle split segments */
+    /* void *split segments */
     gchar *base_name = g_strdup(filename);
     if (g_str_has_suffix(base_name, ".001"))
       base_name[strlen(base_name) - 4] = '\0';

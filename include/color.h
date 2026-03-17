@@ -41,7 +41,7 @@ enum {
 void SetMenuColor(EUDORA_MenuHandle menu, short item, EUDORA_RGBColor *color);
 
 EUDORA_RGBColor *GetLabelColor(short index, EUDORA_RGBColor *color);
-OSErr MyGetLabel(short labelNumber, EUDORA_RGBColor *color, PStr labelString);
+int MyGetLabel(short labelNumber, EUDORA_RGBColor *color, char * labelString);
 
 void Color3DRect(EUDORA_Rect *r, EUDORA_RGBColor *color, D3EffectEnum howMuch, bool raised);
 void TwoToneFrame(EUDORA_Rect *r, EUDORA_RGBColor *topLeft, EUDORA_RGBColor *botRight);
@@ -57,7 +57,7 @@ void SetForeGrey(short greyValue);
 void SetBGGrey(short greyValue);
 EUDORA_RGBColor *SetRGBGrey(EUDORA_RGBColor *color, short greyValue);
 short LightestGrey(EUDORA_Rect *r);
-OSErr ColorParam(EUDORA_RGBColor *color, PStr text);
+int ColorParam(EUDORA_RGBColor *color, char * text);
 bool ColorIsLight(EUDORA_RGBColor *color);
 
 bool ColCtlPicker(EUDORA_ControlHandle cntl);

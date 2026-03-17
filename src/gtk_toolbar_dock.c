@@ -222,7 +222,7 @@ static void toolbar_dock_to_window(DockableToolbar *toolbar) {
   toolbar->position = TOOLBAR_DOCK_TOP;
 }
 
-/* Handle floating window close — re-dock instead of destroying */
+/* void *floating window close — re-dock instead of destroying */
 static gboolean on_float_window_close(GtkWindow *window, gpointer user_data) {
   (void)window;
   DockableToolbar *toolbar = (DockableToolbar *)user_data;

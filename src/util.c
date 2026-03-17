@@ -72,18 +72,18 @@ void Dprintf(const char *fmt, ...);
 
 char BitTable[] = {0x1, 0x2, 0x4, 0x8, 0x10, 0x20, 0x40, 0x80};
 bool PasswordFilter(void *dgPtr, void *event, short *item);
-void CopyPassword(UPtr password);
+void CopyPassword(char * password);
 int ResetPassword(void);
-UHandle PwChars = NULL;
+unsigned char * PwChars = NULL;
 void NukeMenuItem(MenuHandle mh, short item);
 void CompactTempZone(void);
-short FindMenuByName(UPtr name);
-UPtr GetRStringLo(PStr theString, int theIndex, PersHandle forPers);
-void *TempNewHandleGlue(long size, OSErr *err);
-void QueueSound(PStr name);
-void PlaySystemSound(PStr name);
+short FindMenuByName(char * name);
+char *GetRStringLo(char *theString, int theIndex, PersHandle forPers);
+void *TempNewHandleGlue(long size, int *err);
+void QueueSound(char *name);
+void PlaySystemSound(char *name);
 void AddSoundsToMenuFrom(MenuHandle mh, short vRef, long dirID);
-OSErr FindSystemSound(OSType disk, OSType folder, PStr name, void *spec);
+int FindSystemSound(OSType disk, OSType folder, char *name, void *spec);
 
 //	Globals
 
@@ -95,7 +95,7 @@ void MacInitialize(int masterCount, long ensureStack) {}
 /**********************************************************************
  * turn a font name into a font id; if the name is not found, use ApplFont
  **********************************************************************/
-int GetFontID(UPtr theName) { return 0; }
+int GetFontID(char * theName) { return 0; }
 
 /**********************************************************************
  * Check or uncheck a font size in the font menu
@@ -136,8 +136,8 @@ void AwaitKey(void) {}
 /**********************************************************************
  * change or add some data to the current resource file
  **********************************************************************/
-void ChangePResource(UPtr theData, int theLength, long theType, int theID,
-                     UPtr theName) {
+void ChangePResource(char * theData, int theLength, long theType, int theID,
+                     char * theName) {
   /*
    * does the resource exist and reside in the topmost res file?
    */
@@ -149,21 +149,21 @@ void ChangePResource(UPtr theData, int theLength, long theType, int theID,
 /**********************************************************************
  * add some data to the current resource file
  **********************************************************************/
-void AddPResource(UPtr theData, int theLength, long theType, int theID,
-                  UPtr theName) {
-  Handle aHandle;
+void AddPResource(char * theData, int theLength, long theType, int theID,
+                  char * theName) {
+  void *aHandle;
 
   /*
    * allocate the handle
    */
-  aHandle = NuHandle((long)theLength);
+  aHandle = malloc((long)theLength);
   if (aHandle == NULL)
     return;
 
   /*
    * copy the data
    */
-  memmove(*aHandle, theData, (long)theLength);
+  memmove(aHandle, theData, (long)theLength);
 
   /*
    * add it
@@ -174,12 +174,12 @@ void AddPResource(UPtr theData, int theLength, long theType, int theID,
 /************************************************************************
  * ZapResourceLo - get rid of a resource.
  ************************************************************************/
-OSErr ZapResourceLo(OSType type, short id, bool one) { return resNotFound; }
+int ZapResourceLo(OSType type, short id, bool one) { return resNotFound; }
 
 /**********************************************************************
  * Atoi - replacement for standard C routine
  **********************************************************************/
-long Atoi(UPtr s) {
+long Atoi(char * s) {
   long mul = 1;
   long n = 0;
 
@@ -201,7 +201,7 @@ long Atoi(UPtr s) {
 /**********************************************************************
  * AToOSType - ASCII to OSType
  **********************************************************************/
-OSType AToOSType(UPtr s) {
+OSType AToOSType(char * s) {
   long n = 0;
   short i;
 
@@ -220,13 +220,13 @@ int ResourceCpy(short toRef, short fromRef, long type, int id) { return noErr; }
 /**********************************************************************
  * DrawTruncString - truncate and draw a string; restores string when done
  **********************************************************************/
-void DrawTruncString(UPtr string, int len) {}
+void DrawTruncString(char * string, int len) {}
 
 /**********************************************************************
  * CalcTrunc - figure out how much of a string we can print to fit
  * in a given width
  **********************************************************************/
-int CalcTextTrunc(UPtr string, short length, short width, void *port) {
+int CalcTextTrunc(char * string, short length, short width, void *port) {
   return length; // Handled by GTK TextView/Label rendering
 }
 
@@ -244,7 +244,7 @@ typedef struct {
   int result;
   GtkWidget *entry;
   GtkWidget *save_check;
-  UPtr word;
+  char *word;
   int size;
 } PwDialogData;
 
@@ -277,7 +277,7 @@ static gboolean pw_on_close(GtkWindow *win, gpointer user_data) {
   return TRUE;
 }
 
-int GetPassword(PStr personality, PStr userName, PStr serverName, UPtr word,
+int GetPassword(char *personality, char *userName, char *serverName, char *word,
                 int size, short prompt) {
   (void)prompt;
 
@@ -385,7 +385,7 @@ bool PasswordFilter(void *dgPtr, void *event, short *item) { return false; }
  * GetPassStuff - collect the info needed for the password prompt
  * Ported from Mac: reads from INI prefs, fills C strings
  ************************************************************************/
-void GetPassStuff(unsigned char *persName, unsigned char *uName, unsigned char *hName) {
+void GetPassStuff(char *persName, char *uName, char *hName) {
   if (uName) {
     gchar *u = prefs_get_string(PREFS_GROUP_CHECKING_MAIL, "pop_username", "");
     strncpy((char *)uName, u, 127);
@@ -407,7 +407,7 @@ void GetPassStuff(unsigned char *persName, unsigned char *uName, unsigned char *
 /************************************************************************
  * CopyPassword - retrieve the password
  ************************************************************************/
-void CopyPassword(UPtr password) {
+void CopyPassword(char * password) {
   strcpy((char *)password, (const char *)*PwChars);
   HPurge(PwChars);
 }
@@ -416,7 +416,7 @@ void CopyPassword(UPtr password) {
  * MyAppendMenu - see that a menu item gets appended to a menu.  Avoids
  * menu manager meta-characters.
  ************************************************************************/
-void MyAppendMenu(MenuHandle menu, UPtr name) {}
+void MyAppendMenu(MenuHandle menu, char * name) {}
 
 RGBColor *GetItemColor(short menu, short item, RGBColor *color) {
   return color;
@@ -426,18 +426,18 @@ RGBColor *GetItemColor(short menu, short item, RGBColor *color) {
  * MyInsMenuItem - see that a menu item gets appended to a menu.	Avoids
  * menu manager meta-characters.
  ************************************************************************/
-void MyInsMenuItem(MenuHandle menu, UPtr name, short afterItem) {}
+void MyInsMenuItem(MenuHandle menu, char * name, short afterItem) {}
 
 void SetItemR(MenuHandle menu, short item, short id) {}
 
-void MySetItem(MenuHandle menu, short item, PStr itemStr) {}
+void MySetItem(MenuHandle menu, short item, char *itemStr) {}
 
 /************************************************************************
  * MyGetItem - get the text of a menu item.  Strip leading NULL, if any
  ************************************************************************/
 /* Ported to gtk_menus.c */
 #if 0
-PStr MyGetItem(MenuHandle menu, short item, PStr name) {
+char * MyGetItem(MenuHandle menu, short item, char * name) {
   GetMenuItemText(menu, item, name);
   if (*name && !name[1]) {
     memmove(name + 1, name + 2, name[0] - 1);
@@ -450,7 +450,7 @@ PStr MyGetItem(MenuHandle menu, short item, PStr name) {
 /************************************************************************
  * CopyMenuItem - copy a menu item from one menu to another
  ************************************************************************/
-OSErr CopyMenuItem(MenuHandle fromMenu, short fromItem, MenuHandle toMenu,
+int CopyMenuItem(MenuHandle fromMenu, short fromItem, MenuHandle toMenu,
                    short toItem) {
   return noErr;
 }
@@ -458,7 +458,7 @@ OSErr CopyMenuItem(MenuHandle fromMenu, short fromItem, MenuHandle toMenu,
 /**********************************************************************
  * PStr2Handle - copy a PString to a handle
  **********************************************************************/
-void **PStr2Handle(unsigned char *string) { return NULL; }
+void *PStr2Handle(char *string) { return NULL; }
 
 /************************************************************************
  * SetItemReducedIcon - set a reduced icon for a menu item
@@ -466,12 +466,12 @@ void **PStr2Handle(unsigned char *string) { return NULL; }
 void SetItemReducedIcon(MenuHandle menu, short item, short iconid) {}
 
 /* FindItemByName is implemented in gtk_menus.c */
-extern short FindItemByName(MenuHandle menu, UPtr name);
+extern short FindItemByName(MenuHandle menu, char * name);
 
 /************************************************************************
  * FindMenuByName - find a named menu item
  ************************************************************************/
-short FindMenuByName(UPtr name) { return 0; }
+short FindMenuByName(char * name) { return 0; }
 
 short MyUniqueID(ResType type) { return 0; }
 
@@ -505,14 +505,14 @@ uint32_t GestaltBits(uint32_t selector) { return 0; }
 /************************************************************************
  * BinFindItemByName - find a named menu item, using binary search
  ************************************************************************/
-short BinFindItemByName(MenuHandle menu, UPtr name) {
+short BinFindItemByName(MenuHandle menu, char * name) {
   /* Mac Menu searching is not portable; GTK handles menus differently. */
   return 0;
 }
 
 void *Event2Window(void *event) { return 0; }
 
-void FixURLString(PStr url) {}
+void FixURLString(char *url) {}
 
 short CurrentModifiers(void) { return 0; }
 
@@ -520,12 +520,12 @@ void AttachHierMenu(short menu, short item, short hierId) {}
 
 bool DirtyKey(long keyAndChar) { return false; }
 
-UPtr LocalDateTimeStr(UPtr string) {
+char * LocalDateTimeStr(char * string) {
   *string = 0;
   return string;
 }
 
-PStr WeekDay(PStr string, long secs) {
+char *WeekDay(char *string, long secs) {
   *string = 0;
   return string;
 }
@@ -535,9 +535,9 @@ PStr WeekDay(PStr string, long secs) {
  ************************************************************************/
 unsigned long GMTDateTime(void) { return (unsigned long)time(NULL); }
 
-unsigned long LocalDateTime(void) { return (unsigned long)time(NULL); }
+uint32_t LocalDateTime(void) { return (unsigned long)time(NULL); }
 
-PStr LocalDateTimeShortStr(PStr s) {
+char *LocalDateTimeShortStr(char *s) {
   *s = 0;
   return s;
 }
@@ -564,13 +564,13 @@ bool MyWaitMouseMoved(Point pt, bool honorControl) { return false; }
 
 bool MyDragHas(void *drag, short item, OSType type) { return false; }
 
-OSErr MyGetDragItemData(void *drag, short item, OSType type, Handle *data) {
+int MyGetDragItemData(void *drag, short item, OSType type, void **data) {
   if (data)
     *data = NULL;
   return noErr;
 }
 
-OSErr MySetDragItemFlavorData(void *drag, short item, OSType type, void *data,
+int MySetDragItemFlavorData(void *drag, short item, OSType type, void *data,
                               long len) {
   return noErr;
 }
@@ -601,14 +601,14 @@ void Rude(void) {}
 /************************************************************************
  * PlayNamedSound - play a sound with a given name
  ************************************************************************/
-void PlayNamedSound(PStr name) {}
+void PlayNamedSound(char *name) {}
 
-void PlaySystemSound(PStr name) {}
+void PlaySystemSound(char *name) {}
 
 /************************************************************************
  * FindSystemSound - look in a particular location for a sound
  ************************************************************************/
-OSErr FindSystemSound(OSType disk, OSType folder, PStr name, void *spec) {
+int FindSystemSound(OSType disk, OSType folder, char *name, void *spec) {
   return fnfErr;
 }
 
@@ -617,7 +617,7 @@ void PlaySoundIdle(void) {}
 /************************************************************************
  * QueueSound - queue this system sound to play it later
  ************************************************************************/
-void QueueSound(PStr name) {}
+void QueueSound(char * name) {}
 
 /************************************************************************
  * PlaySoundId - play a sound with a given resource id
@@ -666,14 +666,14 @@ short CountStrn(short resId) {
 /************************************************************************
  *
  ************************************************************************/
-void NukeMenuItemByName(short menuId, UPtr itemName) {}
+void NukeMenuItemByName(short menuId, char * itemName) {}
 
 void NukeMenuItem(MenuHandle mh, short item) {}
 
 /************************************************************************
  *
  ************************************************************************/
-void RenameItem(short menuId, UPtr oldName, UPtr newName) {}
+void RenameItem(short menuId, char * oldName, char * newName) {}
 
 /************************************************************************
  *
@@ -707,7 +707,7 @@ long ZoneSecs(void) {
 /**********************************************************************
  * AddMyResource - add resource, but set Eudora Settings, too
  **********************************************************************/
-void AddMyResource(Handle h, OSType type, short id, ConstStr255Param name) {
+void AddMyResource(void *h, OSType type, short id, ConstStr255Param name) {
   if (SettingsRefN)
     UseResFile(SettingsRefN);
   AddResource(h, type, id, name);
@@ -830,7 +830,7 @@ void ButtonFit(ControlHandle button) {
 /**********************************************************************
  * return a string from an STR# resource
  **********************************************************************/
-PStr GetRString(PStr theString, short theIndex) {
+char *GetRString(char *theString, short theIndex) {
   SCPtr start, end;
   gint64 ticks = g_get_monotonic_time();
   gint64 oldest = ticks;
@@ -848,7 +848,7 @@ PStr GetRString(PStr theString, short theIndex) {
    */
   if (!dontReadCache) {
     n = HandleCount(StringCache);
-    start = *StringCache;
+    start = StringCache;
     end = start + n;
     for (; start < end; start++) {
       if (theIndex == start->id && start->persId == curPersId) {
@@ -858,11 +858,11 @@ PStr GetRString(PStr theString, short theIndex) {
       } else if (oldest) {
         if (!start->id) {
           oldest = 0;
-          oldSpot = start - *StringCache;
+          oldSpot = start - StringCache;
           replaceOld = true;
         } else if (oldest > start->used) {
           oldest = start->used;
-          oldSpot = start - *StringCache;
+          oldSpot = start - StringCache;
           replaceOld = true;
         }
       }
@@ -880,7 +880,7 @@ PStr GetRString(PStr theString, short theIndex) {
   if (!StringCache && !dontWriteCache) {
     GetRStringLo(sizeStr, STRING_CACHE, NULL);
     StringToNum(sizeStr, &n);
-    StringCache = (SCHandle)NuHandleClear(n * sizeof(StringCacheEntry));
+    StringCache = (SCHandle)calloc(1,n * sizeof(StringCacheEntry));
     oldSpot = 0;
   }
 
@@ -890,10 +890,10 @@ PStr GetRString(PStr theString, short theIndex) {
   if (StringCache && !dontWriteCache &&
       replaceOld)
   {
-    g_strlcpy((char *)(*StringCache)[oldSpot].string, (const char *)theString, 256);
-    (*StringCache)[oldSpot].id = theIndex;
-    (*StringCache)[oldSpot].used = ticks;
-    (*StringCache)[oldSpot].persId = curPersId;
+    g_strlcpy((char *)StringCache[oldSpot].string, (const char *)theString, 256);
+    StringCache[oldSpot].id = theIndex;
+    StringCache[oldSpot].used = ticks;
+    StringCache[oldSpot].persId = curPersId;
   }
 
   return (ProxifyStr(theString, theIndex));
@@ -909,8 +909,8 @@ void SCClear(short theId) {
   if (StringCache) {
     n = HandleCount(StringCache);
     for (i = 0; i < n; i++)
-      if (theId == -1 || (*StringCache)[i].id == theId) {
-        (*StringCache)[i].id = 0;
+      if (theId == -1 || StringCache[i].id == theId) {
+        StringCache[i].id = 0;
         // break;
       }
   }
@@ -919,7 +919,7 @@ void SCClear(short theId) {
 /**********************************************************************
  * return a string from an STR# resource
  **********************************************************************/
-PStr GetRStringLo(PStr theString, int theIndex, PersHandle forPers) {
+char *GetRStringLo(char *theString, int theIndex, PersHandle forPers) {
   /* GTK Port: look up from compiled-in string table - now returns C string */
   theString[0] = '\0';
   if (!NoDominant || CurPers == PersList) {
@@ -934,7 +934,7 @@ PStr GetRStringLo(PStr theString, int theIndex, PersHandle forPers) {
 /************************************************************************
  * FindSTRNIndex - find a string in a resource id
  ************************************************************************/
-short FindSTRNIndex(short resId, PStr string) {
+short FindSTRNIndex(short resId, char *string) {
   /* Search string table entries resId+1, resId+2, ... for a match.
      Returns the enum index (1-based) if found, 0 if not. */
   extern const char *string_table_lookup(uint16_t id);
@@ -943,7 +943,7 @@ short FindSTRNIndex(short resId, PStr string) {
     const char *s = string_table_lookup((uint16_t)(resId + i));
     if (!s || !s[0])
       continue;  /* skip empty/missing entries but keep searching */
-    if (strcasecmp((const char *)string, s) == 0)
+    if (strcasecmp(string, s) == 0)
       return i;
   }
   return 0;
@@ -952,7 +952,7 @@ short FindSTRNIndex(short resId, PStr string) {
 /**********************************************************************
  * FindSTRNIndexRes - Find a string in an STR# resource
  **********************************************************************/
-short FindSTRNIndexRes(UHandle resource, PStr string) {
+short FindSTRNIndexRes(unsigned char * resource, char *string) {
   /* GTK Port: Strings stored differently */
   return 0;
 }
@@ -960,7 +960,7 @@ short FindSTRNIndexRes(UHandle resource, PStr string) {
 /************************************************************************
  * FindSTRNSubIndex - find a substring in a resource id
  ************************************************************************/
-short FindSTRNSubIndex(short resId, PStr string) {
+short FindSTRNSubIndex(short resId, char *string) {
   /* GTK Port: Strings stored differently */
   return 0;
 }
@@ -968,7 +968,7 @@ short FindSTRNSubIndex(short resId, PStr string) {
 /**********************************************************************
  * FindSTRNSubIndexRes - Find a substring in an STR# resource
  **********************************************************************/
-short FindSTRNSubIndexRes(UHandle resource, PStr string) {
+short FindSTRNSubIndexRes(unsigned char * resource, char *string) {
   /* GTK Port: Strings stored differently */
   return 0;
 }
@@ -976,7 +976,7 @@ short FindSTRNSubIndexRes(UHandle resource, PStr string) {
 /**********************************************************************
  * CountStrnRes - count strings in an STR# resource, given the resource
  **********************************************************************/
-short CountStrnRes(UHandle resH) {
+short CountStrnRes(unsigned char * resH) {
   /* GTK Port: Strings stored differently */
   return (0);
 }
@@ -1001,8 +1001,8 @@ RGBColor *GetRColor(RGBColor *color, int index) {
 /**********************************************************************
  * Color2String - convert a color to a string
  **********************************************************************/
-PStr Color2String(PStr string, RGBColor *color) {
-  ComposeString(string, (const unsigned char *)"%d,%d,%d", color->red, color->green, color->blue);
+char *Color2String(char *string, RGBColor *color) {
+  ComposeString((unsigned char *)string, (const unsigned char *)"%d,%d,%d", color->red, color->green, color->blue);
   return (string);
 }
 
@@ -1050,8 +1050,8 @@ OSType GetROSType(int index) {
 /************************************************************************
  * RemoveChar - remove a char from some text
  ************************************************************************/
-long RemoveChar(Byte c, UPtr text, long size) {
-  UPtr from, to, limit;
+long RemoveChar(Byte c, char * text, long size) {
+  char *from, *to, *limit;
 
   for (to = text, limit = text + size; to < limit && *to != c; to++)
     ;
@@ -1065,35 +1065,34 @@ long RemoveChar(Byte c, UPtr text, long size) {
 /************************************************************************
  * RemoveCharHandle - remove a character from a handle
  ************************************************************************/
-long RemoveCharHandle(Byte c, UHandle text) {
-  long len = GetHandleSize((Handle)text);
-  long newLen = RemoveChar(c, LDRef(text), len);
+long RemoveCharHandle(Byte c, unsigned char * text) {
+  long len = GetHandleSize((void *)text);
+  long newLen = RemoveChar(c, text, len);
 
-  UL(text);
   if (newLen < len)
-    SetHandleBig((Handle)text, newLen);
+    SetHandleBig((void *)text, newLen);
   return (newLen);
 }
 
 /**********************************************************************
  *
  **********************************************************************/
-OSErr AddLf(Handle text) {
-  UPtr spot, end;
+int AddLf(void *text) {
+  char *spot, *end;
   long len = GetHandleSize_(text);
   long newLen = len;
 
-  end = *text + len;
-  for (spot = *text; spot < end; spot++)
+  end = (char *)text + len;
+  for (spot = (char *)text; spot < end; spot++)
     if (*spot == '\015')
       newLen++;
 
   if (newLen > len) {
-    SetHandleBig((Handle)text, newLen);
+    SetHandleBig((void *)text, newLen);
     if (MemError())
       return (MemError());
-    end = *text + newLen;
-    for (spot = *text + len - 1; spot > (UPtr)*text; spot--) {
+    end = (char *)text + newLen;
+    for (spot = (char *)text + len - 1; spot > (char *)text; spot--) {
       if (*spot == '\015')
         *--end = '\012';
       *--end = *spot;
@@ -1105,7 +1104,7 @@ OSErr AddLf(Handle text) {
 /************************************************************************
  * GetRStr - get a string from an 'STR ' resource
  ************************************************************************/
-UPtr GetRStr(UPtr string, short id) {
+char * GetRStr(char * string, short id) {
   /* GTK port: map to application resources */
   *string = 0;
   return (string);
@@ -1114,18 +1113,17 @@ UPtr GetRStr(UPtr string, short id) {
 /**********************************************************************
  * CountChars - count characters in a handle
  **********************************************************************/
-long CountChars(Handle text, Byte c) {
-  long count = CountCharsPtr(LDRef(text), GetHandleSize(text), c);
-  UL(text);
+long CountChars(void *text, Byte c) {
+  long count = CountCharsPtr(text, GetHandleSize(text), c);
   return (count);
 }
 
 /**********************************************************************
  * CountCharsPtr - count characters in a pointer
  **********************************************************************/
-long CountCharsPtr(UPtr ptr, long size, Byte c) {
+long CountCharsPtr(char * ptr, long size, Byte c) {
   short n __attribute__((unused)) = 0;
-  UPtr end = ptr + size;
+  char * end = ptr + size;
 
   while (ptr < end)
     if (*ptr++ == c)
@@ -1137,21 +1135,21 @@ long CountCharsPtr(UPtr ptr, long size, Byte c) {
 /**********************************************************************
  * HandleLineBreaks - figure out linebreaks in a block of text
  **********************************************************************/
-OSErr HandleLinebreaks(Handle text, long ***breaks, short inWidth) {
+int HandleLinebreaks(void *text, long ***breaks, short inWidth) {
   Fixed width;
   short n __attribute__((unused)) = 0;
-  UPtr ptr;
+  char * ptr;
   long len;
   long textOffset;
   long cum = 0;
-  OSErr err;
+  int err;
 
   if ((*breaks = (long **)NuHTempBetter(0)) == NULL)
     return (MemError());
   if (!text || !(len = GetHandleSize(text)))
     return (noErr);
 
-  ptr = LDRef(text);
+  ptr = text;
   while (len) {
     width = inWidth << 16;
     textOffset = 1;
@@ -1159,10 +1157,12 @@ OSErr HandleLinebreaks(Handle text, long ***breaks, short inWidth) {
     len -= textOffset;
     ptr += textOffset;
     cum += textOffset;
-    if ((err = (OSErr)(intptr_t)PtrPlusHand_(&cum, *breaks, sizeof(cum))))
+    *breaks = buf_append(*breaks, &cum, sizeof(cum));
+    if (!*breaks)
+      err = MemError();
+    if (err)
       return (err);
   }
-  UL(text);
 
   return (noErr);
 }
@@ -1170,21 +1170,21 @@ OSErr HandleLinebreaks(Handle text, long ***breaks, short inWidth) {
 /************************************************************************
  * TransLitString - transliaterate with the default viewing table
  ************************************************************************/
-void TransLitString(UPtr string) {
+void TransLitString(char * string) {
   /* GTK Port: Translation tables (taBL) not used directly */
 }
 
 /************************************************************************
  * TransLitRes - translit, fetching table from a resource
  ************************************************************************/
-void TransLitRes(UPtr string, long len, short resId) {
+void TransLitRes(char * string, long len, short resId) {
   /* GTK Port: Translation tables (taBL) not used directly */
 }
 
 /************************************************************************
  * TransLit - transliterate some chars
  ************************************************************************/
-void TransLit(UPtr string, long len, UPtr table) {
+void TransLit(char * string, long len, char * table) {
   /* GTK Port: Translation tables (taBL) not used directly */
 }
 
@@ -1202,40 +1202,40 @@ long ScriptVar(short selector) {
 }
 
 #define StackSpot(s, n)                                                        \
-  ((UPtr) * s + sizeof(StackType_Util) + (n) * (*stack)->elSize)
+  ((char *)(s) + sizeof(StackType_Util) + (n) * (s)->elSize)
 
 /**********************************************************************
  * StackInit - initialize a stack
  *  First four bytes are the element size
  *  Second four bytes are the # of valid elements in the stack
  **********************************************************************/
-OSErr StackInit(long size, StackHandle *stack) {
+int StackInit(long size, StackHandle *stack) {
   *stack = (StackHandle)NuHTempBetter(sizeof(StackType_Util));
   if (!*stack)
     return (MemError());
-  (**stack)->elSize = size;
-  (**stack)->elCount = 0;
+  (*stack)->elSize = size;
+  (*stack)->elCount = 0;
   return (noErr);
 }
 
 /**********************************************************************
  * StackPush - push an item onto a stack
  **********************************************************************/
-OSErr StackPush(void *what, StackHandle stack) {
+int StackPush(void *what, StackHandle stack) {
   if (!stack)
     return fnfErr;
   else {
     short nSpace =
-        (GetHandleSize_(stack) - sizeof(StackType_Util)) / (*stack)->elSize;
+        (GetHandleSize_(stack) - sizeof(StackType_Util)) / stack->elSize;
 
-    ASSERT(nSpace >= (*stack)->elCount);
-    if (nSpace == (*stack)->elCount) {
-      SetHandleBig_(stack, GetHandleSize_(stack) + 20 * (*stack)->elSize);
+    ASSERT(nSpace >= stack->elCount);
+    if (nSpace == stack->elCount) {
+      SetHandleBig_(stack, GetHandleSize_(stack) + 20 * stack->elSize);
       if (MemError())
         return (MemError());
     }
-    memmove(StackSpot(stack, (*stack)->elCount), what, (*stack)->elSize);
-    (*stack)->elCount++;
+    memmove(StackSpot(stack, stack->elCount), what, stack->elSize);
+    stack->elCount++;
     return (noErr);
   }
 }
@@ -1243,23 +1243,23 @@ OSErr StackPush(void *what, StackHandle stack) {
 /**********************************************************************
  * StackQueue - queue an item onto a bottom of stack
  **********************************************************************/
-OSErr StackQueue(void *what, StackHandle stack) {
+int StackQueue(void *what, StackHandle stack) {
   if (!stack)
     return fnfErr;
   else {
     short nSpace =
-        (GetHandleSize_(stack) - sizeof(StackType_Util)) / (*stack)->elSize;
+        (GetHandleSize_(stack) - sizeof(StackType_Util)) / stack->elSize;
 
-    ASSERT(nSpace >= (*stack)->elCount);
-    if (nSpace == (*stack)->elCount) {
-      SetHandleBig_(stack, GetHandleSize_(stack) + 20 * (*stack)->elSize);
+    ASSERT(nSpace >= stack->elCount);
+    if (nSpace == stack->elCount) {
+      SetHandleBig_(stack, GetHandleSize_(stack) + 20 * stack->elSize);
       if (MemError())
         return (MemError());
     }
     memmove(StackSpot(stack, 1), StackSpot(stack, 0),
-        (*stack)->elCount * (*stack)->elSize);
-    memmove(StackSpot(stack, 0), what, (*stack)->elSize);
-    (*stack)->elCount++;
+        stack->elCount * stack->elSize);
+    memmove(StackSpot(stack, 0), what, stack->elSize);
+    stack->elCount++;
     return (noErr);
   }
 }
@@ -1267,34 +1267,34 @@ OSErr StackQueue(void *what, StackHandle stack) {
 /**********************************************************************
  * StackPop - pop an item off a stack
  **********************************************************************/
-OSErr StackPop(void *into, StackHandle stack) {
-  if (!stack || !(*stack)->elCount)
+int StackPop(void *into, StackHandle stack) {
+  if (!stack || !stack->elCount)
     return (fnfErr);
-  (*stack)->elCount--;
+  stack->elCount--;
   if (into)
-    memmove(into, StackSpot(stack, (*stack)->elCount), (*stack)->elSize);
+    memmove(into, StackSpot(stack, stack->elCount), stack->elSize);
   return (noErr);
 }
 
 /**********************************************************************
  * StackTop - fetch top stack item
  **********************************************************************/
-OSErr StackTop(void *into, StackHandle stack) {
-  if (!stack || !(*stack)->elCount)
+int StackTop(void *into, StackHandle stack) {
+  if (!stack || !stack->elCount)
     return (fnfErr);
   if (into)
-    memmove(into, StackSpot(stack, (*stack)->elCount - 1), (*stack)->elSize);
+    memmove(into, StackSpot(stack, stack->elCount - 1), stack->elSize);
   return (noErr);
 }
 
 /**********************************************************************
  * StackItem - fetch a stack item
  **********************************************************************/
-OSErr StackItem(void *into, short item, StackHandle stack) {
-  if (!stack || !(*stack)->elCount || item >= (*stack)->elCount)
+int StackItem(void *into, short item, StackHandle stack) {
+  if (!stack || !stack->elCount || item >= stack->elCount)
     return (fnfErr);
   if (into)
-    memmove(into, StackSpot(stack, item), (*stack)->elSize);
+    memmove(into, StackSpot(stack, item), stack->elSize);
   return (noErr);
 }
 
@@ -1305,20 +1305,20 @@ void StackCompact(StackHandle stack) {
   if (!stack)
     return;
   SetHandleBig_(stack,
-                (*stack)->elCount * (*stack)->elSize + sizeof(StackType_Util));
+                stack->elCount * stack->elSize + sizeof(StackType_Util));
 }
 
 /**********************************************************************
  * StackStringFind - find an item in the stack
  **********************************************************************/
-short StackStringFind(PStr find, StackHandle stack) {
+short StackStringFind(char * find, StackHandle stack) {
   unsigned char s[256];
   short item;
 
   if (!stack)
     return -1;
 
-  for (item = (*stack)->elCount; item > 0;) {
+  for (item = stack->elCount; item > 0;) {
     item--;
     StackItem(s, item, stack);
     if (StringSame((const char *)s, (const char *)find))
@@ -1328,18 +1328,18 @@ short StackStringFind(PStr find, StackHandle stack) {
   return -1;
 }
 
-#define AAElemSize(aa) ((*(aa))->dataSize + (*(aa))->keySize)
+#define AAElemSize(aa) ((aa)->dataSize + (aa)->keySize)
 #define AAKeySpot(aa, indx)                                                    \
-  ((UPtr)(*(aa)) + sizeof(AssocArray) + ((indx) - 1) * AAElemSize(aa))
-#define AADataSpot(aa, indx) (AAKeySpot(aa, indx) + (*(aa))->keySize)
+  ((char *)(aa) + sizeof(AssocArray) + ((indx) - 1) * AAElemSize(aa))
+#define AADataSpot(aa, indx) (AAKeySpot(aa, indx) + (aa)->keySize)
 /************************************************************************
  * AANew - create an associative array
  ************************************************************************/
 AAHandle AANew(short keySize, short dataSize) {
   AAHandle aa = NewZHTB(AssocArray);
   if (aa) {
-    (*aa)->keySize = keySize;
-    (*aa)->dataSize = dataSize;
+    aa->keySize = keySize;
+    aa->dataSize = dataSize;
   }
   return (aa);
 }
@@ -1347,7 +1347,7 @@ AAHandle AANew(short keySize, short dataSize) {
 /************************************************************************
  * AAAddItem - add an item to an associative array
  ************************************************************************/
-OSErr AAAddItem(AAHandle aa, bool replace, PStr key, UPtr data) {
+int AAAddItem(AAHandle aa, bool replace, char *key, char * data) {
   short count = AACountItems(aa);
   short spot = AAFindKey(aa, key);
   unsigned char lwrKey[256];
@@ -1365,10 +1365,10 @@ OSErr AAAddItem(AAHandle aa, bool replace, PStr key, UPtr data) {
       memmove(AAKeySpot(aa, spot) + AAElemSize(aa), AAKeySpot(aa, spot),
           AAElemSize(aa) * (count - spot + 1));
   }
-  memmove(AADataSpot(aa, spot), data, (*aa)->dataSize);
-  PCopy(lwrKey, key);
+  memmove(AADataSpot(aa, spot), data, aa->dataSize);
+  g_strlcpy((char *)(lwrKey), (char *)(key), sizeof(lwrKey));
   MyLowerStr(lwrKey);
-  memmove(AAKeySpot(aa, spot), lwrKey, (*aa)->keySize);
+  memmove(AAKeySpot(aa, spot), lwrKey, aa->keySize);
   return (noErr);
 }
 
@@ -1376,7 +1376,7 @@ OSErr AAAddItem(AAHandle aa, bool replace, PStr key, UPtr data) {
  * AAAddResItem - add an item to an associative array, using a resource for
  *a key
  ************************************************************************/
-OSErr AAAddResItem(AAHandle aa, bool replace, short keyId, UPtr data) {
+int AAAddResItem(AAHandle aa, bool replace, short keyId, char * data) {
   unsigned char key[256];
 
   GetRString(key, keyId);
@@ -1386,7 +1386,7 @@ OSErr AAAddResItem(AAHandle aa, bool replace, short keyId, UPtr data) {
 /************************************************************************
  * AADeleteKey - delete an item by key
  ************************************************************************/
-OSErr AADeleteKey(AAHandle aa, PStr key) {
+int AADeleteKey(AAHandle aa, char *key) {
   short spot = AAFindKey(aa, key);
   if (spot > 0) {
     short count = AACountItems(aa);
@@ -1402,10 +1402,10 @@ OSErr AADeleteKey(AAHandle aa, PStr key) {
 /************************************************************************
  * AAFetchData - fetch data from an assoc array, by key
  ************************************************************************/
-OSErr AAFetchData(AAHandle aa, PStr key, UPtr data) {
+int AAFetchData(AAHandle aa, char *key, char * data) {
   short spot = AAFindKey(aa, key);
   if (spot > 0) {
-    memmove(data, AADataSpot(aa, spot), (*aa)->dataSize);
+    memmove(data, AADataSpot(aa, spot), aa->dataSize);
     return (noErr);
   }
   return (1); /* not found */
@@ -1414,7 +1414,7 @@ OSErr AAFetchData(AAHandle aa, PStr key, UPtr data) {
 /************************************************************************
  * AAFetchResData - fetch data from an assoc array, by a resource key
  ************************************************************************/
-OSErr AAFetchResData(AAHandle aa, short keyId, UPtr data) {
+int AAFetchResData(AAHandle aa, short keyId, char * data) {
   unsigned char key[256];
 
   return (AAFetchData(aa, GetRString(key, keyId), data));
@@ -1423,16 +1423,16 @@ OSErr AAFetchResData(AAHandle aa, short keyId, UPtr data) {
 /************************************************************************
  * AAFetchIndData - fetch data from an assoc array, by index
  ************************************************************************/
-OSErr AAFetchIndData(AAHandle aa, short index, UPtr data) {
-  memmove(data, AADataSpot(aa, index), (*aa)->dataSize);
+int AAFetchIndData(AAHandle aa, short index, char * data) {
+  memmove(data, AADataSpot(aa, index), aa->dataSize);
   return (noErr);
 }
 
 /************************************************************************
  * AAFetchIndKey - fetch key from an assoc array, by index
  ************************************************************************/
-OSErr AAFetchIndKey(AAHandle aa, short index, PStr key) {
-  memmove(key, AAKeySpot(aa, index), (*aa)->keySize);
+int AAFetchIndKey(AAHandle aa, short index, char *key) {
+  memmove(key, AAKeySpot(aa, index), aa->keySize);
   return (noErr);
 }
 
@@ -1442,7 +1442,7 @@ OSErr AAFetchIndKey(AAHandle aa, short index, PStr key) {
  *		positive: index of found item
  *    negative: index of smallest item > current item
  ************************************************************************/
-short AAFindKey(AAHandle aa, PStr key) {
+short AAFindKey(AAHandle aa, char *key) {
   short count = AACountItems(aa);
   short first = 1;
   short last = count;
@@ -1451,10 +1451,9 @@ short AAFindKey(AAHandle aa, PStr key) {
   short result;
   unsigned char lwrKey[256];
 
-  PCopy(lwrKey, key);
+  g_strlcpy((char *)(lwrKey), (char *)(key), sizeof(lwrKey));
   MyLowerStr(lwrKey);
 
-  LDRef(aa);
 
   while (first <= last) {
     mid = (first + last) / 2;
@@ -1469,7 +1468,6 @@ short AAFindKey(AAHandle aa, PStr key) {
       first = mid + 1;
   }
 
-  UL(aa);
   return (-greater);
 }
 
@@ -1477,41 +1475,40 @@ short AAFindKey(AAHandle aa, PStr key) {
  * AACountItems - count the items in an associative array
  ************************************************************************/
 short AACountItems(AAHandle aa) {
-  if (!aa || !*aa)
+  if (!aa)
     return (-1);
   return ((GetHandleSize_(aa) - sizeof(AssocArray)) /
-          ((*aa)->keySize + (*aa)->dataSize));
+          (aa->keySize + aa->dataSize));
 }
 
 /**********************************************************************
  * AccuInit - initialize an accumulator
  **********************************************************************/
-OSErr AccuInit(AccuPtr a) {
+int AccuInit(AccuPtr a) {
   a->offset = 0;
   a->size = 1 K;
-  a->data = NuHTempBetter(a->size);
-  return (a->err = MemError());
+  a->data = malloc(a->size);
+  return (a->err = a->data ? noErr : memFullErr);
 }
 
 /**********************************************************************
- * AccuInitWithHandle - make an accumulator out of an existing handle
+ * AccuInitWithPtr - make an accumulator out of an existing buffer
  **********************************************************************/
-void AccuInitWithHandle(AccuPtr a, Handle h) {
-  a->size = a->offset = GetHandleSize(h);
-  a->data = h;
+void AccuInitWithPtr(AccuPtr a, char *buf, long size) {
+  a->size = a->offset = size;
+  a->data = buf;
 }
 
 /************************************************************************
  * AccuWrite - write an accumulator to a file
  ************************************************************************/
-OSErr AccuWrite(AccuPtr a, short refN) {
+int AccuWrite(AccuPtr a, short refN) {
   long count = a->offset;
-  OSErr err;
+  int err;
 
   if (!count)
     return (noErr);
-  err = AWrite(refN, &count, LDRef(a->data));
-  UL(a->data);
+  err = AWrite(refN, &count, a->data);
   return (err);
 }
 
@@ -1529,7 +1526,7 @@ long AccuFTell(AccuPtr a, short refN) {
 /************************************************************************
  * AccuFSeek - move the pointer back to a given spot
  ************************************************************************/
-OSErr AccuFSeek(AccuPtr a, short refN, long spot) {
+int AccuFSeek(AccuPtr a, short refN, long spot) {
   long curSpot = AccuFTell(a, refN);
   if (curSpot - spot <= a->offset) {
     a->offset -= curSpot - spot;
@@ -1544,53 +1541,45 @@ OSErr AccuFSeek(AccuPtr a, short refN, long spot) {
  *
  **********************************************************************/
 void AccuTrim(AccuPtr a) {
-  OSErr err;
+  int err;
+  char *_tmp;
 
   if (!a->data && (err = AccuInit(a)))
     return;
 
-#ifdef DEBUG
-  if (RunType != Production) {
-    if (a->size != GetHandleSize(a->data) || a->size < a->offset) {
-      Dprintf("o %d s %d hs %d h %x", a->offset, a->size,
-              GetHandleSize(a->data), a->data);
-    }
-  }
-#endif
-
-  SetHandleBig(a->data, a->offset);
-  a->size = a->offset;
+  _tmp = realloc(a->data, a->offset ? a->offset : 1);
+  if (_tmp) { a->data = _tmp; a->size = a->offset; }
 }
 
 /**********************************************************************
  *
  **********************************************************************/
-OSErr AccuAddChar(AccuPtr a, Byte c) { return (AccuAddPtr(a, &c, 1)); }
+int AccuAddChar(AccuPtr a, Byte c) { return (AccuAddPtr(a, &c, 1)); }
 
 /**********************************************************************
  *
  **********************************************************************/
-OSErr AccuAddLong(AccuPtr a, unsigned long longVal) {
+int AccuAddLong(AccuPtr a, unsigned long longVal) {
   return (AccuAddPtr(a, &longVal, sizeof(longVal)));
 }
 
 /**********************************************************************
  * AccuAddPtr64 - add some data, base-64 encoded
  **********************************************************************/
-OSErr AccuAddPtrB64(AccuPtr a, void *bytes, long len) {
+int AccuAddPtrB64(AccuPtr a, void *bytes, long len) {
   long newLen = len * 4 / 3 + 4;
-  Handle encoded = NuHandle(newLen);
-  OSErr err;
+  char *encoded = malloc(newLen);
+  int err;
 
   if (!encoded)
-    return MemError();
+    return memFullErr;
 
-  Encode64DataPtr(LDRef(encoded), &newLen, bytes, len);
+  Encode64DataPtr(encoded, &newLen, bytes, len);
   ASSERT(newLen <= len * 4 / 3 + 4);
 
-  err = AccuAddPtr(a, *encoded, newLen);
+  err = AccuAddPtr(a, encoded, newLen);
 
-  ZapHandle(encoded);
+  free(encoded);
 
   return err;
 }
@@ -1598,8 +1587,8 @@ OSErr AccuAddPtrB64(AccuPtr a, void *bytes, long len) {
 /**********************************************************************
  * AccuAddTrPtr - add to an accumulator, but translate first
  **********************************************************************/
-OSErr AccuAddTrPtr(AccuPtr a, void *bytes, long len, UPtr from, UPtr to) {
-  OSErr err;
+int AccuAddTrPtr(AccuPtr a, void *bytes, long len, char *from, char *to) {
+  int err;
 
   // translate
   TrLo(bytes, len, from, to);
@@ -1616,28 +1605,21 @@ OSErr AccuAddTrPtr(AccuPtr a, void *bytes, long len, UPtr from, UPtr to) {
 /**********************************************************************
  *
  **********************************************************************/
-OSErr AccuAddPtr(AccuPtr a, void *bytes, long len) {
-  OSErr err;
+int AccuAddPtr(AccuPtr a, void *bytes, long len) {
+  int err;
 
   if (!a->data && (err = AccuInit(a)))
     return (err);
 
-#ifdef DEBUG
-  if (RunType != Production) {
-    if (a->size != GetHandleSize(a->data) || a->size < a->offset) {
-      Dprintf("o %d s %d hs %d h %x", a->offset, a->size,
-              GetHandleSize(a->data), a->data);
-    }
-  }
-#endif
-
   if (a->offset + len > a->size) {
+    char *_tmp;
     a->size += len + 4 K;
-    SetHandleBig_(a->data, a->size);
-    if (MemError())
-      return (a->err = MemError());
+    _tmp = realloc(a->data, a->size);
+    if (!_tmp)
+      return (a->err = memFullErr);
+    a->data = _tmp;
   }
-  memmove(*a->data + a->offset, bytes, len);
+  memmove(a->data + a->offset, bytes, len);
   a->offset += len;
   return (noErr);
 }
@@ -1645,12 +1627,12 @@ OSErr AccuAddPtr(AccuPtr a, void *bytes, long len) {
 /**********************************************************************
  * AccuAddSortedLong - add a long to an accumulator, but keep it sorted
  **********************************************************************/
-OSErr AccuAddSortedLong(AccuPtr a, long addVal) {
-  OSErr err = AccuAddPtr(a, &addVal, sizeof(addVal));
+int AccuAddSortedLong(AccuPtr a, long addVal) {
+  int err = AccuAddPtr(a, &addVal, sizeof(addVal));
 
   if (!err) {
-    long *start = *a->data;                             // start of data
-    long *spot = *a->data + a->offset - sizeof(addVal); // spot we added addVal
+    long *start = (long *)a->data;                             // start of data
+    long *spot = (long *)(a->data + a->offset - sizeof(addVal)); // spot we added addVal
     long *newSpot = spot - 1; // spot addVal really belongs
 
     // if the value before us is bigger than we are, we'll need to move
@@ -1684,7 +1666,7 @@ OSErr AccuAddSortedLong(AccuPtr a, long addVal) {
 /**********************************************************************
  *
  **********************************************************************/
-OSErr AccuAddRes(AccuPtr a, short res) {
+int AccuAddRes(AccuPtr a, short res) {
   unsigned char s[256];
 
   GetRString(s, res);
@@ -1695,23 +1677,23 @@ OSErr AccuAddRes(AccuPtr a, short res) {
  * AccuAddHandleToPtr - copy some data into a handle and add the handle to
  *the accumulator
  **********************************************************************/
-OSErr AccuAddHandleToPtr(AccuPtr a, UPtr data, long size) {
-  Handle h = NuDHTempBetter(data, size);
-  OSErr err;
-  if (h) {
-    err = AccuAddPtr(a, (void *)&h, sizeof(h));
-    if (err)
-      ZapHandle(h);
+int AccuAddHandleToPtr(AccuPtr a, char *data, long size) {
+  char *buf = malloc(size);
+  int err;
+  if (buf) {
+    memcpy(buf, data, size);
+    err = AccuAddPtr(a, (void *)&buf, sizeof(buf));
+    free(buf);
   } else
-    err = MemError();
+    err = memFullErr;
   return (err);
 }
 
 /**********************************************************************
  * AccuAddTrHandle - add a translated handle
  **********************************************************************/
-OSErr AccuAddTrHandle(AccuPtr a, Handle data, UPtr from, UPtr to) {
-  OSErr err;
+int AccuAddTrHandle(AccuPtr a, void *data, char *from, char *to) {
+  int err;
 
   Tr(data, from, to);
   err = AccuAddHandle(a, data);
@@ -1722,8 +1704,8 @@ OSErr AccuAddTrHandle(AccuPtr a, Handle data, UPtr from, UPtr to) {
 /**********************************************************************
  *
  **********************************************************************/
-OSErr AccuAddHandle(AccuPtr a, Handle data) {
-  OSErr err;
+int AccuAddHandle(AccuPtr a, void *data) {
+  int err;
   long len;
 
   if (!a->data && (err = AccuInit(a)))
@@ -1733,24 +1715,17 @@ OSErr AccuAddHandle(AccuPtr a, Handle data) {
   if (!data)
     return noErr;
 
-#ifdef DEBUG
-  if (RunType != Production) {
-    if (a->size != GetHandleSize(a->data) || a->size < a->offset) {
-      Dprintf("o %d s %d hs %d h %x", a->offset, a->size,
-              GetHandleSize(a->data), a->data);
-    }
-  }
-#endif
-
   len = GetHandleSize(data);
 
   if (a->offset + len > a->size) {
+    char *_tmp;
     a->size += len + 4 K;
-    SetHandleBig_(a->data, a->size);
-    if (MemError())
-      return (a->err = MemError());
+    _tmp = realloc(a->data, a->size);
+    if (!_tmp)
+      return (a->err = memFullErr);
+    a->data = _tmp;
   }
-  memmove(*a->data + a->offset, *data, len);
+  memmove(a->data + a->offset, data, len);
   a->offset += len;
   return (noErr);
 }
@@ -1758,8 +1733,8 @@ OSErr AccuAddHandle(AccuPtr a, Handle data) {
 /**********************************************************************
  *
  **********************************************************************/
-OSErr AccuAddFromHandle(AccuPtr a, Handle data, long offset, long len) {
-  OSErr err;
+int AccuAddFromHandle(AccuPtr a, void *data, long offset, long len) {
+  int err;
 
   if (!a->data && (err = AccuInit(a)))
     return (err);
@@ -1770,22 +1745,15 @@ OSErr AccuAddFromHandle(AccuPtr a, Handle data, long offset, long len) {
   if (len < 0)
     return len;
 
-#ifdef DEBUG
-  if (RunType != Production) {
-    if (a->size != GetHandleSize(a->data) || a->size < a->offset) {
-      Dprintf("o %d s %d hs %d h %x", a->offset, a->size,
-              GetHandleSize(a->data), a->data);
-    }
-  }
-#endif
-
   if (a->offset + len > a->size) {
+    char *_tmp;
     a->size += len + 4 K;
-    SetHandleBig_(a->data, a->size);
-    if (MemError())
-      return (a->err = MemError());
+    _tmp = realloc(a->data, a->size);
+    if (!_tmp)
+      return (a->err = memFullErr);
+    a->data = _tmp;
   }
-  memmove(*a->data + a->offset, *data + offset, len);
+  memmove(a->data + a->offset, (char *)data + offset, len);
   a->offset += len;
   return (noErr);
 }
@@ -1793,19 +1761,19 @@ OSErr AccuAddFromHandle(AccuPtr a, Handle data, long offset, long len) {
 /************************************************************************
  * AccuFindPtr - find a pointer in an accumulator
  ************************************************************************/
-long AccuFindPtr(AccuPtr a, UPtr stuff, short len) {
-  UPtr spot;
-  UPtr end;
+long AccuFindPtr(AccuPtr a, const char *stuff, short len) {
+  const char *spot;
+  const char *end;
 
   if (!a->data || !len)
     return -1;
 
-  spot = *a->data;
+  spot = a->data;
   end = spot + a->offset - len;
 
   for (; spot <= end; spot += len)
     if (!memcmp(spot, stuff, len))
-      return spot - (UPtr)*a->data;
+      return spot - a->data;
 
   return -1;
 }
@@ -1820,12 +1788,12 @@ long AccuFindLong(AccuPtr a, unsigned long theLong) {
   if (!a->data)
     return -1;
 
-  spot = (unsigned long *)*a->data;
+  spot = (unsigned long *)a->data;
   end = (unsigned long *)spot + (a->offset - sizeof(unsigned long)) / sizeof(unsigned long);
 
   for (; spot <= end; spot++)
     if (*spot == theLong)
-      return spot - (unsigned long *)*a->data;
+      return spot - (unsigned long *)a->data;
 
   return -1;
 }
@@ -1835,27 +1803,28 @@ long AccuFindLong(AccuPtr a, unsigned long theLong) {
  ************************************************************************/
 short DecodeB64Accu(AccuPtr a, bool isText) {
   Dec64 d64;
-  Handle data = NuHandle((3 * a->offset) / 4 + 4);
+  char *data = malloc((3 * a->offset) / 4 + 4);
   long len;
   long result;
 
   if (!data)
-    return MemError();
-  if (!a->offset)
+    return memFullErr;
+  if (!a->offset) {
+    free(data);
     return noErr;
+  }
 
   Zero(d64);
-  result = Decode64(LDRef(a->data), a->offset, LDRef(data), &len, &d64, isText);
+  result = Decode64(a->data, a->offset, data, &len, &d64, isText);
   if ((d64.decoderState + d64.padCount) % 4)
     result++;
 
   if (!result) {
     a->offset = len;
-    memmove(*a->data, *data, len);
+    memmove(a->data, data, len);
   }
 
-  ZapHandle(data);
-  UL(a->data);
+  free(data);
 
   return (result);
 }
@@ -1863,36 +1832,29 @@ short DecodeB64Accu(AccuPtr a, bool isText) {
 /**********************************************************************
  *
  **********************************************************************/
-OSErr AccuInsertChar(AccuPtr a, Byte c, long offset) {
-  return (AccuInsertPtr(a, &c, 1, offset));
+int AccuInsertChar(AccuPtr a, Byte c, long offset) {
+  return (AccuInsertPtr(a, (char *)&c, 1, offset));
 }
 
 /**********************************************************************
  *
  **********************************************************************/
-OSErr AccuInsertPtr(AccuPtr a, UPtr bytes, long len, long offset) {
-  OSErr err;
+int AccuInsertPtr(AccuPtr a, char *bytes, long len, long offset) {
+  int err;
 
   if (!a->data && (err = AccuInit(a)))
     return (err);
 
-#ifdef DEBUG
-  if (RunType != Production) {
-    if (a->size != GetHandleSize(a->data) || a->size < a->offset) {
-      Dprintf("o %d s %d hs %d h %x", a->offset, a->size,
-              GetHandleSize(a->data), a->data);
-    }
-  }
-#endif
-
   if (a->offset + len > a->size) {
+    char *_tmp;
     a->size += len + 4 K;
-    SetHandleBig_(a->data, a->size);
-    if (MemError())
-      return (a->err = MemError());
+    _tmp = realloc(a->data, a->size);
+    if (!_tmp)
+      return (a->err = memFullErr);
+    a->data = _tmp;
   }
-  memmove(*a->data + offset + len, *a->data + offset, a->offset - offset);
-  memmove(*a->data + offset, bytes, len);
+  memmove(a->data + offset + len, a->data + offset, a->offset - offset);
+  memmove(a->data + offset, bytes, len);
   a->offset += len;
   return (noErr);
 }
@@ -1900,10 +1862,10 @@ OSErr AccuInsertPtr(AccuPtr a, UPtr bytes, long len, long offset) {
 /**********************************************************************
  * Strip 'n' bytes off of the end of an accumulator
  **********************************************************************/
-OSErr AccuStrip(AccuPtr a, long num)
+int AccuStrip(AccuPtr a, long num)
 
 {
-  OSErr theError;
+  int theError;
 
   if (!a->data && (theError = AccuInit(a)))
     return (theError);
@@ -1915,8 +1877,8 @@ OSErr AccuStrip(AccuPtr a, long num)
 /************************************************************************
  * Long2Hex - write a long in 8 hex bytes
  ************************************************************************/
-PStr Long2Hex(PStr hex, long aLong) {
-  Bytes2Hex((void *)&aLong, sizeof(aLong), (void *)hex);
+char *Long2Hex(char *hex, long aLong) {
+  Bytes2Hex((char *)&aLong, sizeof(aLong), (char *)hex);
   hex[8] = '\0';
   return (hex);
 }
@@ -1925,9 +1887,9 @@ char *hexdig = "0123456789ABCDEF";
 /************************************************************************
  * Bytes2Hex - encode some bytes in hex
  ************************************************************************/
-UPtr Bytes2Hex(UPtr bytes, long size, UPtr hex) {
+char * Bytes2Hex(char * bytes, long size, char * hex) {
   Byte c;
-  UPtr spot = hex;
+  char * spot = hex;
 
   while (size--) {
     c = *bytes++;
@@ -1952,7 +1914,7 @@ bool IsHexDig(Byte c) {
 /************************************************************************
  * Hex2Bytes - decode some bytes from hex
  ************************************************************************/
-OSErr Hex2Bytes(UPtr hex, long size, UPtr bytes) {
+int Hex2Bytes(char * hex, long size, char * bytes) {
   Byte hi, lo;
 
   while (size >= 2) {
@@ -2004,9 +1966,9 @@ bool SafeToAllocate(long size) {
  * NuHTempOK - New Handle, prefer my heap but temp mem ok
  ************************************************************************/
 void *NuHTempOK(long size) {
-  Handle h;
+  void *h;
   RANDOM_FAILURE;
-  if (!SafeToAllocate(size) || !(h = NuHandle(size)))
+  if (!SafeToAllocate(size) || !(h = malloc(size)))
     h = NuHTempBetter(size);
   return (h);
 }
@@ -2015,26 +1977,23 @@ void *NuHTempOK(long size) {
  * NuDHTempBetter - allocate a handle and copy data into it
  **********************************************************************/
 void *NuDHTempBetter(void *data, long size) {
-  Handle h;
+  void *h;
   RANDOM_FAILURE;
-
   h = NuHTempBetter(size);
-  if (h)
-    memmove(*h, data, size);
-  return (h);
+  if (h) memmove(h, data, size);
+  return h;
 }
 
 /**********************************************************************
  * NuDHTempOK - allocate a handle and copy data into it
  **********************************************************************/
 void *NuDHTempOK(void *data, long size) {
-  Handle h;
+  void *h;
 
   RANDOM_FAILURE;
 
   h = NuHTempOK(size);
-  if (h)
-    memmove(*h, data, size);
+  if (h) memmove(h, data, size);
   return (h);
 }
 
@@ -2042,23 +2001,8 @@ void *NuDHTempOK(void *data, long size) {
  * NuHTempBetter - New Handle, prefer temp mem
  ************************************************************************/
 void *NuHTempBetter(long size) {
-  Handle theMem;
-  OSErr err;
-
   RANDOM_FAILURE;
-#ifdef DEBUG
-  if (BUG9)
-    return (NuHandle(size));
-#endif
-
-  if (size > 1 K)
-    CompactTempZone();
-  theMem = TempNewHandleGlue(size, &err);
-  if (!theMem)
-    theMem = NuHandle(size);
-  else if (size > 1 K)
-    MoveHHi(theMem);
-  return (theMem);
+  return malloc(size > 0 ? size : 1);
 }
 
 /************************************************************************
@@ -2071,7 +2015,7 @@ void UpdateMDI(short resId, long type) {
 /**********************************************************************
  * ZeroHandle - clear the contents of a handle
  **********************************************************************/
-void *TempNewHandleGlue(long size, OSErr *err) {
+void *TempNewHandleGlue(long size, int *err) {
   return (TempNewHandle(size, err));
 }
 
@@ -2079,15 +2023,11 @@ void *TempNewHandleGlue(long size, OSErr *err) {
  * ZeroHandle - clear the contents of a handle
  **********************************************************************/
 void *ZeroHandle(void *hand) {
-  Handle h = hand;
-  long len;
-
-  if (h && *h) {
-    len = GetHandleSize(h);
-    WriteZero(LDRef(h), len);
-    UL(h);
+  if (hand) {
+    long len = InlineGetHandleSize(hand);
+    if (len > 0) memset(hand, 0, len);
   }
-  return (h);
+  return hand;
 }
 
 /************************************************************************
@@ -2096,10 +2036,9 @@ void *ZeroHandle(void *hand) {
 void CompactTempZone(void) {}
 
 /************************************************************************
- * NewIOBHandle - New IO buffer, Handle
- ************************************************************************/
-Handle NewIOBHandle(long min, long max) {
-  Handle theMem;
+ * NewIOBHandle - New IO buffer, void *************************************************************************/
+void *NewIOBHandle(long min, long max) {
+  void *theMem;
 
   CompactTempZone();
   do {
@@ -2115,7 +2054,7 @@ Handle NewIOBHandle(long min, long max) {
 /************************************************************************
  * GetTableCName - get the canonical name of a table
  ************************************************************************/
-bool GetTableCName(short tid, PStr name) {
+bool GetTableCName(short tid, char *name) {
   /* GTK port: euTM resources not used */
   name[0] = '\0';
   return false;
@@ -2124,7 +2063,7 @@ bool GetTableCName(short tid, PStr name) {
 /************************************************************************
  * GetTableID - get the id of a named table
  ************************************************************************/
-bool GetTableID(PStr name, short *tid) {
+bool GetTableID(char *name, short *tid) {
   /* GTK port: euTM resources not used */
   *tid = 0;
   return false;
@@ -2170,7 +2109,7 @@ void MyUseResFile(short refN) {
  ************************************************************************/
 void RESCHK(OSType type, short resId);
 void RESCHK(OSType type, short resId) {
-  Handle resH = GetResource_(type, resId);
+  void *resH = GetResource_(type, resId);
   short flags;
 
   if (resH) {
@@ -2198,9 +2137,9 @@ bool IsVICOM(void) {
  *   it doesn't work if CurResFile is not set to the resource's resource file
  ************************************************************************/
 #undef RemoveResource
-OSErr MyRemoveResource(Handle h) {
+int MyRemoveResource(void *h) {
   short useFile, saveFile = CurResFile();
-  OSErr err = noErr;
+  int err = noErr;
 
   if (h) {
     useFile = HomeResFile(h);
@@ -2217,7 +2156,7 @@ OSErr MyRemoveResource(Handle h) {
 /************************************************************************
  * FinderDragVoodoo - hack around a Finder 8.1 (at least) bug
  ************************************************************************/
-OSErr FinderDragVoodoo(DragReference drag) {
+int FinderDragVoodoo(DragReference drag) {
   // This magic incantation seems to avoid a bug in (at least) the 8.1
   // finder which seems to sometimes go boom if the first drag it sees is
   // non-TEXT, promised, sender-only, and not saved.
@@ -2304,7 +2243,7 @@ bool HaveOSX(void) { return GetOSVersion() >= 0x1000; }
  * GTK port: uses strftime with the locale's preferred time format.
  * The 'wantSeconds' parameter selects HH:MM:SS vs HH:MM.
  **********************************************************************/
-void TimeString(long secs, bool wantSeconds, unsigned char *str, void *intlHandle) {
+void TimeString(long secs, bool wantSeconds, char *str, void *intlHandle) {
   (void)intlHandle; /* Mac intl resource handle — not used on POSIX */
   if (!str) return;
   str[0] = '\0';

@@ -68,15 +68,15 @@ typedef struct _GtkWidget GtkWidget;
 
 typedef struct {
   long id;
-  Handle properties;
-} TransInfo, *TransInfoPtr, **TransInfoHandle;
+  void *properties;
+} TransInfo, *TransInfoPtr, *TransInfoHandle;
 
 typedef struct {
   FSSpec spec;
   uint32_t cid;
   uint32_t absURL;
   uint32_t relURL;
-} PartDesc, *PDPtr, **PDHandle;
+} PartDesc, *PDPtr, *PDHandle;
 
 /* Define MyWindow struct for gTextviewCtrl port */
 typedef struct MyWindow {
@@ -93,8 +93,8 @@ typedef struct MyWindow {
 
   bool (*button)(struct MyWindow *, GtkWidget *, GdkEvent *);
   bool (*app1)(struct MyWindow *, void *);
-  bool (*find)(struct MyWindow *, unsigned char *);
-  unsigned char *(*curAddr)(struct MyWindow *, unsigned char *);
+  bool (*find)(struct MyWindow *, char *);
+  char *(*curAddr)(struct MyWindow *, char *);
   RGBColor backColor;                           /* Current background color */
   bool ro;                                      /* Read Only flag */
   bool saveSize;                                /* Saved size flag */
@@ -179,10 +179,10 @@ struct mstruct {
   TransInfoHandle hTranslators;
   short nTransIcons;
   short sound;
-  Handle etlFiles;        /* FSSpecHandle stub */
-  Handle hStationerySpec; /* FSSpecHandle stub */
+  void *etlFiles;        /* FSSpecHandle stub */
+  void *hStationerySpec; /* FSSpecHandle stub */
   bool textFormatBarEnabled;
-  Handle persGraphic;
+  void *persGraphic;
   bool openToEnd;
   Accumulator newsGroupAcc; // to hold newsgroup names
   bool redrawPersPopup;     // used if we try to draw the popup but fail
@@ -197,18 +197,18 @@ struct mstruct {
 
 /* Prototypes - Adapted for Portability */
 void EnableMsgButtons(MyWindowPtr win, bool enable);
-OSErr SetMessText(MessHandle messH, short whichTXE, unsigned char *string,
+int SetMessText(MessHandle messH, short whichTXE, char *string,
                   long size);
-OSErr RedirectAnnotation(MessHandle messH);
+int RedirectAnnotation(MessHandle messH);
 int SigValidate(short sigId);
 void SetSig(TOCType * tocH, short sumNum, int sigId);
 ControlHandle FindControlByRefCon(MyWindowPtr win, long refCon);
 short GetControlValue(ControlHandle cntl);
 void SetControlMaximum(ControlHandle cntl, short max);
-unsigned char *MessCurAddr(MyWindowPtr win, unsigned char *addr);
+char *MessCurAddr(MyWindowPtr win, char *addr);
 
-void FindFrom(unsigned char *who, GtkWidget *pte);
-unsigned char *CurAddrSel(MyWindowPtr win, unsigned char *addr);
+void FindFrom(char *who, GtkWidget *pte);
+char *CurAddrSel(MyWindowPtr win, char *addr);
 
 void QuoteLines(GtkWidget *pte, long from, long to, short pfid, long *qEnd);
 char *HandleHeadGetPStr(char *text, short head, char *pStr);
@@ -219,35 +219,35 @@ int SuckPtrAddresses(char ***addr, const char *text, long size, bool b1, bool b2
                      bool b3, void *p);
 char *ShortAddr(char *shortAddr, const char *longAddr);
 short CountAddresses(char **addresses, short atLeast);
-bool IsMe(unsigned char *address);
-unsigned char *GetReturnAddr(unsigned char *addr, bool comments);
-unsigned char *GetRealname(unsigned char *name);
+bool IsMe(const char *address);
+char *GetReturnAddr(char *addr, bool comments);
+char *GetRealname(char *name);
 void SetSumFlag(TOCType * tocH, short sumNum, long flag);
 bool SumFlagIsSet(TOCType * tocH, short sumNum, long flag);
 
 /* Hash function - portable version */
-uLong HashWithSeedLo(unsigned char *s, uLong n, uLong seed);
+uLong HashWithSeedLo(char *s, uLong n, uLong seed);
 #define HashWithSeed(s, seed)                                                  \
   HashWithSeedLo((unsigned char *)(s), strlen((char *)(s)), seed)
 #define Hash(s) HashWithSeed(s, 1)
 
-OSErr TOCFindMessByMID(uLong mid, TOCType * tocH, long *sumNum);
+int TOCFindMessByMID(uLong mid, TOCType * tocH, long *sumNum);
 
 int AppendMessage(TOCType * fromTocH, int fromN, TOCType ** toTocHP, bool copy,
                   bool toTemp, bool isIMAPtoPopTransfer);
 MyWindowPtr GetAMessage(TOCType * tocH, short sumNum, void *u1, void *u2,
                         bool b1);
-OSErr EnsureMID(TOCType * tocH, short sumNum);
-OSErr SpoolMessage(MessHandle messH, FSSpecPtr theSpec, short refN);
-long FindAnAttachment(Handle text, long offset, FSSpecPtr spec, bool attach,
+int EnsureMID(TOCType * tocH, short sumNum);
+int SpoolMessage(MessHandle messH, FSSpecPtr theSpec, short refN);
+long FindAnAttachment(void *text, long offset, FSSpecPtr spec, bool attach,
                       uLong *cid, uLong *relURL, uLong *absURL);
 MyWindowPtr ReopenMessage(MyWindowPtr win);
-OSErr FileGraphicChangeGraphic(GtkWidget *pte, long offset, FSSpecPtr spec);
+int FileGraphicChangeGraphic(GtkWidget *pte, long offset, FSSpecPtr spec);
 void BoxSelectAfter(MyWindowPtr win, short sumNum);
 void Preview(TOCType * tocH, short sumNum);
 void MovingAttachments(TOCType * tocH, short sumNum, bool attach, bool wipe,
                        bool toTrash, bool inPlace);
 void NukeXfUndo(void);
-OSErr RemSpoolFolder(long uidHash);
+int RemSpoolFolder(long uidHash);
 
 #endif

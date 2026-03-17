@@ -31,7 +31,7 @@ ADVISED OF THE POSSIBILITY OF SUCH DAMAGE. */
  *
  * GTK4 port:
  *   - MessHandle still **MessType (double pointer) per message.h
- *   - TOCType * direct pointer (no Handle indirection on TOC)
+ *   - TOCType * direct pointer (no void *indirection on TOC)
  *   - PETEHandle / bodyPTE / subPTE = GtkWidget* (GtkTextView via gEditCtrl)
  *   - ControlHandle = void* (GtkWidget* buttons/widgets)
  *   - QuickDraw drawing → GTK4 widgets / CSS styling
@@ -82,10 +82,10 @@ extern void MakeMessFileName(TOCType *tocH, short sumNum, unsigned char *name);
 extern void GetAttFolderPath(char *buf, int bufSize);
 extern int GetIMAPAttachFolderPath(char *buf, int bufSize);
 extern void GetPartsFolder(char *buf, int bufSize);
-extern Handle MessText(MessHandle messH);
+extern void *MessText(MessHandle messH);
 extern void SetMessRich(MessHandle messH);
-extern int AccuAddHandle(AccuPtr a, Handle h);
-extern int AccuAddFromHandle(AccuPtr a, Handle h, long from, long to);
+extern int AccuAddHandle(AccuPtr a, void *h);
+extern int AccuAddFromHandle(AccuPtr a, void *h, long from, long to);
 extern void AccuTrim(AccuPtr a);
 extern int HTMLPreamble(AccuPtr a, unsigned char *title, int flags, bool b);
 extern int HTMLPostamble(AccuPtr a, bool b);
@@ -93,13 +93,13 @@ extern int BuildHTML(AccuPtr a, GtkWidget *pte, void *p1, long len, long off,
                      void *p2, void *p3, int n, unsigned char *mid, void *p4, void *p5);
 extern int BuildEnriched(AccuPtr a, GtkWidget *pte, void *p1, long len, long off,
                          void *p2, bool b);
-extern int SaveTextAsMessage(Handle extras, Handle text, TOCType *tocH, long *fromLen);
+extern int SaveTextAsMessage(void *extras, void *text, TOCType *tocH, long *fromLen);
 extern void ReplyDefaults(short modifiers, bool *all, bool *self, bool *quote);
 extern void DoReplyMessage(MyWindowPtr win, bool all, bool self, bool quote,
                            bool b1, short item, bool b2, bool b3, bool b4);
-extern void DoRedistributeMessage(MyWindowPtr win, Handle addr, bool turbo,
+extern void DoRedistributeMessage(MyWindowPtr win, void *addr, bool turbo,
                                   bool b1, bool b2);
-extern void DoForwardMessage(MyWindowPtr win, Handle addr, bool b);
+extern void DoForwardMessage(MyWindowPtr win, void *addr, bool b);
 extern void DoSalvageMessage(MyWindowPtr win, bool b);
 extern void DeleteMessage(TOCType *tocH, short sumNum, bool nuke);
 extern TOCType *GetTrashTOC(void);
@@ -114,14 +114,13 @@ extern short Item2Status(short item);
 extern void SelectBoxRange(TOCType *tocH, int start, int end, bool cmd, int eStart, int eEnd);
 extern void BoxCenterSelection(MyWindowPtr win);
 extern void BeenThereDoneThat(TOCType *tocH, short sumNum);
-extern Handle MenuItem2Handle(short menu, short item);
+extern void *MenuItem2Handle(short menu, short item);
 extern void SetTopMargin(MyWindowPtr win, short margin);
 extern void SetBGColorsByPers(MessHandle messH);
 extern int CacheMessage(TOCType *tocH, short sumNum);
-extern void BuildDateHeader(unsigned char *scratch, long seconds);
 extern void GenerateReceipt(MessHandle messH, int disp, int dispLocal, int action, int sent);
 extern bool DisplayGetGraphics(MyWindowPtr win);
-extern int Box2Path(FSSpecPtr box, unsigned char *path);
+extern int Box2Path(const char *boxPath, unsigned char *path);
 extern void CompIBarUpdate(MessHandle messH);
 extern void InsertCommaIfNeedBe(GtkWidget *pte, HeadSpec *hs);
 extern short SubjCompare(unsigned char *s1, unsigned char *s2);
@@ -174,12 +173,6 @@ extern void BoxOpen(MyWindowPtr win);
 #endif
 #ifndef OPT_RECEIPT
 #define OPT_RECEIPT (1<<12)
-#endif
-#ifndef FLAG_KEEP_COPY
-#define FLAG_KEEP_COPY (1<<4)
-#endif
-#ifndef FLAG_SUBSEQUENT
-#define FLAG_SUBSEQUENT (1<<25)
 #endif
 #ifndef COMP_TOP_MARGIN
 #define COMP_TOP_MARGIN 6001
@@ -384,15 +377,15 @@ bool MessClose(MyWindowPtr win) {
 
   LL_Remove(MessList, messH, (MessHandle));
 
-  AccuZap(&messH->extras);
-  AccuZap(&messH->aSourceMID);
+  free(messH->extras.data); messH->extras.data = NULL; messH->extras.offset = messH->extras.size = 0;
+  free(messH->aSourceMID.data); messH->aSourceMID.data = NULL; messH->aSourceMID.offset = messH->aSourceMID.size = 0;
 
   if (messH->etlFiles)
-    ZapHandle(messH->etlFiles);
+    free(messH->etlFiles);
 
   win->privateData = nil;
 
-  AccuZap(&messH->newsGroupAcc);
+  free(messH->newsGroupAcc.data); messH->newsGroupAcc.data = NULL; messH->newsGroupAcc.offset = messH->newsGroupAcc.size = 0;
 
   g_free(messH); messH = NULL;
   tocH->sums[sumNum].messH = nil;
@@ -487,9 +480,9 @@ void SetSubject(TOCType *tocH, short sumNum, unsigned char *sub) {
   unsigned char title[256];
   MessHandle messH = tocH->sums[sumNum].messH;
 
-  PSCopy(oldSubj, tocH->sums[sumNum].subj);
+  g_strlcpy((char *)oldSubj, (char *)tocH->sums[sumNum].subj, 64);
   if (!EqualString(oldSubj, sub, true, true)) {
-    PSCopy(tocH->sums[sumNum].subj, sub);
+    g_strlcpy((char *)tocH->sums[sumNum].subj, (char *)sub, 60);
     InvalSum(tocH, sumNum);
     TOCSetDirty(tocH, true);
 
@@ -525,9 +518,9 @@ void SetSender(TOCType *tocH, short sumNum, unsigned char *sender) {
   unsigned char title[256];
   MessHandle messH = tocH->sums[sumNum].messH;
 
-  PCopy(oldSender, tocH->sums[sumNum].from);
+  g_strlcpy((char *)oldSender, (char *)tocH->sums[sumNum].from, 64);
   if (!EqualString(oldSender, sender, true, true)) {
-    PCopy(tocH->sums[sumNum].from, sender);
+    g_strlcpy((char *)tocH->sums[sumNum].from, (char *)sender, 48);
     InvalSum(tocH, sumNum);
     TOCSetDirty(tocH, true);
     if (messH) {
@@ -820,7 +813,7 @@ bool SaveMess(MyWindowPtr win) {
   MessHandle messH = Win2MessH(win);
   TOCType *tocH = messH->tocH;
   long fromLen;
-  Handle text = MessText(messH);
+  void *text = MessText(messH);
   HeadSpec hSpec;
   Accumulator enriched;
   int err = noErr;
@@ -839,7 +832,7 @@ bool SaveMess(MyWindowPtr win) {
           if (!(err = AccuAddFromHandle(&enriched, text, 0, hSpec.value))) {
             if (MessOptIsSet(messH, OPT_HTML)) {
               unsigned char scratch[256];
-              PSCopy(scratch, SumOf(messH)->subj);
+              g_strlcpy((char *)scratch, (char *)SumOf(messH)->subj, 256);
               if (!(err = HTMLPreamble(&enriched, scratch, 0, true))) {
                 NumToString(SumOf(messH)->msgIdHash, scratch);
                 if (!(err = BuildHTML(&enriched, TheBody, nil,
@@ -855,7 +848,7 @@ bool SaveMess(MyWindowPtr win) {
               AccuTrim(&enriched);
               err = SaveTextAsMessage(nil, enriched.data, messH->tocH,
                                       &fromLen);
-              ZapHandle(enriched.data);
+              if (enriched.data) { free(enriched.data); enriched.data = NULL; };
               enriched.data = nil;
               if (err) return false;
               richSave = true;
@@ -867,13 +860,13 @@ bool SaveMess(MyWindowPtr win) {
 
   if (err) {
     WarnUser(CANT_SAVE_RICH, err);
-    ZapHandle(enriched.data);
+    if (enriched.data) { free(enriched.data); enriched.data = NULL; };
     ClearMessFlag(messH, FLAG_RICH);
     ClearMessOpt(messH, OPT_HTML);
   }
 
   if (!richSave) {
-    Handle extras =
+    void *extras =
         (!blahBlah && messH->extras.offset) ? messH->extras.data : nil;
     if (SaveTextAsMessage(extras, text, messH->tocH, &fromLen))
       return false;
@@ -893,9 +886,9 @@ bool SaveMess(MyWindowPtr win) {
   }
 
   if (tocH->imapTOC && (oldSum->opts & OPT_IMAP_SENT)) {
-    if (oldSum->from[0]) PCopy(newSum->from, oldSum->from);
+    if (oldSum->from[0]) g_strlcpy((char *)newSum->from, (char *)oldSum->from, 48);
   } else {
-    if (newSum->from[0]) PCopy(oldSum->from, newSum->from);
+    if (newSum->from[0]) g_strlcpy((char *)oldSum->from, (char *)newSum->from, 48);
   }
 
   InvalSum(tocH, messH->sumNum);
@@ -914,9 +907,9 @@ bool SaveMess(MyWindowPtr win) {
   PeteSetURLRescan(TheBody, 0);
   PeteCleanList(win->pte);
   win->isDirty = false;
-  ZapHandle(SumOf(messH)->cache);
+  free(SumOf(messH)->cache);
   SetMessOpt(messH, OPT_EDITED);
-  ZapHandle(messH->etlFiles);
+  free(messH->etlFiles);
   if (tocH->previewID == SumOf(messH)->serialNum)
     tocH->previewID = 0;
   return true;
@@ -954,7 +947,7 @@ bool MessMenu(MyWindowPtr win, int menu, int item, short modifiers) {
   bool result = false;
   short tableId;
   bool turbo = false;
-  Handle addr = nil;
+  void *addr = nil;
 
   switch (menu) {
   case FILE_MENU:
@@ -1062,7 +1055,7 @@ bool MessMenu(MyWindowPtr win, int menu, int item, short modifiers) {
     addr = MenuItem2Handle(menu, item);
     DoRedistributeMessage(win, addr, turbo, !(modifiers & shiftKey), true);
     result = true;
-    ZapHandle(addr);
+    free(addr);
     break;
 
   case TABLE_HIER_MENU:
@@ -1131,7 +1124,7 @@ bool MessMenu(MyWindowPtr win, int menu, int item, short modifiers) {
                                 sumNum, modifiers, false);
     break;
   }
-  ZapHandle(addr);
+  free(addr);
   return result;
 }
 
@@ -1147,7 +1140,7 @@ void Fcc(MessHandle messH, FSSpecPtr box) {
   if (!HasFeature(featureFcc)) return;
   UseFeature(featureFcc);
 
-  if (Box2Path(box, path)) PCopy(path, (unsigned char *)box->name);
+  if (Box2Path(box->path, path)) g_strlcpy((char *)path, (char *)box->name, 256);
   scratch[0] = 0;
   PCatC(scratch, '"');
   PCatR(scratch, FCC_PREFIX);
@@ -1177,8 +1170,8 @@ short EzOpenFind(TOCType *tocH, short origSum) {
       if (ez == 3 || ez == 2) return origSum + 1;
       if (ez == 4) {
         unsigned char s1[64], s2[64];
-        PSCopy(s1, tocH->sums[origSum].subj);
-        PSCopy(s2, tocH->sums[origSum + 1].subj);
+        g_strlcpy((char *)s1, (char *)tocH->sums[origSum].subj, 64);
+        g_strlcpy((char *)s2, (char *)tocH->sums[origSum + 1].subj, 64);
         if (!SubjCompare(s1, s2)) return origSum + 1;
       }
     }
@@ -1306,7 +1299,7 @@ static short SaveAsToOpenFileLo(short refN, MessHandle messH) {
   long bytes;
   short err = 0;
   unsigned char *where;
-  Handle text;
+  void *text;
   bool para = PrefIsSet(PREF_PARAGRAPHS);
   bool exclHead =
       PrefIsSet(PREF_EXCLUDE_HEADERS) || (SumOf(messH)->flags & FLAG_SUBSEQUENT);
@@ -1324,10 +1317,10 @@ static short SaveAsToOpenFileLo(short refN, MessHandle messH) {
     write(refN, "\n", 1);
   }
 
-  where = (unsigned char *)(*text);
+  where = (unsigned char *)text;
   bytes = GetHandleSize(text);
   if (exclHead) {
-    where = (unsigned char *)(*text) + hs.value;
+    where = (unsigned char *)text + hs.value;
     bytes = hs.stop - hs.value;
     while (bytes > 1 && *where == '\n') { where++; bytes--; }
     while (bytes > 1 && where[bytes - 1] == where[bytes - 2] &&
@@ -1546,7 +1539,7 @@ void NextMess(TOCType *tocH, MessHandle messH, short whichWay,
 /* ============================================================
  * MessFind - find in the window
  * ============================================================ */
-bool MessFind(MyWindowPtr win, unsigned char *what) {
+bool MessFind(MyWindowPtr win, char *what) {
   return FindInPTE(win, Win2MessH(win)->bodyPTE, (const char *)what);
 }
 
@@ -1740,16 +1733,16 @@ int ExportHTMLSum(TOCType *tocH, short sumNum) {
 
 int ExportHTML(MessHandle messH) {
   int err;
-  Handle cache;
+  void *cache;
   long len = 0, grandLen;
 
   err = CacheMessage(messH->tocH, messH->sumNum);
   if (err) return err;
   cache = SumOf(messH)->cache;
-  if (!cache || !*cache) return -1;
+  if (!cache) return -1;
 
   grandLen = GetHandleSize(cache);
-  char *data = (char *)*cache;
+  char *data = (char *)cache;
   char *htmlStart = NULL, *htmlEnd = NULL;
   int inHTML = 0;
 

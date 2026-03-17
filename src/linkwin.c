@@ -130,7 +130,7 @@ void AgeLinks(void);
 void ZapPVICache(void);
 /* WarnUser - in mailbox.h */
 void AuditHit(int a, int b, int c, int d, int e, int f, int g, int h);
-bool GetDateString(VLNodeID id, unsigned char *str);
+bool GetDateString(VLNodeID id, char dateStr[256]);
 /* GetLHPreviewIcon - in linkmng.h */
 void PlotIconSuite(void *r, int align, int tt, void *icon);
 void HPurge(void *v);
@@ -334,7 +334,7 @@ static void DoClick(MyWindowPtr win, EventRecord *event);
 static void DoCursor(Point mouse);
 static void DoActivate(MyWindowPtr win);
 static bool DoKey(MyWindowPtr win, EventRecord *event);
-static OSErr DoDragHandler(MyWindowPtr win, DragTrackingMessage which,
+static int DoDragHandler(MyWindowPtr win, DragTrackingMessage which,
                            DragReference drag);
 static void DoShowHelp(MyWindowPtr win, Point mouse);
 static bool DoMenuSelect(MyWindowPtr win, int menu, int item, short modifiers);
@@ -343,7 +343,7 @@ static long ViewListCallBack(ViewListPtr pView, VLCallbackMessage message,
 static bool GetListData(VLNodeInfo *data, short selectedItem);
 static void SetControls(void);
 static void DoGrow(MyWindowPtr win, Point *newSize);
-static bool LinkFind(MyWindowPtr win, PStr what);
+static bool LinkFind(MyWindowPtr win, char * what);
 static bool LinkDrawRowCallBack(ViewListPtr pView, short item, Rect *pRect,
                                 CellRec *pCellData, bool select,
                                 bool eraseName);
@@ -754,7 +754,7 @@ static bool DoKey(MyWindowPtr win, EventRecord *event) {
 /**********************************************************************
  * LinkFind - find in the window
  **********************************************************************/
-static bool LinkFind(MyWindowPtr win, PStr what) {
+static bool LinkFind(MyWindowPtr win, char * what) {
   return FindListView(win, &gWin.list, what);
 }
 
@@ -804,7 +804,7 @@ void DoClick(MyWindowPtr win, EventRecord *event) {
 }
 
 /************************************************************************
- * DoColumnClick - Handle a click on a column header, if indeed it is one
+ * DoColumnClick - void *a click on a column header, if indeed it is one
  ************************************************************************/
 static void DoColumnClick(MyWindowPtr win, EventRecord *event,
                           ControlHandle ctl) {
@@ -906,10 +906,10 @@ static bool DoMenuSelect(MyWindowPtr win, int menu, int item, short modifiers) {
 /**********************************************************************
  * DoDragHandler - handle drags
  **********************************************************************/
-static OSErr DoDragHandler(MyWindowPtr win, DragTrackingMessage which,
+static int DoDragHandler(MyWindowPtr win, DragTrackingMessage which,
                            DragReference drag) {
 #pragma unused(win)
-  OSErr err = noErr;
+  int err = noErr;
 
   // #warning  don't forget to handle drags from link history window!
 
@@ -966,10 +966,10 @@ static bool LinkDrawRowCallBack(ViewListPtr pView, short item, Rect *pRect,
   Rect rIcon, rName, rDate;
   Point ptName, ptDate;
   bool hasColor = IsColorWin(GetMyWindowWindowPtr(pView->wPtr));
-  Str255 dateStr;
+  char dateStr[256];
   short column;
   Rect columnRect;
-  Handle theIcon;
+  void *theIcon;
   LinkSortTypeEnum sortedColumn = gWin.sort & kLinkSortTypeMask;
 
   /* GTK port: get list row count from GtkListBox */
@@ -1141,8 +1141,8 @@ static void GetCellRectsForLHWin(ViewListPtr pView, CellRec *pCellData,
 static long ViewListCallBack(ViewListPtr pView, VLCallbackMessage message,
                              long data) {
   VLNodeInfo *pInfo;
-  OSErr err = noErr;
-  Handle hUrl;
+  int err = noErr;
+  void *hUrl;
   SendDragDataInfo *pSendData;
 
   switch (message) {
@@ -1183,8 +1183,7 @@ static long ViewListCallBack(ViewListPtr pView, VLCallbackMessage message,
     HLock(hUrl);
     err = 0; /* SetDragItemFlavorData(pSendData->drag, pSendData->itemRef,
                                 pSendData->flavor, *hUrl,
-                                InlineGetHandleSize((Handle)hUrl), 0L); */
-    UL(hUrl);
+                                InlineGetHandleSize((void *)hUrl), 0L); */
     break;
   }
   return err;
@@ -1259,7 +1258,7 @@ static short GetCellData(ViewListPtr pView, short item, CellRec *pCellData) {
   dataLen = sizeof(CellRec);
   c.h = 0;
   c.v = item;
-  LGetCell((Ptr)pCellData, &dataLen, c, pView->hList);
+  LGetCell((char *)pCellData, &dataLen, c, pView->hList);
   return dataLen;
 }
 
@@ -1328,7 +1327,7 @@ static void LinkSaveSortOrder(LinkSortTypeEnum sort) {
 /************************************************************************
  * PreventOfflineLink - don't follow this link if we're offline
  ************************************************************************/
-bool PreventOfflineLink(OSErr *err, bool justDoIt) {
+bool PreventOfflineLink(int *err, bool justDoIt) {
   bool preventConnection = false;
 
   return (preventConnection);
@@ -1349,10 +1348,10 @@ bool PingAdServer(void) {
   bool result = false;
   TransStream stream = nil;
   extern char PlayListURL[]; // currently in adwin.c
-  Str255 proto, host, query;
+  char proto[256], host[256], query[256];
   unsigned char *p;
   long port = 80; // default http: port
-  OSErr err = NewTransStream(&stream);
+  int err = NewTransStream(&stream);
   bool oldPref = PrefIsSet(PREF_IGNORE_PPP);
 
   // #warning Ping the Adserver, whatever we're supposed to

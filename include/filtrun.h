@@ -49,7 +49,7 @@ int FilterMessage(FilterKeywordEnum fType, TOCType *tocH, short sumNum);
 void GenSpecWindow(CSpecHandle specList);
 int FilterNoteMatch(short filter, long secs);
 uLong FilterLastMatchHi(short filter);
-void NonSequitur(unsigned char *subject, TOCType *tocH, short sumNum);
+void NonSequitur(char *subject, TOCType *tocH, short sumNum);
 void FilterPostprocess(FilterKeywordEnum fType, FilterPBPtr fpb);
 void AddSpecToList(FSSpecPtr spec, CSpecHandle specList);
 bool FilterMatchHi(short f, TOCType *tocH, short sumNum);

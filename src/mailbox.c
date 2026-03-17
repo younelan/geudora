@@ -22,26 +22,43 @@ PROFITS; OR BUSINESS INTERRUPTION) HOWEVER CAUSED AND ON ANY THEORY OF
 LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT (INCLUDING NEGLIGENCE
 OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE OF THIS SOFTWARE, EVEN IF
 ADVISED OF THE POSSIBILITY OF SUCH DAMAGE. */
-
-#include "mailbox.h"
-#include "../include/pete_shim.h"
+#include <stdbool.h>
+#include <string.h>
 #include "Globals.h"
-#include "MyRes.h"
-#include "StringDefs.h"
-#include "StringUtil.h"
+
+/*
+ * IsRoot - is the path's parent the MailRoot path?
+ */
+bool IsRoot(const char *path) {
+  char parent[1024];
+  /* use strncpy to avoid depending on glib here (headers included later) */
+  strncpy(parent, path, sizeof(parent) - 1);
+  parent[sizeof(parent) - 1] = '\0';
+  char *p = strrchr(parent, '/');
+  if (!p)
+    return false;
+  *p = '\0';
+  return (strcmp(parent, MailRoot.path) == 0);
+}
 #include "features.h"
 #include "fileutil.h"
+#include <fcntl.h>
+#include <sys/stat.h>
+#include "legacy_shim.h"
 #include "junk.h"
 #include "legacy_shim.h"
 #include "lineio.h"
 #include "mesg_error_store.h"
 #include "mydefs.h"
+#include "MyRes.h"
 #include "pop.h"
 #include "sort.h"
 #include "toc.h"
 #include "trans.h"
 #include <assert.h>
 #include <stdarg.h>
+#include <sys/stat.h>
+#include <unistd.h>
 #ifndef ASSERT
 #define ASSERT(x) assert(x)
 #endif
@@ -85,6 +102,14 @@ enum { kStatReadMsg = 0 };
 /* OPT_OPEN and OPT_AUTO_OPENED defined in mailbox.h */
 /* MAILBOX_MENU defined in gtk_menus.h */
 
+/* Backwards-compatible menu ID names expected by legacy code */
+#ifndef MAILBOX_MENU
+#define MAILBOX_MENU MENU_MAILBOX
+#endif
+#ifndef TRANSFER_MENU
+#define TRANSFER_MENU MENU_TRANSFER
+#endif
+
 /* Missing Structs */
 /* Missing Definitions / Decls */
 /* FSSpec defined in headers */
@@ -101,7 +126,7 @@ enum { kStatReadMsg = 0 };
 extern long AnyTOCDirty;
 typedef unsigned long uLong;
 struct MenuAndScore;
-typedef struct MenuAndScore **MenuAndScoreHandle;
+typedef struct MenuAndScore *MenuAndScoreHandle;
 /* BoxCenterSelection declared in boxact.h */
 
 int BoxMatchMenuItems(unsigned char *name, MenuAndScoreHandle *mashPtr,
@@ -115,9 +140,8 @@ int BoxMatchMenuItemsIn1Menu(MenuHandle mh, AccuPtr a, unsigned char *name,
 
 // Fix pointer math in MailboxAlias/SpecAlias usage area
 #define MAILBOX_ALIAS_MATH(leaf, spot, name)                                   \
-  MakePStr(leaf, spot + 1, *name - ((char *)spot - name))
-char *MailboxAlias(short which, char *name);
-char *MailboxSpecAlias(FSSpecPtr spec, char *name);
+  { size_t _mpl = ( *name - ((char *)spot - name)); memcpy(leaf,  spot + 1, _mpl); ((char*)(leaf))[_mpl] = '\0'; }
+char *MailboxSpecAlias(const char *specPath, char *name);
 void BuildBoxMenus(void);
 bool DeleteSum(TOCType * tocH, int sumNum);
 void MakeMessTitle(unsigned char *name, TOCType * tocH, int sumNum, bool b);
@@ -125,11 +149,11 @@ bool IsQueued(TOCType * tocH, int sumNum);
 
 /* New Missing Decls */
 void MBTickle(void *u1, void *u2);
-void AddBoxHigh(FSSpecPtr spec);
+void AddBoxHigh(const char *specPath);
 /* AttIsSelected declared in messact.h (via junk.h) */
 unsigned char *PeteSelectedString(void *u1, void *pte);
 bool MenuItemIsSeparator(MenuHandle mh, short item);
-unsigned char *CollapseLWSP(unsigned char *s);
+/* CollapseLWSP declared in StringUtil.h as char *CollapseLWSP(char *s) */
 void AppendMenu(MenuHandle mh, const unsigned char *item);
 void SetMenuItemCommandID(MenuHandle mh, short item, long id);
 void SetMenuItemHierarchicalMenu(MenuHandle mh, short item, MenuHandle subMenu);
@@ -149,13 +173,13 @@ long GetPrefLong(short pref);
 /* SetWTitle declared in mailbox.h */
 /* GetAMessage declared in message.h */
 void RemoveUTF8FromSum(MSumPtr sum);
-void SetHandleBig(Handle h, long size);
+/* SetHandleBig declared in util.h */
 long TempMaxMem(long *grow);
 short FindDirLevel(short vRefNum, long dirID);
 /* DeleteMenuItem, EnableItem, etc. are in gtk_menus.h */
 /* FindItemByName, MyGetItem, CountMenuItems, etc. are in gtk_menus.h */
 void HideDialogItem(DialogPtr dp, short item);
-/* MyParamText declared in log.h with PStr params */
+/* MyParamText declared in log.h with char * params */
 void StartMovableModal(DialogPtr dp);
 void ShowWindow(WindowPtr win);
 /* Cursor and Dialog Decls */
@@ -163,14 +187,14 @@ WindowPtr GetDialogWindow(DialogPtr dp);
 #define GetMyWindowDialogPtr(win) ((DialogPtr)GetMyWindowWindowPtr(win))
 /* Legacy Dialog Functions */
 /* CloseMyWindow provided by legacy_shim.h */
-TOCType * FindTOC(FSSpecPtr spec);
+TOCType * FindTOC(const char *path);
 void Box2TOCSpec(FSSpecPtr spec, FSSpecPtr tocSpec);
 void utl_SaveWindowPos(WindowPtr win, Rect *r, bool *zoomed);
-UPtr GetMailboxName(TOCType * tocH, short sum, UPtr name);
+char *GetMailboxName(TOCType * tocH, short sum, char *name);
 /* UpdateIMAPMailbox declared in mailbox.h */
 
-void GetPortBounds(void *port, Rect *r);
-void *GetWindowPort(WindowPtr win);
+/* Port/window helpers are provided by platform headers or central stubs; remove
+  redundant prototypes here to avoid duplicate declarations. */
 typedef struct BoxMapStruct BoxCountElem; /* Guessing same layout */
 void GetMenuItemText(MenuHandle mh, short item, unsigned char *text);
 /* Restored Function Declarations */
@@ -178,19 +202,17 @@ void utl_RestoreWindowPos(WindowPtr win, Rect *r, bool zoomed, short u1,
                           short u2, short u3, void *cb1, void *cb2);
 short MessWi(MyWindowPtr win);
 typedef struct BoxMapStruct BoxMapType;
-short TitleBarHeight(WindowPtr win);
-short LeftRimWidth(WindowPtr win);
+/* Title bar / rim helpers handled by platform-specific code. */
 void FigureZoom(void);
 void DefPosition(void);
 void AddBoxCountItem(short item, short vRef, long dirId);
 void AddBoxCountMenu(short menu, short item, short vRef, long dirId,
                      bool force);
-void **PtrPlusHand(const void *ptr, void **hand, long size);
 void MovableModalDialog(DialogPtr dp, void *filter, short *item);
 void SetDItemState(DialogPtr dp, short item, bool state);
 bool GetDItemState(DialogPtr dp, short item);
 void PopCursor(void);
-void GetDIText(DialogPtr dp, short item, char *text);
+/* Dialog item text helpers implemented centrally (mac_stubs.c) */
 bool BadMailboxName(FSSpecPtr spec, bool folder);
 bool BadMailboxNameChars(FSSpecPtr spec);
 void TooLong(unsigned char *name); /* Fixed const */
@@ -206,6 +228,7 @@ struct BoxMapStruct {
 };
 void HiliteButtonOne(DialogPtr dp);
 void SelectDialogItemText(DialogPtr dp, short item, short start, short end);
+void GetDIText(DialogPtr dp, short item, unsigned char *name);
 void PushCursor(void *cursor);
 extern void *iBeamCursor; /* Likely global */
 
@@ -219,7 +242,7 @@ void CycleBalls(void);
 long GetPrefLong(short pref);
 /* SetWTitle, ShowMyWindow, UserSelectWindow, GetNewMyWindow, OpenMailbox,
    InitMailboxWin, MyDisposeWindow — all declared in mailbox.h */
-bool IsWindowVisible(WindowPtr win);
+/* `IsWindowVisible` is an inline in include/mailbox.h */
 long TOCDelDup(TOCType * tocH);
 TOCType * CheckTOC(FSSpecPtr spec);
 TOCType * GetTOCFromSearchWin(FSSpecPtr spec);
@@ -240,13 +263,14 @@ typedef struct MenuAndScore {
   short menu;
   short item;
   long score;
-} MenuAndScore, *MenuAndScorePtr, **MenuAndScoreHandle;
+} MenuAndScore, *MenuAndScorePtr, *MenuAndScoreHandle;
 
 void ZeroMailbox(TOCType * tocH);
 int AddBoxMap(short vRef, long dirId);
-bool WantRebuildTOC(UPtr boxName, int why);
-void AddBox(short function, UPtr name, short level, bool unread);
-void RemoveBox(short function, UPtr name, short level);
+bool WantRebuildTOC(unsigned char * boxName, int why);
+void AddBox(short function, unsigned char * name, short level, bool unread);
+void RemoveBox(short function, unsigned char * name, short level);
+int Path2Box(char *path, FSSpecPtr box);
 /* Forward declaration to ensure calls earlier in this file see the
  * canonical implementation declared/defined here (mailbox.h may vary
  * between platforms). Kept local to this translation unit.
@@ -267,9 +291,9 @@ int BoxMatchMenuItemsIn1Menu(MenuHandle mh, AccuPtr a, unsigned char *name,
                              int score());
 int CompareMAS(MenuAndScorePtr mas1, MenuAndScorePtr mas2);
 void SwapMAS(MenuAndScorePtr mas1, MenuAndScorePtr mas2);
-static void ProcessIMAPChanges(Handle sumList, TOCType * toc,
+static void ProcessIMAPChanges(void *sumList, TOCType * toc,
                                IMAPUpdateType message);
-static int IMAPRecvLine(TransStream stream, UPtr buffer, long *size);
+static int IMAPRecvLine(TransStream stream, unsigned char * buffer, long *size);
 void DeleteIMAPSum(TOCType * tocH, int sumNum);
 void DeleteMessageLo(TOCType * tocH, int sumNum, bool nuke);
 void DecodeIMAPMessages(TOCType * tocH, FSSpecPtr spec);
@@ -278,7 +302,7 @@ void DecodeIMAPMessages(TOCType * tocH, FSSpecPtr spec);
  * allocation. These keep mailbox.c self-contained and use standard
  * malloc/calloc so we don't touch other files.
  */
-/* Use the project's portable Handle APIs rather than redefining Mac
+/* Use the project's portable void *APIs rather than redefining Mac
  * structs here. Allocate a fixed buffer large enough for expected
  * mesg-error contents (uid + 256-byte pascal string + error code).
  */
@@ -304,7 +328,7 @@ int AddOutgoingMesgError(short sumNum, uLong uidHash, int errorCode,
   TOCType * tocH = NULL;
   TOCType * tempTocH = NULL;
   short outSumNum = sumNum;
-  Str255 fmtdError, error;
+  char fmtdError[256], error[256];
   va_list args;
 
 
@@ -343,13 +367,7 @@ int DeleteMesgError(TOCType * tocH, short sum) {
   mesgErrorHandle mesgErrH;
 
   if ((mesgErrH = (mesgErrorHandle)tocH->sums[sum].mesgErrH)) {
-    /* Free using standard allocation primitives: free the inner
-     * mesgError struct, then free the handle (pointer-to-pointer).
-     */
-    if (*mesgErrH) {
-      free(*mesgErrH);
-      *mesgErrH = NULL;
-    }
+    /* Free the flat mesgError struct */
     free(mesgErrH);
     tocH->sums[sum].mesgErrH = NULL;
     /* persist changes to sidecar */
@@ -377,15 +395,7 @@ int AddMesgError(TOCType * tocH, short sum, unsigned char *errorStr,
   /* if for some reason, mesgErrH isn't empty, overwrite it */
   mesgErrH = (mesgErrorHandle)tocH->sums[sum].mesgErrH;
   if (!mesgErrH) {
-    mesgErrorPtr inner = (mesgErrorPtr)calloc(1, sizeof(MesgErrorType));
-    if (inner) {
-      mesgErrH = (mesgErrorHandle)malloc(sizeof(mesgErrorPtr));
-      if (mesgErrH) {
-        *mesgErrH = inner;
-      } else {
-        free(inner);
-      }
-    }
+    mesgErrH = (mesgErrorHandle)calloc(1, sizeof(MesgErrorType));
     if (!mesgErrH)
       err = MemError();
   }
@@ -396,9 +406,9 @@ int AddMesgError(TOCType * tocH, short sum, unsigned char *errorStr,
      * of these errors can be added later via sidecar files.
      */
     if (errorStr)
-      PCopyTrim((*mesgErrH)->errorStr, errorStr, sizeof((*mesgErrH)->errorStr));
-    (*mesgErrH)->uidHash = tocH->sums[sum].uidHash;
-    (*mesgErrH)->errorCode = errorCode;
+      PCopyTrim(mesgErrH->errorStr, errorStr, sizeof(mesgErrH->errorStr));
+    mesgErrH->uidHash = tocH->sums[sum].uidHash;
+    mesgErrH->errorCode = errorCode;
   }
   // let's ignore the error since we can set the mesg state
   tocH->sums[sum].state = MESG_ERR;
@@ -427,18 +437,22 @@ int FillMesgErrors(TOCType * tocH) {
 /**********************************************************************
  * GetMailbox - put a mailbox window frontmost; open if necessary
  **********************************************************************/
-int GetMailbox(FSSpecPtr spec, bool showIt) {
+int GetMailbox(const char *path, bool showIt) {
   TOCType * toc;
+  FSSpec tmpSpec;
 
-  if (ResolveAliasOrElse(spec, nil, nil))
+  /* Build a temporary FSSpec from the POSIX path for legacy helpers */
+  spec_make(NULL, path, &tmpSpec);
+
+  if (ResolveAliasOrElse(&tmpSpec, nil, nil))
     return (userCanceledErr);
 
-  // if this is an IMAP folder we're going to open, adjust the spec so it points
-  // to the mailbox inside
-  if (IsIMAPCacheFolder(spec))
-    spec->parID = SpecDirId(spec);
+  /* if this is an IMAP folder we're going to open, adjust the spec so it points
+     to the mailbox inside */
+  if (IsIMAPCacheFolder(&tmpSpec))
+    tmpSpec.parID = SpecDirId(&tmpSpec);
 
-  if ((toc = FindTOC(spec))) {
+  if ((toc = FindTOC(tmpSpec.path))) {
     WindowPtr tocWinWP;
     tocWinWP = GetMyWindowWindowPtr(toc->win);
     UsingWindow(tocWinWP);
@@ -460,15 +474,17 @@ int GetMailbox(FSSpecPtr spec, bool showIt) {
     return (0);
   }
 
-  return OpenMailbox(spec, showIt, NULL);
+  return OpenMailbox(tmpSpec.path, showIt, NULL);
 }
 
 /**********************************************************************
  * OpenMailbox - open the named mailbox
  **********************************************************************/
-int OpenMailbox(FSSpecPtr spec, bool showIt, TOCType * toc) {
+int OpenMailbox(const char *path, bool showIt, TOCType * toc) {
   MyWindow *win;
   WindowPtr winWP;
+  FSSpec tmpSpec;
+  spec_make(NULL, path, &tmpSpec);
 
   /*
    * create window
@@ -490,8 +506,8 @@ int OpenMailbox(FSSpecPtr spec, bool showIt, TOCType * toc) {
   /*
    * read or build toc for window if we don't have it yet
    */
-  if (!toc && !(toc = GetTOCFromSearchWin(spec))) {
-    toc = CheckTOC(spec);
+  if (!toc && !(toc = GetTOCFromSearchWin(&tmpSpec))) {
+    toc = CheckTOC(&tmpSpec);
     if (toc == nil) {
       DisposeWindow_(winWP);
       MyThreadEndCritical();
@@ -559,7 +575,33 @@ int OpenMailbox(FSSpecPtr spec, bool showIt, TOCType * toc) {
  **********************************************************************/
 /* BoxClose, BoxButton, BoxMenu, BoxGonnaShow, BoxPosition, BoxFind — in boxact.c */
 void BoxCursor(Point mouse) {}
-void MBDrawerOpen(MyWindowPtr win) {}
+void MBDrawerOpen(MyWindowPtr win) {
+  if (!win) return;
+  GtkWidget *parent = GetMyWindowWindowPtr(win);
+  if (!parent) return;
+
+  TOCType *toc = (TOCType *)GetMyWindowPrivateData(win);
+  if (!toc) return;
+  if (toc->drawerWin) return; /* already open */
+
+  GtkWidget *drawer = gtk_window_new();
+  /* Make it transient for the mailbox window so WM positions it sensibly */
+  if (GTK_IS_WINDOW(drawer) && GTK_IS_WINDOW(parent))
+    gtk_window_set_transient_for(GTK_WINDOW(drawer), GTK_WINDOW(parent));
+
+  /* Reasonable default size; prefs may drive this later */
+  gtk_window_set_default_size(GTK_WINDOW(drawer), 320, 480);
+
+  /* Minimal content for now: a container that other code can populate later */
+  GtkWidget *box = gtk_box_new(GTK_ORIENTATION_VERTICAL, 0);
+  gtk_window_set_child(GTK_WINDOW(drawer), box);
+
+  /* Track the drawer widget on the TOC so callers can detect/open/close it */
+  toc->drawerWin = (void *)drawer;
+
+  /* Present the drawer */
+  gtk_window_present(GTK_WINDOW(drawer));
+}
 
 /* Column indices for mailbox list */
 enum {
@@ -1205,22 +1247,15 @@ static void on_mbox_row_activated(GtkTreeView *tree_view, GtkTreePath *path,
     static gboolean msgview_css_loaded = FALSE;
     if (!msgview_css_loaded) {
       GtkCssProvider *css = gtk_css_provider_new();
-      gtk_css_provider_load_from_string(css,
+      const char *css_data =
         ".msg-header-box {"
         "  background-color: alpha(currentColor, 0.06);"
         "  border-bottom: 1px solid alpha(currentColor, 0.15);"
-        "}"
-        ".msg-toolbar {"
-        "  background-color: alpha(currentColor, 0.03);"
-        "  border-bottom: 1px solid alpha(currentColor, 0.10);"
-        "}"
-        ".msg-toolbar button { min-height: 24px; min-width: 24px; padding: 2px 6px; }"
-        ".msg-hdr-label { font-weight: bold; opacity: 0.6; }"
-        ".msg-subject-value { font-weight: bold; font-size: 1.1em; }"
-      );
+        "}";
+      gtk_css_provider_load_from_data(css, css_data, -1);
       gtk_style_context_add_provider_for_display(
-        gdk_display_get_default(), GTK_STYLE_PROVIDER(css),
-        GTK_STYLE_PROVIDER_PRIORITY_USER);
+          gdk_display_get_default(), GTK_STYLE_PROVIDER(css),
+          GTK_STYLE_PROVIDER_PRIORITY_USER);
       g_object_unref(css);
       msgview_css_loaded = TRUE;
     }
@@ -1827,15 +1862,17 @@ long TOCDelEmpty(TOCType * tocH) {
 /**********************************************************************
  * OpenFilterMessages - open messages that filters say we should
  **********************************************************************/
-int OpenFilterMessages(FSSpecPtr spec) {
-  TOCType * tocH = TOCBySpec(spec);
+int OpenFilterMessages(const char *specPath) {
+  FSSpec spec;
+  spec_make(NULL, specPath, &spec);
+  TOCType * tocH = TOCBySpec(&spec);
   short i;
   bool openedOne;
 
   if (!tocH)
     return (1);
 
-  g_print("Opening messages from %s\n", spec->name);
+  g_print("Opening messages from %s\n", specPath);
 
   do {
     openedOne = false;
@@ -1897,56 +1934,60 @@ bool SaveMessageSum(void *vsum, TOCType **tocH) {
   return true;
 }
 
-/************************************************************************
- * IsRoot - is a spec at the root of the Eudora Folder?
- ************************************************************************/
-bool IsRoot(FSSpecPtr spec) {
-  return (spec->parID == MailRoot.dirId &&
-          SameVRef(spec->vRefNum, MailRoot.vRef));
-}
+
 
 /************************************************************************
  * IsSpool - is a spec in the Spool Folder?
  ************************************************************************/
-bool IsSpool(FSSpecPtr spec) {
+bool IsSpool(const char *path) {
   FSSpec folderSpec;
+  char parent[1024];
 
   if (SubFolderSpec(SPOOL_FOLDER, &folderSpec))
-    return (false);
+    return false;
 
-  return (spec->parID == folderSpec.parID &&
-          SameVRef(spec->vRefNum, folderSpec.vRefNum));
+  g_strlcpy(parent, path, sizeof(parent));
+  char *p = strrchr(parent, '/');
+  if (p)
+    *p = '\0';
+  return (strcmp(parent, folderSpec.path) == 0 || strcmp(path, folderSpec.path) == 0);
 }
 
 /************************************************************************
  * IsDelivery - is a spec in the Delivery Folder?
  ************************************************************************/
-bool IsDelivery(FSSpecPtr spec) {
+bool IsDelivery(const char *path) {
   FSSpec folderSpec;
+  char parent[1024];
 
   if (SubFolderSpec(DELIVERY_FOLDER, &folderSpec))
-    return (false);
+    return false;
 
-  return (spec->parID == folderSpec.parID &&
-          SameVRef(spec->vRefNum, folderSpec.vRefNum));
+  g_strlcpy(parent, path, sizeof(parent));
+  char *p = strrchr(parent, '/');
+  if (p)
+    *p = '\0';
+  return (strcmp(parent, folderSpec.path) == 0 || strcmp(path, folderSpec.path) == 0);
 }
 
 /**********************************************************************
  * Spec2Menu - find the menu params for a given FSSpec
  **********************************************************************/
-int Spec2Menu(FSSpecPtr spec, bool forXfer, short *menu, short *item) {
-  Str63 name;
-  long dirID = spec->parID;
+int Spec2Menu(const char *specPath, bool forXfer, short *menu, short *item) {
+  char name[64];
+  FSSpec spec;
+  spec_make(NULL, specPath, &spec);
+  long dirID = spec.parID;
   FSSpec parentSpec;
 
-  if (IsIMAPMailboxFile(spec)) {
-    ParentSpec(spec, &parentSpec);
+  if (IsIMAPMailboxFile(&spec)) {
+    ParentSpec(&spec, &parentSpec);
     dirID = parentSpec.parID;
   }
 
-  if (0 <= (*menu = FindDirLevel(spec->vRefNum, dirID))) {
+  if (0 <= (*menu = FindDirLevel(spec.vRefNum, dirID))) {
     *menu = *menu ? *menu : MAILBOX_MENU;
-    MailboxSpecAlias(spec, name);
+    MailboxSpecAlias(spec.path, name);
     *item = FindItemByName(GetMHandle(*menu), (unsigned char *)name);
     if (forXfer)
       *menu = (*menu == MAILBOX_MENU) ? TRANSFER_MENU : *menu + MAX_BOX_LEVELS;
@@ -1962,22 +2003,24 @@ int Spec2Menu(FSSpecPtr spec, bool forXfer, short *menu, short *item) {
  **********************************************************************/
 int TOCH2Menu(TOCType * tocH, bool forXfer, short *mnu, short *item) {
   FSSpec spec = GetMailboxSpec(tocH, -1);
-  return (Spec2Menu(&spec, forXfer, mnu, item));
+  return (Spec2Menu(spec.path, forXfer, mnu, item));
 }
 
 /**********************************************************************
  * FixSpecUnread - fix the unread-ness of a file
  **********************************************************************/
-void FixSpecUnread(FSSpecPtr spec, bool unread) {
+void FixSpecUnread(const char *path, bool unread) {
   FInfo info;
+  FSSpec tmpSpec;
 
-  FSpGetFInfo(spec, &info);
+  spec_make(NULL, path, &tmpSpec);
+  // FSpGetFInfo is no-op
   if (((info.fdFlags & 0xe) != 0) != unread) {
     if (unread)
       info.fdFlags |= 0xe;
     else
       info.fdFlags &= ~0xe;
-    FSpSetFInfo(spec, &info);
+    // FSpSetFInfo is no-op
   }
 }
 
@@ -2035,14 +2078,21 @@ void FixMenuUnread(MenuHandle mh, int item, bool unread) {
 /**********************************************************************
  * Box2Path - walk up our menus, looking for the one true way
  **********************************************************************/
-int Box2Path(FSSpecPtr box, char *path) {
+int Box2Path(const char *boxPath, char *path) {
   short menu, item;
   int err = noErr;
   MenuHandle mh = NULL;
-  Str63 name;
+  char name[64];
+  FSSpec tmpSpec;
 
-  PCopy((unsigned char *)path, box->name);
-  err = Spec2Menu(box, False, &menu, &item);
+  /* Convert incoming POSIX path to a temporary FSSpec and reuse existing
+     Spec2Menu logic to find menu/item. This is a transitional helper while
+     callers are migrated to path-based APIs. */
+  if ((err = Path2Box((char *)boxPath, &tmpSpec)))
+    return err;
+
+  g_strlcpy((char *)path, (char *)tmpSpec.name, 256);
+  err = Spec2Menu(tmpSpec.path, False, &menu, &item);
   if (!err)
     mh = GetMHandle(menu);
 
@@ -2069,8 +2119,8 @@ int Box2Path(FSSpecPtr box, char *path) {
  **********************************************************************/
 int Path2Box(char *path, FSSpecPtr box) {
   int err = fnfErr;
-  UPtr spot;
-  Str31 name;
+  unsigned char * spot;
+  char name[32];
   char curdir[1024];
 
   box->vRefNum = MailRoot.vRef;
@@ -2088,8 +2138,11 @@ int Path2Box(char *path, FSSpecPtr box) {
     IsAlias(box, box);
 
     // if it's not a folder, we're done
-    if (!FSpIsItAFolder(box))
-      break;
+    {
+      struct stat st;
+      if (lstat(box->path, &st) < 0 || !S_ISDIR(st.st_mode))
+        break;
+    }
 
     // get the folder's spec
     box->parID = SpecDirId(box);
@@ -2113,8 +2166,11 @@ int Path2Box(char *path, FSSpecPtr box) {
       IsAlias(box, box);
 
       // if it's not a folder, we're done
-      if (!FSpIsItAFolder(box))
-        break;
+      {
+        struct stat st;
+        if (lstat(box->path, &st) < 0 || !S_ISDIR(st.st_mode))
+          break;
+      }
 
       // get the folder's spec
       box->parID = SpecDirId(box);
@@ -2145,22 +2201,22 @@ void CalcAllSumLengths(TOCType * toc) {
  * CalcSumLengths - calculcate how long the strings in a sum can be
  ************************************************************************/
 void CalcSumLengths(TOCType * tocH, int sumNum) {
-  Str255 scratch;
+  char scratch[256];
   short trunc;
-  short dWidth = (*BoxLines)[WID_DATE] - (*BoxLines)[WID_DATE - 1];
-  short fWidth = (*BoxLines)[WID_FROM] - (*BoxLines)[WID_FROM - 1];
+  short dWidth = BoxLines[WID_DATE] - BoxLines[WID_DATE - 1];
+  short fWidth = BoxLines[WID_FROM] - BoxLines[WID_FROM - 1];
 
   if (FontIsFixed) {
     tocH->sums[sumNum].dateTrunc = dWidth / FontWidth - 1;
     tocH->sums[sumNum].fromTrunc = fWidth / FontWidth - 1;
   } else {
-    PCopy(scratch, tocH->sums[sumNum].date);
+    g_strlcpy((char *)(scratch), (char *)(tocH->sums[sumNum].date), sizeof(scratch));
     trunc = CalcTrunc(scratch, dWidth, InsurancePort);
     if (trunc && trunc < *scratch)
       trunc--;
     tocH->sums[sumNum].dateTrunc = trunc;
 
-    PCopy(scratch, tocH->sums[sumNum].from);
+    g_strlcpy((char *)(scratch), (char *)(tocH->sums[sumNum].from), sizeof(scratch));
     trunc = CalcTrunc(scratch, fWidth, InsurancePort);
     if (trunc && trunc < *scratch)
       trunc--;
@@ -2261,19 +2317,19 @@ short FindSumByHash(TOCType * tocH, uint32_t hash) {
  * RedoWho - Redo the who field because of an in/out transition.
  **********************************************************************/
 int RedoWho(TOCType * tocH, short sumNum) {
-  Str255 who;
+  char who[256];
   short hState;
   int err = noErr;
-  UPtr spot;
-  UPtr text;
+  unsigned char * spot;
+  unsigned char * text;
   long len, hLen;
-  Str255 hName;
+  char hName[256];
   short i;
 
   if (!(err = CacheMessage(tocH, sumNum)))
     if (tocH->sums[sumNum].cache) {
       hState = HGetState(tocH->sums[sumNum].cache);
-      text = *(tocH->sums[sumNum].cache);
+      text = (unsigned char *)tocH->sums[sumNum].cache;
       len = GetHandleSize(tocH->sums[sumNum].cache);
       *who = 0;
       if (tocH->sums[sumNum].state == SENT ||
@@ -2298,9 +2354,9 @@ int RedoWho(TOCType * tocH, short sumNum) {
         }
       }
       if (spot && hLen) {
-        MakePStr(who, (char *)spot, hLen);
+        memcpy(who, spot, hLen); who[hLen] = '\0';
         BeautifyFrom(who);
-        PSCopy((unsigned char *)tocH->sums[sumNum].from, who);
+        g_strlcpy((char *)tocH->sums[sumNum].from, (char *)who, 48);
         if (tocH->sums[sumNum].messH) {
           MakeMessTitle(hName, tocH, sumNum, True);
           SetWTitle_(GetMyWindowWindowPtr(tocH->sums[sumNum].messH->win),
@@ -2327,11 +2383,22 @@ int BoxFOpenLo(TOCType * tocH, short sumNum) {
   if (tocH->refN == 0) {
     spec = GetMailboxSpec(tocH, sumNum);
     g_print("BoxFOpen: name='%s' path='%s'\n", spec.name, spec.path);
-    err = AFSpOpenDF(&spec, &newSpec, fsRdWrPerm, &refN);
-    if (err)
-      FileSystemError(OPEN_MBOX, spec.name, err);
-    else
-      tocH->refN = refN;
+    newSpec = spec;
+    {
+      bool folder = false, wasIt = false;
+      if ((err = ResolveAliasFile(&newSpec, true, &folder, &wasIt))) {
+        FileSystemError(OPEN_MBOX, (const char *)spec.name, err);
+      } else {
+        int flags = O_RDWR; /* caller requested read/write */
+        int fd = open(newSpec.path, flags);
+        if (fd < 0) {
+          err = fnfErr;
+          FileSystemError(OPEN_MBOX, (const char *)spec.name, err);
+        } else {
+          tocH->refN = (short)fd;
+        }
+      }
+    }
   }
 
   return (err);
@@ -2343,8 +2410,6 @@ int BoxFOpenLo(TOCType * tocH, short sumNum) {
  **********************************************************************/
 /* Local Decls for usage */
 void NoteFreeSpace(TOCType * tocH);
-int MyFSClose(short refN);
-// short FSClose(short refNum); removed - defined in mailbox.h as void*
 
 int BoxFOpen(TOCType * tocH) { return BoxFOpenLo(tocH, -1); }
 // #pragma segment Main
@@ -2358,11 +2423,11 @@ void BoxFClose(TOCType * tocH, bool flush) {
 
   if (tocH->refN > 0) {
     NoteFreeSpace(tocH);
-    err = flush ? MyFSClose(tocH->refN) : (int)(long)FSClose(tocH->refN);
+    err = close(tocH->refN);
     tocH->refN = 0;
     spec = GetMailboxSpec(tocH, -1);
     if (err)
-      FileSystemError(CLOSE_MBOX, spec.name, err);
+      FileSystemError(CLOSE_MBOX, (const char *)spec.name, err);
     (void)0;
   }
 }
@@ -2388,7 +2453,7 @@ void Preview(TOCType * tocH, short sumNum);
 bool DeleteSum(TOCType * tocH, int sumNum) {
   MSumPtr sum;
   int mNum;
-  Str31 name;
+  char name[32];
 
   ASSERT(tocH);
   ASSERT(sumNum < tocH->count);
@@ -2412,7 +2477,7 @@ bool DeleteSum(TOCType * tocH, int sumNum) {
   if (IsQueued(tocH, sumNum))
     ForceSend = 0;
   if (tocH->sums[sumNum].cache) {
-    DisposeHandle(tocH->sums[sumNum].cache);
+    free(tocH->sums[sumNum].cache);
     tocH->sums[sumNum].cache = NULL;
   }
   if (!tocH->virtualTOC)
@@ -2428,7 +2493,7 @@ bool DeleteSum(TOCType * tocH, int sumNum) {
   /* Shrink TOC by one summary.
    * Do NOT g_realloc here — that can move the block and invalidate the
    * caller's pointer (e.g. TOCDelEmpty loops over the TOC).  The original
-   * Mac code used Handle indirection so realloc was safe; with direct
+   * Mac code used void *indirection so realloc was safe; with direct
    * pointers we just decrement count and leave the memory oversized. */
   if (--tocH->count == 0 && !tocH->virtualTOC)
     ZeroMailbox(tocH);
@@ -2533,14 +2598,14 @@ void InvalSum(TOCType * tocH, short sumNum) {
 /************************************************************************
  * AddBox - add a mailbox to the menus
  ************************************************************************/
-void AddBox(short function, UPtr name, short level, bool unread) {
+void AddBox(short function, unsigned char * name, short level, bool unread) {
   short base = function * MAX_BOX_LEVELS;
   short menuId = level ? base + level
                        : (function == MAILBOX ? MAILBOX_MENU : TRANSFER_MENU);
   MenuHandle mh = GetMHandle(menuId);
   short item, lastItem;
   Style theStyle;
-  Str63 scratch;
+  char scratch[64];
   Boolean skipIMAP =
       (menuId == MAILBOX_MENU || menuId == TRANSFER_MENU) && IMAPExists();
 
@@ -2572,7 +2637,7 @@ void AddBox(short function, UPtr name, short level, bool unread) {
 /************************************************************************
  * RemoveBox - remove a mailbox from the mailbox menus
  ************************************************************************/
-void RemoveBox(short function, UPtr name, short level) {
+void RemoveBox(short function, unsigned char * name, short level) {
   short base = function * MAX_BOX_LEVELS;
   short menuId = level ? base + level
                        : (function == MAILBOX ? MAILBOX_MENU : TRANSFER_MENU);
@@ -2599,7 +2664,7 @@ void RemoveBox(short function, UPtr name, short level) {
 /* void HideDialogItem(DialogPtr dp, short item); Added below */
 
 // ...
-short GetMBDirName(short vRef, long dirId, UPtr name) {
+short GetMBDirName(short vRef, long dirId, unsigned char * name) {
   int err;
 
   // If we're at the mail root, pretend we're one up
@@ -2626,8 +2691,8 @@ bool GetNewMailbox(short vRef, long inDirId, FSSpecPtr spec, bool *folder,
   MyWindowPtr dgPtrWin;
   DialogPtr dgPtr;
   short item;
-  Str255 name;
-  Str63 folderName;
+  char name[256];
+  char folderName[64];
   extern ModalFilterYDUPP DlgFilterUPP;
 
   if (GetMBDirName(vRef, inDirId, folderName))
@@ -2664,8 +2729,7 @@ bool GetNewMailbox(short vRef, long inDirId, FSSpecPtr spec, bool *folder,
       *xfer = GetDItemState(dgPtr, NEW_MAILBOX_NOXF);
     spec->vRefNum = vRef;
     spec->parID = inDirId;
-    PSCopy(spec->name,
-           name); /* FSMakeFSSpec screws up this step if the name is
+    g_strlcpy((char *)spec->name, (char *)name, 64); /* FSMakeFSSpec screws up this step if the name is
                      too long. We want to catch that in BadMailboxName,
                      not here, so don't use FSMakeFSSpec. */
   } while (item == NEW_MAILBOX_OK && BadMailboxName(spec, *folder));
@@ -2679,21 +2743,21 @@ bool GetNewMailbox(short vRef, long inDirId, FSSpecPtr spec, bool *folder,
 /**********************************************************************
  * RenameMailbox - rename a mailbox
  **********************************************************************/
-int RenameMailbox(FSSpecPtr spec, UPtr newName, bool folder) {
+int RenameMailbox(FSSpecPtr spec, unsigned char * newName, bool folder) {
   int err;
-  Str63 oldTOCName, suffix;
-  Str63 newTOCName;
+  char oldTOCName[64], suffix[64];
+  char newTOCName[64];
   FSSpec tocSpec;
 
   err = HRename(spec->vRefNum, spec->parID, spec->name, newName);
   if (err)
-    return (FileSystemError(RENAMING_BOX, spec->name, err));
+    return (FileSystemError(RENAMING_BOX, (const char *)spec->name, err));
 
   if (!folder) {
     //	Rename TOC file also if it exists
     GetRString(suffix, TOC_SUFFIX);
-    PCopy(oldTOCName, spec->name);
-    PCopy(newTOCName, newName);
+    g_strlcpy((char *)oldTOCName, (char *)spec->name, 64);
+    g_strlcpy((char *)newTOCName, (char *)newName, 64);
     PCat(oldTOCName, suffix);
     PCat(newTOCName, suffix);
 
@@ -2709,7 +2773,7 @@ int RenameMailbox(FSSpecPtr spec, UPtr newName, bool folder) {
         if (err == fnfErr)
           err = 0;
         if (err) {
-          FileSystemError(RENAMING_BOX, oldTOCName, err);
+          FileSystemError(RENAMING_BOX, (const char *)oldTOCName, err);
         }
       }
       if (err)
@@ -2728,7 +2792,7 @@ int RenameMailbox(FSSpecPtr spec, UPtr newName, bool folder) {
  **********************************************************************/
 bool BadMailboxName(FSSpecPtr spec, bool folder) {
   int err;
-  Str15 suffix;
+  char suffix[16];
   long newDirId;
   bool success;
 
@@ -2754,18 +2818,27 @@ bool BadMailboxName(FSSpecPtr spec, bool folder) {
       WarnUser(TOO_MANY_LEVELS, MAX_BOX_LEVELS);
       return (True);
     }
-    if (err = FSpDirCreate(spec, smSystemScript, &newDirId)) {
-      FileSystemError(CREATING_MAILBOX, spec->name, err);
-      return (True);
+    {
+      int mkerr = mkdir(spec->path, 0755);
+      if (mkerr != 0) {
+        FileSystemError(CREATING_MAILBOX, (const char *)spec->name,
+                        errno ? errno : ioErr);
+        return (True);
+      }
+      newDirId = 0;
+      AddBoxMap(spec->vRefNum, newDirId);
+      spec->parID = newDirId;
     }
-    AddBoxMap(spec->vRefNum, newDirId);
-    spec->parID = newDirId;
     *spec->name = 0;
   } else {
-    err = FSpCreate(spec, CREATOR, MAILBOX_TYPE, smSystemScript);
-    if (err) {
-      FileSystemError(CREATING_MAILBOX, spec->name, err);
-      return (True);
+    {
+      int fd = creat(spec->path, 0644);
+      if (fd < 0) {
+        FileSystemError(CREATING_MAILBOX, (const char *)spec->name,
+                        errno ? errno : ioErr);
+        return (True);
+      }
+      close(fd);
     }
   }
   return (False);
@@ -2813,7 +2886,9 @@ int ChainTrash(FSSpecPtr spec) {
   chain = *spec;
   if (!ResolveAliasFile(&chain, False, &isFolder, &wasAlias) && wasAlias)
     ChainTrash(&chain);
-  return (FSpTrash(spec));
+  if (unlink(spec->path) != 0)
+    return ioErr;
+  return 0;
 }
 
 /************************************************************************
@@ -2841,14 +2916,15 @@ int RemoveMailbox(FSSpecPtr spec, bool trashChain) {
   /*
    * files
    */
-  if (err = trashChain ? ChainTrash(spec) : FSpTrash(spec))
-    return (FileSystemError(DELETING_BOX, spec->name, err));
+  if (err = trashChain ? ChainTrash(spec) : (unlink(spec->path) == 0 ? 0 : ioErr))
+    return (FileSystemError(DELETING_BOX, (const char *)spec->name, err));
   Box2TOCSpec(spec, &tocSpec);
-  err = trashChain ? ChainTrash(&tocSpec) : FSpTrash(&tocSpec);
+  err = trashChain ? ChainTrash(&tocSpec)
+                    : (unlink(tocSpec.path) == 0 ? 0 : ioErr);
   if (err == fnfErr || err == bdNamErr || err == paramErr)
     err = 0;
   if (err)
-    return (FileSystemError(DELETING_BOX, tocSpec.name, err));
+    return (FileSystemError(DELETING_BOX, (const char *)tocSpec.name, err));
 
   return (noErr);
 }
@@ -2858,8 +2934,8 @@ int RemoveMailbox(FSSpecPtr spec, bool trashChain) {
 /************************************************************************
  * TooLong - complain about a name that's too long
  ************************************************************************/
-void TooLong(UPtr name) {
-  Str63 toolong1, toolong2;
+void TooLong(unsigned char * name) {
+  char toolong1[64], toolong2[64];
   MyParamText(GetRString(toolong1, BOX_TOO_LONG1), name,
               GetRString(toolong2, BOX_TOO_LONG2), "");
   ReallyDoAnAlert(OK_ALRT, Note);
@@ -2873,8 +2949,8 @@ short FindDirLevel(short vRef, long dirId) {
   short n = BoxMapCount;
 
   for (level = 0; level < n; level++)
-    if ((*BoxMap)[level].dirId == dirId &&
-        SameVRef((*BoxMap)[level].vRef, vRef))
+    if (BoxMap[level].dirId == dirId &&
+        SameVRef(BoxMap[level].vRef, vRef))
       return (level && g16bitSubMenuIDs ? level + BOX_MENU_START - 1 : level);
 
   return (-1);
@@ -2885,10 +2961,13 @@ short FindDirLevel(short vRef, long dirId) {
  ************************************************************************/
 void BuildBoxCount(void) {
   if (BoxCount) {
-    DisposeHandle(BoxCount);
+    void **_bc = (void **)BoxCount;
+    if (*_bc)
+      free(*_bc);
+    free(_bc);
     BoxCount = NULL;
   }
-  BoxCount = NuHandle(0);
+  BoxCount = malloc(0);
   if (!BoxCount) {
     WarnUser(MEM_ERR, MemError());
     return;
@@ -2911,13 +2990,13 @@ int AddBoxMap(short vRef, long dirId) {
 
   bmt.vRef = vRef;
   bmt.dirId = dirId;
-  if (!PtrPlusHand_(&bmt, BoxMap, sizeof(bmt))) {
-    err = MemError();
-    if (!err)
-      err = memFullErr;
+  struct BoxMapStruct *newBoxMap = buf_append(BoxMap, &bmt, sizeof(bmt));
+  if (!newBoxMap) {
+    err = memFullErr;
     WarnUser(MEM_ERR, err);
     return err;
   }
+  BoxMap = newBoxMap;
   return noErr;
 }
 
@@ -2929,7 +3008,7 @@ void AddBoxCountMenu(short menuID, short item, short vRef, long dirId,
   MenuHandle mh = GetMHandle(menuID);
   short n = CountMenuItems(mh);
   short it;
-  Str255 s;
+  char s[256];
 
   for (; item <= n; item++) {
     if (HasSubmenu(mh, item)) {
@@ -2960,7 +3039,7 @@ void AddBoxCountItem(short item, short vRef, long dirId) {
   bce.item = item;
   bce.dirId = dirId;
   bce.vRef = vRef;
-  if (PtrPlusHand_(&bce, BoxCount, sizeof(bce)))
+  if (buf_append(BoxCount, &bce, sizeof(bce)) == NULL)
     WarnUser(MEM_ERR, MemError());
 }
 
@@ -3007,20 +3086,22 @@ char *MailboxAlias(short which, char *name) {
 /**********************************************************************
  * MailboxSpecAlias - get the aliased name of a mailbox from a filespec
  **********************************************************************/
-char *MailboxSpecAlias(FSSpecPtr spec, char *name) {
-  if (spec->vRefNum == MailRoot.vRef && spec->parID == MailRoot.dirId) {
-    if (EqualStrRes(spec->name, IN))
+char *MailboxSpecAlias(const char *specPath, char *name) {
+  FSSpec tmpSpec;
+  spec_make(NULL, specPath, &tmpSpec);
+  if (tmpSpec.vRefNum == MailRoot.vRef && tmpSpec.parID == MailRoot.dirId) {
+    if (EqualStrRes(tmpSpec.name, IN))
       GetRString(name, FILE_ALIAS_IN);
-    else if (EqualStrRes(spec->name, OUT))
+    else if (EqualStrRes(tmpSpec.name, OUT))
       GetRString(name, FILE_ALIAS_OUT);
-    else if (EqualStrRes(spec->name, JUNK))
+    else if (EqualStrRes(tmpSpec.name, JUNK))
       GetRString(name, FILE_ALIAS_JUNK);
-    else if (EqualStrRes(spec->name, TRASH))
+    else if (EqualStrRes(tmpSpec.name, TRASH))
       GetRString(name, FILE_ALIAS_TRASH);
     else
-      PCopy(name, spec->name);
+      g_strlcpy((char *)name, (char *)tmpSpec.name, 64);
   } else
-    PCopy(name, spec->name);
+    g_strlcpy((char *)name, (char *)tmpSpec.name, 64);
   return (name);
 }
 
@@ -3037,7 +3118,7 @@ char *MailboxFile(short which, char *name) {
  * MailboxMenuFile - get the filename from a menu
  **********************************************************************/
 char *MailboxMenuFile(short mid, short item, char *name) {
-  Str31 prefix;
+  char prefix[32];
 
   if ((mid == MAILBOX_MENU || mid == TRANSFER_MENU) &&
       item <= MAILBOX_BAR1_ITEM) {
@@ -3072,7 +3153,7 @@ char *MailboxMenuFile(short mid, short item, char *name) {
  ************************************************************************/
 bool GetTransferParams(short menu, short item, FSSpecPtr spec, bool *xfer) {
   bool folder = False, noxfer = False;
-  Str31 fix;
+  char fix[32];
   FSSpec newSpec;
   bool root;
   MenuHandle mh = GetMHandle(menu);
@@ -3091,7 +3172,7 @@ bool GetTransferParams(short menu, short item, FSSpecPtr spec, bool *xfer) {
     MenuID2VD(menu, &vRef, &parID);
     spec->vRefNum = vRef;
     spec->parID = parID;
-    root = IsRoot(spec);
+    root = IsRoot(spec->path);
     if (root ? item == TRANSFER_NEW_ITEM
              : item == TRANSFER_NEW_ITEM - TRANSFER_BAR1_ITEM) {
       do {
@@ -3108,8 +3189,8 @@ bool GetTransferParams(short menu, short item, FSSpecPtr spec, bool *xfer) {
           }
           // otherwise, make sure the mailbox got created and add it.  It might
           // not have gotten created if we failed to add an IMAP box.
-          else if (FSpExists(&newSpec) == noErr)
-            AddBoxHigh(&newSpec);
+          else if (access(newSpec.path, F_OK) == 0)
+            AddBoxHigh(newSpec.path);
 
           *spec = newSpec;
         } else
@@ -3133,10 +3214,10 @@ bool GetTransferParams(short menu, short item, FSSpecPtr spec, bool *xfer) {
  *appropriate
  ************************************************************************/
 int AppendXferSelection(PETEHandle pte, MenuHandle contextMenu) {
-  Str255 s;
+  char s[256];
   MenuAndScoreHandle mash;
   bool divided = false;
-  Str31 name;
+  char name[32];
   int err = fnfErr;
   short smid;
 
@@ -3151,8 +3232,8 @@ int AppendXferSelection(PETEHandle pte, MenuHandle contextMenu) {
             n = MIN(n, i);
 
             for (i = 0; i < n; i++) {
-              short menu = (*mash)[i].menu;
-              short item = (*mash)[i].item;
+              short menu = mash[i].menu;
+              short item = mash[i].item;
               short newItem;
               short realMenu =
                   menu == MAILBOX_MENU ? TRANSFER_MENU : menu + MAX_BOX_LEVELS;
@@ -3163,7 +3244,7 @@ int AppendXferSelection(PETEHandle pte, MenuHandle contextMenu) {
                   if (CountMenuItems(contextMenu) &&
                       !MenuItemIsSeparator(contextMenu,
                                            CountMenuItems(contextMenu)))
-                    AppendMenu(contextMenu, (UPtr)"-"); // add a divider
+                    AppendMenu(contextMenu, (unsigned char *)"-"); // add a divider
                 }
                 CopyMenuItem(GetMHandle(realMenu), item, contextMenu, REAL_BIG);
                 MyGetItem(GetMHandle(menu), item, name);
@@ -3186,7 +3267,10 @@ int AppendXferSelection(PETEHandle pte, MenuHandle contextMenu) {
                 err = noErr;
               }
             }
-            ZapHandle(mash);
+            if (mash) {
+              free(mash);
+              mash = NULL;
+            }
           }
 
   return err;
@@ -3211,8 +3295,8 @@ void MenuID2VD(short menuID, short *vRef, long *dirId) {
       menuID -= BOX_MENU_START - 1;
     if (menuID > gMaxBoxLevels)
       menuID -= gMaxBoxLevels; //	was from Transfer menu
-    *vRef = (*BoxMap)[menuID].vRef;
-    *dirId = (*BoxMap)[menuID].dirId;
+    *vRef = BoxMap[menuID].vRef;
+    *dirId = BoxMap[menuID].dirId;
   }
 }
 
@@ -3238,15 +3322,15 @@ void SelectMessage(TOCType * tocH, short mNum) {
  ************************************************************************/
 int BoxSpecByName(FSSpecPtr spec, char *name) {
   MenuHandle mh = GetMHandle(MAILBOX_MENU);
-  UPtr spot;
-  Str31 leaf;
+  unsigned char * spot;
+  char leaf[32];
 
   if (*name && name[1] == ':') {
     if (!Path2Box(name, spec))
       return (noErr);
     else {
       spot = PRIndex(name, ':');
-      MakePStr(leaf, spot + 1, *name - ((char *)spot - name));
+      { int _mlen = *name - ((char *)spot - name); memcpy(leaf, spot + 1, _mlen); leaf[_mlen] = '\0'; }
       return (BoxSpecByNameInMenu(mh, spec, leaf));
     }
   }
@@ -3266,23 +3350,14 @@ int BoxMatchMenuItems(unsigned char *name, MenuAndScoreHandle *mashPtr,
 
   err = BoxMatchMenuItemsInMenu(mh, &a, name, score);
 
-  if (err)
-    do {
-      void **_azh = (a).data;
-      if (_azh) {
-        if (*_azh)
-          free(*_azh);
-        free(_azh);
-      }
-      (a).data = NULL;
-      (a).offset = (a).size = 0;
-    } while (0);
-  else if (a.offset) {
+  if (err) {
+    free(a.data); a.data = NULL; a.offset = a.size = 0;
+  } else if (a.offset) {
     AccuTrim(&a);
     *mashPtr = (MenuAndScoreHandle)a.data;
-    QuickSort((UPtr)(*(a.data)), sizeof(MenuAndScore), 0,
+    QuickSort((unsigned char *)(*(a.data)), sizeof(MenuAndScore), 0,
               a.offset / sizeof(MenuAndScore) - 1, CompareMAS, SwapMAS);
-    UL(a.data);
+    // a.data is char* (Accumulator field), not a Handle — UL() removed
   }
 
   return err ? err : (a.data ? noErr : fnfErr);
@@ -3333,7 +3408,7 @@ int BoxMatchMenuItemsInMenu(MenuHandle mh, AccuPtr a, unsigned char *name,
  **********************************************************************/
 int BoxMatchMenuItemsIn1Menu(MenuHandle mh, AccuPtr a, unsigned char *name,
                              int score()) {
-  Str63 itemTitle;
+  char itemTitle[64];
   short i;
   short n = CountMenuItems(mh);
   short res;
@@ -3386,7 +3461,7 @@ int BoxMatchMenuItemsIn1Menu(MenuHandle mh, AccuPtr a, unsigned char *name,
  *  -1 is no match
  **********************************************************************/
 int BoxMatchScore(unsigned char *name, unsigned char *candidate) {
-  UPtr spot;
+  unsigned char * spot;
   int score = 0;
 
   if (spot = PFindSub(name, candidate)) {
@@ -3452,7 +3527,7 @@ int BoxSpecByNameInMenu(MenuHandle mh, FSSpecPtr spec, unsigned char *name) {
  * FindBoxByNameIn1Menu - find a mailbox in a single menu
  **********************************************************************/
 short FindBoxByNameIn1Menu(MenuHandle mh, unsigned char *name) {
-  Str63 itemTitle;
+  char itemTitle[64];
   short i;
   short n = CountMenuItems(mh);
   short res;
@@ -3561,10 +3636,10 @@ long CountFlaggedMessages(TOCType * tocH) {
  * IsMailbox - is a TEXT file a mailbox?
  ************************************************************************/
 bool IsMailbox(FSSpecPtr spec) {
-  Handle data;
+  void **data;
   short refN = 0;
   long count;
-  UPtr spot;
+  unsigned char * spot;
   uLong box, res, file;
   bool from;
   OSType type;
@@ -3592,8 +3667,11 @@ bool IsMailbox(FSSpecPtr spec) {
   /*
    * No .toc, but maybe that's just because we need to build one
    */
-  if (!FSpDFSize(spec))
-    return (True); /* empty.  vacuuously ok */
+  {
+    struct stat st;
+    if (stat(spec->path, &st) < 0 || st.st_size == 0)
+      return (True); /* empty or missing: vacuously ok */
+  }
 
   /*
    * read the first line
@@ -3605,12 +3683,16 @@ bool IsMailbox(FSSpecPtr spec) {
    * is it an envelope?
    */
   count = GetHandleSize(data) - 1;
-  for (spot = (UPtr)(*data);
-       *spot != '\015' && spot < (UPtr)(*data) + count; spot++)
+  for (spot = (unsigned char *)(*data);
+       *spot != '\015' && spot < (unsigned char *)(*data) + count; spot++)
     ;
   spot[1] = 0;
   from = IsFromLine(*data);
-  ZapHandle(data);
+  if (data) {
+    if (*data) free(*data);
+    free(data);
+    data = NULL;
+  }
 
   return (from);
 }
@@ -3621,12 +3703,12 @@ bool IsMailbox(FSSpecPtr spec) {
  **********************************************************************/
 void RemoveBoxHigh(FSSpecPtr spec) {
   short level = FindDirLevel(spec->vRefNum, spec->parID);
-  Str63 xferName;
+  char xferName[64];
 
   RemoveBox(MAILBOX, spec->name, level);
 
   GetRString(xferName, TRANSFER_PREFIX);
-  PSCat(xferName, spec->name);
+  g_strlcat((char *)xferName, (char *)spec->name, 64);
   RemoveBox(TRANSFER, xferName, level);
   BuildBoxCount();
   MBTickle(nil, nil);
@@ -3635,15 +3717,24 @@ void RemoveBoxHigh(FSSpecPtr spec) {
 /**********************************************************************
  * AddBoxHigh - add a box to the menus
  **********************************************************************/
-void AddBoxHigh(FSSpecPtr spec) {
-  short level = FindDirLevel(spec->vRefNum, spec->parID);
-  Str63 xferName;
-  FInfo info;
+void AddBoxHigh(const char *specPath) {
+  FSSpec spec;
+  short level;
+  char xferName[64];
+  FInfo info; // FInfo is a Mac-specific struct, not directly used in POSIX context for flags
 
-  FSpGetFInfo(spec, &info); //	Get unread status of box
-  AddBox(MAILBOX, spec->name, level, (info.fdFlags & 0xe) != 0);
+  spec_make(NULL, specPath, &spec);
+  level = FindDirLevel(spec.vRefNum, spec.parID);
+
+  // FSpGetFInfo is no-op. In a POSIX context, file flags like fdFlags are not directly available
+  // in the same way. The original code used (info.fdFlags & 0xe) != 0 to determine a boolean.
+  // For now, we'll assume this flag check should default to false or be handled by other means
+  // if "unread status" is truly needed.
+  // For faithful replacement, we initialize info.fdFlags to 0.
+  info.fdFlags = 0; 
+  AddBox(MAILBOX, spec.name, level, (info.fdFlags & 0xe) != 0);
   GetRString(xferName, TRANSFER_PREFIX);
-  PSCat(xferName, spec->name);
+  g_strlcat((char *)xferName, (char *)spec.name, 64);
   AddBox(TRANSFER, xferName, level, false);
   BuildBoxCount();
   MBTickle(nil, nil);
@@ -3657,7 +3748,7 @@ void PopupMailboxPath(MyWindowPtr win, TOCType * tocH, short sum, Point pt) {
   MenuHandle hMenu;
   short top, left;
   Rect rStruct;
-  Str255 s;
+  char s[256];
   Boolean fMessage = false;
   short menuIdx = 0;
   FSSpec spec;
@@ -3734,7 +3825,6 @@ void PopupMailboxPath(MyWindowPtr win, TOCType * tocH, short sum, Point pt) {
 
     switch (selection) {
       WindowPtr tocWinWP;
-      Handle hStringList;
 
     case kSelMailbox:
       //	Open mailbox window
@@ -3748,23 +3838,40 @@ void PopupMailboxPath(MyWindowPtr win, TOCType * tocH, short sum, Point pt) {
 
     case kSelFolder:
 
-      //	Create a list of names of mailbox folders starting with the
-      // highest 	level not including the Eudora folder and working on
-      // down to the item 	the was selected
-      if (hStringList = NuHandle(0)) {
-        short itemIdx;
+      // Create a list of names of mailbox folders starting with the
+      // highest level not including the Eudora folder and working down
+      // to the item that was selected. Use plain malloc/realloc instead
+      // of legacy void *APIs.
+      {
+        char *hStringList = NULL;
+        size_t hStringList_size = 0;
+        short itemIdx = CountMenuItems(hMenu);
 
-        itemIdx = CountMenuItems(hMenu);
         for (; itemIdx >= item; itemIdx--) {
           MyGetItem(hMenu, itemIdx, s);
-          PtrAndHand(s, hStringList, *s + 1);
+          size_t add = (size_t)(*s + 1);
+          char *p = realloc(hStringList, hStringList_size + add);
+          if (!p) {
+            free(hStringList);
+            hStringList = NULL;
+            hStringList_size = 0;
+            break;
+          }
+          hStringList = p;
+          memcpy(hStringList + hStringList_size, s, add);
+          hStringList_size += add;
         }
-        //	Add a null
-        *s = 0;
-        PtrAndHand(s, hStringList, 1);
-
-        MBOpenFolder(hStringList, IsIMAP);
-        DisposeHandle(hStringList);
+        if (hStringList) {
+          s[0] = 0; /* terminate last Pascal string */
+          char *p = realloc(hStringList, hStringList_size + 1);
+          if (p) {
+            hStringList = p;
+            hStringList[hStringList_size] = 0;
+            hStringList_size += 1;
+          }
+          MBOpenFolder((void *)hStringList, IsIMAP);
+          free(hStringList);
+        }
       }
       break;
     }
@@ -3806,11 +3913,11 @@ error:
 /**********************************************************************
  *	GetMailboxName - get the name of the indicated mailbox (and message)
  **********************************************************************/
-UPtr GetMailboxName(TOCType * tocH, short sum, UPtr name) {
+char *GetMailboxName(TOCType * tocH, short sum, char *name) {
   FSSpec spec;
 
   spec = GetMailboxSpec(tocH, sum);
-  g_strlcpy((char *)name, spec.name, 256);
+  g_strlcpy(name, spec.name, 256);
   return name;
 }
 
@@ -3856,11 +3963,11 @@ TOCType * GetRealTOC(TOCType * tocH, short sum, short *realSum) {
       if (!spec.vRefNum)
         goto error;
 
-      realTocH = FindTOC(&spec);
+      realTocH = FindTOC(spec.path);
       if (!realTocH) {
-        if (GetMailbox(&spec, false))
+        if (GetMailbox(spec.path, false))
           goto error;
-        realTocH = FindTOC(&spec);
+        realTocH = FindTOC(spec.path);
       }
       if (!realTocH)
         goto error;
@@ -3885,7 +3992,7 @@ error:
 /**********************************************************************
  * ProcessIMAPChanges - process IMAP adds, deletes, or updates
  **********************************************************************/
-static void ProcessIMAPChanges(Handle sumList, TOCType * toc,
+static void ProcessIMAPChanges(void *sumList, TOCType * toc,
                                IMAPUpdateType message) {
   short count;
   MSumPtr pSum;
@@ -3910,22 +4017,23 @@ static void ProcessIMAPChanges(Handle sumList, TOCType * toc,
   // find the hidden toc if needed
   hidTocH = GetHiddenCacheMailbox(mbox, false, true);
 
-  // Handle copies first.  The sumList doesn't actually contains summaries.
+  // void *copies first.  The sumList doesn't actually contains summaries.
   // As this deals with local cached message only, a best shot approach should
   // suffice
   if (message == kDoCopy) {
-    count = GetHandleSize_(sumList) / sizeof(UIDCopyStruct);
-    for (pCopy = *sumList; count--; pCopy++) {
+    count = InlineGetHandleSize((void *)sumList) / sizeof(UIDCopyStruct);
+    for (pCopy = (UIDCopyPtr)sumList; count--; pCopy++) {
       toTocH = TOCBySpec(&(pCopy->toSpec));
 
       if (toTocH && pCopy->hOldSums && pCopy->hNewUIDs) {
-        numMessages = GetHandleSize_(pCopy->hOldSums) / sizeof(MSumType);
-        numUidResponses = GetHandleSize_(pCopy->hNewUIDs) / sizeof(long);
+        numMessages = InlineGetHandleSize((void *)pCopy->hOldSums) /
+                sizeof(MSumType);
+        numUidResponses = InlineGetHandleSize((void *)pCopy->hNewUIDs) /
+              sizeof(long);
 
         for (j = 0; j < numUidResponses; j++) {
-          newUid = ((long *)(*(pCopy->hNewUIDs)))[j];
-          pSum = &(((
-              MSumPtr)(*(pCopy->hOldSums)))[numMessages - numUidResponses + j]);
+          newUid = ((long *)(pCopy->hNewUIDs))[j];
+          pSum = &(((MSumPtr)(pCopy->hOldSums))[numMessages - numUidResponses + j]);
           IMAPTransferLocalCache(toc, pSum, toTocH, newUid, pCopy->copy);
         }
         if (!IMAPFilteringUnderway() && (!pCopy->copy))
@@ -3933,15 +4041,21 @@ static void ProcessIMAPChanges(Handle sumList, TOCType * toc,
       }
 
       // Cleanup
-      ZapHandle(pCopy->hOldSums);
-      ZapHandle(pCopy->hNewUIDs);
+        if (pCopy->hOldSums) {
+          free(pCopy->hOldSums);
+          pCopy->hOldSums = NULL;
+        }
+      if (pCopy->hNewUIDs) {
+        free(pCopy->hNewUIDs);
+        pCopy->hNewUIDs = NULL;
+      }
     }
 
     goto done;
   }
 
-  count = GetHandleSize_(sumList) / sizeof(MSumType);
-  for (pSum = *sumList; count--; pSum++) {
+  count = InlineGetHandleSize((void *)sumList) / sizeof(MSumType);
+  for (pSum = (MSumPtr)sumList; count--; pSum++) {
     Boolean found;
 
     // Spin the cursor every 100 messages or so.
@@ -4063,14 +4177,17 @@ static void ProcessIMAPChanges(Handle sumList, TOCType * toc,
 
 done:
   if (message != kDoDeleteAttachments)
-    ZapHandle(sumList);
+    if (sumList) {
+      free(sumList);
+      sumList = NULL;
+    }
 }
 
 /************************************************************************
  * IMAPRecvLine - read a line at a time from the spool file. Returns ".\015"
  * at the ends of messages.
  ************************************************************************/
-static int IMAPRecvLine(TransStream stream, UPtr buffer, long *size) {
+static int IMAPRecvLine(TransStream stream, unsigned char * buffer, long *size) {
   static bool wasFrom;
   static bool wasNl = True;
   short lineType;
@@ -4111,8 +4228,8 @@ static int IMAPRecvLine(TransStream stream, UPtr buffer, long *size) {
 /**********************************************************************
  * UpdateIMAPMailbox - check for any changes to the local IMAP mailbox
  **********************************************************************/
-OSErr UpdateIMAPMailbox(TOCType * toc) {
-  Handle toAdd = nil, toUpdate = nil, toDelete = nil, toCopy = nil;
+int UpdateIMAPMailbox(TOCType * toc) {
+  void *toAdd = nil, *toUpdate = nil, *toDelete = nil, *toCopy = nil;
   IMAPSResultHandle results = nil;
   short sumNum;
   MailboxNodeHandle mbox = nil;
@@ -4210,7 +4327,7 @@ OSErr UpdateIMAPMailbox(TOCType * toc) {
     MarkAsProcessed(&spec);
 
     //	Don't need spool file anymore
-    FSpDelete(&spec);
+    unlink(spec.path);
   }
 
   //
@@ -4282,7 +4399,9 @@ void DecodeIMAPMessages(TOCType * toc, FSSpecPtr spec) {
   short saveRefN = CurResFile();
   PersHandle oldPers = CurPers;
   static TransVector IMAPTrans = {nil, nil, nil, nil,          nil, nil,
-                                  nil, nil, nil, IMAPRecvLine, nil};
+                                  nil, nil, nil,
+                                  (int (*)(TransStream, char *, long *))IMAPRecvLine,
+                                  nil};
   MailboxNodeHandle mbox = TOCToMbox(toc);
   short sumNum;
 
@@ -4308,17 +4427,17 @@ void DecodeIMAPMessages(TOCType * toc, FSSpecPtr spec) {
 
   //	Get the IMAP index resource
   hIMAPIndex = nil;
-  if ((fileRef = FSpOpenResFile(spec, fsRdPerm)) != -1) {
+  if ((fileRef = -1) != -1) {
     hIMAPIndex = (IndexStruct **)Get1Resource(INDEX_RES_TYPE, INDEX_RES_ID);
-    DetachResource((Handle)hIMAPIndex);
-    CloseResFile(fileRef);
+    DetachResource((void *)hIMAPIndex);
+    close(fileRef);
   }
   if (!hIMAPIndex)
     goto msgDone;
 
   // now, grab messages
   TOCSetDirty(toc, true);
-  countIMAP = GetHandleSize_(hIMAPIndex) / sizeof(IndexStruct);
+  countIMAP = InlineGetHandleSize((void *)hIMAPIndex) / sizeof(IndexStruct);
 
   // open the destination mailbox
   err = BoxFOpen(toc);
@@ -4426,7 +4545,11 @@ msgDone:
     Lip = nil;
   }
   NoAttachments = False;
-  ZapHandle(hIMAPIndex);
+  if (hIMAPIndex) {
+    if (*hIMAPIndex) free(*hIMAPIndex);
+    free(hIMAPIndex);
+    hIMAPIndex = NULL;
+  }
 
   UseResFile(saveRefN);
 

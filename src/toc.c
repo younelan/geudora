@@ -90,11 +90,11 @@ static const char *path_basename(const char *path)
 #endif
 
 /* Forward declarations */
-static OSErr ReadDForkTOC(FSSpecPtr aSpec, TOCType * *inTOC);
+static int ReadDForkTOC(FSSpecPtr aSpec, TOCType * *inTOC);
 FSSpecPtr Box2TOCSpec(FSSpecPtr boxSpec, FSSpecPtr tocSpec);
 static short GetMailboxType(FSSpecPtr spec);
 void CleanseTOC(TOCType * tocH);
-static OSErr InsaneTOC(TOCType * tocH);
+static int InsaneTOC(TOCType * tocH);
 TOCType * ReadTOC(FSSpecPtr spec);
 static short GetTOCK(TOCType * tocH, unsigned long *usedK, unsigned long *totalK);
 static bool TOCUnread(TOCType * tocH);
@@ -103,11 +103,11 @@ static TOCType * FixErrantTOC(FSSpecPtr spec, TOCType * tocH, short why);
 static void CheckStringLen(char *s, int maxLen, int fillLen);
 
 /* External prototypes for functions defined in other modules */
-int GetMailbox(FSSpecPtr spec, bool showIt);
-bool IsSpool(FSSpecPtr spec);
-bool IsDelivery(FSSpecPtr spec);
+int GetMailbox(const char *path, bool showIt);
+bool IsSpool(const char *path);
+bool IsDelivery(const char *path);
 void InvalBoxSizeBox(void *wp);
-void FixSpecUnread(FSSpecPtr spec, bool unread);
+void FixSpecUnread(const char *path, bool unread);
 void FixMenuUnread(MenuHandle mh, int item, bool unread);
 int Spec2Menu(FSSpecPtr spec, bool forXfer, short *menu, short *item);
 void BoxFClose(TOCType * tocH, bool flush);
@@ -250,7 +250,7 @@ static void disk_to_sum(const MSumDisk *d, MSumType *s) {
   s->origZone = d->origZone;
   s->sigId = d->sigId;
 
-  /* Handle potential legacy Pascal strings from disk */
+  /* void *potential legacy Pascal strings from disk */
   unsigned char fromLen = (unsigned char)d->from[0];
   if (fromLen > 0 && fromLen < sizeof(d->from)) {
     /* If the first byte looks like a length and we find a null or end of buffer
@@ -336,7 +336,7 @@ static void sum_to_disk(const MSumType *s, MSumDisk *d) {
  * TOCBySpec - take a spec, return a TOC
  ************************************************************************/
 TOCType * TOCBySpec(FSSpecPtr spec) {
-  if (!GetMailbox(spec, false))
+  if (!GetMailbox(spec->path, false))
     return FindTOC(spec);
   return NULL;
 }
@@ -366,7 +366,7 @@ short GetTOCByFSS(FSSpecPtr specPtr, TOCType * *tocH) {
  * KillTOC - remove the .toc file for a mailbox
  * Ported from Mac: resource fork operations → unlink .toc file
  ************************************************************************/
-OSErr KillTOC(short refN, FSSpecPtr spec) {
+int KillTOC(short refN, FSSpecPtr spec) {
   (void)refN;
   if (!spec)
     return noErr;
@@ -412,7 +412,7 @@ TOCType * CheckTOC(FSSpecPtr spec) {
     return NULL;
 
   unsigned long box, res, file;
-  OSErr err = TOCDates(spec, &box, &res, &file);
+  int err = TOCDates(spec, &box, &res, &file);
   if (err && err != fnfErr)
     return NULL;
 
@@ -449,7 +449,7 @@ TOCType * CheckTOC(FSSpecPtr spec) {
  ************************************************************************/
 TOCType * ReadTOC(FSSpecPtr spec) {
   TOCType * tocH = NULL;
-  OSErr insane = noErr;
+  int insane = noErr;
 
   insane = ReadDForkTOC(spec, &tocH);
 
@@ -505,7 +505,7 @@ TOCType * ReadTOC(FSSpecPtr spec) {
  * TOCDates - get the dates off a mailbox
  * Ported from Mac: AFSpGetMod/PeekRTOC → stat(). Resource fork date = 0
  ************************************************************************/
-OSErr TOCDates(FSSpecPtr spec, unsigned long *box, unsigned long *res, unsigned long *file) {
+int TOCDates(FSSpecPtr spec, unsigned long *box, unsigned long *res, unsigned long *file) {
   struct stat st;
 
   /* Mailbox modification time */
@@ -536,7 +536,7 @@ OSErr TOCDates(FSSpecPtr spec, unsigned long *box, unsigned long *res, unsigned 
  * ReadDForkTOC - read a TOC from the data-fork .toc file
  * Ported from Mac: AFSpOpenDF/GetEOF/ARead → fopen/fread
  ************************************************************************/
-static OSErr ReadDForkTOC(FSSpecPtr aSpec, TOCType * *inTOC) {
+static int ReadDForkTOC(FSSpecPtr aSpec, TOCType * *inTOC) {
   *inTOC = NULL;
 
   char tocPath[PATH_MAX];
@@ -758,7 +758,7 @@ static void FixBoxUnread(TOCType * tocH) {
   Spec2Menu(&spec, false, &myMenu, &myItem);
 
   if (myItem > 0) {
-    FixSpecUnread(&spec, unread);
+    FixSpecUnread(spec.path, unread);
     FixMenuUnread(GetMHandle(myMenu), myItem, unread);
   }
 
@@ -832,22 +832,24 @@ short TOCUnreadCount(TOCType * tocH, bool recentOnly) {
  * FindTOC - find a TOC in the TOC window list
  * Ported from Mac: IsAlias fallback removed (Mac-only concept)
  ************************************************************************/
-TOCType * FindTOC(FSSpecPtr spec) {
-  if (!spec)
+TOCType * FindTOC(const char *path) {
+  if (!path)
     return NULL;
 
   /* Prefer path comparison when available (portable) */
-  if (spec->path[0]) {
+  if (path[0]) {
     for (TOCType *tocH = TOCList; tocH; tocH = tocH->next) {
-      if (tocH->path[0] && strcmp(tocH->path, spec->path) == 0)
+      if (tocH->path[0] && strcmp(tocH->path, path) == 0)
         return tocH;
     }
   }
 
-  /* Fallback to SameSpec for legacy callers */
+  /* Fallback to SameSpec for legacy callers: construct a temporary spec */
+  FSSpec tmpSpec;
+  spec_make(NULL, path, &tmpSpec);
   for (TOCType *tocH = TOCList; tocH; tocH = tocH->next) {
     FSSpec boxSpec = GetMailboxSpec(tocH, -1);
-    if (SameSpec(&boxSpec, spec))
+    if (SameSpec(&boxSpec, &tmpSpec))
       return tocH;
   }
   return NULL;
@@ -959,7 +961,7 @@ TOCType * GetSpecialTOC(short nameId) {
  * PeekTOC - peek into a .toc file to get basic info
  * Ported from Mac: resource fork path removed, data-fork only
  ************************************************************************/
-OSErr PeekTOC(FSSpecPtr spec, TOCType *tocPart) {
+int PeekTOC(FSSpecPtr spec, TOCType *tocPart) {
   /* If already open, return the live copy */
   TOCType * tocH = FindTOC(spec);
   if (tocH) {
@@ -969,7 +971,7 @@ OSErr PeekTOC(FSSpecPtr spec, TOCType *tocPart) {
 
   /* Check dates */
   unsigned long box, file, res;
-  OSErr err = TOCDates(spec, &box, &res, &file);
+  int err = TOCDates(spec, &box, &res, &file);
   if (err)
     return err;
 
@@ -1009,7 +1011,7 @@ OSErr PeekTOC(FSSpecPtr spec, TOCType *tocPart) {
  * Ported from Mac: FSpDFSize → stat(), GetHandleSize_ check skipped
  * (handle sizes are implicit in glib malloc)
  ************************************************************************/
-static OSErr InsaneTOC(TOCType * tocH) {
+static int InsaneTOC(TOCType * tocH) {
   if (!tocH)
     return -1;
 
@@ -1076,7 +1078,7 @@ static short GetMailboxType(FSSpecPtr spec) {
     return TRASH;
   if (strcasecmp(spec->name, "Junk") == 0)
     return JUNK;
-  if (IsSpool(spec)) {
+  if (IsSpool(spec->path)) {
     if (strcasecmp(spec->name, "In.temp") == 0)
       return IN_TEMP;
     if (strcasecmp(spec->name, "Out.temp") == 0)

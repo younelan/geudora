@@ -43,7 +43,7 @@ typedef struct {
   unsigned char partial[4];
   short partialCount;
   short bytesOnLine;
-} Enc64, *Enc64Ptr, **Enc64Handle;
+} Enc64, *Enc64Ptr, *Enc64Handle;
 
 /*
  * state buffer for decoding
@@ -54,30 +54,30 @@ typedef struct {
   long padCount;         /* how many pad chars found so far? */
   unsigned char partial; /* partially decoded byte from/for last/next time */
   bool wasCR;            /* was the last character a carriage return? */
-} Dec64, *Dec64Ptr, **Dec64Handle;
+} Dec64, *Dec64Ptr, *Dec64Handle;
 
 typedef enum { qpNormal, qpEqual, qpByte1 } QPStates;
 
 typedef struct {
   QPStates state;
   unsigned char lastChar;
-} DecQP, *DecQPPtr, **DecQPHandle;
+} DecQP, *DecQPPtr, *DecQPHandle;
 
 typedef struct {
   short leftBytes;
   unsigned char buffer[64];
-} UUState, *UUStatePtr, **UUStateHandle;
+} UUState, *UUStatePtr, *UUStateHandle;
 
 /*
  * to do the encoding/decoding
  */
-long Encode64(unsigned char *bin, long len, unsigned char *sixFour,
-              unsigned char *newLine, Enc64Ptr e64);
-long Decode64(unsigned char *sixFour, long sixFourLen, unsigned char *bin,
+long Encode64(char *bin, long len, char *sixFour,
+              char *newLine, Enc64Ptr e64);
+long Decode64(char *sixFour, long sixFourLen, char *bin,
               long *binLen, Dec64Ptr d64, bool text);
-long EncodeQP(unsigned char *bin, long len, unsigned char *qp,
-              unsigned char *newLine, long *bplp);
-long DecodeQP(unsigned char *qp, long qpLen, unsigned char *bin, long *binLen,
+long EncodeQP(char *bin, long len, char *qp,
+              char *newLine, long *bplp);
+long DecodeQP(char *qp, long qpLen, char *bin, long *binLen,
               DecQPPtr dqp);
 
 #ifndef TOOL
@@ -96,14 +96,14 @@ typedef enum {
 } BoundaryType;
 
 typedef struct MIMEMapStruct {
-  Str31 mimetype;
-  Str31 subtype;
-  Str31 suffix;
+  char mimetype[32];
+  char subtype[32];
+  char suffix[32];
   OSType creator;
   OSType type;
   unsigned long flags;
   OSType specialId;
-} MIMEMap, *MIMEMapPtr, **MIMEMapHandle;
+} MIMEMap, *MIMEMapPtr, *MIMEMapHandle;
 
 typedef struct AttMapStruct {
   MIMEMap mm;
@@ -111,10 +111,10 @@ typedef struct AttMapStruct {
   bool isText;
   bool isBasic;
   bool suppressXMac;
-  Str31 shortName;
+  char shortName[32];
   char longName[128]; // was Str127
-  Str15 uuName;
-} AttMap, *AttMapPtr, **AttMapHandle;
+  char uuName[16];
+} AttMap, *AttMapPtr, *AttMapHandle;
 
 #define ATT_MAP_NAME(a) (*a->longName ? a->longName : a->shortName)
 
@@ -126,24 +126,24 @@ typedef struct AttMapStruct {
 #define mmDiscard 0x0400
 #define mmApplySuffix 0x0200
 
-typedef struct DecoderPB DecoderPB, *DecoderPBPtr, **DecoderPBHandle;
+typedef struct DecoderPB DecoderPB, *DecoderPBPtr, *DecoderPBHandle;
 typedef struct MIMEState MIMEState, *MIMESPtr;
 typedef MIMEState *MIMESHandle;
-typedef OSErr DecoderFunc(CallType callType, DecoderPBPtr decPB);
+typedef int DecoderFunc(CallType callType, DecoderPBPtr decPB);
 typedef BoundaryType ReadBodyFunc(TransStream stream, short refN,
                                   MIMESHandle mimeSList, char *buf, long bSize,
                                   LineReader *lr);
-DecoderFunc *FindMIMEDecoder(unsigned char *encoding, bool *isExtern,
+DecoderFunc *FindMIMEDecoder(char *encoding, bool *isExtern,
                              bool load);
 DecoderFunc QPEncoder, B64Encoder, UUEncoder;
-OSErr FindAttMap(FSSpecPtr spec, AttMapPtr mmp);
+int FindAttMap(FSSpecPtr spec, AttMapPtr mmp);
 
 typedef struct {
   long offset;
   PETETextStyle style;
   long validBits;
   short sizeIndex;
-} OffsetAndStyle, *OffsetAndStylePtr, **OffsetAndStyleHandle;
+} OffsetAndStyle, *OffsetAndStylePtr, *OffsetAndStyleHandle;
 
 /*
  * for decoders and file savers
@@ -179,25 +179,25 @@ struct MIMEState {
 
 MIMESHandle NewMIMES(TransStream stream, HeaderDHandle hdh, bool forceMIME,
                      short context);
-OSErr RecordTLMIME(FSSpecPtr spec, MIMESHandle tlMIME); // guessed handle type
-OSErr RecordTL(FSSpecPtr spec, void **tl);              // guessed handle type
+int RecordTLMIME(FSSpecPtr spec, emsMIMEHandle tlMIME);
+int RecordTL(FSSpecPtr spec, void **tl);              // guessed handle type
 void DisposeMIMES(MIMESHandle msh);
 #define ZapMIMES(msh)                                                          \
   do {                                                                         \
     DisposeMIMES(msh);                                                         \
     (msh) = nil;                                                               \
   } while (0);
-short FindMIMECharsetLo(unsigned char *charSet, bool *found);
+short FindMIMECharsetLo(char *charSet, bool *found);
 #define FindMIMECharset(cset) FindMIMECharsetLo(cset, nil)
-void FigureMIMEFromApple(OSType creator, OSType type, unsigned char *name,
-                         unsigned char *mimeType, unsigned char *mimeSub,
-                         unsigned char *mimeSuffix, long *flags,
+void FigureMIMEFromApple(OSType creator, OSType type, char *name,
+                         char *mimeType, char *mimeSub,
+                         char *mimeSuffix, long *flags,
                          OSType *specialId);
-bool FindMIMEMapPtr(unsigned char *type, unsigned char *subType,
-                    unsigned char *name, MIMEMapPtr mmp);
-unsigned char *Encode64Data(unsigned char *encoded, unsigned char *data,
+bool FindMIMEMapPtr(char *type, char *subType,
+                    char *name, MIMEMapPtr mmp);
+char *Encode64Data(char *encoded, char *data,
                             short len);
-void Encode64DataPtr(unsigned char *encoded, long *outLen, unsigned char *data,
+void Encode64DataPtr(char *encoded, long *outLen, char *data,
                      short len);
 #define kMIMEBoring ((MIMESHandle)(-1L))
 #define READ_MESSAGE ((void *)-1)

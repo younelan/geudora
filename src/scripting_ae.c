@@ -67,7 +67,7 @@ static ScriptPropertyID ae_prop_to_script(DescType prop)
 /*----------------------------------------------------------------------
  * AE handler: create filter
  *--------------------------------------------------------------------*/
-static OSErr AECreateFilterHandler(const AppleEvent *event,
+static int AECreateFilterHandler(const AppleEvent *event,
                                    AppleEvent *reply, SRefCon refcon)
 {
   (void)refcon;
@@ -97,7 +97,7 @@ static OSErr AECreateFilterHandler(const AppleEvent *event,
 /*----------------------------------------------------------------------
  * AE handler: delete filter
  *--------------------------------------------------------------------*/
-static OSErr AEDeleteFilterHandler(const AppleEvent *event,
+static int AEDeleteFilterHandler(const AppleEvent *event,
                                    AppleEvent *reply, SRefCon refcon)
 {
   (void)reply; (void)refcon;
@@ -116,7 +116,7 @@ static OSErr AEDeleteFilterHandler(const AppleEvent *event,
 /*----------------------------------------------------------------------
  * AE handler: get filter property
  *--------------------------------------------------------------------*/
-static OSErr AEGetFilterPropertyHandler(const AppleEvent *event,
+static int AEGetFilterPropertyHandler(const AppleEvent *event,
                                         AppleEvent *reply, SRefCon refcon)
 {
   (void)refcon;
@@ -168,7 +168,7 @@ static OSErr AEGetFilterPropertyHandler(const AppleEvent *event,
 /*----------------------------------------------------------------------
  * AE handler: count filters
  *--------------------------------------------------------------------*/
-static OSErr AECountFiltersHandler(const AppleEvent *event,
+static int AECountFiltersHandler(const AppleEvent *event,
                                    AppleEvent *reply, SRefCon refcon)
 {
   (void)event; (void)refcon;
@@ -186,7 +186,7 @@ static OSErr AECountFiltersHandler(const AppleEvent *event,
  *--------------------------------------------------------------------*/
 #define cEuPersonality  'euPe'
 
-static OSErr AECountPersonalitiesHandler(const AppleEvent *event,
+static int AECountPersonalitiesHandler(const AppleEvent *event,
                                           AppleEvent *reply, SRefCon refcon)
 {
   (void)event; (void)refcon;
@@ -202,7 +202,7 @@ static OSErr AECountPersonalitiesHandler(const AppleEvent *event,
 /*----------------------------------------------------------------------
  * AE handler: create personality
  *--------------------------------------------------------------------*/
-static OSErr AECreatePersonalityHandler(const AppleEvent *event,
+static int AECreatePersonalityHandler(const AppleEvent *event,
                                          AppleEvent *reply, SRefCon refcon)
 {
   (void)event; (void)refcon;
@@ -218,7 +218,7 @@ static OSErr AECreatePersonalityHandler(const AppleEvent *event,
 /*----------------------------------------------------------------------
  * AE handler: get personality property
  *--------------------------------------------------------------------*/
-static OSErr AEGetPersPropertyHandler(const AppleEvent *event,
+static int AEGetPersPropertyHandler(const AppleEvent *event,
                                        AppleEvent *reply, SRefCon refcon)
 {
   (void)refcon;
@@ -267,7 +267,7 @@ static OSErr AEGetPersPropertyHandler(const AppleEvent *event,
 /*----------------------------------------------------------------------
  * AE handler: set personality property
  *--------------------------------------------------------------------*/
-static OSErr AESetPersPropertyHandler(const AppleEvent *event,
+static int AESetPersPropertyHandler(const AppleEvent *event,
                                        AppleEvent *reply, SRefCon refcon)
 {
   (void)refcon;
@@ -313,7 +313,7 @@ static OSErr AESetPersPropertyHandler(const AppleEvent *event,
 /*----------------------------------------------------------------------
  * AE handler: delete personality
  *--------------------------------------------------------------------*/
-static OSErr AEDeletePersonalityHandler(const AppleEvent *event,
+static int AEDeletePersonalityHandler(const AppleEvent *event,
                                          AppleEvent *reply, SRefCon refcon)
 {
   (void)reply; (void)refcon;
@@ -332,7 +332,7 @@ static OSErr AEDeletePersonalityHandler(const AppleEvent *event,
 /*----------------------------------------------------------------------
  * AE handler: check mail
  *--------------------------------------------------------------------*/
-static OSErr AECheckMailHandler(const AppleEvent *event,
+static int AECheckMailHandler(const AppleEvent *event,
                                  AppleEvent *reply, SRefCon refcon)
 {
   (void)refcon;
@@ -379,7 +379,7 @@ static int ae_get_mailbox_and_index(const AppleEvent *event,
 /*----------------------------------------------------------------------
  * AE handler: count messages in a mailbox
  *--------------------------------------------------------------------*/
-static OSErr AECountMessagesHandler(const AppleEvent *event,
+static int AECountMessagesHandler(const AppleEvent *event,
                                      AppleEvent *reply, SRefCon refcon)
 {
   (void)refcon;
@@ -404,7 +404,7 @@ static OSErr AECountMessagesHandler(const AppleEvent *event,
 /*----------------------------------------------------------------------
  * AE handler: get message property
  *--------------------------------------------------------------------*/
-static OSErr AEGetMessagePropertyHandler(const AppleEvent *event,
+static int AEGetMessagePropertyHandler(const AppleEvent *event,
                                           AppleEvent *reply, SRefCon refcon)
 {
   (void)refcon;
@@ -468,7 +468,7 @@ static OSErr AEGetMessagePropertyHandler(const AppleEvent *event,
 /*----------------------------------------------------------------------
  * AE handler: set message property
  *--------------------------------------------------------------------*/
-static OSErr AESetMessagePropertyHandler(const AppleEvent *event,
+static int AESetMessagePropertyHandler(const AppleEvent *event,
                                           AppleEvent *reply, SRefCon refcon)
 {
   (void)refcon;
@@ -528,7 +528,7 @@ static OSErr AESetMessagePropertyHandler(const AppleEvent *event,
 /*----------------------------------------------------------------------
  * AE handler: create message (compose)
  *--------------------------------------------------------------------*/
-static OSErr AECreateMessageHandler(const AppleEvent *event,
+static int AECreateMessageHandler(const AppleEvent *event,
                                      AppleEvent *reply, SRefCon refcon)
 {
   (void)event; (void)refcon;
@@ -544,7 +544,7 @@ static OSErr AECreateMessageHandler(const AppleEvent *event,
 /*----------------------------------------------------------------------
  * AE handler: reply to message
  *--------------------------------------------------------------------*/
-static OSErr AEReplyMessageHandler(const AppleEvent *event,
+static int AEReplyMessageHandler(const AppleEvent *event,
                                     AppleEvent *reply, SRefCon refcon)
 {
   (void)refcon;
@@ -577,7 +577,7 @@ static OSErr AEReplyMessageHandler(const AppleEvent *event,
 /*----------------------------------------------------------------------
  * AE handler: forward message
  *--------------------------------------------------------------------*/
-static OSErr AEForwardMessageHandler(const AppleEvent *event,
+static int AEForwardMessageHandler(const AppleEvent *event,
                                       AppleEvent *reply, SRefCon refcon)
 {
   (void)refcon;
@@ -599,7 +599,7 @@ static OSErr AEForwardMessageHandler(const AppleEvent *event,
 /*----------------------------------------------------------------------
  * AE handler: redirect message
  *--------------------------------------------------------------------*/
-static OSErr AERedirectMessageHandler(const AppleEvent *event,
+static int AERedirectMessageHandler(const AppleEvent *event,
                                        AppleEvent *reply, SRefCon refcon)
 {
   (void)refcon;
@@ -621,7 +621,7 @@ static OSErr AERedirectMessageHandler(const AppleEvent *event,
 /*----------------------------------------------------------------------
  * AE handler: queue message for sending
  *--------------------------------------------------------------------*/
-static OSErr AEQueueMessageHandler(const AppleEvent *event,
+static int AEQueueMessageHandler(const AppleEvent *event,
                                     AppleEvent *reply, SRefCon refcon)
 {
   (void)reply; (void)refcon;
@@ -640,7 +640,7 @@ static OSErr AEQueueMessageHandler(const AppleEvent *event,
 /*----------------------------------------------------------------------
  * AE handler: move/copy message between mailboxes
  *--------------------------------------------------------------------*/
-static OSErr AEMoveMessageHandler(const AppleEvent *event,
+static int AEMoveMessageHandler(const AppleEvent *event,
                                    AppleEvent *reply, SRefCon refcon)
 {
   (void)reply; (void)refcon;

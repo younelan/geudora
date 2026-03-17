@@ -7,9 +7,9 @@
  * status, opening, etc.).
  *
  * TOCHandle → TOCType *  (direct pointer, no double-deref)
- * PStr → unsigned char * (Pascal strings)
+ * char * → unsigned char * (Pascal strings)
  * EventRecord * → void * (opaque event)
- * OSErr → int
+ * int → int
  * PETEHandle → GtkWidget *
  */
 
@@ -36,15 +36,6 @@
 #endif
 #ifndef MAX_BOX_NAME
 #define MAX_BOX_NAME 31
-#endif
-#ifndef FLAG_SKIPPED
-#define FLAG_SKIPPED (1 << 5)
-#endif
-#ifndef FLAG_OUT
-#define FLAG_OUT (1 << 1)
-#endif
-#ifndef FLAG_HAS_ATT
-#define FLAG_HAS_ATT (1 << 0)
 #endif
 #ifndef OPT_JUSTSUB
 #define OPT_JUSTSUB (1 << 3)
@@ -315,7 +306,7 @@ bool BoxMenu(MyWindowPtr win, int menu, int item, short modifiers)
 /***********************************************************************
  * BoxFind - find text in summaries
  ***********************************************************************/
-bool BoxFind(MyWindowPtr win, unsigned char *what)
+bool BoxFind(MyWindowPtr win, char *what)
 {
     if (!win || !what || !*what) return false;
 
@@ -624,7 +615,7 @@ void CheckSortItems(MyWindowPtr win)
  * In GTK4, menus use GAction strings not handles. This returns NULL
  * since the callers that use it (forward/redirect) need porting too.
  ***********************************************************************/
-Handle MenuItem2Handle(short menu, short item)
+void *MenuItem2Handle(short menu, short item)
 {
     (void)menu; (void)item;
     return NULL;

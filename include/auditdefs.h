@@ -3,13 +3,13 @@
 
 #include "mydefs.h"
 
-OSErr AuditShutdown(long faceTime, long rearTime, long connectTime, long totalTime);
-OSErr AuditTimestamp(long faceTime, long rearTime, long connectTime, long totalTime);
-OSErr AuditCheckStart(uLong sessionID, uLong personalityID, bool isAuto);
-OSErr AuditCheckDone(uLong sessionID, long messagesRcvd, long bytesRcvd);
-OSErr AuditSendStart(uLong sessionID, uLong personalityID, bool isAuto);
-OSErr AuditSendDone(uLong sessionID, long messagesSent, long bytesSent);
-OSErr AuditStartup(long platform, long version, long buildNumber);
-OSErr AuditConnect(bool connectionUp);
+int AuditShutdown(long faceTime, long rearTime, long connectTime, long totalTime);
+int AuditTimestamp(long faceTime, long rearTime, long connectTime, long totalTime);
+int AuditCheckStart(uLong sessionID, uLong personalityID, bool isAuto);
+int AuditCheckDone(uLong sessionID, long messagesRcvd, long bytesRcvd);
+int AuditSendStart(uLong sessionID, uLong personalityID, bool isAuto);
+int AuditSendDone(uLong sessionID, long messagesSent, long bytesSent);
+int AuditStartup(long platform, long version, long buildNumber);
+int AuditConnect(bool connectionUp);
 
 #endif /* AUDITDEFS_H */

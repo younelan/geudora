@@ -49,7 +49,7 @@ struct IMAPConnectionStruct
 
 // Connection pool management routines
 
-OSErr EnsureConnectionPool(PersHandle pers);
+int EnsureConnectionPool(PersHandle pers);
 void CheckIMAPConnections(void);
 void ZapAllIMAPConnections(bool force);
 void IMAPInvalidatePerConnections(PersHandle pers);

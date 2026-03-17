@@ -62,10 +62,10 @@ bool PersAnyPasswords(void)
 /**********************************************************************
  * PersFillPw - grab passwords for a personality
  **********************************************************************/
-OSErr PersFillPw(PersHandle pers,uint32_t whichOnes)
+int PersFillPw(PersHandle pers,uint32_t whichOnes)
 {
 	char pw[256];
-	OSErr err = noErr;
+	int err = noErr;
 	char uName[128], hName[128], persName[64];
 
 	pw[0] = '\0';
@@ -104,9 +104,9 @@ OSErr PersFillPw(PersHandle pers,uint32_t whichOnes)
 /**********************************************************************
  * PersSavePw - save passwords for a personality
  **********************************************************************/
-OSErr PersSavePw(PersHandle pers)
+int PersSavePw(PersHandle pers)
 {
-	OSErr err = noErr;
+	int err = noErr;
 
 	/* Password is stored in the system keychain by GetPassword() when the
 	 * user checks "Save password". PersSavePw only needs to clear it when
@@ -126,9 +126,9 @@ OSErr PersSavePw(PersHandle pers)
 /**********************************************************************
  * PersSaveAll - save all personalities
  **********************************************************************/
-OSErr PersSaveAll(void)
+int PersSaveAll(void)
 {
-	OSErr err=noErr;
+	int err=noErr;
 	PersHandle pers;
 	bool multiplePersonalities = false;
 	
@@ -141,9 +141,9 @@ OSErr PersSaveAll(void)
 /**********************************************************************
  * 
  **********************************************************************/
-OSErr PersSave(PersHandle pers)
+int PersSave(PersHandle pers)
 {
-	OSErr err = noErr;
+	int err = noErr;
 
 	if (pers->dirty)
 	{
@@ -162,7 +162,7 @@ PersHandle PersNew(void)
 	PersHandle pers, newPers=nil;
 	short n;
 	short resEnd;
-	Str63 untitled;
+	char untitled[64];
 
 	UseFeature (featureMultiplePersonalities);
 		
@@ -213,7 +213,7 @@ PersHandle PersNew(void)
 /**********************************************************************
  * PersDelete - kill a personality
  **********************************************************************/
-OSErr PersDelete(PersHandle pers)
+int PersDelete(PersHandle pers)
 {
 	if (HasFeature (featureMultiplePersonalities))
 	{
@@ -243,11 +243,8 @@ OSErr PersDelete(PersHandle pers)
  **********************************************************************/
 void PersZapResources(OSType type,short resEnd)
 {
-	Handle res;
-	
-	// Kill old resources
-	type = PERS_TYPE(type,resEnd);
-	while (res=Get1IndResource(type,1)) {RemoveResource(res); if (!ResError()) DisposeHandle(res);}
+	/* GTK port: no Mac resource fork; personalities stored in prefs */
+	(void)type; (void)resEnd;
 }
 
 /**********************************************************************
@@ -275,7 +272,7 @@ PersHandle FindPersById(uint32_t persId)
 /**********************************************************************
  * FindPersById - find a personality, given a personality name
  **********************************************************************/
-PersHandle FindPersByName(PStr name)
+PersHandle FindPersByName(char * name)
 {
 	if (EqualStrRes(name,DOMINANT)) return(PersList);
 	return(FindPersById(Hash(name)));
@@ -288,7 +285,7 @@ PersHandle FindPersByName(PStr name)
 void InitPersonalities(void)
 {
 	PersHandle pers = g_malloc0(sizeof(Personality));
-	Str63 dom;
+	char dom[64];
 	uint32_t ticks = TickCount();
 	long hash;
 	short n;
@@ -300,7 +297,7 @@ void InitPersonalities(void)
 	if (!pers) DieWithError(MEM_ERR,MemError());
 	LL_Queue(PersList,pers,(PersHandle));
 	GetRString(dom,DOMINANT);
-	PSCopy(pers->name,dom);
+	g_strlcpy((char *)(pers->name), (char *)(dom), sizeof(pers->name));
 	pers->mailboxTree = 0;
 	pers->imapRefresh = 0;
 	
@@ -309,55 +306,26 @@ void InitPersonalities(void)
 	/*
 	 * Next, any others
 	 */
+	/* GTK port: additional personalities come from the INI file (account_N
+	 * sections), not Mac resource fork. Load them and add to PersList. */
 	if (HasFeature (featureMultiplePersonalities)) {
-		for (n=1;pers=(PersHandle)Get1IndResource(PERS_RTYPE,n);n++)
-		{
-			if (!pers || !GetHandleSize(pers))
-			{
-				RemoveResource(pers);
-				if (!ResError()) n--;	// removed one, retry
-				ZapHandle(pers);
-			}
-			else if (pers->version > PERS_VERS)
-				ReleaseResource((Handle)pers);
-			else
-			{
-				DetachResource((Handle)pers);
-				SetHandleBig((Handle)pers,sizeof(Personality));
-				if (MemError()) DieWithError(MEM_ERR,MemError());
-				pers->next = nil;
-				LL_Queue(PersList,pers,(PersHandle));
-				pers->dirty = False;
-				pers->checkTicks = 0;
-				pers->proxy = nil;
-				pers->mailboxTree = 0;
-				pers->imapRefresh = 0;
-				// The popd resources shouldn't be here if this is
-				// an imap personality.  Kill them.
-				if (IsIMAPPers(pers))
-				{
-					ZapResource(PERS_POPD_TYPE(pers),POPD_ID);
-					ZapResource(PERS_POPD_TYPE(pers),DELETE_ID);
-					ZapResource(PERS_POPD_TYPE(pers),FETCH_ID);
-				}
-				
-				if (pers!=PersList)
-				{
-					PSCopy(dom,pers->name);
-					hash = Hash(dom);
-					ASSERT(hash==pers->persId);
-					pers->persId = hash;
-					
-					// make sure we commit this particular setting
-				 PushPers(pers);
-					GetPrefNoDominant(dom,PREF_SUBMISSION_PORT);
-					if (!*dom) SetPref(PREF_SUBMISSION_PORT,NoStr);
-					PopPers();					
-				}
-			}
+		PrefsAccount accounts[16];
+		int nAccounts = prefs_load_accounts(accounts, 16);
+		for (int ai = 1; ai < nAccounts; ai++) {
+			if (!accounts[ai].enabled || !accounts[ai].name[0]) continue;
+			pers = PersNew();
+			if (!pers) break;
+			g_strlcpy(pers->name, accounts[ai].name, sizeof(pers->name));
+			pers->persId = Hash(pers->name);
+			pers->dirty = False;
+			pers->checkTicks = 0;
+			pers->proxy = nil;
+			pers->mailboxTree = 0;
+			pers->imapRefresh = 0;
+			LL_Queue(PersList, pers, (PersHandle));
 		}
-		if (n > 1)
-			UseFeature (featureMultiplePersonalities);
+		if (nAccounts > 1)
+			UseFeature(featureMultiplePersonalities);
 		UpdatePersList();
 	}
 
@@ -381,14 +349,14 @@ void PushPers(PersHandle newCur)
  **********************************************************************/
 void PopPers(void)
 {
-	ASSERT(PersStack && (*PersStack)->elCount);
+	ASSERT(PersStack && PersStack->elCount);
 	if (PersStack) StackPop(&CurPers,PersStack);
 }
 
 /**********************************************************************
  * PersSetName - set the name of a personality
  **********************************************************************/
-OSErr PersSetName(PersHandle pers,PStr name)
+int PersSetName(PersHandle pers,char * name)
 {
 	uint32_t hash = Hash(name);
 	PersHandle oldPers;
@@ -398,7 +366,7 @@ OSErr PersSetName(PersHandle pers,PStr name)
 		if (pers==oldPers) return(noErr);
 		else return(WarnUser(USED_PERSONALITY,dupFNErr));
 	}
-	PSCopy(pers->name,name);
+	g_strlcpy((char *)(pers->name), (char *)(name), sizeof(pers->name));
 	if (pers->persId)
 		AuditPersRename(pers->persId,hash);
 	else
@@ -451,7 +419,7 @@ void DisposePersonalities(void)
 	while (pers=PersList)
 	{
 		LL_Remove(PersList,pers,(PersHandle));
-		ZapHandle(pers);
+		free(pers);
 	}
 	CurPers = PersList = nil;
 }
@@ -459,13 +427,13 @@ void DisposePersonalities(void)
 /**********************************************************************
  * SetPers - set the personality of a message
  **********************************************************************/
-OSErr SetPers(TOCType * tocH,short sumNum,PersHandle pers,bool stationery)
+int SetPers(TOCType * tocH,short sumNum,PersHandle pers,bool stationery)
 {
 	WindowPtr	messWinWP;
 	MessHandle messH = tocH->sums[sumNum].messH;
 	bool opened = messH==nil;
-	Str255 addr;
-	OSErr err = noErr;
+	char addr[256];
+	int err = noErr;
 	uint32_t sigId;
 	ControlHandle cntl;
 	bool redirected = (tocH->sums[sumNum].opts & OPT_REDIRECTED)!=0;
@@ -610,7 +578,7 @@ void PersSkipNextCheck(void)
 void PersSetAutoCheck(void)
 {
 	long ival;
-	Str255 s;
+	char s[256];
 	bool is;
 	
 	PushPers(CurPers);
@@ -743,12 +711,12 @@ static void UpdatePersList(void)
 	count = PersCount();
 	if (count <= 2)
 		;	//	Not enough items to sort
-	else if (hPersList=NuHandleClear((count+2)*sizeof(PersHandle)))
+	else if (hPersList=calloc(1,(count+2)*sizeof(PersHandle)))
 	{
 		PersHandle	*pPersList;
 		short				idx;
 		
-		pPersList=LDRef(hPersList);
+		pPersList=hPersList;
 		for (pers=PersList;pers;pers=pers->next)
 			*pPersList++ = pers;
 		*pPersList = nil;	//	Used later for rebuilding linked list

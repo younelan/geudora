@@ -28,7 +28,7 @@ DAMAGE. */
 /************************************************************************
  * declarations for binhexing and unbinhexing macintosh files
  ************************************************************************/
-bool ConvertHexBin(short refN,UPtr buf,long *size,POPLineType lineType,long estSize);
+bool ConvertHexBin(short refN,unsigned char * buf,long *size,POPLineType lineType,long estSize);
 void EndHexBin(void);
 void BeginHexBin(HeaderDHandle hdh);
 
@@ -42,7 +42,7 @@ typedef enum {
 bool AutoWantTheFileLo(FSSpecPtr specPtr,bool ohYesYouDo,bool relatedPart, bool imapStub);
 bool AutoWantTheFile(FSSpecPtr specPtr,bool ohYesYouDo,bool relatedPart);
 void SafeInfo(FInfo *info, FXInfo *fxInfo);
-void ForceAttachFolder(PStr volName, long *dirId);
+void ForceAttachFolder(char * volName, long *dirId);
 
 
 #endif

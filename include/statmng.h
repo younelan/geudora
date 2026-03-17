@@ -71,7 +71,7 @@ void ShutdownStats(void);
 void StatsIdle(void);
 void UpdateNumStat(StatType which, long value);
 void UpdateNumStatWithTime(StatType which, long value, uLong seconds);
-Handle GetStatsAsText(StatTimePeriod period, bool extended);
+void *GetStatsAsText(StatTimePeriod period, bool extended);
 char GetIntlNumberPart(short charToken);
 void ResetStatistics(void);
 

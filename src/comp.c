@@ -60,30 +60,11 @@ int ReadMessage(TOCType * tocH, int sumNum, unsigned char *buffer);
 bool ShowMyWindow(void *winWP);
 extern short AWrite(short refNum, long *count, unsigned char *buffer);
 
-/* Missing constants */
-#ifndef FLAG_ICON_BAR
-#define FLAG_ICON_BAR (1 << 6)
-#endif
 #ifndef OPT_COMP_TOOLBAR_VISIBLE
 #define OPT_COMP_TOOLBAR_VISIBLE (1 << 7)
 #endif
 #ifndef PREF_COMP_TOOLBAR
 #define PREF_COMP_TOOLBAR PREF_188
-#endif
-#ifndef FLAG_CAN_ENC
-#define FLAG_CAN_ENC   (1L<<9)
-#endif
-#ifndef FLAG_BX_TEXT
-#define FLAG_BX_TEXT   (1L<<2)
-#endif
-#ifndef FLAG_WRAP_OUT
-#define FLAG_WRAP_OUT  (1L<<3)
-#endif
-#ifndef FLAG_KEEP_COPY
-#define FLAG_KEEP_COPY (1L<<4)
-#endif
-#ifndef FLAG_RR
-#define FLAG_RR        (1L<<5)
 #endif
 #ifndef MessZoomSize
 #define MessZoomSize 0
@@ -1361,8 +1342,7 @@ unsigned char *CompCurAddr(MyWindowPtr win, unsigned char *addr) {
 
 /**********************************************************************
  * BodyOffset - return the offset to the first character of the body
- * of a message - ported to use char* instead of Handle
- **********************************************************************/
+ * of a message - ported to use char* instead of void ***********************************************************************/
 long BodyOffset(char *text) {
   char *spot;
   long size = strlen(text);
@@ -1562,7 +1542,7 @@ int GetCompTexts(MessHandle messH, bool new) {
       }
     }
 
-    // Handle inline signature
+    // void *inline signature
     if (MessOptIsSet(messH, OPT_INLINE_SIG)) {
       FindAndMarkSigSep(messWin->pte);
     }
@@ -1574,7 +1554,7 @@ int GetCompTexts(MessHandle messH, bool new) {
   if (buffer)
     g_free(buffer);
 
-  // Handle signature insertion (simplified)
+  // void *signature insertion (simplified)
   if (!new && !MessOptIsSet(messH, OPT_INLINE_SIG)) {
     // Add signature logic here
     if (MessOptIsSet(messH, OPT_INLINE_SIG)) {
@@ -1852,7 +1832,7 @@ void CompDidResize(MyWindowPtr win) {
  **********************************************************************/
 bool CompClick(MyWindowPtr win, GdkEvent *event) {
   if (win && win->pte) {
-    // Handle click in gEditCtrl
+    // void *click in gEditCtrl
     // This would need GTK event handling
     return true;
   }
@@ -1889,7 +1869,7 @@ bool CompMenu(MyWindowPtr win, int menuItem) {
  **********************************************************************/
 bool CompKey(MyWindowPtr win, GdkEvent *event) {
   if (win && win->pte) {
-    // Handle key events in gEditCtrl
+    // void *key events in gEditCtrl
     // This would need GTK key event handling
     return true;
   }
@@ -1938,7 +1918,7 @@ void CompGonnaShow(MyWindowPtr win) {
  * Ported from Mac drag handling to GTK
  **********************************************************************/
 bool CompDragHandler(MyWindowPtr win, void *dragEvent) {
-  // Handle drag operations in gEditCtrl
+  // void *drag operations in gEditCtrl
   // This would need GTK drag and drop implementation
   return false;
 }
@@ -1951,7 +1931,7 @@ void CompIdle(MyWindowPtr win) {
   MessHandle messH = Win2MessH(win);
 
   if (messH && win->pte) {
-    // Handle idle processing for gEditCtrl
+    // void *idle processing for gEditCtrl
     // Auto-save, spell check, etc.
   }
 }

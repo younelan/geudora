@@ -33,15 +33,15 @@
 #include "threading.h"
 
 /* Forward declarations — ESSL transport wrappers */
-static OSErr ESSLConnectTrans(TransStream stream, UPtr serverName, long port,
+static int ESSLConnectTrans(TransStream stream, const char *serverName, long port,
                               bool silently, uLong timeout);
-static OSErr ESSLSendTrans(TransStream stream, UPtr text, long size, ...);
-static OSErr ESSLReceiveTrans(TransStream stream, UPtr line, long *size);
-static OSErr ESSLDisTrans(TransStream stream);
-static OSErr ESSLDestroyTrans(TransStream stream);
-static OSErr ESSLTransErr(TransStream stream);
-static void ESSLSilenceTrans(TransStream stream, int silence);
-static unsigned char *ESSLWhoAmI(TransStream stream, UPtr who);
+static int ESSLSendTrans(TransStream stream, const char *text, long size, ...);
+static int ESSLReceiveTrans(TransStream stream, char * line, long *size);
+static int ESSLDisTrans(TransStream stream);
+static int ESSLDestroyTrans(TransStream stream);
+static int ESSLTransErr(TransStream stream);
+static void ESSLSilenceTrans(TransStream stream, bool silence);
+static char *ESSLWhoAmI(TransStream stream, char *who);
 
 /* Forward declarations — certificate management */
 static int ssl_verify_callback(int preverify_ok, X509_STORE_CTX *ctx);
@@ -51,22 +51,22 @@ static int is_cert_trusted_locally(X509 *cert);
 static int save_cert_locally(X509 *cert);
 
 /* Defined in tcp.c */
-extern OSErr NetRecvLine(TransStream stream, UPtr line, long *size);
+extern int NetRecvLine(TransStream stream, char * line, long *size);
 
 /* The underlying (unwrapped) TCP transport vector */
 TransVector ESSLSubTrans;
 
 /* The SSL-wrapped transport vector */
 static TransVector ESSLTrans = {
-    (int (*)(TransStream, unsigned char *, long, int, unsigned long))ESSLConnectTrans,
-    (int (*)(TransStream, unsigned char *, long, ...))ESSLSendTrans,
+    ESSLConnectTrans,
+    ESSLSendTrans,
     ESSLReceiveTrans,
     ESSLDisTrans,
     ESSLDestroyTrans,
     ESSLTransErr,
-    (void (*)(TransStream, int))ESSLSilenceTrans,
+    ESSLSilenceTrans,
     NULL, /* vSendWDS */
-    ESSLWhoAmI,
+    (char *(*)(TransStream, char *))ESSLWhoAmI,
     NetRecvLine, /* vRecvLine — line-buffered recv calls RecvTrans internally */
     NULL  /* vAsyncSendTrans */
 };
@@ -586,10 +586,10 @@ OSStatus ESSLStartSSL(TransStream stream) {
 /************************************************************************
  * ESSLConnectTrans — connect, then optionally start SSL
  ************************************************************************/
-static OSErr ESSLConnectTrans(TransStream stream, UPtr serverName, long port,
+static int ESSLConnectTrans(TransStream stream, const char *serverName, long port,
                               bool silently, uLong timeout) {
     /* Connect via the underlying TCP transport first */
-    OSErr err = (*ESSLSubTrans.vConnectTrans)(stream, serverName, port,
+    int err = (*ESSLSubTrans.vConnectTrans)(stream, serverName, port,
                                               silently, timeout);
     if (err)
         return err;
@@ -617,8 +617,8 @@ static OSErr ESSLConnectTrans(TransStream stream, UPtr serverName, long port,
 /************************************************************************
  * ESSLSendTrans — send data, using SSL if active
  ************************************************************************/
-static OSErr ESSLSendTrans(TransStream stream, UPtr text, long size, ...) {
-    OSErr err = noErr;
+static int ESSLSendTrans(TransStream stream, const char *text, long size, ...) {
+    int err = noErr;
     va_list ap;
 
     if (size == 0)
@@ -645,7 +645,7 @@ static OSErr ESSLSendTrans(TransStream stream, UPtr text, long size, ...) {
             }
         }
 
-        text = va_arg(ap, UPtr);
+        text = va_arg(ap, char *);
         if (text)
             size = va_arg(ap, long);
     } while (!err && text);
@@ -657,7 +657,7 @@ static OSErr ESSLSendTrans(TransStream stream, UPtr text, long size, ...) {
 /************************************************************************
  * ESSLReceiveTrans — receive data, using SSL if active
  ************************************************************************/
-static OSErr ESSLReceiveTrans(TransStream stream, UPtr line, long *size) {
+static int ESSLReceiveTrans(TransStream stream, char * line, long *size) {
     if (!(stream->ESSLSetting & esslSSLInUse))
         return (*ESSLSubTrans.vRecvTrans)(stream, line, size);
 
@@ -679,24 +679,24 @@ static OSErr ESSLReceiveTrans(TransStream stream, UPtr line, long *size) {
 /************************************************************************
  * Passthrough functions — delegate to the underlying TCP transport
  ************************************************************************/
-static OSErr ESSLDisTrans(TransStream stream) {
+static int ESSLDisTrans(TransStream stream) {
     return (*ESSLSubTrans.vDisTrans)(stream);
 }
 
-static OSErr ESSLDestroyTrans(TransStream stream) {
+static int ESSLDestroyTrans(TransStream stream) {
     CleanupSSLConnection(stream);
     stream->ESSLSetting = 0;
     return (*ESSLSubTrans.vDestroyTrans)(stream);
 }
 
-static OSErr ESSLTransErr(TransStream stream) {
+static int ESSLTransErr(TransStream stream) {
     return (*ESSLSubTrans.vTransError)(stream);
 }
 
-static void ESSLSilenceTrans(TransStream stream, int silence) {
+static void ESSLSilenceTrans(TransStream stream, bool silence) {
     (*ESSLSubTrans.vSilenceTrans)(stream, silence);
 }
 
-static unsigned char *ESSLWhoAmI(TransStream stream, UPtr who) {
+static char *ESSLWhoAmI(TransStream stream, char *who) {
     return (*ESSLSubTrans.vWhoAmI)(stream, who);
 }

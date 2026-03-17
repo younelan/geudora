@@ -46,11 +46,11 @@ typedef struct PGPRecvContextStruct *PGPRecvContextPtr;
 
 /* Decoder globals - these were once globals, but need to be thread specific for
  * the decoders to work properly */
-typedef struct HexBinGlobals_ **HBGHandle;
-typedef struct UUGlobals_ **UUGlobalsHandle;
+typedef struct HexBinGlobals_ *HBGHandle;
+typedef struct UUGlobals_ *UUGlobalsHandle;
 
 typedef struct decoderGlobals_ decoderGlobalsRec, *decoderGlobalsPtr,
-    **decoderGlobalsHandle;
+    *decoderGlobalsHandle;
 struct decoderGlobals_ {
   bool DealingWithIdiotIMail;     // is IMail here?
   bool AnyRich;                   /* any body parts with richText? */
@@ -82,18 +82,18 @@ struct decoderGlobals_ {
 /* Encodier globals - these were once globals, but need to be thread specific
  * for the encoders/send code to work properly */
 typedef struct encoderGlobals_ encoderGlobalsRec, *encoderGlobalsPtr,
-    **encoderGlobalsHandle;
+    *encoderGlobalsHandle;
 struct encoderGlobals_ {
   // static variables for BufferSend
   DecoderPB pb;
-  Handle buffers[2];
-  Handle buffer;
+  void *buffers[2];
+  void *buffer;
   DecoderFunc *oldEncoder;
 };
 
 /* thread globals */
 typedef struct threadGlobals_ threadGlobalsRec, *threadGlobalsPtr,
-    **threadGlobalsHandle;
+    *threadGlobalsHandle;
 struct threadGlobals_ {
   MyWindowPtr tProgWindow;
   short tCommandPeriod;
@@ -112,7 +112,7 @@ struct threadGlobals_ {
                              message be deleted */
   decoderGlobalsRec decoderG;
   encoderGlobalsRec encoderG;
-  Str255 GlobalTemp; /* a temporary buffer used, among other places, while
+  char GlobalTemp[256]; /* a temporary buffer used, among other places, while
                         reading headers */
 };
 
@@ -127,6 +127,7 @@ extern threadGlobalsRec ThreadGlobals; // Main thread globals
 
 /* Thread-specific globals access macros */
 #define ProgWindow (CurThreadGlobals->tProgWindow)
+#undef CommandPeriod
 #define CommandPeriod (CurThreadGlobals->tCommandPeriod)
 #define EudoraCommandPeriod CommandPeriod
 #define StringCache (CurThreadGlobals->tStringCache)
@@ -188,11 +189,11 @@ typedef struct xferMailParams_ {
 } xferMailParamsRec;
 
 // special structs used inside the IMAPTransferRec_
-typedef struct IMAPSCStruct IMAPSCStruct, *IMAPSCPtr, **IMAPSCHandle;
+typedef struct IMAPSCStruct IMAPSCStruct, *IMAPSCPtr, *IMAPSCHandle;
 typedef struct IMAPSResultStruct IMAPSResultStruct, *IMAPSResultPtr,
-    **IMAPSResultHandle;
+    *IMAPSResultHandle;
 typedef struct IMAPAppendStruct IMAPAppendStruct, *IMAPAppendPtr,
-    **IMAPAppendHandle;
+    *IMAPAppendHandle;
 
 #ifndef IMAP_TRANSFER_REC_DEFINED
 #define IMAP_TRANSFER_REC_DEFINED
@@ -207,16 +208,16 @@ struct IMAPTransferRec_ {
   bool expunge;        // expunge the mailbox
   bool copy;           // copy messages
   bool attachmentsToo; // download everything in one big chunk
-  Handle uids;         // list of uids
+  void *uids;         // list of uids
   MailboxNodeHandle targetBox; // the interesting mailbox
   FSSpecHandle attachments;    // list of attachment stubs to fetch
   FSSpecHandle toResync;       // list of mailboxes to resync
   IMAPAppendHandle appendData; // data for message apends
 
   // message search
-  Handle toSearch;      // list of FSSpecs to search.  These are indexes into a
+  void *toSearch;      // list of FSSpecs to search.  These are indexes into a
                         // BoxCount handle
-  Handle boxesToSearch; // list of mailboxes to search
+  void *boxesToSearch; // list of mailboxes to search
   IMAPSCHandle searchC; // list of search criteria
   bool matchAll;        // AND or OR
   IMAPSResultHandle results; // results of the search
@@ -273,25 +274,25 @@ ProgressBlock **GetCurrentThreadPrbl(void);
 #endif
 bool InAThread(void);
 void IncrementNumBackgroundThreads(void);
-OSErr MyInitThreads(void);
+int MyInitThreads(void);
 void KillThreads(void);
 void MyThreadBeginCritical(void);
 void MyThreadEndCritical(void);
 void MyYieldToAnyThread(void);
 
-OSErr PushThreadPrefChange(short pref);
+int PushThreadPrefChange(short pref);
 void SetCurrentTaskKind(TaskKindEnum taskKind);
 void SetThreadGlobalCommandPeriod(ThreadID threadID, bool value);
-OSErr SetupXferMailThread(bool check, bool send, bool manual, bool scripted,
+int SetupXferMailThread(bool check, bool send, bool manual, bool scripted,
                           XferFlags flags, IMAPTransferPtr imapInfo);
 bool ThreadsAvailable(void);
 void RemoveTaskErrors(TaskKindEnum taskKind, long persId);
-OSErr SetThreadStackSize(long newSize);
+int SetThreadStackSize(long newSize);
 long GetThreadStackSize(void);
 
-Handle GetResourceMainThread(ResType theType, short theID);
-OSErr ZapSettingsResourceMainThread(OSType type, short id);
-OSErr AddMyResourceMainThread(Handle h, OSType type, short id,
+void *GetResourceMainThread(ResType theType, short theID);
+int ZapSettingsResourceMainThread(OSType type, short id);
+int AddMyResourceMainThread(void *h, OSType type, short id,
                               ConstStr255Param name);
 
 #define GetResourceMainThread_(t, i)                                           \

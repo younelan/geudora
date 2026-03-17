@@ -14,10 +14,6 @@ All rights reserved. */
 typedef bool Boolean;
 #endif
 
-#ifndef OSErr
-typedef int32_t OSErr;
-#define OSErr OSErr
-#endif
 
 #ifndef noErr
 #define noErr 0
@@ -30,14 +26,6 @@ typedef int32_t OSErr;
 typedef unsigned char Str255[256];
 #endif
 
-#ifndef UPtr
-typedef unsigned char *UPtr;
-#endif
-
-#ifndef Handle
-typedef void **Handle;
-#define Handle Handle
-#endif
 
 struct MailboxNode;
 typedef struct MailboxNode *MailboxNodeHandle;
@@ -249,10 +237,10 @@ typedef struct IMAPStreamStruct {
   unsigned long currentUID;
   unsigned long messageCount;
   unsigned long MessageSizeLimit;
-  Str255 mailboxName;
+  char mailboxName[256];
   UIDVALIDITY uidvalidity;
   MAILSTREAM *mailStream;
-  Str255 pServerName;
+  char pServerName[256];
   unsigned long portNumber;
   MailboxNodeHandle mbox;
 } IMAPStreamStruct, *IMAPStreamPtr;
@@ -293,7 +281,7 @@ enum {
   errIMAPLastError
 };
 
-OSErr NewImapStream(IMAPStreamPtr *imapStream, UPtr ServerName,
+int NewImapStream(IMAPStreamPtr *imapStream, unsigned char * ServerName,
                     unsigned long PortNum);
 void ZapImapStream(IMAPStreamPtr *imapStream);
 bool OpenControlStream(IMAPStreamPtr imapStream);
@@ -315,7 +303,7 @@ void Check(IMAPStreamPtr imapStream);
 bool Noop(IMAPStreamPtr imapStream);
 bool UIDDeleteMessages(IMAPStreamPtr imapStream, char *pList, bool Expunge);
 bool UIDUnDeleteMessages(IMAPStreamPtr imapStream, char *pList);
-OSErr UIDExpunge(IMAPStreamPtr imapStream, const char *pUidList);
+int UIDExpunge(IMAPStreamPtr imapStream, const char *pUidList);
 Boolean Expunge(IMAPStreamPtr imapStream);
 Boolean Logout(IMAPStreamPtr imapStream);
 bool IsSelected(MAILSTREAM *imapStream);

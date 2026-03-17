@@ -36,7 +36,7 @@ ADVISED OF THE POSSIBILITY OF SUCH DAMAGE. */
 #include "trans.h"
 
 // Mac types for portable layer
-typedef void **RgnHandle;
+typedef void *RgnHandle;
 bool MessClose(MyWindowPtr win);
 bool MessMenu(MyWindowPtr win, int menu, int item, short modifiers);
 void MessZoomSize(MyWindowPtr win, Rect *zoom);
@@ -49,7 +49,7 @@ bool SaveAsFilter(void *dgPtr, void *event, short *item, char *userData);
 short SaveAsHook(short item, void *dgPtr, char *userData);
 void NextMess(TOCType * tocH, MessHandle messH, short whichWay, long modifiers,
               bool ezOpen);
-bool MessFind(MyWindowPtr win, unsigned char *what);
+bool MessFind(MyWindowPtr win, char *what);
 void MessClick(MyWindowPtr win, void *event);
 short NewPrior(short item, short prior);
 int MessGonnaShow(MyWindowPtr win);

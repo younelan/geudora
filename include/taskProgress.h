@@ -12,7 +12,7 @@ typedef taskErrData *taskErrHandle;
 struct taskErrData_ {
   TaskKindEnum taskKind;
   long persId;
-  Str255 taskDesc, errMess, errExplanation;
+  char taskDesc[256], errMess[256], errExplanation[256];
   ControlHandle helpButton;
   taskErrHandle next;
 };

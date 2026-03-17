@@ -686,8 +686,8 @@ bool Fix1342(unsigned char *chars, long *len) {
      */
     found = true;
     encoding = q[1][1];
-    MakePStr(charset, q[0] + 1, q[1] - q[0] - 1);
-    MakePStr(text, q[2] + 1, q[3] - q[2] - 1);
+    { size_t _l = q[1] - q[0] - 1; charset[0] = _l; memcpy(charset+1, q[0]+1, _l); }
+    { size_t _l = q[3] - q[2] - 1; text[0] = _l; memcpy(text+1, q[2]+1, _l); }
     if (!PrefIsSet(PREF_ALWAYS_CHARSET) &&
         Translate1342(text, charset, encoding)) {
       long textLen = strlen((const char *)text);

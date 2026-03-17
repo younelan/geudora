@@ -94,7 +94,7 @@ typedef struct PETETextStyle {
 /* Graphic style — same fields but graphicInfo instead of color */
 typedef struct PETEGraphicInfo PETEGraphicInfo;
 typedef PETEGraphicInfo *PETEGraphicInfoPtr;
-typedef PETEGraphicInfo **PETEGraphicInfoHandle;
+typedef PETEGraphicInfo *PETEGraphicInfoHandle;
 
 struct PETEGraphicInfo {
 	void *itemProc;             /* Graphic handler callback */
@@ -128,7 +128,7 @@ typedef struct PETEStyleEntry {
 	long psStartChar;           /* Character offset where this style starts */
 	long psGraphic;             /* 0 for text, 1 for graphic */
 	PETEStyleInfo psStyle;      /* Union containing text or graphic style */
-} PETEStyleEntry, *PETEStyleList, *PETEStyleEntryPtr, **PETEStyleListHandle;
+} PETEStyleEntry, *PETEStyleList, *PETEStyleEntryPtr, *PETEStyleListHandle;
 
 /* Paragraph info — per-paragraph formatting */
 typedef struct PETEParaInfo {
@@ -146,7 +146,7 @@ typedef struct PETEParaInfo {
 	uint8_t quoteLevel : 4;     /* Quote level */
 	uint8_t paraFlags;          /* Paragraph flags */
 	short tabCount;             /* Number of tab stops */
-	short **tabHandle;          /* Handle to tab stop array */
+	short *tabHandle;          /* void *to tab stop array */
 } PETEParaInfo, *PETEParaInfoPtr;
 
 /* Paragraph scrap — for clipboard/serialization */
@@ -165,7 +165,7 @@ typedef struct PETEParaScrapEntry {
 	uint8_t paraFlags;
 	short tabCount;
 } PETEParaScrapEntry;
-typedef PETEParaScrapEntry **PETEParaScrapHandle;
+typedef PETEParaScrapEntry *PETEParaScrapHandle;
 
 /* Document initialization info */
 typedef struct PETEDocInitInfo {
@@ -183,7 +183,7 @@ typedef struct PETELabelStyleEntry {
 	short plSize;
 	RGBColor plColor;
 	short plColorWeight;
-} PETELabelStyleEntry, *PETELabelStylePtr, *PETELabelStyleList, **PETELabelStyleHandle;
+} PETELabelStyleEntry, *PETELabelStylePtr, *PETELabelStyleList, *PETELabelStyleHandle;
 
 /* PeteSaneMargin — paragraph margin info */
 #ifndef PETE_SANE_MARGIN_DEFINED
@@ -192,7 +192,7 @@ typedef struct {
 	long first;   /* First line margin */
 	long second;  /* Subsequent lines margin */
 	long right;   /* Right margin */
-} PeteSaneMargin, *PSMPtr, **PSMHandle;
+} PeteSaneMargin, *PSMPtr, *PSMHandle;
 #endif
 
 /* ===== PETE Enums ===== */

@@ -90,24 +90,16 @@ void GetBoxLines(void)
     int i;
 
     if (!BoxWidths) {
-        /* Allocate Handle-style: pointer to pointer to array */
-        short *data = (short *)calloc(count, sizeof(short));
-        short **handle = (short **)malloc(sizeof(short *));
-        if (!data || !handle) {
-            free(data);
-            free(handle);
-            return;
-        }
-        *handle = data;
-        BoxWidths = handle;
+        BoxWidths = (short *)calloc(count, sizeof(short));
+        if (!BoxWidths) return;
     }
 
     for (i = 0; i < count; i++) {
         if (*GetRString(scratch, BoxLinesStrn + i + 1)) {
             width = atol((const char *)scratch);
-            (*BoxWidths)[i] = (short)width;
+            BoxWidths[i] = (short)width;
         } else {
-            (*BoxWidths)[i] = 50; /* fallback default */
+            BoxWidths[i] = 50; /* fallback default */
         }
     }
 }

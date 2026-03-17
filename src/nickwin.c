@@ -1184,7 +1184,7 @@ void OpenABWin(void) {
   /* Populate */
   ab_fill_list();
 
-  /* Handle window close */
+  /* void *window close */
   g_signal_connect(AB.window, "close-request",
                    G_CALLBACK(on_ab_window_close), NULL);
 

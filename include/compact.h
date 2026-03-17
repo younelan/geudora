@@ -29,10 +29,6 @@ typedef enum {kEuSendNow, kEuSendNext, kEuSendLater, kEuSendNever} SendTypeEnum;
 
 #define SENT_OR_SENDING(state) ((state)==SENT || (state)==BUSY_SENDING)
 
-#ifndef FLAG_ATYPE_LO
-#define FLAG_ATYPE_LO (1L<<6)
-#define FLAG_ATYPE_HI (1L<<7)
-#endif
 #define AttachOptNumber(flags) (((flags & (FLAG_ATYPE_LO|FLAG_ATYPE_HI))>>6)&0x3)
 #define SetAOptNumber(flags,num) \
 	do{(flags) &= ~(FLAG_ATYPE_LO|FLAG_ATYPE_HI); (flags) |= (num)<<6;}while(0)
@@ -78,10 +74,10 @@ bool InTranslator(TransInfoHandle hTranslators, long id);
 /* Stationery */
 uLong ApproxMessageSize(MessHandle messH);
 int SaveStationeryStuff(short refN, MessHandle messH);
-int GetStationerySum(unsigned char *text, long textLen, MSumPtr pSum);
+int GetStationerySum(char *text, long textLen, MSumPtr pSum);
 void ApplyStationery(MyWindowPtr win, FSSpec *spec, bool dontCleanse, bool personality);
 void ApplyStationeryLo(MyWindowPtr win, FSSpec *spec, bool dontCleanse, bool personality, bool editStationery);
-void ApplyStationeryHandle(MyWindowPtr win, unsigned char *text, long textLen, bool dontCleanse, bool personality, bool editStationery);
+void ApplyStationeryHandle(MyWindowPtr win, char *text, long textLen, bool dontCleanse, bool personality, bool editStationery);
 
 /* Drawing */
 void PlotFlag(Rect *r, bool on, short which);

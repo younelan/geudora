@@ -1,6 +1,6 @@
 /* Copyright (c) 2017, Computer History Museum
 All rights reserved. (BSD license — see source)
-Ported to GTK4/GLib. TOCHandle → TOCType*, PStr → unsigned char* */
+Ported to GTK4/GLib. TOCHandle → TOCType*, char * → unsigned char* */
 
 #ifndef BOXACT_H
 #define BOXACT_H
@@ -18,7 +18,7 @@ void BoxClick(MyWindowPtr win, void *event);
 void BoxActivate(MyWindowPtr win);
 bool BoxMenu(MyWindowPtr win, int menu, int item, short modifiers);
 bool BoxClose(MyWindowPtr win);
-bool BoxFind(MyWindowPtr win, unsigned char *what);
+bool BoxFind(MyWindowPtr win, char *what);
 void BoxOpen(MyWindowPtr win);
 bool BoxKey(MyWindowPtr win, void *event);
 void SelectBoxRange(TOCType *tocH, int start, int end, bool cmd,
@@ -41,7 +41,7 @@ bool RedoTOC(TOCType *tocH);
 void RedoAllTOCs(void);
 void MBResort(TOCType *tocH);
 void CheckSortItems(MyWindowPtr win);
-Handle MenuItem2Handle(short menu, short item);
+void *MenuItem2Handle(short menu, short item);
 void ServerMenuChoice(TOCType *tocH, short sumNum, short item,
                       bool shiftPressed);
 void BeenThereDoneThat(TOCType *tocH, short sumNum);

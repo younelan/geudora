@@ -26,22 +26,25 @@ DAMAGE. */
 
 /* Forward declarations for types used in ACAP */
 typedef struct Personality *PersHandle;
-typedef struct ACAPState **ACAPStateHandle;  // ACAP state handle
+typedef struct ACAPState *ACAPStateHandle;  // ACAP state handle
 /* TransStream is defined in TransStream.h via mydefs.h */
 struct TransStreamStruct;  // Forward declaration
 typedef struct TransStreamStruct *TransStream;
 
-/* Minimal portable declarations used by acap.c */
-typedef unsigned char *PStr; /* pascal-style byte string pointer (also in mydefs.h) */
+/* Minimal portable declarations used by acap.c
+  Project-wide `char *`/string types are defined centrally (see `mailbox.h`/`mydefs.h`).
+  Do not redefine `char *` here to avoid conflicting typedefs. */
 
 /* ACAP entry points */
-OSErr ACAPLoad(bool giveQuit);
-OSErr GetACAPLogin(PStr server, PStr user, PStr password, bool giveQuit);
-OSErr ACAPLogin(PStr server, PStr user, PStr password, ACAPStateHandle state);
+int ACAPLoad(bool giveQuit);
+/* Use portable C strings for textual parameters */
+int GetACAPLogin(char *server, char *user, char *password, bool giveQuit);
+int ACAPLogin(char *server, char *user, char *password, ACAPStateHandle state);
 
 /* Stub declarations for functions not yet ported */
 void GetPOPInfo(void *user, void *password);
-PStr GetPOPPref(PStr dest);
+/* GetPOPPref fills `dest` and returns it; use portable `char *` */
+char *GetPOPPref(char *dest);
 /* DisTrans is a macro defined in mydefs.h */
 /* ReallyDoAnAlert is defined in legacy_shim.h */
 void Cleanup(void);

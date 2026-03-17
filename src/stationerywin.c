@@ -78,7 +78,7 @@ static void EditStationery(GtkWidget *widget, gpointer data);
 static void DeleteStationery(GtkWidget *widget, gpointer data);
 static void NewStationeryFile(GtkWidget *widget, gpointer data);
 static void DoGrow(MyWindowPtr win, Point *newSize);
-static bool StnyFind(MyWindowPtr win, PStr what);
+static bool StnyFind(MyWindowPtr win, char * what);
 
 /************************************************************************
  * GTK UI Callbacks
@@ -277,7 +277,7 @@ void DoClick(MyWindowPtr win, void *event) {
 /**********************************************************************
  * StnyFind - find in the window
  **********************************************************************/
-static bool StnyFind(MyWindowPtr win, PStr what) {
+static bool StnyFind(MyWindowPtr win, char * what) {
   return false; // GTK natively handles Ctrl-F find dialogs in GtkTreeView if
                 // set up
 }

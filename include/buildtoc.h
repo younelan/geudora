@@ -46,7 +46,7 @@ TOCType * BuildTOC(const char *path);
 TOCType * BuildTOC_Path(const char *path);
 TOCType * RebuildTOC(const char *path, TOCType * oldTocH, bool resource,
                      bool tempToc);
-OSErr ReadSum(MSumPtr sum, bool isOut, LineIOP lip, bool lookEnvelope);
+int ReadSum(MSumPtr sum, bool isOut, LineIOP lip, bool lookEnvelope);
 int SumToFrom(MSumPtr sum, unsigned char * fromLine);
 void CopyHeaderLine(unsigned char * to, int size, unsigned char * from);
 long FindTOCSpot(TOCType * tocH, long length);

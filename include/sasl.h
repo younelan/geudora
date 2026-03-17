@@ -20,13 +20,13 @@ DAMAGE. */
 #define SASL_H
 /* Copyright (c) 2002 by QUALCOMM Incorporated */
 
-#include "mydefs.h"   /* For OSErr, PStr */
+#include "mydefs.h"   /* For int, char * */
 #include "util.h"     /* For AccuPtr */
 #include "StrnDefs.h" /* For SASLEnum */
 
-short SASLFind(PStr service, PStr mechStr, SASLEnum mech);
-OSErr SASLDo(PStr service, SASLEnum mech, short rounds, long *state, AccuPtr chalAcc, AccuPtr respAcc);
-void SASLDone(PStr service, SASLEnum mech, short rounds, long *state, short err);
+short SASLFind(char * service, char * mechStr, SASLEnum mech);
+int SASLDo(char * service, SASLEnum mech, short rounds, long *state, AccuPtr chalAcc, AccuPtr respAcc);
+void SASLDone(char * service, SASLEnum mech, short rounds, long *state, short err);
 
 /* GSS-API availability checks - portable version */
 #ifdef HAVE_GSSAPI

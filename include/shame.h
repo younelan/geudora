@@ -31,10 +31,10 @@ DAMAGE. */
 void Aprintf(short templ, short which, short rFormat, ...);
 
 /* MemoryPreflight: check if enough memory is available */
-OSErr MemoryPreflight(long size);
+int MemoryPreflight(long size);
 
-/* MyHandToHand: duplicate a Handle in place */
-OSErr MyHandToHand(Handle *inHandle);
+/* MyHandToHand: duplicate a void *in place */
+int MyHandToHand(void **inHandle);
 
 /* WarnUser: show a warning dialog by string resource ID + error code */
 int WarnUser(short stringId, int err);
@@ -47,10 +47,10 @@ void SetAlertBeep(bool onOrOff);
 
 /* ReallyStandardAlert / MyStandardAlert: GTK-ported alert helpers */
 short ReallyStandardAlert(int alertType, const char *error, const char *explanation, void *alertParam);
-OSErr MyStandardAlert(int inAlertType, const char *inError, const char *inExplanation, void *inAlertParam, short *outItemHit);
+int MyStandardAlert(int inAlertType, const char *inError, const char *inExplanation, void *inAlertParam, short *outItemHit);
 
 /* GoGetHelp: open help URL — stub for now */
-OSErr GoGetHelp(const char *error, const char *explanation);
+int GoGetHelp(const char *error, const char *explanation);
 
 /* Switch: yield to other threads/events */
 bool Switch(void);

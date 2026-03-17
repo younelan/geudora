@@ -205,7 +205,7 @@ typedef struct {
                      // (i.e. Eliminates all Jello in a painful unspoken
                      // manner).  Each are stored as Pascal styled strings, one
                      // after the other.
-} FeatureRes, *FeatureResPtr, **FeatureResHandle;
+} FeatureRes, *FeatureResPtr, *FeatureResHandle;
 
 // Features in memory
 

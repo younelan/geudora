@@ -258,9 +258,9 @@ void DisposProgress(ProgressBHandle prbl) {
   if (prbl == nil)
     return;
   /* Control handling stubbed for GTK port */
-  if ((*prbl)->next)
-    DisposProgress((*prbl)->next);
-  ZapHandle(prbl);
+  if (prbl->next)
+    DisposProgress(prbl->next);
+  free(prbl);
 }
 
 /************************************************************************

@@ -49,9 +49,9 @@ typedef struct {
 /* Global variables for legacy compatibility */
 RootSpec Root;
 long YieldTicks;
-OSErr inProgress = 1;      /* From MachOPreComp.pch */
-OSErr cacheFault = -23042; /* From MachOPreComp.pch */
-OSErr userCancelled = -29999;
+int inProgress = 1;      /* From MachOPreComp.pch */
+int cacheFault = -23042; /* From MachOPreComp.pch */
+int userCancelled = -29999;
 
 static AppState app_state = {0};
 
@@ -146,7 +146,7 @@ static gchar *extract_header(const char *raw, const char *name) {
         val++;
       }
 
-      /* Handle continuation lines (next line starts with space or tab) */
+      /* void *continuation lines (next line starts with space or tab) */
       while (TRUE) {
         const char *next = val;
         /* Skip over any flavor of newline */

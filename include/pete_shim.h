@@ -55,8 +55,8 @@ typedef char Str31[32];
 #endif
 
 /* Minimal opaque PETE structures used by peteglue.h */
-typedef struct PETEGraphicInfo PETEGraphicInfo, *PETEGraphicInfoPtr, **PETEGraphicInfoHandle;
-typedef struct PETEStyleEntry PETEStyleEntry, *PETEStyleList, *PETEStyleEntryPtr, **PETEStyleListHandle;
+typedef struct PETEGraphicInfo PETEGraphicInfo, *PETEGraphicInfoPtr, *PETEGraphicInfoHandle;
+typedef struct PETEStyleEntry PETEStyleEntry, *PETEStyleList, *PETEStyleEntryPtr, *PETEStyleListHandle;
 typedef struct PETEParaInfo PETEParaInfo, *PETEParaInfoPtr;
 typedef struct PETEDocInitInfo PETEDocInitInfo, *PETEDocInitInfoPtr;
 typedef void *PETEParaScrapHandle;

@@ -29,7 +29,7 @@ DAMAGE. */
 typedef struct AttMapStruct *AttMapPtr;
 
 int SendBinHex(TransStream stream,FSSpecPtr spec,AttMapPtr amp);
-OSErr MIMEFileHeader(TransStream stream,AttMapPtr amp,short convertID,long modDate);
+int MIMEFileHeader(TransStream stream,AttMapPtr amp,short convertID,long modDate);
 
 
 #endif

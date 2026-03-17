@@ -68,12 +68,12 @@ bool AnyThreadsRunning(void);
 /************************************************************************
  *	EnsureConnectionPool - build the connection pool for a given pers
  ************************************************************************/
-OSErr EnsureConnectionPool(PersHandle pers) {
-  OSErr err = noErr;
+int EnsureConnectionPool(PersHandle pers) {
+  int err = noErr;
   PersHandle oldPers = CurPers;
   long numConnections;
   IMAPConnectionHandle node;
-  Str255 user, host;
+  char user[256], host[256];
 
   CurPers = pers;
 
@@ -108,7 +108,7 @@ short CountConnections(PersHandle pers) {
   short result = 0;
   PersHandle oldPers = CurPers;
   IMAPConnectionHandle node = gIMAPConnectionPool, next = nil;
-  Str255 user, host;
+  char user[256], host[256];
   long port;
 
   CurPers = pers;
@@ -162,14 +162,14 @@ void CleanupConnection(IMAPStreamPtr *imapStream) {
 
       if (node->imapStream->mailStream &&
           node->imapStream->mailStream->refN > 0) {
-        MyFSClose(node->imapStream->mailStream->refN);
+        close(node->imapStream->mailStream->refN);
         node->imapStream->mailStream->refN = -1;
       }
 
 #ifdef DEBUG
       if (node->imapStream->mailStream &&
           node->imapStream->mailStream->flagsRefN > 0) {
-        MyFSClose(node->imapStream->mailStream->flagsRefN);
+        close(node->imapStream->mailStream->flagsRefN);
         node->imapStream->mailStream->flagsRefN = -1;
       }
 #endif
@@ -179,7 +179,6 @@ void CleanupConnection(IMAPStreamPtr *imapStream) {
 
       // unlock this node
       node->inUse = false;
-      UL(node);
     } else {
       // the node for this stream was not found.  Kill the imapstream.
       ZapImapStream(imapStream);
@@ -198,8 +197,8 @@ IMAPStreamPtr GetIMAPConnectionLo(TaskKindEnum forWhat, bool progress,
   IMAPStreamPtr stream = nil;
   IMAPConnectionHandle node = nil;
   long numConnections = GetRLong(IMAP_MAX_CONNECTIONS);
-  Str255 user, host;
-  OSErr err = noErr;
+  char user[256], host[256];
+  int err = noErr;
   long ticks = TickCount();
   bool progressed = false;
   bool connectionBusy =
@@ -265,14 +264,12 @@ IMAPStreamPtr GetIMAPConnectionLo(TaskKindEnum forWhat, bool progress,
               if (!AnyThreadsRunning()) {
                 // there are no threads, or we're in the only thread running.
                 node->inUse = false;
-                UL(node);
               }
             }
 
             // if the node is not in use ...
             if (!node->inUse) {
               // lock it now.  No one else my touch it.
-              LDRef(node);
               node->inUse = true;
 
               // Can we reuse this stream?
@@ -309,7 +306,6 @@ IMAPStreamPtr GetIMAPConnectionLo(TaskKindEnum forWhat, bool progress,
                     noErr) {
                   // unlock this node.
                   node->inUse = false;
-                  UL(node);
 
                   // couldn't get a stream.
                   WarnUser(MEM_ERR, err);
@@ -479,11 +475,9 @@ void CloseIMAPStreamSilently(IMAPConnectionHandle node) {
       node->imapStream->mailStream->transStream->BeSilent = true;
 
     // close the connection to the server.
-    LDRef(node);
     node->inUse = true;
     CloseImapStream(node);
     node->inUse = false;
-    UL(node);
   }
 }
 

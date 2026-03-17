@@ -24,7 +24,7 @@ DAMAGE. */
 typedef enum {
   vcKeyNone							= 0,
   vcKeyOtherXDash				= 1,			// An "X-" keyword that doesn't match any passed to the parse
-  vcKeyString						= 2,			// When present, the text of the keyword is stored in the 'strings' Handle of aparamter record
+  vcKeyString						= 2,			// When present, the text of the keyword is stored in the 'strings' void *of aparamter record
   vcKeyBegin						= 3,			// DO NOT CHANGE THE ORDER OF THESE FROM HERE DOWN!!
 	vcKeyVcard						= 4,
 	vcKeyEnd							= 5,
@@ -165,7 +165,7 @@ typedef enum {
 	vcPropFlagWork			= 0x0004
 } VCardPropertyFlagsType;
 
-typedef UHandle XDashStringHandle;			// All the X- things the client cares about -- length-byte, text, null (ad nauseum...)
+typedef unsigned char * XDashStringHandle;			// All the X- things the client cares about -- length-byte, text, null (ad nauseum...)
 
 //
 //	VCardParamRec
@@ -199,7 +199,7 @@ typedef struct {
 	vcKeywordType	pValue;
 	long					offset;
 	long					length;
-} VCardParamRec, *VCardParamPtr, **VCardParamHandle;
+} VCardParamRec, *VCardParamPtr, *VCardParamHandle;
 
 //
 //	VCardItemRec
@@ -214,8 +214,8 @@ typedef struct {
 //
 //		In addition, we might optionally also find various parameters or group information.  Each
 //		of these is stored in a Handle.  'params' is a collection of VCardParamRec records, while
-//		'group' is a Handle containing the text of the whole group identifier.  'strings' is a
-//		Handle containing any text needed by the parameters.
+//		'group' is a void *containing the text of the whole group identifier.  'strings' is a
+//		void *containing any text needed by the parameters.
 //
 
 typedef struct {
@@ -223,19 +223,19 @@ typedef struct {
 	ValueEncodingType				encoding;
 	ValueCharsetType				charset;
 	VCardPropertyFlagsType	propertyFlags;
-	Handle									value;
-	Handle									group;
-	Handle									strings;
+	void *value;
+	void *group;
+	void *strings;
 	VCardParamHandle				params;
-} VCardItemRec, *VCardItemPtr, **VCardItemHandle;
+} VCardItemRec, *VCardItemPtr, *VCardItemHandle;
 
-typedef OSErr		(*VCardItemProc) (VCardItemPtr itemPtr, long refcon);
-typedef Boolean	(*VCardErrorProc) (Handle vCard, VCardItemPtr itemPtr, long refcon, VCardErrorType error, long offset);
+typedef int		(*VCardItemProc) (VCardItemPtr itemPtr, long refcon);
+typedef Boolean	(*VCardErrorProc) (void *vCard, VCardItemPtr itemPtr, long refcon, VCardErrorType error, long offset);
 
 bool IsVCardAvailable (void);
-Handle	MakeVCard (Handle addresses, Handle notes);
-OSErr		ParseVCard (Handle vCard, uLong *offset, XDashStringHandle xDashStrings, VCardItemProc itemProc, VCardErrorProc errorProc, long refcon);
+void *MakeVCard (void *addresses, void *notes);
+int		ParseVCard (void *vCard, uLong *offset, XDashStringHandle xDashStrings, VCardItemProc itemProc, VCardErrorProc errorProc, long refcon);
 Boolean	IsVCardFile (FSSpecPtr spec);
-PStr		MakeVCardFileName (short ab,short nick, PStr filename);
+char *		MakeVCardFileName (short ab,short nick, char * filename);
 
 #endif

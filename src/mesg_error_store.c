@@ -78,13 +78,13 @@ int mesg_error_store_save_all(TOCType * tocH) {
       continue;
     json_builder_begin_object(builder);
     char uidbuf[32];
-    g_snprintf(uidbuf, sizeof(uidbuf), "%08lx", (unsigned long)(*h)->uidHash);
+    g_snprintf(uidbuf, sizeof(uidbuf), "%08lx", (unsigned long)h->uidHash);
     json_builder_set_member_name(builder, "uid_hash");
     json_builder_add_string_value(builder, uidbuf);
     json_builder_set_member_name(builder, "error_code");
-    json_builder_add_int_value(builder, (*h)->errorCode);
+    json_builder_add_int_value(builder, h->errorCode);
     json_builder_set_member_name(builder, "error_text");
-    json_builder_add_string_value(builder, (const gchar *)(*h)->errorStr);
+    json_builder_add_string_value(builder, (const gchar *)h->errorStr);
     json_builder_set_member_name(builder, "created_at");
     json_builder_add_int_value(builder, (gint64)time(NULL));
     json_builder_end_object(builder);
@@ -185,11 +185,11 @@ int mesg_error_store_load(TOCType * tocH) {
     /* find matching summary and attach */
     short sum = FindSumByHash(tocH, (uLong)uid);
     if (sum != -1) {
-      mesgErrorHandle h = (mesgErrorHandle)NuHandleClear(sizeof(MesgErrorType));
+      mesgErrorHandle h = (mesgErrorHandle)calloc(1,sizeof(MesgErrorType));
       if (h) {
-        PCSTrim((*h)->errorStr, (PStr)unesc);
-        (*h)->uidHash = (uLong)uid;
-        (*h)->errorCode = code;
+        PCSTrim(h->errorStr, (char *)unesc);
+        h->uidHash = (uLong)uid;
+        h->errorCode = code;
         tocH->sums[sum].mesgErrH = (void **)h;
       }
     }

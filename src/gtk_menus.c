@@ -460,7 +460,7 @@ int CountMenuItems(GMenuModel *mh) {
   return g_menu_model_get_n_items(mh);
 }
 
-unsigned char *MyGetItem(MenuHandle mh, short item, unsigned char *name) {
+char *MyGetItem(MenuHandle mh, short item, char *name) {
   /* items are 1-based in legacy Eudora, 0-based in GLib */
   int index = item - 1;
   if (!mh || index < 0 || index >= g_menu_model_get_n_items(mh)) {
@@ -486,16 +486,12 @@ unsigned char *MyGetItem(MenuHandle mh, short item, unsigned char *name) {
   return name;
 }
 
-short FindItemByName(MenuHandle mh, unsigned char *name) {
+short FindItemByName(MenuHandle mh, char *name) {
   if (!mh || !name)
     return 0;
 
   int count = g_menu_model_get_n_items(mh);
-  /* Legacy C string from Pascal string */
-  char p_name[256];
-  size_t p_len = name[0];
-  memcpy(p_name, name + 1, p_len);
-  p_name[p_len] = '\0';
+  const char *p_name = name;
 
   for (int i = 0; i < count; i++) {
     gchar *label = get_menu_item_label(mh, i);

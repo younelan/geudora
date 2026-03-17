@@ -52,9 +52,6 @@ ADVISED OF THE POSSIBILITY OF SUCH DAMAGE. */
 #ifndef kTextEncodingUS_ASCII
 #define kTextEncodingUS_ASCII 0x0600
 #endif
-#ifndef FLAG_WRAP_OUT
-#define FLAG_WRAP_OUT (1<<3)
-#endif
 
 typedef enum {
   NotAb,
@@ -71,16 +68,18 @@ typedef enum {
   AbSLimit
 } AbStates;
 
-bool BeginAbomination(unsigned char *name, HeaderDHandle hdh);
-short SaveAbomination(unsigned char *text, long size);
-bool IsAbLine(unsigned char *text, long size, HeaderDHandle hdh);
-long UURightLength(unsigned char *text, long size);
-bool ConvertUUSingle(short refN, unsigned char *buf, long *size, POPLineType lineType,
+/* `name` is textual — use portable `char *` */
+bool BeginAbomination(char *name, HeaderDHandle hdh);
+short SaveAbomination(char *text, long size);
+bool IsAbLine(char *text, long size, HeaderDHandle hdh);
+long UURightLength(char *text, long size);
+bool ConvertUUSingle(short refN, char *buf, long *size, POPLineType lineType,
                      long estSize, MIMEMapPtr hintMM, HeaderDHandle hdh);
-bool ConvertSingle(short refN, unsigned char *buf, long size);
-OSErr SendSingle(TransStream stream, FSSpecPtr spec, bool dataToo, AttMapPtr amp);
-OSErr SendDouble(TransStream stream, FSSpecPtr spec, long flags, short tableID, AttMapPtr amp);
-OSErr SendUU(TransStream stream, FSSpecPtr spec, AttMapPtr amp);
-OSErr SendDataFork(TransStream stream, FSSpecPtr spec, long flags, short tableID, AttMapPtr amp);
+bool ConvertSingle(short refN, char *buf, long size);
+/* `specPath` is a POSIX file path to the file to send */
+int SendSingle(TransStream stream, const char *specPath, bool dataToo, AttMapPtr amp);
+int SendDouble(TransStream stream, const char *specPath, long flags, short tableID, AttMapPtr amp);
+int SendUU(TransStream stream, const char *specPath, AttMapPtr amp);
+int SendDataFork(TransStream stream, const char *specPath, long flags, short tableID, AttMapPtr amp);
 
 #endif

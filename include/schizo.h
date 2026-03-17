@@ -83,12 +83,12 @@ int32_t PersFillPw(PersHandle pers, uint32_t whichOnes);
 #define kFillSecondPw 2
 PersHandle PersNew(void);
 PersHandle FindPersById(uint32_t persId);
-PersHandle FindPersByName(unsigned char *name);
+PersHandle FindPersByName(char *name);
 uint32_t PersType(uint32_t theType, PersHandle pers);
 /* Personality scripting now centralized in scripting.h / scripting_ae.c / scripting_dbus.c */
 int32_t PersDelete(PersHandle pers);
 long PersCount(void);
-int32_t PersSetName(PersHandle pers, unsigned char *name);
+int PersSetName(PersHandle pers, char *name);
 void PushPers(PersHandle newCur);
 void PopPers(void);
 int32_t SetPers(TOCType * tocH, short sumNum, PersHandle pers, bool stationery);

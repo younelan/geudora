@@ -21,7 +21,7 @@ DAMAGE. */
 
 #include "pete_portable.h"  /* All PETE types: PETETextStyle, PETEParaInfo, PETEHandle, PeteSaneMargin, etc. */
 #include "peteglue.h"       /* Pete wrapper functions */
-#include "mailbox.h"        /* StackHandle, OSErr, UHandle, PStr, Str31, RGBColor, etc. */
+#include "mailbox.h"        /* StackHandle, int, unsigned char *, char *, Str31, RGBColor, etc. */
 #include "message.h"        /* MessHandle */
 #include <stdbool.h>
 
@@ -31,27 +31,27 @@ typedef struct Accumulator *AccuPtr;
 
 typedef struct
 {
-	Str31 styleName;
+	char styleName[32];
 	PETETextStyle textStyle;
 	long textValid;
 	PETEParaInfo paraInfo;
 	long paraValid;
 	bool wholePara;
 	bool formatBar;
-} EuStyleSheet, *ESSPtr, **ESSHandle;
+} EuStyleSheet, *ESSPtr, *ESSHandle;
 
 
-int BuildEnriched(AccuPtr enriched, PETEHandle pte, UHandle text, long len, long offset, PETEStyleListHandle pslh, bool xrich);
+int BuildEnriched(AccuPtr enriched, PETEHandle pte, unsigned char * text, long len, long offset, PETEStyleListHandle pslh, bool xrich);
 int PeteRich(PETEHandle pte, long start, long stop, bool unwrap);
 short IncrementTextSize(short size, short increment);
 bool SetMessRich(MessHandle messH);
 typedef enum {hasNoStyle, hasOnlyExcerpt, hasTonsOCrap} StyleLevelEnum;
 StyleLevelEnum HasStyles(PETEHandle pte, long from, long to, bool allowGraphics);
-int ParaIndent2Margin(PSMPtr marg, PStr string);
-int InsertRichLo(UHandle text, long textOffset, long textLen, long offset, bool headers, bool unwrap, PETEHandle pte, StackHandle partStack, MessHandle messH, bool delSP);
-int InsertRich(UHandle text, long textOffset, long textLen, long offset, bool unwrap, PETEHandle pte, StackHandle partStack, bool delSP);
-PStr Style2String(ESSPtr ess, PStr string);
-int String2Style(ESSPtr ess, PStr string);
+int ParaIndent2Margin(PSMPtr marg, char *string);
+int InsertRichLo(unsigned char * text, long textOffset, long textLen, long offset, bool headers, bool unwrap, PETEHandle pte, StackHandle partStack, MessHandle messH, bool delSP);
+int InsertRich(unsigned char * text, long textOffset, long textLen, long offset, bool unwrap, PETEHandle pte, StackHandle partStack, bool delSP);
+char *Style2String(ESSPtr ess, char *string);
+int String2Style(ESSPtr ess, char *string);
 short FindSizeInc(short size);
 
 #endif

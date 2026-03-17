@@ -152,11 +152,11 @@ typedef struct {
   long unused4; //	totalYears;
   NumericStats numStats[kStatCount];
   ShortNumericStats shortStats[kShortStatCount];
-} StatData, *StatDataPtr, **StatDataHandle;
+} StatData, *StatDataPtr, *StatDataHandle;
 
 typedef struct {
   short rThis, rLast;
-  Str32 sProjected;
+  char sProjected[33];
   StatTimePeriod period;
   short rPeriod;
   Boolean showAverage;
@@ -201,11 +201,11 @@ static short kwdStrTab[] = {kStatReceivedMail,
 /************************************************************************
  * prototypes
  ************************************************************************/
-static OSErr ReadStatData(void);
-static OSErr WriteStatData(void);
+static int ReadStatData(void);
+static int WriteStatData(void);
 static void CheckTimeChange(void);
-static OSErr LoadStats(void);
-static OSErr SaveStats(bool force);
+static int LoadStats(void);
+static int SaveStats(bool force);
 static void UpdateFacetime(void);
 static void UpdateFacetimeLo(void);
 static void GetStatTotals(NumericStats *stats, StatTimePeriod period,
@@ -216,16 +216,16 @@ void GetStatTotalPercents(NumericStats *statNumerator,
 static long SumArray(long *values, short len);
 #define SumArrayHi(a) SumArray(a, sizeof(a) / sizeof(a[0]))
 static char *GetGraphPict(NumericStats *stats, StatTimePeriod period,
-                          bool seconds, bool showAverage, StringPtr sThis,
-                          StringPtr sLast, StringPtr sAverage);
-static Handle GetXLabels(StatTimePeriod period);
-static UPtr RightAlign7(uLong value, UPtr s);
-static UPtr RightAlign7Dec(uLong value, UPtr s);
-static UPtr RightAlign(uLong value, UPtr s, short minLen, short decPlace);
+                          bool seconds, bool showAverage, char * sThis,
+                          char * sLast, char * sAverage);
+static void *GetXLabels(StatTimePeriod period);
+static unsigned char * RightAlign7(uLong value, unsigned char * s);
+static unsigned char * RightAlign7Dec(uLong value, unsigned char * s);
+static unsigned char * RightAlign(uLong value, unsigned char * s, short minLen, short decPlace);
 static void AddToAve(uLong *to, uLong *from, short length);
 static void UpdateNumStatLo(StatType which, long value);
-static OSErr GetAbbrevNames(Handle *monthNames, Handle *dayNames);
-static void MoveNames(Str15 *names, long count, long abbrLen, StringPtr dest);
+static int GetAbbrevNames(void **monthNames, void **dayNames);
+static void MoveNames(char names[16], long count, long abbrLen, char * dest);
 static void ComposeNumStats(AccuPtr a, StatType type, short strType,
                             ComposeStatsData *data);
 static void ComposeShortStats(AccuPtr a, StatType type, short strType,
@@ -233,7 +233,7 @@ static void ComposeShortStats(AccuPtr a, StatType type, short strType,
                               bool percent);
 static void ComposeUsageActivities(AccuPtr a, ComposeStatsData *data);
 static bool InitGraphPict(GraphData *data, SeriesInfo *theSeries,
-                          StatTimePeriod period, StringPtr *labels);
+                          StatTimePeriod period, char * *labels);
 static char *FinishGraphPict(GraphData *data);
 static void ComposeFRR(AccuPtr a, ComposeStatsData *data);
 void ComposeJunkJunk(AccuPtr a, ComposeStatsData *data);
@@ -242,7 +242,7 @@ static void AccuAddNumStats(AccuPtr a, short keyword, PeriodicStats *stats);
 static void AccuAddArray(AccuPtr a, short keyword, uLong *stats, short count);
 static void AccuAddShortStats(AccuPtr a, short keyword,
                               ShortPeriodicStats *stats);
-static void ParseStatFile(Handle hStatXML);
+static void ParseStatFile(void *hStatXML);
 static short WordStrn(short rStrn, long value);
 void UpdateCalcStats(void);
 typedef enum { opPlus, opMinus, opPercent } OpType;
@@ -269,7 +269,7 @@ void ShutdownStats(void) {
     return;
   UpdateFacetime();
   SaveStats(true);
-  ZapHandle(gStatData);
+  free(gStatData);
   DisposeFaceMeasure(gFaceMeasure);
   gFaceMeasure = nil;
 }
@@ -372,7 +372,7 @@ void UpdateNumStatWithTime(StatType which, long value, uLong seconds) {
     dMonth = gCurrentTime.ld.month - dt.ld.month;
     dYear = gCurrentTime.ld.year - dt.ld.year;
 
-    pData = *gStatData;
+    pData = gStatData;
 
     if (which < kStatCount) {
       pNum = &pData->numStats[which];
@@ -468,7 +468,7 @@ static void UpdateNumStatLo(StatType which, long value) {
     return;
 
   if (value) {
-    pData = *gStatData;
+    pData = gStatData;
 
     if (which < kStatCount) {
       pNum = &pData->numStats[which];
@@ -517,7 +517,7 @@ void CheckTimeChange(void) {
   theTime.hl.lHigh = 0;
   GetDateTime(&theTime.hl.lLow);
   LongSecondsToDate(&theTime.c, &dt);
-  theTime.hl.lLow = (*gStatData)->startTime;
+  theTime.hl.lLow = gStatData->startTime;
   LongSecondsToDate(&theTime.c, &dtStart);
   timeFlags = 0;
 
@@ -580,10 +580,9 @@ void CheckTimeChange(void) {
     NumericStats *pStats;
     ShortNumericStats *pShortStats;
 
-    LDRef(gStatData);
 
     //  Do numeric stats
-    for (i = 0, pStats = (*gStatData)->numStats; i < kStatCount;
+    for (i = 0, pStats = gStatData->numStats; i < kStatCount;
          i++, pStats++) {
       //	Do year
       if (timeFlags & kNewYear) {
@@ -639,7 +638,7 @@ void CheckTimeChange(void) {
     }
 
     //  Do short stats
-    for (i = 0, pShortStats = (*gStatData)->shortStats; i < kShortStatCount;
+    for (i = 0, pShortStats = gStatData->shortStats; i < kShortStatCount;
          i++, pShortStats++) {
       //	Do year
       if (timeFlags & kNewYear) {
@@ -671,7 +670,6 @@ void CheckTimeChange(void) {
       }
     }
     gAutoUpdateTicks = TickCount() + kAutoUpdateTicks;
-    UL(gStatData);
   }
 
   gCurrentTime = dt;
@@ -688,11 +686,11 @@ static void AddToAve(uLong *to, uLong *from, short length) {
 /************************************************************************
  * LoadStats - load stats from file in XML format
  ************************************************************************/
-OSErr LoadStats(void) {
-  OSErr err;
+int LoadStats(void) {
+  int err;
   FSSpec spec, renameSpec;
-  Str255 s;
-  Handle hStatXML;
+  char s[256];
+  void *hStatXML;
   LongDateCvt theTime;
 
   if (gStatData)
@@ -702,27 +700,27 @@ OSErr LoadStats(void) {
   if (!gStatData)
     return MemError();
 
-  (*gStatData)->startTime = (*gStatData)->junkStartTime =
-      (*gStatData)->currentTime =
+  gStatData->startTime = gStatData->junkStartTime =
+      gStatData->currentTime =
           LocalDateTime(); // in case we can't get any saved stats
 
   spec_for(Root.path, (const char *)GetRString(s, STATISTICS_FILE), &spec);
   err = Snarf(&spec, &hStatXML, 0);
   if (!err) {
     ParseStatFile(hStatXML);
-    ZapHandle(hStatXML);
+    free(hStatXML);
   } else if (!FSpExists(&spec)) {
     //	There was a problem loading the stats data. Either the file doesn't
     // exist yet 	or there was a file error. In the latter case, rename
     // the bad file so we have 	a backup and so we can create a new one.
     renameSpec = spec;
-    PSCat(renameSpec.name, (UPtr)".bad");
+    g_strlcat((char *)renameSpec.name, ".bad", sizeof(renameSpec.name));
     UniqueSpec(&renameSpec, 31);
-    FSpRename(&spec, renameSpec.name);
+    MyFSpRename(&spec, renameSpec.name);
   }
 
   theTime.hl.lHigh = 0;
-  theTime.hl.lLow = (*gStatData)->currentTime;
+  theTime.hl.lLow = gStatData->currentTime;
   LongSecondsToDate(&theTime.c, &gCurrentTime);
   CheckTimeChange();
 
@@ -732,10 +730,10 @@ OSErr LoadStats(void) {
 /************************************************************************
  * SaveStats - save stats to file in XML format
  ************************************************************************/
-OSErr SaveStats(bool force) {
-  OSErr err;
+int SaveStats(bool force) {
+  int err;
   FSSpec spec;
-  Str255 s, sValue;
+  char s[256], sValue[256];
   Accumulator a;
   StatDataPtr pStatData;
   short i;
@@ -747,8 +745,8 @@ OSErr SaveStats(bool force) {
     return noErr; // if the disk isn't spun up, bail
 
   CheckTimeChange();
-  (*gStatData)->currentTime = LocalDateTime();
-  pStatData = LDRef(gStatData);
+  gStatData->currentTime = LocalDateTime();
+  pStatData = gStatData;
 
   // start XML
   AccuInit(&a);
@@ -825,14 +823,13 @@ OSErr SaveStats(bool force) {
   XMLDecIndent();
   AccuAddTagLine(&a, GetRString(s, StatXMLStrn + ksStatDocEntry), true);
   AccuTrim(&a);
-  UL(gStatData);
 
   // save out to file
   spec_for(Root.path,
                (const char *)GetRString((unsigned char *)s, STATISTICS_FILE),
                &spec);
   err = Blat(&spec, a.data, false);
-  AccuZap(&a);
+  free(a.data); a.data = NULL; a.offset = a.size = 0;
 
   gStatsDirty = false;
   return err;
@@ -843,7 +840,7 @@ OSErr SaveStats(bool force) {
  ************************************************************************/
 void ResetStatistics(void) {
   FSSpec spec;
-  Str255 s;
+  char s[256];
 
   ShutdownStats();
   spec_for(Root.path, (const char *)GetRString(s, STATISTICS_FILE), &spec);
@@ -856,7 +853,7 @@ void ResetStatistics(void) {
  ************************************************************************/
 static void AccuAddShortStats(AccuPtr a, short keyword,
                               ShortPeriodicStats *stats) {
-  Str63 s;
+  char s[64];
 
   AccuAddTagLine(a, (unsigned char *)GetRString((unsigned char *)s, keyword),
                  false);
@@ -886,7 +883,7 @@ static void AccuAddShortStats(AccuPtr a, short keyword,
  * AccuAddNumStats - save number stats
  ************************************************************************/
 static void AccuAddNumStats(AccuPtr a, short keyword, PeriodicStats *stats) {
-  Str63 s;
+  char s[64];
 
   AccuAddTagLine(a, (unsigned char *)GetRString((unsigned char *)s, keyword),
                  false);
@@ -907,7 +904,7 @@ static void AccuAddNumStats(AccuPtr a, short keyword, PeriodicStats *stats) {
  * AccuAddArray - save an array of data
  ************************************************************************/
 static void AccuAddArray(AccuPtr a, short keyword, uLong *stats, short count) {
-  Str63 s;
+  char s[64];
   short i;
 
   AccuIndent(a);
@@ -1047,11 +1044,11 @@ void GetStatTotalPercents(NumericStats *statNumerator,
 /************************************************************************
  * GetStatsAsText - return stats in HTML format
  ************************************************************************/
-Handle GetStatsAsText(StatTimePeriod period, bool extended) {
+void *GetStatsAsText(StatTimePeriod period, bool extended) {
   Accumulator a;
   ComposeStatsData data;
-  Str255 s;
-  Str32 sTime;
+  char s[256];
+  char sTime[33];
   short rPeriodTab[] = {sStatDay, sStatWeek, sStatMonth, sStatYear};
   short rThisTab[] = {sStatToday, sStatThisWeek, sStatThisMonth, sStatThisYear};
   short rLastTab[] = {sStatYesterday, sStatLastWeek, sStatLastMonth,
@@ -1069,7 +1066,7 @@ Handle GetStatsAsText(StatTimePeriod period, bool extended) {
   data.rLast = StatHTMLStrn + rLastTab[period];
 
   //	Don't display averages until we have statistics for 24 hours
-  data.showAverage = LocalDateTime() > (*gStatData)->startTime + 60 * 60 * 24;
+  data.showAverage = LocalDateTime() > gStatData->startTime + 60 * 60 * 24;
 
   if (AccuInit(&a)) {
     PopGWorld();
@@ -1077,7 +1074,7 @@ Handle GetStatsAsText(StatTimePeriod period, bool extended) {
   }
 
   if (!data.showAverage ||
-      ((LocalDateTime() - (*gStatData)->startTime) < secondsTab[period]))
+      ((LocalDateTime() - gStatData->startTime) < secondsTab[period]))
     GetRString(data.sProjected, StatHTMLStrn + sStatProjected);
   else
     data.sProjected[0] = 0;
@@ -1085,7 +1082,6 @@ Handle GetStatsAsText(StatTimePeriod period, bool extended) {
   UpdateCalcStats();
 
   AccuAddRes(&a, StatHTMLStrn + sStatHTMLBegin); //	begin HTML
-  LDRef(gStatData);
   if (!extended) {
     ComposeNumStats(&a, kStatReceivedMail, sStatRecdEmail,
                     &data);                      //	Received Email
@@ -1139,8 +1135,8 @@ Handle GetStatsAsText(StatTimePeriod period, bool extended) {
   }
 
   //	Since when?
-  DateString((*gStatData)->startTime, longDate, s, nil);
-  TimeString((*gStatData)->startTime, false, sTime, nil);
+  DateString(gStatData->startTime, longDate, s, nil);
+  TimeString(gStatData->startTime, false, sTime, nil);
   AccuComposeR(&a, StatHTMLStrn + sStatSince, s, sTime);
 
   //	Current time
@@ -1148,7 +1144,6 @@ Handle GetStatsAsText(StatTimePeriod period, bool extended) {
   TimeString(LocalDateTime(), false, sTime, nil);
   AccuComposeR(&a, StatHTMLStrn + sStatCurrentTime, s, sTime);
 
-  UL(gStatData);
   AccuAddRes(&a, StatHTMLStrn + sStatHTMLEnd); //	end HTML
 
   PopGWorld();
@@ -1160,21 +1155,21 @@ Handle GetStatsAsText(StatTimePeriod period, bool extended) {
  ************************************************************************/
 static void ComposeFRR(AccuPtr a, ComposeStatsData *data) {
   uLong secs;
-  Str32 sThisVal, sLastVal, sAveVal, sTotalVal;
-  Str63 sThisPeriod, sLastPeriod;
+  char sThisVal[33], sLastVal[33], sAveVal[33], sTotalVal[33];
+  char sThisPeriod[64], sLastPeriod[64];
   ShortNumericStats *sStats;
   float dayAve;
   PicHandle hPict;
   GraphData graphData;
   SeriesInfo theSeries[3];
-  StringPtr labels[3];
+  char * labels[3];
   uLong thisSeries[3], lastSeries[3], aveSeries[3], totalSeries;
   short i;
 
   for (i = 0; i < 3; i++) {
     sStats =
-        &(*gStatData)->shortStats[kStatForwardMsg - kBeginShortStats - 1 + i];
-    secs = LocalDateTime() - (*gStatData)->startTime;
+        &gStatData->shortStats[kStatForwardMsg - kBeginShortStats - 1 + i];
+    secs = LocalDateTime() - gStatData->startTime;
     dayAve = secs ? 10 * 24.0 * 60.0 * 60.0 * (float)sStats->total / secs : 0;
     switch (data->period) {
     case kStatDay:
@@ -1246,89 +1241,89 @@ static void ComposeFRR(AccuPtr a, ComposeStatsData *data) {
  * ComposeJunkJunk - show more junk stats
  ************************************************************************/
 void ComposeJunkJunk(AccuPtr a, ComposeStatsData *data) {
-  Str32 sThis, sLast;
+  char sThis[33], sLast[33];
   uLong junkTotal, total, falseNeg, falsePos, falseWhite;
   uLong lastJunkTotal, lastTotal, lastFalseNeg, lastFalsePos, lastFalseWhite;
 
   switch (data->period) {
   case kStatDay:
-    junkTotal = SumArrayHi((*gStatData)->numStats[kStatJunkTotal].current.day);
-    total = SumArrayHi((*gStatData)->numStats[kStatTotal].current.day);
+    junkTotal = SumArrayHi(gStatData->numStats[kStatJunkTotal].current.day);
+    total = SumArrayHi(gStatData->numStats[kStatTotal].current.day);
     falseNeg =
-        SumArrayHi((*gStatData)->numStats[kStatFalseNegatives].current.day);
+        SumArrayHi(gStatData->numStats[kStatFalseNegatives].current.day);
     falsePos =
-        SumArrayHi((*gStatData)->numStats[kStatFalsePositives].current.day);
+        SumArrayHi(gStatData->numStats[kStatFalsePositives].current.day);
     falseWhite =
-        SumArrayHi((*gStatData)->numStats[kStatFalseWhiteList].current.day);
-    lastJunkTotal = SumArrayHi((*gStatData)->numStats[kStatJunkTotal].last.day);
-    lastTotal = SumArrayHi((*gStatData)->numStats[kStatTotal].last.day);
+        SumArrayHi(gStatData->numStats[kStatFalseWhiteList].current.day);
+    lastJunkTotal = SumArrayHi(gStatData->numStats[kStatJunkTotal].last.day);
+    lastTotal = SumArrayHi(gStatData->numStats[kStatTotal].last.day);
     lastFalseNeg =
-        SumArrayHi((*gStatData)->numStats[kStatFalseNegatives].last.day);
+        SumArrayHi(gStatData->numStats[kStatFalseNegatives].last.day);
     lastFalsePos =
-        SumArrayHi((*gStatData)->numStats[kStatFalsePositives].last.day);
+        SumArrayHi(gStatData->numStats[kStatFalsePositives].last.day);
     lastFalseWhite =
-        SumArrayHi((*gStatData)->numStats[kStatFalseWhiteList].last.day);
+        SumArrayHi(gStatData->numStats[kStatFalseWhiteList].last.day);
     break;
 
   case kStatWeek:
-    junkTotal = SumArrayHi((*gStatData)->numStats[kStatJunkTotal].current.week);
-    total = SumArrayHi((*gStatData)->numStats[kStatTotal].current.week);
+    junkTotal = SumArrayHi(gStatData->numStats[kStatJunkTotal].current.week);
+    total = SumArrayHi(gStatData->numStats[kStatTotal].current.week);
     falseNeg =
-        SumArrayHi((*gStatData)->numStats[kStatFalseNegatives].current.week);
+        SumArrayHi(gStatData->numStats[kStatFalseNegatives].current.week);
     falsePos =
-        SumArrayHi((*gStatData)->numStats[kStatFalsePositives].current.week);
+        SumArrayHi(gStatData->numStats[kStatFalsePositives].current.week);
     falseWhite =
-        SumArrayHi((*gStatData)->numStats[kStatFalseWhiteList].current.week);
+        SumArrayHi(gStatData->numStats[kStatFalseWhiteList].current.week);
     lastJunkTotal =
-        SumArrayHi((*gStatData)->numStats[kStatJunkTotal].last.week);
-    lastTotal = SumArrayHi((*gStatData)->numStats[kStatTotal].last.week);
+        SumArrayHi(gStatData->numStats[kStatJunkTotal].last.week);
+    lastTotal = SumArrayHi(gStatData->numStats[kStatTotal].last.week);
     lastFalseNeg =
-        SumArrayHi((*gStatData)->numStats[kStatFalseNegatives].last.week);
+        SumArrayHi(gStatData->numStats[kStatFalseNegatives].last.week);
     lastFalsePos =
-        SumArrayHi((*gStatData)->numStats[kStatFalsePositives].last.week);
+        SumArrayHi(gStatData->numStats[kStatFalsePositives].last.week);
     lastFalseWhite =
-        SumArrayHi((*gStatData)->numStats[kStatFalseWhiteList].last.week);
+        SumArrayHi(gStatData->numStats[kStatFalseWhiteList].last.week);
     break;
 
   case kStatMonth:
     junkTotal =
-        SumArrayHi((*gStatData)->numStats[kStatJunkTotal].current.month);
-    total = SumArrayHi((*gStatData)->numStats[kStatTotal].current.month);
+        SumArrayHi(gStatData->numStats[kStatJunkTotal].current.month);
+    total = SumArrayHi(gStatData->numStats[kStatTotal].current.month);
     falseNeg =
-        SumArrayHi((*gStatData)->numStats[kStatFalseNegatives].current.month);
+        SumArrayHi(gStatData->numStats[kStatFalseNegatives].current.month);
     falsePos =
-        SumArrayHi((*gStatData)->numStats[kStatFalsePositives].current.month);
+        SumArrayHi(gStatData->numStats[kStatFalsePositives].current.month);
     falseWhite =
-        SumArrayHi((*gStatData)->numStats[kStatFalseWhiteList].current.month);
+        SumArrayHi(gStatData->numStats[kStatFalseWhiteList].current.month);
     lastJunkTotal =
-        SumArrayHi((*gStatData)->numStats[kStatJunkTotal].last.month);
-    lastTotal = SumArrayHi((*gStatData)->numStats[kStatTotal].last.month);
+        SumArrayHi(gStatData->numStats[kStatJunkTotal].last.month);
+    lastTotal = SumArrayHi(gStatData->numStats[kStatTotal].last.month);
     lastFalseNeg =
-        SumArrayHi((*gStatData)->numStats[kStatFalseNegatives].last.month);
+        SumArrayHi(gStatData->numStats[kStatFalseNegatives].last.month);
     lastFalsePos =
-        SumArrayHi((*gStatData)->numStats[kStatFalsePositives].last.month);
+        SumArrayHi(gStatData->numStats[kStatFalsePositives].last.month);
     lastFalseWhite =
-        SumArrayHi((*gStatData)->numStats[kStatFalseWhiteList].last.month);
+        SumArrayHi(gStatData->numStats[kStatFalseWhiteList].last.month);
     break;
 
   case kStatYear:
-    junkTotal = SumArrayHi((*gStatData)->numStats[kStatJunkTotal].current.year);
-    total = SumArrayHi((*gStatData)->numStats[kStatTotal].current.year);
+    junkTotal = SumArrayHi(gStatData->numStats[kStatJunkTotal].current.year);
+    total = SumArrayHi(gStatData->numStats[kStatTotal].current.year);
     falseNeg =
-        SumArrayHi((*gStatData)->numStats[kStatFalseNegatives].current.year);
+        SumArrayHi(gStatData->numStats[kStatFalseNegatives].current.year);
     falsePos =
-        SumArrayHi((*gStatData)->numStats[kStatFalsePositives].current.year);
+        SumArrayHi(gStatData->numStats[kStatFalsePositives].current.year);
     falseWhite =
-        SumArrayHi((*gStatData)->numStats[kStatFalseWhiteList].current.year);
+        SumArrayHi(gStatData->numStats[kStatFalseWhiteList].current.year);
     lastJunkTotal =
-        SumArrayHi((*gStatData)->numStats[kStatJunkTotal].last.year);
-    lastTotal = SumArrayHi((*gStatData)->numStats[kStatTotal].last.year);
+        SumArrayHi(gStatData->numStats[kStatJunkTotal].last.year);
+    lastTotal = SumArrayHi(gStatData->numStats[kStatTotal].last.year);
     lastFalseNeg =
-        SumArrayHi((*gStatData)->numStats[kStatFalseNegatives].last.year);
+        SumArrayHi(gStatData->numStats[kStatFalseNegatives].last.year);
     lastFalsePos =
-        SumArrayHi((*gStatData)->numStats[kStatFalsePositives].last.year);
+        SumArrayHi(gStatData->numStats[kStatFalsePositives].last.year);
     lastFalseWhite =
-        SumArrayHi((*gStatData)->numStats[kStatFalseWhiteList].last.year);
+        SumArrayHi(gStatData->numStats[kStatFalseWhiteList].last.year);
     break;
   }
 
@@ -1393,58 +1388,58 @@ void ComposeJunkJunk(AccuPtr a, ComposeStatsData *data) {
  ************************************************************************/
 static void ComposeUsageActivities(AccuPtr a, ComposeStatsData *data) {
   uLong read, compose, other, total, readPercent, composePercent, otherPercent;
-  Str32 sRead, sCompose, sOther;
+  char sRead[33], sCompose[33], sOther[33];
   PicHandle hPict;
   GraphData graphData;
   SeriesInfo theSeries[3];
-  StringPtr labels[3];
+  char * labels[3];
   uLong series[3];
 
   switch (data->period) {
   case kStatDay:
-    read = (*gStatData)
+    read = (gStatData)
                ->shortStats[kStatFaceTimeRead - kBeginShortStats - 1]
                .current.day;
-    compose = (*gStatData)
+    compose = (gStatData)
                   ->shortStats[kStatFaceTimeCompose - kBeginShortStats - 1]
                   .current.day;
-    other = (*gStatData)
+    other = (gStatData)
                 ->shortStats[kStatFaceTimeOther - kBeginShortStats - 1]
                 .current.day;
     break;
 
   case kStatWeek:
-    read = (*gStatData)
+    read = (gStatData)
                ->shortStats[kStatFaceTimeRead - kBeginShortStats - 1]
                .current.week;
-    compose = (*gStatData)
+    compose = (gStatData)
                   ->shortStats[kStatFaceTimeCompose - kBeginShortStats - 1]
                   .current.week;
-    other = (*gStatData)
+    other = (gStatData)
                 ->shortStats[kStatFaceTimeOther - kBeginShortStats - 1]
                 .current.week;
     break;
 
   case kStatMonth:
-    read = (*gStatData)
+    read = (gStatData)
                ->shortStats[kStatFaceTimeRead - kBeginShortStats - 1]
                .current.month;
-    compose = (*gStatData)
+    compose = (gStatData)
                   ->shortStats[kStatFaceTimeCompose - kBeginShortStats - 1]
                   .current.month;
-    other = (*gStatData)
+    other = (gStatData)
                 ->shortStats[kStatFaceTimeOther - kBeginShortStats - 1]
                 .current.month;
     break;
 
   case kStatYear:
-    read = (*gStatData)
+    read = (gStatData)
                ->shortStats[kStatFaceTimeRead - kBeginShortStats - 1]
                .current.year;
-    compose = (*gStatData)
+    compose = (gStatData)
                   ->shortStats[kStatFaceTimeCompose - kBeginShortStats - 1]
                   .current.year;
-    other = (*gStatData)
+    other = (gStatData)
                 ->shortStats[kStatFaceTimeOther - kBeginShortStats - 1]
                 .current.year;
     break;
@@ -1490,17 +1485,17 @@ static void ComposeShortStats(AccuPtr a, StatType type, short strType,
                               ComposeStatsData *data, short rObject,
                               bool percent) {
   uLong thisVal, lastVal, aveVal;
-  Str32 sThisVal, sLastVal, sAveVal, sTotalVal;
+  char sThisVal[33], sLastVal[33], sAveVal[33], sTotalVal[33];
   float dayAve, secs, recvMailAve;
   ShortNumericStats *stats;
   NumericStats *recvMailStats;
 
-  secs = LocalDateTime() - (*gStatData)->startTime;
+  secs = LocalDateTime() - gStatData->startTime;
   //	average is times 10 so we can do a single decimal place
-  stats = &(*gStatData)->shortStats[type - kBeginShortStats - 1];
+  stats = &gStatData->shortStats[type - kBeginShortStats - 1];
   dayAve = secs ? 10 * 24.0 * 60.0 * 60.0 * (float)stats->total / secs : 0;
   if (type == kStatReadMsg) {
-    recvMailStats = &(*gStatData)->numStats[kStatReceivedMail];
+    recvMailStats = &gStatData->numStats[kStatReceivedMail];
     recvMailAve =
         secs ? 24.0 * 60.0 * 60.0 * (float)recvMailStats->total / secs : 0;
     aveVal = dayAve * 100 / recvMailAve;
@@ -1591,17 +1586,17 @@ static void ComposeNumStats(AccuPtr a, StatType type, short strType,
                             ComposeStatsData *data) {
   uLong values[4];
   PicHandle hPict;
-  Str32 sThisVal, sLastVal, sAveVal, sTotalVal;
-  Str63 sThisPeriod, sLastPeriod;
+  char sThisVal[33], sLastVal[33], sAveVal[33], sTotalVal[33];
+  char sThisPeriod[64], sLastPeriod[64];
 
   if (type == kStatJunkPercent)
-    GetStatTotalPercents(&(*gStatData)->numStats[kStatJunkTotal],
-                         &(*gStatData)->numStats[kStatTotal], data->period,
+    GetStatTotalPercents(&gStatData->numStats[kStatJunkTotal],
+                         &gStatData->numStats[kStatTotal], data->period,
                          values);
   else
-    GetStatTotals(&(*gStatData)->numStats[type], data->period, values,
-                  type != kStatJunkPercent ? (*gStatData)->startTime
-                                           : (*gStatData)->junkStartTime);
+    GetStatTotals(&gStatData->numStats[type], data->period, values,
+                  type != kStatJunkPercent ? gStatData->startTime
+                                           : gStatData->junkStartTime);
 
   if (type == kStatFaceTime) {
     //	Usage
@@ -1629,7 +1624,7 @@ static void ComposeNumStats(AccuPtr a, StatType type, short strType,
   }
 
   // add a graph
-  char *b64 = GetGraphPict(&(*gStatData)->numStats[type], data->period,
+  char *b64 = GetGraphPict(&gStatData->numStats[type], data->period,
                            type == kStatFaceTime, data->showAverage,
                            GetRString(sThisPeriod, data->rThis),
                            GetRString(sLastPeriod, data->rLast),
@@ -1657,21 +1652,21 @@ static short WordStrn(short rStrn, long value) {
 /************************************************************************
  * RightAlign7 - right align with 7 chars in field
  ************************************************************************/
-static UPtr RightAlign7(uLong value, UPtr s) {
+static unsigned char * RightAlign7(uLong value, unsigned char * s) {
   return RightAlign(value, s, 7, 0);
 }
 
 /************************************************************************
  * RightAlign7Dec - right align with 7 chars in field and use decimal place
  ************************************************************************/
-static UPtr RightAlign7Dec(uLong value, UPtr s) {
+static unsigned char * RightAlign7Dec(uLong value, unsigned char * s) {
   return RightAlign(value, s, 7, 1);
 }
 
 /************************************************************************
  * RightAlign - right align with X chars in field, and add any commas
  ************************************************************************/
-static UPtr RightAlign(uLong value, UPtr s, short minLen, short decPlace) {
+static unsigned char * RightAlign(uLong value, unsigned char * s, short minLen, short decPlace) {
   short len;
   char cTokThousands, cDecPoint;
 
@@ -1708,13 +1703,13 @@ static UPtr RightAlign(uLong value, UPtr s, short minLen, short decPlace) {
  * GetGraphPict - make a graph
  ************************************************************************/
 static char *GetGraphPict(NumericStats *stats, StatTimePeriod period,
-                          bool seconds, bool showAverage, StringPtr sThis,
-                          StringPtr sLast, StringPtr sAverage) {
+                          bool seconds, bool showAverage, char * sThis,
+                          char * sLast, char * sAverage) {
   uLong aveVals[31], *aveRaw;
   short i;
   GraphData data;
   SeriesInfo theSeries[3];
-  StringPtr labels[3];
+  char * labels[3];
   DateTimeRec dtStart, dtNow;
   uLong elapsedUnits;
   bool doAverage = true;
@@ -1734,7 +1729,7 @@ static char *GetGraphPict(NumericStats *stats, StatTimePeriod period,
     theSeries[2].type = GetRLong(STAT_AVERAGE_TYPE);
 
     SecondsToDate(LocalDateTime(), &dtNow);
-    SecondsToDate((*gStatData)->startTime, &dtStart);
+    SecondsToDate(gStatData->startTime, &dtStart);
     dtNow.minute = dtNow.second = 0;
     dtStart.minute = dtStart.second = 0;
 
@@ -1800,7 +1795,7 @@ static uLong CalcElapsedUnits(StatTimePeriod period) {
   uLong elapsedUnits;
 
   SecondsToDate(LocalDateTime(), &dtNow);
-  SecondsToDate((*gStatData)->startTime, &dtStart);
+  SecondsToDate(gStatData->startTime, &dtStart);
   dtNow.minute = dtNow.second = 0;
   dtStart.minute = dtStart.second = 0;
 
@@ -1845,7 +1840,7 @@ static uLong CalcElapsedUnits(StatTimePeriod period) {
  * InitGraphPict - make a graph
  ************************************************************************/
 static bool InitGraphPict(GraphData *data, SeriesInfo *theSeries,
-                          StatTimePeriod period, StringPtr *labels) {
+                          StatTimePeriod period, char * *labels) {
   Zero(*data);
   SetRect(&data->bounds, 0, 0, GetRLong(STAT_GRAPH_WIDTH),
           GetRLong(STAT_GRAPH_HEIGHT));
@@ -1921,12 +1916,12 @@ static char *FinishGraphPict(GraphData *data) {
 /************************************************************************
  * GetXLabels - generate the X-axis labels
  ************************************************************************/
-static Handle GetXLabels(StatTimePeriod period) {
-  static Handle labelList[4];
-  Str255 s;
-  OSErr err = noErr;
+static void *GetXLabels(StatTimePeriod period) {
+  static void *labelList[4];
+  char s[256];
+  int err = noErr;
 
-  if (!labelList[period] || !*labelList[period]) {
+  if (!labelList[period]) {
     // need to generate stringlist
     Accumulator a;
     short i;
@@ -1948,8 +1943,9 @@ static Handle GetXLabels(StatTimePeriod period) {
         if ((err = AccuAddPtr(&a, &s, *s + 1)))
           break;
       }
-      if (err)
-        AccuZap(&a);
+      if (err) {
+        free(a.data); a.data = NULL; a.offset = a.size = 0;
+      }
       else {
         AccuTrim(&a);
         labelList[period] = a.data;
@@ -1970,7 +1966,7 @@ static Handle GetXLabels(StatTimePeriod period) {
 /************************************************************************
  * GetAbbrevNames - get abbreviated month and weekday names
  ************************************************************************/
-static OSErr GetAbbrevNames(Handle *monthNames, Handle *dayNames) {
+static int GetAbbrevNames(void **monthNames, void **dayNames) {
   const char *m[] = {"Jan", "Feb", "Mar", "Apr", "May", "Jun",
                      "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"};
   const char *d[] = {"Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"};
@@ -1981,8 +1977,8 @@ static OSErr GetAbbrevNames(Handle *monthNames, Handle *dayNames) {
   if (!*monthNames || !*dayNames)
     return memFullErr;
 
-  *(short *)**monthNames = 12;
-  char *ptr = (char *)**monthNames + 2;
+  *(short *)*monthNames = 12;
+  char *ptr = (char *)*monthNames + 2;
   for (int i = 0; i < 12; i++) {
     int l = strlen(m[i]);
     *ptr++ = l;
@@ -1990,8 +1986,8 @@ static OSErr GetAbbrevNames(Handle *monthNames, Handle *dayNames) {
     ptr += l;
   }
 
-  *(short *)**dayNames = 7;
-  ptr = (char *)**dayNames + 2;
+  *(short *)*dayNames = 7;
+  ptr = (char *)*dayNames + 2;
   for (int i = 0; i < 7; i++) {
     int l = strlen(d[i]);
     *ptr++ = l;
@@ -2005,7 +2001,7 @@ static OSErr GetAbbrevNames(Handle *monthNames, Handle *dayNames) {
 /************************************************************************
  * SaveStats - save stats to file in XML format
  ************************************************************************/
-static void ParseStatFile(Handle hStatXML) {
+static void ParseStatFile(void *hStatXML) {
   // FIXME: Port Eudora XML stats parser to GMarkup
   // The Mac version used TokenInfo and GetNextToken from xml.h which is
   // unported
@@ -2032,8 +2028,8 @@ void UpdateCalcStats(void) {
   long oldTotal;
 
   // Take the ones we score as junk...
-  (*gStatData)->numStats[kStatJunkTotal] =
-      (*gStatData)->numStats[kStatScoredJunk];
+  gStatData->numStats[kStatJunkTotal] =
+      gStatData->numStats[kStatScoredJunk];
 
   // Subtract the false positives (they weren't really junk)
   NumericStatOperation(kStatJunkTotal, kStatFalsePositives, opMinus);
@@ -2048,8 +2044,8 @@ void UpdateCalcStats(void) {
   // the result is all the junk we got!
 
   // Take the ones we didn't score as junk...
-  (*gStatData)->numStats[kStatTotal] =
-      (*gStatData)->numStats[kStatScoredNotJunk];
+  gStatData->numStats[kStatTotal] =
+      gStatData->numStats[kStatScoredNotJunk];
 
   // Add the whitelist
   NumericStatOperation(kStatTotal, kStatWhiteList, opPlus);
@@ -2060,38 +2056,38 @@ void UpdateCalcStats(void) {
   // The result is all eligible mail
 
   // Compute percentages
-  (*gStatData)->numStats[kStatJunkPercent] =
-      (*gStatData)->numStats[kStatJunkTotal];
-  oldTotal = (*gStatData)->numStats[kStatJunkPercent].total;
+  gStatData->numStats[kStatJunkPercent] =
+      gStatData->numStats[kStatJunkTotal];
+  oldTotal = gStatData->numStats[kStatJunkPercent].total;
   NumericStatOperation(kStatJunkPercent, kStatTotal, opPercent);
-  (*gStatData)->numStats[kStatJunkPercent].total = oldTotal;
+  gStatData->numStats[kStatJunkPercent].total = oldTotal;
 }
 
 /************************************************************************
  * NumericStatOperation - add or subtract one numeric stat from another
  ************************************************************************/
 void NumericStatOperation(StatType destination, StatType increment, OpType op) {
-  PeriodicStatOperation(&(*gStatData)->numStats[destination].current,
-                        &(*gStatData)->numStats[increment].current, op);
-  PeriodicStatOperation(&(*gStatData)->numStats[destination].last,
-                        &(*gStatData)->numStats[increment].last, op);
-  PeriodicStatOperation(&(*gStatData)->numStats[destination].average,
-                        &(*gStatData)->numStats[increment].average, op);
+  PeriodicStatOperation(&gStatData->numStats[destination].current,
+                        &gStatData->numStats[increment].current, op);
+  PeriodicStatOperation(&gStatData->numStats[destination].last,
+                        &gStatData->numStats[increment].last, op);
+  PeriodicStatOperation(&gStatData->numStats[destination].average,
+                        &gStatData->numStats[increment].average, op);
 
   switch (op) {
   case opPlus:
-    (*gStatData)->numStats[destination].total +=
-        (*gStatData)->numStats[increment].total;
+    gStatData->numStats[destination].total +=
+        gStatData->numStats[increment].total;
     break;
   case opMinus:
-    (*gStatData)->numStats[destination].total -=
-        (*gStatData)->numStats[increment].total;
+    gStatData->numStats[destination].total -=
+        gStatData->numStats[increment].total;
     break;
   case opPercent:
-    (*gStatData)->numStats[destination].total =
-        (*gStatData)->numStats[increment].total
-            ? (100 * (*gStatData)->numStats[destination].total) /
-                  (*gStatData)->numStats[increment].total
+    gStatData->numStats[destination].total =
+        gStatData->numStats[increment].total
+            ? (100 * gStatData->numStats[destination].total) /
+                  gStatData->numStats[increment].total
             : 0;
     break;
   }
@@ -2141,7 +2137,7 @@ bool StatDataLoaded(void) {
 
 long StatGetTotal(StatType which) {
   if (!gStatData) return 0;
-  StatDataPtr p = *gStatData;
+  StatDataPtr p = gStatData;
   if (which < kStatCount)
     return p->numStats[which].total;
   else if (which > kBeginShortStats && which < kEndStats)
@@ -2152,7 +2148,7 @@ long StatGetTotal(StatType which) {
 /* Get current-period value for a numeric stat */
 long StatGetCurrentPeriod(StatType which, StatTimePeriod period) {
   if (!gStatData || which >= kStatCount) return 0;
-  NumericStats *ns = &(*gStatData)->numStats[which];
+  NumericStats *ns = &gStatData->numStats[which];
   switch (period) {
   case kStatDay:   return SumArrayHi(ns->current.day);
   case kStatWeek:  return SumArrayHi(ns->current.week);
@@ -2164,7 +2160,7 @@ long StatGetCurrentPeriod(StatType which, StatTimePeriod period) {
 
 long StatGetLastPeriod(StatType which, StatTimePeriod period) {
   if (!gStatData || which >= kStatCount) return 0;
-  NumericStats *ns = &(*gStatData)->numStats[which];
+  NumericStats *ns = &gStatData->numStats[which];
   switch (period) {
   case kStatDay:   return SumArrayHi(ns->last.day);
   case kStatWeek:  return SumArrayHi(ns->last.week);
@@ -2177,7 +2173,7 @@ long StatGetLastPeriod(StatType which, StatTimePeriod period) {
 /* Get current-period value for a short stat */
 long StatGetShortCurrent(StatType which, StatTimePeriod period) {
   if (!gStatData || which <= kBeginShortStats || which >= kEndStats) return 0;
-  ShortNumericStats *ss = &(*gStatData)->shortStats[which - kBeginShortStats - 1];
+  ShortNumericStats *ss = &gStatData->shortStats[which - kBeginShortStats - 1];
   switch (period) {
   case kStatDay:   return ss->current.day;
   case kStatWeek:  return ss->current.week;
@@ -2189,7 +2185,7 @@ long StatGetShortCurrent(StatType which, StatTimePeriod period) {
 
 long StatGetShortLast(StatType which, StatTimePeriod period) {
   if (!gStatData || which <= kBeginShortStats || which >= kEndStats) return 0;
-  ShortNumericStats *ss = &(*gStatData)->shortStats[which - kBeginShortStats - 1];
+  ShortNumericStats *ss = &gStatData->shortStats[which - kBeginShortStats - 1];
   switch (period) {
   case kStatDay:   return ss->last.day;
   case kStatWeek:  return ss->last.week;
@@ -2201,19 +2197,19 @@ long StatGetShortLast(StatType which, StatTimePeriod period) {
 
 long StatGetStartTime(void) {
   if (!gStatData) return 0;
-  return (*gStatData)->startTime;
+  return gStatData->startTime;
 }
 
 /* Get hourly breakdown for today (24 values) for a numeric stat */
 void StatGetHourlyData(StatType which, long out[24]) {
   memset(out, 0, 24 * sizeof(long));
   if (!gStatData || which >= kStatCount) return;
-  memcpy(out, (*gStatData)->numStats[which].current.day, 24 * sizeof(long));
+  memcpy(out, gStatData->numStats[which].current.day, 24 * sizeof(long));
 }
 
 /* Get daily breakdown for this week (7 values) */
 void StatGetWeeklyData(StatType which, long out[7]) {
   memset(out, 0, 7 * sizeof(long));
   if (!gStatData || which >= kStatCount) return;
-  memcpy(out, (*gStatData)->numStats[which].current.week, 7 * sizeof(long));
+  memcpy(out, gStatData->numStats[which].current.week, 7 * sizeof(long));
 }

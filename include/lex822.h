@@ -69,7 +69,7 @@ typedef struct {
   bool reinitToken;          /* have we seen the end of the input stream? */
   bool uhOh;                 /* we tawt we taw a putty tat */
   bool has1522;              /* RFC 1522 encoded data found */
-} Lex822State, *L822SPtr, **L822SHandle;
+} Lex822State, *L822SPtr, *L822SHandle;
 
 typedef struct Accumulator *AccuPtr;
 struct TransStreamStruct; // Forward declaration

@@ -79,26 +79,25 @@ ADVISED OF THE POSSIBILITY OF SUCH DAMAGE. */
 typedef struct AssocArray {
   short keySize;  /* length of keys */
   short dataSize; /* length of data blocks */
-} AssocArray, *AAPtr, **AAHandle;
+} AssocArray, *AAPtr, *AAHandle;
 AAHandle AANew(short keySize, short dataSize);
-int AAAddItem(AAHandle aa, bool replace, unsigned char *key,
-              unsigned char *data);
-int AAAddResItem(AAHandle aa, bool replace, short keyId, unsigned char *data);
-int AADeleteKey(AAHandle aa, unsigned char *key);
-int AAFetchData(AAHandle aa, unsigned char *key, unsigned char *data);
-int AAFetchResData(AAHandle aa, short keyId, unsigned char *data);
-int AAFetchIndData(AAHandle aa, short index, unsigned char *data);
-int AAFetchIndKey(AAHandle aa, short index, unsigned char *key);
+int AAAddItem(AAHandle aa, bool replace, char *key, char *data);
+int AAAddResItem(AAHandle aa, bool replace, short keyId, char *data);
+int AADeleteKey(AAHandle aa, char *key);
+int AAFetchData(AAHandle aa, char *key, char *data);
+int AAFetchResData(AAHandle aa, short keyId, char *data);
+int AAFetchIndData(AAHandle aa, short index, char *data);
+int AAFetchIndKey(AAHandle aa, short index, char *key);
 short AACountItems(AAHandle aa);
-#define AAZap(aaH) ZapHandle(aaH)
-short AAFindKey(AAHandle aa, unsigned char *key);
+#define AAZap(aaH) free(aaH)
+short AAFindKey(AAHandle aa, char *key);
 
 typedef struct {
   short id;
   uLong used;
   uLong persId;
   unsigned char string[256];
-} StringCacheEntry, *SCPtr, **SCHandle;
+} StringCacheEntry, *SCPtr, *SCHandle;
 
 /**********************************************************************
  * replace RemoveResource calls to fix OS bug
@@ -115,19 +114,19 @@ typedef struct {
   long elCount;
 } StackType_Util, *StackPtr_Util, **StackHandle_Util;
 // Stack functions - declared in mailbox.h with different signatures
-OSErr StackInit(long size, StackHandle *stack);
-OSErr StackPush(void *what, StackHandle stack);
-OSErr StackPop(void *into, StackHandle stack);
-OSErr StackItem(void *into, short item, StackHandle stack);
-// OSErr StackPush(void *what,StackHandle stack);
-// OSErr StackPop(void *into,StackHandle stack);
-// OSErr StackQueue(void *what,StackHandle stack);
-// OSErr StackTop(void *into,StackHandle stack);
+int StackInit(long size, StackHandle *stack);
+int StackPush(void *what, StackHandle stack);
+int StackPop(void *into, StackHandle stack);
+int StackItem(void *into, short item, StackHandle stack);
+// int StackPush(void *what,StackHandle stack);
+// int StackPop(void *into,StackHandle stack);
+// int StackQueue(void *what,StackHandle stack);
+// int StackTop(void *into,StackHandle stack);
 
 void StackCompact(StackHandle stack);
-short StackStringFind(PStr find, StackHandle stack);
+short StackStringFind(char *find, StackHandle stack);
 void SCClear(short theId);
-short CountStrnRes(UHandle resH);
+short CountStrnRes(unsigned char * resH);
 void Rude(void);
 void CheckNone(MenuHandle mh);
 bool OnBatteries(void);
@@ -135,37 +134,35 @@ bool OnBatteries(void);
 // #define Zero(x) WriteZero(&(x),sizeof(x))
 void MacInitialize(int masterCount, long ensureStack);
 // unsigned char * GetRString(unsigned char * theString,short theIndex);
-int GetFontID(unsigned char *theName);
+int GetFontID(char *theName);
 bool GrabEvent(void *theEvent);
 short SubmenuId(MenuHandle mh, short item);
 bool MyOSEventAvail(short mask, void *event);
 #define OSEventAvail MyOSEventAvail
 // struct Accumulator moved to mydefs.h
 // Accumulator typedefs moved to mailbox.h to avoid conflicts
-// typedef struct Accumulator *AccuPtr, **AccuHandle;
+// typedef struct Accumulator *AccuPtr, *AccuHandle;
 #define ACCU_TYPEDEF_DONE
 int AccuInit(AccuPtr a);
-void AccuInitWithHandle(AccuPtr a, void **h);
+void AccuInitWithPtr(AccuPtr a, char *buf, long size);
 void AccuTrim(AccuPtr a);
-int AccuAddTrPtr(AccuPtr a, void *bytes, long len, unsigned char *from,
-                 unsigned char *to);
-int AccuAddTrHandle(AccuPtr a, void **data, unsigned char *from,
-                    unsigned char *to);
+int AccuAddTrPtr(AccuPtr a, void *bytes, long len, char *from, char *to);
+int AccuAddTrHandle(AccuPtr a, void *data, char *from, char *to);
 int AccuAddPtrVoid(AccuPtr a, void *bytes, long len);
 #define AccuAddPtr AccuAddPtrVoid
 int AccuAddPtrB64(AccuPtr a, void *bytes, long len);
-int AccuAddHandle(AccuPtr a, void **data);
-int AccuAddHandleToPtr(AccuPtr a, unsigned char *data, long size);
-OSErr AccuAddLong(AccuPtr a, uLong longVal);
+int AccuAddHandle(AccuPtr a, void *data);
+int AccuAddHandleToPtr(AccuPtr a, char *data, long size);
+int AccuAddLong(AccuPtr a, uLong longVal);
 #define AccuAddHandleToStr(a, s) AccuAddHandleToPtr((a), (s), strlen((const char *)(s)))
 int AccuAddChar(AccuPtr a, unsigned char c);
-int AccuInsertPtr(AccuPtr a, unsigned char *bytes, long len, long offset);
+int AccuInsertPtr(AccuPtr a, char *bytes, long len, long offset);
 int AccuInsertChar(AccuPtr a, unsigned char c, long offset);
-int AccuAddFromHandle(AccuPtr a, void **data, long offset, long len);
+int AccuAddFromHandle(AccuPtr a, void *data, long offset, long len);
 long AccuFTell(AccuPtr a, short refN);
 int AccuFSeek(AccuPtr a, short refN, long fromStart);
-long Atoi(unsigned char *s);
-uint32_t ATouint32_t(unsigned char *s);
+long Atoi(char *s);
+uint32_t ATouint32_t(char *s);
 int AccuAddRes(AccuPtr a, short res);
 int AccuWrite(AccuPtr a, short refN);
 #define AccuAddStr(a, s) AccuAddPtr(a, (s), strlen((const char *)(s)))
@@ -173,16 +170,11 @@ int AccuWrite(AccuPtr a, short refN);
 #define AccuToStr(a, s)                                                        \
   do {                                                                         \
     long _ats_len = min(255, (a)->offset);                                     \
-    BMD(*(a)->data, (s), _ats_len);                                            \
+    BMD((a)->data, (s), _ats_len);                                             \
     (s)[_ats_len] = '\0';                                                      \
   } while (0)
 int AccuStrip(AccuPtr a, long num);
-#define AccuZap(a)                                                             \
-  do {                                                                         \
-    ZapHandle((a)->data);                                                      \
-    (a)->offset = (a)->size = 0;                                               \
-  } while (0)
-long AccuFindPtr(AccuPtr a, unsigned char *stuff, short len);
+long AccuFindPtr(AccuPtr a, const char *stuff, short len);
 long AccuFindLong(AccuPtr a, uLong theLong);
 int AccuAddSortedLong(AccuPtr a, long addVal);
 short DecodeB64Accu(AccuPtr a, bool isText);
@@ -195,28 +187,27 @@ int GetDescent(int fontID, int fontSize);
 int GetAscent(int fontID, int fontSize);
 bool IsFixed(int fontID, int fontSize);
 void AwaitKey(void);
-void AddPResource(unsigned char *, int, long, int, unsigned char *);
-void ChangePResource(unsigned char *theData, int theLength, long theType,
-                     int theID, unsigned char *theName);
+void AddPResource(char *, int, long, int, char *);
+void ChangePResource(char *theData, int theLength, long theType,
+                     int theID, char *theName);
 /* GetRLong declared in mailbox.h with short id */
 uint32_t GetRuint32_t(int index);
 int ResourceCpy(short toRef, short fromRef, long type, int id);
 void WhiteRect(Rect *r);
-void DrawTruncString(unsigned char *string, int len);
+void DrawTruncString(char *string, int len);
 // int CalcTextTrunc(unsigned char * text,short length,short width,GrafPtr
 // port); #define CalcTrunc(text,width,port)
 // CalcTextTrunc((text)+1,*(text),width,port)
 int WannaSave(MyWindowPtr win);
 void ButtonFit(void *button);
 uint32_t GestaltBits(uint32_t selector);
-void GetPassStuff(unsigned char *persName, unsigned char *uName,
-                  unsigned char *hName);
+void GetPassStuff(char *persName, char *uName,
+                  char *hName);
 #ifdef KERBEROS
 int GetPassword(void);
 #else
-int GetPassword(unsigned char *personality, unsigned char *userName,
-                unsigned char *serverName, unsigned char *word, int size,
-                short prompt);
+int GetPassword(char *personality, char *userName, char *serverName,
+                char *word, int size, short prompt);
 #endif
 void CenterRectIn(Rect *inner, Rect *outer);
 void TopCenterRectIn(Rect *inner, Rect *outer);
@@ -239,35 +230,36 @@ typedef struct DateTimeRec {
 } DateTimeRec;
 int FinderDragVoodoo(DragReference drag);
 // typedef enum {Stop, Note, Caution, Normal} AlertEnum;
-void MyAppendMenu(MenuHandle menu, unsigned char *name);
-void MyInsMenuItem(MenuHandle menu, unsigned char *name, short afterItem);
-void MySetItem(MenuHandle menu, short item, unsigned char *itemStr);
-unsigned char *MyGetItem(MenuHandle menu, short item, unsigned char *name);
+void MyAppendMenu(MenuHandle menu, char *name);
+void MyInsMenuItem(MenuHandle menu, char *name, short afterItem);
+void MySetItem(MenuHandle menu, short item, char *itemStr);
+char *MyGetItem(MenuHandle menu, short item, char *name);
 int CopyMenuItem(MenuHandle fromMenu, short fromItem, MenuHandle toMenu,
                  short toItem);
 short CurrentModifiers(void);
 void SpecialKeys(void *event);
-short FindItemByName(MenuHandle menu, unsigned char *name);
-short BinFindItemByName(MenuHandle menu, unsigned char *name);
+short FindItemByName(MenuHandle menu, char *name);
+short BinFindItemByName(MenuHandle menu, char *name);
 void AttachHierMenu(short menu, short item, short hierId);
 void *NuDHTempBetter(void *data, long size);
 bool DirtyKey(long keyAndChar);
-long RemoveChar(unsigned char c, unsigned char *text, long size);
-long RemoveCharHandle(Byte c, UHandle text);
+long RemoveChar(unsigned char c, char *text, long size);
+long RemoveCharHandle(Byte c, unsigned char * text);
 
-unsigned char *GetRStr(unsigned char *string, short id);
-unsigned char *LocalDateTimeStr(unsigned char *string);
-unsigned char *LocalDateTimeShortStr(unsigned char *s);
+char *GetRStr(char *string, short id);
+char *LocalDateTimeStr(char *string);
+char *LocalDateTimeShortStr(char *s);
 // (jp) Universal Headers 3.4 now contains a structure named "LocalDateTime"
+/* Map public name to internal implementation and use fixed-width type */
 #define LocalDateTime MyLocalDateTime
-uLong LocalDateTime(void);
+uint32_t MyLocalDateTime(void);
 uLong GMTDateTime(void);
 long MyMenuKeyLo(void *event, bool enable);
 #define MyMenuKey(e) MyMenuKeyLo((e), true)
 #define UnadornMessage(event) UnadornKey((event)->message, (event)->modifiers)
 long UnadornKey(long message, short modifiers);
-unsigned char *ChangeStrn(short resId, short num, unsigned char *string);
-typedef void **RgnHandle;
+char *ChangeStrn(short resId, short num, char *string);
+typedef void *RgnHandle;
 
 int MyTrackDrag(DragReference drag, void *event, RgnHandle rgn);
 int MySetDragItemFlavorData(DragReference drag, short item, uint32_t type,
@@ -275,8 +267,8 @@ int MySetDragItemFlavorData(DragReference drag, short item, uint32_t type,
 short DragOrMods(DragReference drag);
 bool RecountStrn(short resId);
 short CountStrn(short resId);
-void NukeMenuItemByName(short menuId, unsigned char *itemName);
-void RenameItem(short menuId, unsigned char *oldName, unsigned char *newName);
+void NukeMenuItemByName(short menuId, char *itemName);
+void RenameItem(short menuId, char *oldName, char *newName);
 bool HasSubmenu(MenuHandle mh, short item);
 int ComposeRTrans(TransStream stream, int format, ...);
 bool SetGreyControl(void *button, bool shdBeGrey);
@@ -287,14 +279,13 @@ short MyCountDragItemFlavors(DragReference drag, short item);
 uint32_t MyGetDragItemFlavorType(DragReference drag, short item, short flavor);
 FlavorFlags MyGetDragItemFlavorFlags(DragReference drag, short item,
                                      short flavor);
-bool MyDragHas(DragReference drag, short item, uint32_t type);
-int MyGetDragItemData(DragReference drag, short item, uint32_t type,
-                      void ***data);
+bool MyDragHas(void *drag, short item, OSType type);
+int MyGetDragItemData(void *drag, short item, OSType type, void **data);
 void NOOP(void);
 bool WNE(short eventMask, void *event, long sleep);
 long RoundDiv(long quantity, long unit);
-void TransLitString(unsigned char *string);
-void TransLit(unsigned char *string, long len, unsigned char *table);
+void TransLitString(char *string);
+void TransLit(char *string, long len, char *table);
 // void TransLitRes(unsigned char * string, long len, short resId);
 long TZName2Offset(CStr zoneName);
 #ifdef DEBUG
@@ -306,24 +297,24 @@ void InvalidatePasswords(bool pwGood, bool auxpwGood, bool all);
 void InvalidateCurrentPasswords(bool pwGood, bool auxpwGood);
 // bool MiniEventsLo(long sleepTime, uLong mask);
 #define MiniEvents() MiniEventsLo(0, MINI_MASK)
-short FindSTRNIndex(short resId, unsigned char *string);
-short FindSTRNIndexRes(UHandle resH, PStr string);
-short FindSTRNSubIndex(short resId, unsigned char *string);
-short FindSTRNSubIndexRes(UHandle resH, PStr string);
+short FindSTRNIndex(short resId, char *string);
+short FindSTRNIndexRes(unsigned char * resH, char *string);
+short FindSTRNSubIndex(short resId, char *string);
+short FindSTRNSubIndexRes(unsigned char * resH, char *string);
 void *Event2Window(void *event);
-unsigned char *Long2Hex(unsigned char *hex, long aLong);
-unsigned char *Bytes2Hex(unsigned char *bytes, long size, unsigned char *hex);
-int Hex2Bytes(unsigned char *hex, long size, unsigned char *bytes);
+char *Long2Hex(char *hex, long aLong);
+char *Bytes2Hex(char *bytes, long size, char *hex);
+int Hex2Bytes(char *hex, long size, char *bytes);
 /* void *NuHTempOK(long size); */
 /* void *NuHTempBetter(long size); */
-// Handle NewIOBHandle(long min, long max);
+// void *NewIOBHandle(long min, long max);
 long AFPopUpMenuSelect(MenuHandle mh, short top, short left, short item);
-bool GetTableCName(short tid, unsigned char *name);
-bool GetTableID(unsigned char *name, short *tid);
+bool GetTableCName(short tid, char *name);
+bool GetTableID(char *name, short *tid);
 bool EventPending(void);
 void ShowDragRectHilite(DragReference drag, Rect *r, bool inside);
-unsigned char *WeekDay(unsigned char *string, long secs);
-void TimeString(long secs, bool wantSeconds, unsigned char *str, void *intlHandle);
+char *WeekDay(char *string, long secs);
+void TimeString(long secs, bool wantSeconds, char *str, void *intlHandle);
 int ZapResourceLo(uint32_t type, short id, bool one);
 #define ZapResource(x, y) ZapResourceLo(x, y, False)
 #define Zap1Resource(x, y) ZapResourceLo(x, y, True)
@@ -341,18 +332,18 @@ void AuditPersRename(uint32_t oldId, uint32_t newHash);
 
 /* String override (per-personality string resource override) */
 void SetStrOverride(short strn, const char *str);
-void GetPrefNoDominant(unsigned char *buf, short prefId);
+void GetPrefNoDominant(char *buf, short prefId);
 
-/* Handle management */
+/* void *management */
 void ReleaseResource(void **h);
 void SetHandleBig(void **h, long size);
 #define ControlIsGrey(cntl) (GetControlHilite(cntl) == 255)
-void AddMyResource(void **h, uint32_t type, short id, ConstStr255Param name);
+void AddMyResource(void *h, OSType type, short id, ConstStr255Param name);
 #define CurrentPSN(psn)                                                        \
   (((psn)->highLongOfPSN = 0), ((psn)->lowLongOfPSN = kCurrentProcess), (psn))
-long CountChars(void **text, unsigned char c);
-long CountCharsPtr(unsigned char *ptr, long size, unsigned char c);
-int HandleLinebreaks(void **text, long ***breaks, short inWidth);
+long CountChars(void *text, unsigned char c);
+long CountCharsPtr(char *ptr, long size, unsigned char c);
+int HandleLinebreaks(void *text, long ***breaks, short inWidth);
 
 short MenuWidth(MenuHandle mh);
 //#define IsColorWin(win) \
@@ -363,42 +354,42 @@ bool IsColorWin(void *winWP);
 #define PurgeIfClean(h)                                                        \
   do {                                                                         \
     UL(h);                                                                     \
-    if (!(GetResAttrs((Handle)h) & resChanged))                                \
-      HPurge((Handle)h);                                                       \
+    if (!(GetResAttrs((void *)h) & resChanged))                                \
+      HPurge((void *)h);                                                       \
   } while (0)
 typedef struct {
   void **textH;
-  unsigned char *textP;
+  char *textP;
   long len;
   long lineBegin;
   long lineEnd;
   short partial;
 } WrapDescriptor, WrapPtr;
-void PlayNamedSound(unsigned char *name);
+void PlayNamedSound(char *name);
 void PlaySoundId(short id);
-short FindMenuByName(unsigned char *name);
+short FindMenuByName(char *name);
 RGBColor *GetItemColor(short menu, short item, RGBColor *color);
 bool IsHexDig(unsigned char c);
 bool IsEnabled(short menu, short item);
 bool SafeToAllocate(long size);
 RGBColor *GetRColor(RGBColor *color, int index);
 RGBColor *GetRTextColor(RGBColor *color, int index);
-int AddLf(void **text);
+int AddLf(void *text);
 void *NuDHTempOK(void *data, long size);
-unsigned char *Color2String(unsigned char *string, RGBColor *color);
-void InitWrap(WrapPtr wp, void **textH, unsigned char *textP, long len,
+char *Color2String(char *string, RGBColor *color);
+void InitWrap(WrapPtr wp, void **textH, char *textP, long len,
               long offset, long lastLen);
 short Wrap(WrapPtr wp);
 bool IsPowerNoVM(void);
 void SetHiliteMode(void);
 void SetItemReducedIcon(MenuHandle menu, short item, short iconid);
-void **PStr2Handle(unsigned char *string);
+void *PStr2Handle(char *string);
 long ScriptVar(short selector);
 bool MyWaitMouseMoved(Point pt, bool honorControl);
 // void *ZeroHandle(void *hand);
 void SetItemR(MenuHandle menu, short item, short id);
 bool IsVICOM(void);
-int MyRemoveResource(void **h);
+int MyRemoveResource(void *h);
 short ShortCompare(short value1, short value2);
 short DateCompare(DateTimeRec *date1, DateTimeRec *date2);
 short TimeCompare(DateTimeRec *date1, DateTimeRec *date2);

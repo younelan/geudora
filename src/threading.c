@@ -131,17 +131,17 @@ _Thread_local threadGlobalsPtr CurThreadGlobals = NULL;
 /*
          private functions
 */
-static OSErr CopySettingsForThread(short sourceRefN, PersHandle sourcePerslist,
+static int CopySettingsForThread(short sourceRefN, PersHandle sourcePerslist,
                                    short *destRefN, PersHandle *destPersList,
                                    PersHandle *destCurPers);
-static OSErr DeleteSettingsForThread(short *settingsRefN);
-static OSErr SaveSettingsToMainThread(threadDataHandle threadData);
-static OSErr InitThreadGlobals(threadGlobalsPtr *newThreadGlobals);
-static OSErr DisposeThreadGlobals(threadGlobalsPtr threadGlobals);
+static int DeleteSettingsForThread(short *settingsRefN);
+static int SaveSettingsToMainThread(threadDataHandle threadData);
+static int InitThreadGlobals(threadGlobalsPtr *newThreadGlobals);
+static int DisposeThreadGlobals(threadGlobalsPtr threadGlobals);
 
 int GetFCCs(MessHandle messH, CSpecHandle fccSpecs); // move to sendmail.c?
 
-static OSErr NewXferMail(threadDataHandle *tData, bool check, bool send,
+static int NewXferMail(threadDataHandle *tData, bool check, bool send,
                          bool manual, bool scripted, XferFlags flags,
                          IMAPTransferPtr imapInfo);
 void *XferMailThread(void *threadParameter);
@@ -208,7 +208,7 @@ ProgressBlock **GetCurrentThreadPrbl(void) {
 /************************************************************************
  * InitThreadGlobals - create thread and allocate data for it
  ************************************************************************/
-static OSErr InitThreadGlobals(threadGlobalsPtr *newThreadGlobals) {
+static int InitThreadGlobals(threadGlobalsPtr *newThreadGlobals) {
   if (!(*newThreadGlobals =
             (threadGlobalsPtr)calloc(1, sizeof(**newThreadGlobals))))
     return -108;
@@ -224,12 +224,12 @@ static OSErr InitThreadGlobals(threadGlobalsPtr *newThreadGlobals) {
 /************************************************************************
  * CopyOutToTemp - copy queued messages in Out mailbox to temporary Out mailbox
  ************************************************************************/
-static OSErr CopyOutToTemp(void) {
+static int CopyOutToTemp(void) {
   int ii;
   TOCType *tocH, *tempTocH;
   StateEnum state;
   MessHandle messH;
-  OSErr err = noErr;
+  int err = noErr;
   uLong gmtSecs = GMTDateTime();
   PersHandle pers;
 
@@ -288,14 +288,14 @@ static OSErr CopyOutToTemp(void) {
 /************************************************************************
  * NewXferMail - create thread and allocate data for it
  ************************************************************************/
-static OSErr NewXferMail(threadDataHandle *tData, bool check, bool send,
+static int NewXferMail(threadDataHandle *tData, bool check, bool send,
                          bool manual, bool scripted, XferFlags flags,
                          IMAPTransferPtr imapInfo)
 {
   threadDataHandle threadData = nil;
   threadContextDataPtr threadContext = nil;
   ThreadID threadID;
-  OSErr theError = noErr;
+  int theError = noErr;
   threadGlobalsPtr newThreadGlobals = nil;
 
   // pthreads don't need UPPs or A5 world setup
@@ -428,11 +428,11 @@ static OSErr NewXferMail(threadDataHandle *tData, bool check, bool send,
 /************************************************************************
  * SetupXferMailThread - create thread and allocate data for it
  ************************************************************************/
-OSErr SetupXferMailThread(bool check, bool send, bool manual, bool scripted,
+int SetupXferMailThread(bool check, bool send, bool manual, bool scripted,
                           XferFlags flags, IMAPTransferPtr imapInfo)
 {
   threadDataHandle sendData = nil, checkData = nil;
-  OSErr err = noErr;
+  int err = noErr;
 
   // we tried to send it
   if (send)
@@ -475,14 +475,13 @@ OSErr SetupXferMailThread(bool check, bool send, bool manual, bool scripted,
 /************************************************************************
  * DisposeThreadGlobals -
  ************************************************************************/
-static OSErr DisposeThreadGlobals(threadGlobalsPtr threadGlobals) {
+static int DisposeThreadGlobals(threadGlobalsPtr threadGlobals) {
   if (!threadGlobals)
     return paramErr;
 
   CurThreadGlobals = threadGlobals;
   // kill string cache
   if (StringCache) {
-    free(*StringCache);
     free(StringCache);
     StringCache = nil;
   }
@@ -492,25 +491,21 @@ static OSErr DisposeThreadGlobals(threadGlobalsPtr threadGlobals) {
   PersList = nil;
   CurPers = nil;
   if (PersStack) {
-    free(*PersStack);
     free(PersStack);
     PersStack = nil;
   }
 
   // MIME Maps
   if (MMIn) {
-    free(*MMIn);
     free(MMIn);
     MMIn = nil;
   }
   if (MMOut) {
-    free(*MMOut);
     free(MMOut);
     MMOut = nil;
   }
 
   if (GWStack) {
-    free(*GWStack);
     free(GWStack);
     GWStack = nil;
   }
@@ -613,7 +608,7 @@ void KillThreads(void) {
  ************************************************************************/
 void *XferMailThread(void *threadParameter) {
   threadDataHandle threadData = nil;
-  OSErr theError = noErr;
+  int theError = noErr;
   xferMailParamsRec xferMailParams;
   IMAPTransferRec imapInfo;
 
@@ -717,8 +712,8 @@ void ThreadSwitchProcOut(pthread_t threadBeingSwitched, void *switchProcParam) {
  * SaveSettingsToMainThread - copy changed settings back to main
  ************************************************************************/
 // popd resource is saved directly to the original settings file in DisposePOPD
-static OSErr SaveSettingsToMainThread(threadDataHandle threadData) {
-  OSErr theError = noErr;
+static int SaveSettingsToMainThread(threadDataHandle threadData) {
+  int theError = noErr;
   PersHandle pers, mainPers, oldCurPers;
   StackHandle prefStack;
   char string[256]; // prefs shouldn't exceed 255 chars!!!
@@ -749,7 +744,6 @@ static OSErr SaveSettingsToMainThread(threadDataHandle threadData) {
       CurPers = oldCurPers;
   }
   if (prefStack) {
-    free(*prefStack);
     free(prefStack);
   }
 
@@ -791,7 +785,7 @@ static OSErr SaveSettingsToMainThread(threadDataHandle threadData) {
 
   // Fix Prr in the main thread, mostly for benefit of broken NotifyNewMail
   {
-    OSErr myPrr = Prr;
+    int myPrr = Prr;
 
     ThreadSwitchProcOut(nil, threadData);
     Prr = myPrr;
@@ -816,10 +810,10 @@ static OSErr SaveSettingsToMainThread(threadDataHandle threadData) {
  * Ported: no resource fork duplication needed on Linux/GTK.
  * Settings are in a GKeyFile; we just clone the personality list in memory.
  ************************************************************************/
-static OSErr CopySettingsForThread(short sourceRefN, PersHandle sourcePerslist,
+static int CopySettingsForThread(short sourceRefN, PersHandle sourcePerslist,
                                    short *destRefN, PersHandle *destPersList,
                                    PersHandle *destCurPers) {
-  OSErr theError = noErr;
+  int theError = noErr;
   PersHandle oldPers, clone, lastClone = nil;
 
   (void)sourceRefN; /* resource file ref not used on Linux */
@@ -863,7 +857,7 @@ static OSErr CopySettingsForThread(short sourceRefN, PersHandle sourcePerslist,
  * Note: the cloned personality list itself is freed by DisposeThreadGlobals
  * via DisposePersonalities() which walks PersList. We just reset the refN.
  ************************************************************************/
-static OSErr DeleteSettingsForThread(short *settingsRefN) {
+static int DeleteSettingsForThread(short *settingsRefN) {
   if (*settingsRefN == -1)
     return noErr;
 
@@ -878,8 +872,8 @@ int GetNumBackgroundThreads(void) { return atomic_load(&gNumBackgroundThreads); 
 /************************************************************************
  * PushThreadPrefChange -
  ************************************************************************/
-OSErr PushThreadPrefChange(short pref) {
-  OSErr err = threadNotFoundErr;
+int PushThreadPrefChange(short pref) {
+  int err = threadNotFoundErr;
   threadDataHandle threadData;
 
   GetCurrentThreadData(&threadData);
@@ -921,17 +915,17 @@ bool ThreadsAvailable(void) {
    Mac Eudora used these to access the main thread's settings resource fork
    from background threads. With GKeyFile-based prefs, not needed. */
 
-Handle GetResourceMainThread(ResType theType, short theID) {
+void *GetResourceMainThread(ResType theType, short theID) {
   (void)theType; (void)theID;
   return nil;
 }
 
-OSErr ZapSettingsResourceMainThread(OSType type, short id) {
+int ZapSettingsResourceMainThread(OSType type, short id) {
   (void)type; (void)id;
   return noErr;
 }
 
-OSErr AddMyResourceMainThread(Handle h, OSType type, short id,
+int AddMyResourceMainThread(void *h, OSType type, short id,
                               ConstStr255Param name) {
   (void)h; (void)type; (void)id; (void)name;
   return noErr;
@@ -1002,7 +996,7 @@ void YieldCPUNow(void) {
  * MyInitThreads -
  * 		only call this from main thread during initialization
  ************************************************************************/
-OSErr MyInitThreads(void) {
+int MyInitThreads(void) {
   gMainThreadID = pthread_self();
   return noErr;
 }
@@ -1045,7 +1039,6 @@ void ThreadTermination(pthread_t threadTerminated, void *terminationProcParam) {
     DisposeThreadGlobals(threadData->threadContext.newThreadGlobals);
     if (threadData->threadContext.prefStack) { // should be set to nil in
                                                   // SaveSettingsToMainThread
-      free(*(threadData->threadContext.prefStack));
       free(threadData->threadContext.prefStack);
     }
     ThreadSwitchProcOut(threadTerminated, terminationProcParam);
@@ -1102,16 +1095,16 @@ int ReallyDoAnAlert(int templ, int which);
 /*	Another cheap knockoff - this one from linkmng.c */
 typedef struct privHistoryDStruct {
   FSSpec spec;    /* the history file */
-  Handle theData; /* the toc */
+  void *theData; /* the toc */
   bool ro;        /* read only */
   bool dirty;     /* is the history file dirty? */
-} privHistoryDesc, *privHistoryDPtr, **privHistoryDHandle;
+} privHistoryDesc, *privHistoryDPtr, *privHistoryDHandle;
 
 /* gHistories is defined in linkmng.c */
 extern privHistoryDHandle gHistories;
 
 void CheckSelectedGlobals() {
-  /* Walk the wazoo list — plain linked list, no Mac Handle validation needed */
+  /* Walk the wazoo list — plain linked list, no Mac void *validation needed */
   for (WazooData *w = gWazooListHead; w != NULL; w = w->next) {
     ASSERT(w->win != NULL);
   }
