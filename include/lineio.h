@@ -42,11 +42,11 @@ typedef struct LineIODesc {
 
 short OpenLine(const char *path, short perm, LineIOP lip);
 #define FSpOpenLine(spec, perm, lip) OpenLine((spec), perm, lip)
-int GetLine(unsigned char * line, int size, long *len, LineIOP lip);
+int GetLine(char *line, int size, long *len, LineIOP lip);
 void CloseLine(LineIOP lip);
 long TellLine(LineIOP lip);
 int SeekLine(long spot, LineIOP lip);
 typedef enum { LINE_START = 1, LINE_MIDDLE } GetLineEnum;
-int NLGetLine(unsigned char * line, int size, long *len, LineIOP lip);
+int NLGetLine(char *line, int size, long *len, LineIOP lip);
 
 #endif

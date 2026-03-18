@@ -137,7 +137,7 @@ failure:
 /**********************************************************************
  * NLGetLine - get a line, possibly preceded by a linefeed
  **********************************************************************/
-int NLGetLine(unsigned char *line, int size, long *len, LineIOP lip) {
+int NLGetLine(char *line, int size, long *len, LineIOP lip) {
   short l = GetLine(line, size, len, lip);
 
   if (l == LINE_START && *len && *line == '\012') {
@@ -153,9 +153,9 @@ int NLGetLine(unsigned char *line, int size, long *len, LineIOP lip) {
  * for file manager errors, LINE_START if returning the beginning of
  * a line, LINE_MIDDLE if a partial line is being returned.
  **********************************************************************/
-int GetLine(unsigned char *line, int size, long *len, LineIOP lip) {
-  register unsigned char *bp;
-  register unsigned char *cp = line;
+int GetLine(char *line, int size, long *len, LineIOP lip) {
+  register char *bp;
+  register char *cp = line;
   int where;
   int err;
 
@@ -163,8 +163,8 @@ int GetLine(unsigned char *line, int size, long *len, LineIOP lip) {
     return 0; /* we have no chars */
   size--;     /* make sure we don't overrun buffer */
 
-  bp = (unsigned char *)Buffer + BSpot;
-  where = (bp == (unsigned char *)Buffer || bp[-1] == '\015') ? LINE_START
+  bp = Buffer + BSpot;
+  where = (bp == Buffer || bp[-1] == '\015') ? LINE_START
                                                               : LINE_MIDDLE;
   LastSpot = FSpot + BSpot; /* remember where this line begins */
   for (;;) {
@@ -174,7 +174,7 @@ int GetLine(unsigned char *line, int size, long *len, LineIOP lip) {
         *cp = ' ';
       cp++;
     }
-    BSpot = bp - (unsigned char *)Buffer;
+    BSpot = bp - Buffer;
     if (BSpot == BFilled) {
       FSpot += BFilled;
       BFilled = read(fd, Buffer, BufferSize - 1);
@@ -192,7 +192,7 @@ int GetLine(unsigned char *line, int size, long *len, LineIOP lip) {
       }
       Buffer[BFilled] = '\015'; /* sentinel */
       BSpot = 0;
-      bp = (unsigned char *)Buffer;
+      bp = Buffer;
     } else {
       if (size > 0) {
         *cp++ = '\015';
