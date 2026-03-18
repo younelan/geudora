@@ -93,6 +93,8 @@ int SaveAllHistoryFiles(void);
 void AdWasClicked(AdId adId, int openErr);
 void AgeLinks(void);
 
+/* These were added for GTK linkwin port — not needed yet, remove to fix build */
+
 /* Link Window related */
 void AddAllHistoryItems(ViewListPtr pView, bool needsSort,
                         LinkSortTypeEnum sortType);
