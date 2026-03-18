@@ -41,7 +41,20 @@ ADVISED OF THE POSSIBILITY OF SUCH DAMAGE. */
 #include <stdio.h>
 #include <stdbool.h>
 #include <glib.h>
+
+/* Platform-specific Kerberos/GSSAPI includes.
+ * Unix/macOS: GSSAPI (RFC 2743)
+ * Windows:    SSPI (equivalent API, different names) */
+#ifdef _WIN32
+#define SECURITY_WIN32
+#include <windows.h>
+#include <security.h>
+#include <sspi.h>
+#define HAVE_KERBEROS 1
+#else
 #include <gssapi/gssapi.h>
+#define HAVE_KERBEROS 1
+#endif
 
 #include "imapauth.h"
 
@@ -109,9 +122,16 @@ long KrbV4Authenticator(authchallenge_t challenger, authrespond_t responder,
 
 /* ============================================================
  * GSSAPI (Kerberos V5) Authentication
+ * Unix/macOS: native GSSAPI
+ * Windows:    SSPI (InitializeSecurityContext etc.)
  * ============================================================ */
 
 #define AUTH_GSSAPI_P_NONE 1
+
+static bool gIMAPAuthedKerberos = false;
+
+#ifndef _WIN32
+/* ---- Unix/macOS GSSAPI implementation ---- */
 
 /* Per-authentication context (no Mac KClient dependency) */
 typedef struct {
@@ -122,8 +142,6 @@ typedef struct {
     char             cUser[255];
     char             cHost[255];
 } CGSSAPIAuthData;
-
-static bool gIMAPAuthedKerberos = false;
 
 static long GSSAPIAuthenticate(CGSSAPIAuthData *gd);
 
@@ -298,8 +316,176 @@ static long GSSAPIAuthenticate(CGSSAPIAuthData *gd)
     return ret;
 }
 
+#else /* _WIN32 — SSPI implementation */
+
+/* Per-authentication context for Windows SSPI */
+typedef struct {
+    authchallenge_t  challenger;
+    authrespond_t    responder;
+    MAILSTREAM      *mailstream;
+    char             cService[255];
+    char             cUser[255];
+    char             cHost[255];
+} CGSSAPIAuthData;
+
+static long SSPIAuthenticate(CGSSAPIAuthData *gd) {
+    long ret = NIL;
+    CredHandle hCred;
+    CtxtHandle hCtx;
+    SecBufferDesc inDesc, outDesc;
+    SecBuffer inBuf, outBuf;
+    ULONG attrs;
+    TimeStamp expiry;
+    SECURITY_STATUS ss;
+    unsigned long chalLen;
+    char *pChallenge;
+    char target[512];
+    bool haveCtx = false;
+
+    memset(&hCred, 0, sizeof(hCred));
+    memset(&hCtx, 0, sizeof(hCtx));
+
+    /* Acquire default Kerberos credentials */
+    ss = AcquireCredentialsHandleA(NULL, "Kerberos", SECPKG_CRED_OUTBOUND,
+                                    NULL, NULL, NULL, NULL, &hCred, &expiry);
+    if (ss != SEC_E_OK) {
+        mm_log("SSPI: AcquireCredentialsHandle failed", IMAP_ERROR);
+        (*gd->responder)(gd->mailstream, NIL, 0);
+        return NIL;
+    }
+
+    snprintf(target, sizeof(target), "%s/%s", gd->cService, gd->cHost);
+
+    /* Get initial challenge */
+    pChallenge = (*gd->challenger)(gd->mailstream, &chalLen);
+    if (!pChallenge) {
+        FreeCredentialsHandle(&hCred);
+        return NIL;
+    }
+
+    /* SSPI context loop */
+    do {
+        inBuf.BufferType = SECBUFFER_TOKEN;
+        inBuf.cbBuffer = chalLen;
+        inBuf.pvBuffer = pChallenge;
+        inDesc.ulVersion = SECBUFFER_VERSION;
+        inDesc.cBuffers = 1;
+        inDesc.pBuffers = &inBuf;
+
+        outBuf.BufferType = SECBUFFER_TOKEN;
+        outBuf.cbBuffer = 0;
+        outBuf.pvBuffer = NULL;
+        outDesc.ulVersion = SECBUFFER_VERSION;
+        outDesc.cBuffers = 1;
+        outDesc.pBuffers = &outBuf;
+
+        ss = InitializeSecurityContextA(&hCred, haveCtx ? &hCtx : NULL,
+                target, ISC_REQ_MUTUAL_AUTH | ISC_REQ_REPLAY_DETECT,
+                0, SECURITY_NATIVE_DREP,
+                haveCtx ? &inDesc : NULL, 0,
+                &hCtx, &outDesc, &attrs, &expiry);
+        haveCtx = true;
+
+        if (pChallenge) {
+            fs_give((void **)&pChallenge);
+            pChallenge = NULL;
+        }
+
+        if (ss == SEC_E_OK || ss == SEC_I_CONTINUE_NEEDED) {
+            if (outBuf.cbBuffer > 0) {
+                if (!(*gd->responder)(gd->mailstream, (char *)outBuf.pvBuffer, outBuf.cbBuffer))
+                    ss = SEC_E_INTERNAL_ERROR;
+                FreeContextBuffer(outBuf.pvBuffer);
+            }
+            if (ss == SEC_I_CONTINUE_NEEDED) {
+                pChallenge = (*gd->challenger)(gd->mailstream, &chalLen);
+                if (!pChallenge) ss = SEC_E_INTERNAL_ERROR;
+            }
+        }
+    } while (ss == SEC_I_CONTINUE_NEEDED);
+
+    if (ss == SEC_E_OK) {
+        /* Send final SASL security layer negotiation */
+        pChallenge = (*gd->challenger)(gd->mailstream, &chalLen);
+        if (pChallenge && chalLen >= 4) {
+            /* Unwrap server's security layer offer */
+            inBuf.BufferType = SECBUFFER_TOKEN;
+            inBuf.cbBuffer = chalLen;
+            inBuf.pvBuffer = pChallenge;
+            inDesc.cBuffers = 1;
+            inDesc.pBuffers = &inBuf;
+
+            SecBuffer unwrapBuf = {0, SECBUFFER_DATA, NULL};
+            SecBufferDesc unwrapDesc = {SECBUFFER_VERSION, 1, &unwrapBuf};
+            ULONG qop;
+
+            if (DecryptMessage(&hCtx, &inDesc, 0, &qop) == SEC_E_OK &&
+                inBuf.cbBuffer >= 4) {
+                char tmp[MAILTMPLEN];
+                memcpy(tmp, inBuf.pvBuffer, 4);
+                tmp[0] = AUTH_GSSAPI_P_NONE; /* request no security layer */
+                strcpy(tmp + 4, gd->cUser);
+
+                outBuf.BufferType = SECBUFFER_TOKEN;
+                outBuf.cbBuffer = strlen(gd->cUser) + 4;
+                outBuf.pvBuffer = tmp;
+                outDesc.cBuffers = 1;
+                outDesc.pBuffers = &outBuf;
+
+                if (EncryptMessage(&hCtx, 0, &outDesc, 0) == SEC_E_OK) {
+                    if ((*gd->responder)(gd->mailstream, (char *)outBuf.pvBuffer, outBuf.cbBuffer))
+                        ret = T;
+                }
+            }
+            fs_give((void **)&pChallenge);
+        }
+    } else {
+        mm_log("SSPI: authentication failed", IMAP_ERROR);
+        (*gd->responder)(gd->mailstream, NIL, 0);
+    }
+
+    DeleteSecurityContext(&hCtx);
+    FreeCredentialsHandle(&hCred);
+
+    return ret;
+}
+
+long GssapiAuthenticator(authchallenge_t challenger, authrespond_t responder,
+                          NETMBX *mb, void *s, unsigned long *trial, char *user)
+{
+    MAILSTREAM *stream = (MAILSTREAM *)s;
+    CGSSAPIAuthData authData;
+    long result = 0;
+
+    if (!challenger || !responder || !mb || !s || !user)
+        return 0;
+
+    memset(&authData, 0, sizeof(authData));
+    authData.challenger = challenger;
+    authData.responder  = responder;
+    authData.mailstream = stream;
+
+    strncpy(authData.cUser, mb->user, sizeof(authData.cUser) - 1);
+    strncpy(authData.cHost, mb->host, sizeof(authData.cHost) - 1);
+    strncpy(authData.cService, "imap", sizeof(authData.cService) - 1);
+
+    strncpy(user, mb->user, NETMAXUSER - 1);
+    user[NETMAXUSER - 1] = '\0';
+    *trial = 0;
+
+    result = SSPIAuthenticate(&authData);
+    if (!result)
+        mm_log("SSPI authentication failed", IMAP_ERROR);
+    else
+        gIMAPAuthedKerberos = true;
+
+    return result;
+}
+
+#endif /* _WIN32 */
+
 /* ============================================================
- * Kerberos usage tracking (GSSAPI/IMAP only)
+ * Kerberos usage tracking
  * ============================================================ */
 
 void UsedKerberos(void)
