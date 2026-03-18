@@ -3450,30 +3450,25 @@ int BoxMatchMenuItemsIn1Menu(MenuHandle mh, AccuPtr a, unsigned char *name,
 int BoxMatchScore(unsigned char *name, unsigned char *candidate) {
   unsigned char * spot;
   int score = 0;
+  int nameLen = strlen((char *)name);
+  int candLen = strlen((char *)candidate);
 
   if (spot = PFindSub(name, candidate)) {
-    // equal strings is best score (0)
-    if (*name == *candidate)
+    if (nameLen == candLen)
       return 0;
 
-    // if we don't start at the start of the string, add 50
-    if (spot > candidate + 1) {
+    if (spot > candidate) {
       score += 50;
-      // if the character before us is a word character, add 20
       if (IsWordChar[spot[-1]])
         score += 20;
     }
-    // Now, check the end
-    spot += *name;
-    // if we don't end at the end of the string, add 50
-    if (spot < candidate + *candidate) {
+    spot += nameLen;
+    if (spot < candidate + candLen) {
       score += 50;
-      // if the character after us is a word char, add 50
-      if (IsWordChar[spot[1]])
+      if (IsWordChar[spot[0]])
         score += 20;
     }
-    // Finally, add points for any additional characters
-    score += *candidate - *name;
+    score += candLen - nameLen;
     return score;
   } else
     return -1;

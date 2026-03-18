@@ -48,7 +48,7 @@ ADVISED OF THE POSSIBILITY OF SUCH DAMAGE. */
 #define GetPOPInfoLo(u,h,p)
 #define Zero(x)
 #define IMAP_INBOX_NAME 0
-#define PtoCcpy(d,s)
+/* PtoCcpy: use the global definition (strcpy) */
 #define PrepareToExpunge(s)
 long LogLevel = 0;
 

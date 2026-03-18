@@ -275,14 +275,12 @@ bool IsAbLine(char * text, long size, HeaderDHandle hdh)
 	if (spot[1]=='\015') return(False);
 	if( !BeginAbomination("",hdh) ) return(False);
 	spot++; /* skip the space */
-	namePtr++; /* Skip the size */
 	while( (*spot != '\015') && (i < 63) ){
 				*namePtr++ = *spot++;
 				i++;
 	}
-				if( i>27 ) i = 27; /* Trim filname so number can fit on end */
-	name[0] = i;
-	Other2MacName(name,name);
+	if( i>27 ) i = 27;
+	name[i] = '\0';
 	g_strlcpy((char *)(Name), (char *)(name), sizeof(Name));
 	return(True);
 }

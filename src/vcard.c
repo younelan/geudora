@@ -1728,11 +1728,12 @@ static int VCardParserStrnosemi (VCardParserPtr parserPtr, VCardItemPtr itemPtr)
 static char * VCardParserKeyword (VCardParserPtr parserPtr, char * keyword)
 
 {
-	*keyword = 0;
-	
+	int ki = 0;
+
 	// copy alpha characters into the keyword
-	while (*keyword < 256 && parserPtr->spot <= parserPtr->end && (isalpha (*parserPtr->spot) || isdigit (*parserPtr->spot) || isDASH (*parserPtr->spot)))
-		keyword[++keyword[0]] = *parserPtr->spot++;
+	while (ki < 255 && parserPtr->spot <= parserPtr->end && (isalpha (*parserPtr->spot) || isdigit (*parserPtr->spot) || isDASH (*parserPtr->spot)))
+		keyword[ki++] = *parserPtr->spot++;
+	keyword[ki] = '\0';
 	return (keyword);
 }
 
@@ -1843,7 +1844,7 @@ static int VCardAppendKeywordToGroup (VCardItemPtr itemPtr, char keyword[256])
 	if (GetHandleSize (itemPtr->group))
 		theError = buf_append(itemPtr->group, ".", 1));
 	if (!theError)
-		theError = buf_append(itemPtr->group, &keyword[1], *keyword));
+		theError = buf_append(itemPtr->group, keyword, strlen(keyword)));
 	return (theError);
 }
 
@@ -1947,14 +1948,12 @@ bool IsVCardFile (char * spec)
 	
 	// How about an 8.3 vCard?
 	if (!result) {
-		for (i = spec_name(spec)[0]; i; --i)
-			if (spec_name(spec)[i] == '.')
-				break;
-	
-		if (i) {
-			{ size_t _mpl = (spec_name(spec)[0] - i); memcpy(extension, &spec_name(spec)[i + 1], _mpl); ((char*)(extension))[_mpl] = '\0'; }
-			
-			result = striscmp (extension, GetRString (vcardExtension, VCARD_FILE_EXTENSION)) == 0;
+		{
+			const char *dot = strrchr(spec_name(spec), '.');
+			if (dot && dot[1]) {
+				g_strlcpy(extension, dot + 1, sizeof(extension));
+				result = striscmp(extension, GetRString(vcardExtension, VCARD_FILE_EXTENSION)) == 0;
+			}
 		}
 	}
 	
@@ -1983,9 +1982,8 @@ char * MakeVCardFileName (short ab,short nick, char * filename)
 	char extension[32];
 	
 	GetNicknameNamePStr (ab, nick, filename);
-	filename[++filename[0]] = '.';
-	PCat (filename, GetRString (extension, VCARD_FILE_EXTENSION));
-	*filename = MIN (*filename, 32 - 1);
+	g_strlcat(filename, ".", 32);
+	g_strlcat(filename, GetRString(extension, VCARD_FILE_EXTENSION), 32);
 	return (filename);
 }
 

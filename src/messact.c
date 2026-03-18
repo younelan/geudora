@@ -490,9 +490,7 @@ void SetSubject(TOCType *tocH, short sumNum, unsigned char *sub) {
       MakeMessTitle(title, tocH, sumNum, true);
       if (messH->win && messH->win->window) {
         char cTitle[257];
-        int len = title[0];
-        memcpy(cTitle, title + 1, len);
-        cTitle[len] = '\0';
+        g_strlcpy(cTitle, (char *)title, sizeof(cTitle));
         gtk_window_set_title(GTK_WINDOW(messH->win->window), cTitle);
       }
       if (messH->subPTE && PeteIsValid_(messH->subPTE)) {
@@ -527,9 +525,7 @@ void SetSender(TOCType *tocH, short sumNum, unsigned char *sender) {
       MakeMessTitle(title, tocH, sumNum, true);
       if (messH->win && messH->win->window) {
         char cTitle[257];
-        int len = title[0];
-        memcpy(cTitle, title + 1, len);
-        cTitle[len] = '\0';
+        g_strlcpy(cTitle, (char *)title, sizeof(cTitle));
         gtk_window_set_title(GTK_WINDOW(messH->win->window), cTitle);
       }
     }
@@ -893,9 +889,7 @@ bool SaveMess(MyWindowPtr win) {
   if (messH->win && messH->win->window) {
     MakeMessTitle(title, tocH, messH->sumNum, true);
     char cTitle[257];
-    int tlen = title[0];
-    memcpy(cTitle, title + 1, tlen);
-    cTitle[tlen] = '\0';
+    g_strlcpy(cTitle, (char *)title, sizeof(cTitle));
     gtk_window_set_title(GTK_WINDOW(messH->win->window), cTitle);
   }
 
