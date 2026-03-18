@@ -108,7 +108,7 @@ typedef struct SearchInfo {
   bool dirty;               /* unsaved changes */
 
   /* Saved file */
-  FSSpec saveSpec;           /* spec of saved search file (if any) */
+  char saveSpec[PATH_MAX];           /* spec of saved search file (if any) */
   bool hasSaveSpec;          /* true if saveSpec is valid */
 
   /* Search progress tracking */

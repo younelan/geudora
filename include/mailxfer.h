@@ -55,7 +55,7 @@ typedef struct XferFlags {
 /* IMAP Transfer structure - complete definition */
 typedef struct IMAPTransferRec_ {
   short command;
-  FSSpec targetSpec;
+  char targetSpec[PATH_MAX];
   TOCType * destToc;
   GArray *uids;
   bool attachmentsToo;
@@ -65,7 +65,7 @@ typedef struct IMAPTransferRec_ {
   TOCType * sourceToc;
   bool copy;
   void *attachments;
-  FSSpec targetBox;
+  char targetBox[PATH_MAX];
   void *boxesToSearch;
   void *toSearch;
   void *searchC;

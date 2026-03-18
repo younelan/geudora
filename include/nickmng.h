@@ -115,7 +115,7 @@ typedef enum {
   ((*Aliases)[aShort].type == personalAddressBook)
 
 typedef struct AliasDStruct {
-  FSSpec spec;
+  char spec[PATH_MAX];
   NickStructHandle theData;
   void **hNames;    //	ALB 7/16/96, handle to nicknames
   short **sortData; // Contains nickname ID's -- 0 based -- of the sorted data

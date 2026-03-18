@@ -97,7 +97,7 @@ static int DefaultOutFlags(void) { return 0; }
  * IsFromLine - determine whether or not a given line is a sendmail From
  * line.  Ported from original Eudora — validates the date portion.
  ************************************************************************/
-bool IsFromLine(unsigned char *line) {
+bool IsFromLine(char *line) {
   int num, len;
   int quote = 0;
   char scratch[256];
@@ -110,7 +110,7 @@ bool IsFromLine(unsigned char *line) {
     return false;
 
   /* check for the space after "From" */
-  unsigned char *lp = line + 4;
+  char *lp = line + 4;
   if (*lp++ != ' ')
     return false;
 
@@ -247,7 +247,7 @@ uint32_t UnixDate2Secs(const char *date) {
  * Sets *origZone to the timezone offset in seconds.
  * The dateStr is a C string (header value after "Date: ").
  ************************************************************************/
-uint32_t BeautifyDate(unsigned char *dateStr, long *zoneSecs) {
+uint32_t BeautifyDate(char *dateStr, long *zoneSecs) {
   struct tm tm;
   const char *rest;
 
@@ -320,8 +320,8 @@ uint32_t BeautifyDate(unsigned char *dateStr, long *zoneSecs) {
  * Given "Subject: Hello World\r\n", copies "Hello World" into `to`.
  * Strips leading whitespace after the colon.
  ************************************************************************/
-void CopyHeaderLine(unsigned char *to, int size, unsigned char *from) {
-  unsigned char *colon;
+void CopyHeaderLine(char *to, int size, char *from) {
+  char *colon;
   int len;
 
   if (!to || size <= 0)
@@ -332,7 +332,7 @@ void CopyHeaderLine(unsigned char *to, int size, unsigned char *from) {
     return;
 
   /* Find the colon */
-  colon = (unsigned char *)strchr((char *)from, ':');
+  colon = strchr(from, ':');
   if (!colon) {
     /* No colon — copy whole line */
     colon = from;
@@ -359,7 +359,7 @@ void CopyHeaderLine(unsigned char *to, int size, unsigned char *from) {
  * Strips angle brackets, quotes, and extracts the display name or bare
  * address. Input and output are C strings.
  ************************************************************************/
-void BeautifyFrom(unsigned char *fromStr) {
+void BeautifyFrom(char *fromStr) {
   char *s = (char *)fromStr;
   char *lt, *gt, *start;
   char buf[256];
@@ -428,7 +428,7 @@ void BeautifyFrom(unsigned char *fromStr) {
  * BeautifySubj - clean up a subject line.
  * Removes common Outlook-style reply/forward prefixes.
  ************************************************************************/
-void BeautifySubj(unsigned char *subject, short size) {
+void BeautifySubj(char *subject, short size) {
   char *s = (char *)subject;
   if (!s || !*s)
     return;
@@ -454,7 +454,7 @@ void BeautifySubj(unsigned char *subject, short size) {
 void BeautifySum(MSumPtr sum) {
   if (sum->seconds)
     PtrTimeStamp(sum, sum->seconds, ZoneSecs());
-  BeautifyFrom((unsigned char *)sum->from);
+  BeautifyFrom(sum->from);
 }
 
 /************************************************************************
@@ -462,7 +462,7 @@ void BeautifySum(MSumPtr sum) {
  * Input: "From user@example.com Wed Jun 14 12:36:18 2023"
  * Sets sum->from and calls PtrTimeStamp with parsed date.
  ************************************************************************/
-void GleanFrom(unsigned char *line, MSumPtr sum) {
+void GleanFrom(char *line, MSumPtr sum) {
   char copy[512];
   char *cp, *ep;
   long seconds;
@@ -510,7 +510,7 @@ void GleanFrom(unsigned char *line, MSumPtr sum) {
  * IsBulk - does this header line represent an automated mailer?
  * Simplified: checks for common daemon/mailer-daemon patterns.
  ************************************************************************/
-bool IsBulk(unsigned char *line) {
+bool IsBulk(char *line) {
   char *s = (char *)line;
   /* Look for common automated sender patterns after the colon */
   char *colon = strchr(s, ':');
@@ -531,7 +531,7 @@ bool IsBulk(unsigned char *line) {
  * Returns nonzero if the fromLine matches the outgoing personality.
  * Simplified for the port.
  ************************************************************************/
-int SumToFrom(MSumPtr sum, unsigned char *fromLine) {
+int SumToFrom(MSumPtr sum, char *fromLine) {
   (void)sum;
   (void)fromLine;
   return 0;
@@ -555,7 +555,7 @@ long FindTOCSpot(TOCType * tocH, long length) {
 /************************************************************************
  * TrimWrap - trim wrapping characters from a string
  ************************************************************************/
-unsigned char *TrimWrap(unsigned char *str, int openC, int closeC) {
+char *TrimWrap(char *str, int openC, int closeC) {
   (void)openC;
   (void)closeC;
   return str;
@@ -564,7 +564,7 @@ unsigned char *TrimWrap(unsigned char *str, int openC, int closeC) {
 /************************************************************************
  * TrimNonWord - trim non-word characters
  ************************************************************************/
-unsigned char *TrimNonWord(unsigned char *str) { return str; }
+char *TrimNonWord(char *str) { return str; }
 
 /************************************************************************
  * MatchHeader - match a header name (case-insensitive).
@@ -1143,7 +1143,7 @@ ByteCount GoodUTF8Len(BytePtr utf8, ByteCount bufLen) {
 /* HeaderToUTF8 - validate/convert a C string header to valid UTF-8.
  * Unlike the original which used Pascal strings, this operates on
  * null-terminated C strings in-place. */
-OSStatus HeaderToUTF8(unsigned char *head) {
+OSStatus HeaderToUTF8(char *head) {
   if (!head || !*head)
     return 0;
 

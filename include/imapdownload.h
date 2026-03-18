@@ -158,7 +158,7 @@ struct DeliveryNode {
 typedef struct UpdateNode UpdateNode, *UpdateNodePtr;
 typedef UpdateNode *UpdateNodeHandle;
 struct UpdateNode {
-  FSSpec mailboxSpec;       // the mailbox this message lives in
+  char mailboxSpec[PATH_MAX];       // the mailbox this message lives in
   unsigned long uid;        // uid of the message
   FSSpecHandle attachSpecs; // specs pointing to the attachments that have been
                             // downloaded
@@ -171,21 +171,21 @@ struct UpdateNode {
 typedef struct IMAPAppendStruct IMAPAppendStruct, *IMAPAppendPtr,
     *IMAPAppendHandle;
 struct IMAPAppendStruct {
-  FSSpec spoolSpec;        // the spooled message
+  char spoolSpec[PATH_MAX];        // the spooled message
   StateEnum fromState;     // the state of the original message
   unsigned long fromFlags; // the flags from the original message
 
   bool transferred; // set to true when this message has been successfully
                     // transferred
   long serialNum;   // the serial number of the original POP message
-  FSSpec mailbox;   // the POP mailbox this message came from
+  char mailbox[PATH_MAX];   // the POP mailbox this message came from
 };
 
 // UIDCopyStruct. Contains source mailbox, old UID, and new UID.  Used for main
 // thread copys after a UIDPLUS response
 typedef struct UIDCopyStruct UIDCopyStruct, *UIDCopyPtr;
 struct UIDCopyStruct {
-  FSSpec toSpec;   // destination mailbox
+  char toSpec[PATH_MAX];   // destination mailbox
   void *hOldSums; // a copy of the summaries transferred.
   void *hNewUIDs; // list of new UIDs from UIDPLUS response.
   bool copy;       // true if this was a copy
@@ -381,7 +381,7 @@ void IMAPFilteringCancelled(bool bOverride);
 // Miscellaneous utility functions
 // Miscellaneous utility functions
 DeliveryNodeHandle FindNodeByToc(TOCType * toc);
-int pstrincmp(unsigned char * ps, const char *cs, short n);
+int pstrincmp(char *ps, const char *cs, short n);
 bool IsIMAPOperationUnderway(TaskKindEnum task);
 bool IsIMAPMailboxBusy(TOCType * tocH);
 bool IMAPDoQuit(void);

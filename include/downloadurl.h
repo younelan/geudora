@@ -35,7 +35,7 @@ typedef struct
 
 typedef struct
 {
-	FSSpec	spec;
+	char spec[PATH_MAX];
 	char	checksum;
 } DownloadInfo;
 

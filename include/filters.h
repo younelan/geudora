@@ -110,7 +110,7 @@ typedef struct {
 
 typedef struct {
   char name[32];
-  FSSpec transferSpec;
+  char transferSpec[PATH_MAX];
   bool incoming;
   bool outgoing;
   bool manual;
@@ -136,7 +136,7 @@ typedef struct {
   bool xferredFromIMAP;
   bool print;
   short doNotifyThing;
-  FSSpec spec;
+  char spec[PATH_MAX];
   CSpecHandle report;
   CSpecHandle mailbox;
   CSpecHandle message;

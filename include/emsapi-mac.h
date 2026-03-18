@@ -679,7 +679,7 @@ typedef struct emsPre7MailConfigS {
 typedef struct emsMailConfigS *emsMailConfigP;
 typedef struct emsMailConfigS {
   long size;        /* Size of this data structure */
-  FSSpec configDir; /* Optional directory for config file */
+  char configDir[PATH_MAX]; /* Optional directory for config file */
   emsAddress
       userAddr; /* Current users full name and address from Eudora config */
   emsCallBacksP
@@ -819,7 +819,7 @@ typedef struct emsMailBoxContextFolderDataS *emsMailBoxContextFolderDataP;
 typedef struct emsMailBoxContextFolderDataS {
   long size;           /* IN: Size of this data structure */
   long value;          /* IN: the attribute value for the mailbox in question */
-  FSSpec pluginFolder; /* OUT: Folder that the plugin associates with the given
+  char pluginFolder[PATH_MAX]; /* OUT: Folder that the plugin associates with the given
                           mailbox tags */
 } emsMailBoxContextFolderData;
 #endif // INTERNAL_FOR_QC
@@ -922,7 +922,7 @@ typedef struct emsImporterDataS {
 typedef struct ImportAccountInfoS *ImportAccountInfoP, *ImportAccountInfoH;
 typedef struct ImportAccountInfoS {
   long size;         /* IN: Size of this data structure */
-  FSSpec importSpec; /* spec pointing to folder or file to import */
+  char importSpec[PATH_MAX]; /* spec pointing to folder or file to import */
   char accountName[64]; /* name of account */
   char appName[64];     /* name of Application */
   void **icon;       /* Application icon data */
@@ -948,7 +948,7 @@ typedef struct ImportSignaturesDataS ImportSignaturesDataS,
     *ImportSignaturesDataP, **ImportSignaturesDataH;
 typedef struct ImportSignaturesDataS {
   long size;            /* IN: Size of this data structure */
-  FSSpec importSpec;    /* Spec pointing to the folder or file to import */
+  char importSpec[PATH_MAX];    /* Spec pointing to the folder or file to import */
   emsMakeSig makeSig;   /* Callback to actually create the signature file */
   emsProgress progress; /* Callback for progress */
 } ImportSignaturesData;
@@ -965,7 +965,7 @@ typedef struct ImportAddressDataS ImportAddressDataS, *ImportAddressDataP,
     **ImportAddressDataH;
 typedef struct ImportAddressDataS {
   long size;         /* IN: Size of this data structure */
-  FSSpec importSpec; /* Spec pointing to the folder or file to import */
+  char importSpec[PATH_MAX]; /* Spec pointing to the folder or file to import */
   char accountName[64]; /* name of the account */
   emsMakeAddressBook
       makeAddressBook;        /* Callback to create an address book file */
@@ -994,7 +994,7 @@ typedef struct ImportMailDataS ImportMailDataS, *ImportMailDataP,
     **ImportMailDataH;
 typedef struct ImportMailDataS {
   long size;         /* IN: Size of this data structure */
-  FSSpec importSpec; /* Spec pointing to the folder or file to import */
+  char importSpec[PATH_MAX]; /* Spec pointing to the folder or file to import */
   char accountName[64]; /* name of the account */
   emsMakeMailbox makeMailbox; /* Callback to create a mailbox */
   emsMakeOutMess makeOutMess; /* Callback to create an outgoing message */
@@ -1015,7 +1015,7 @@ typedef enum {
 typedef struct emsMakeMailboxDataS {
   long size;                          /* Size of this data structure */
   ImportMailboxOperationEnum command; /* IN: what to do */
-  FSSpec boxSpec;                     /* IN/OUT: the mailbox to create */
+  char boxSpec[PATH_MAX];                     /* IN/OUT: the mailbox to create */
   bool isFolder;                      /* IN: is this mailbox a folder? */
   bool noSelect;                      /* IN: is this mailbox a simple folder? */
 } emsMakeMailboxData;
@@ -1032,7 +1032,7 @@ typedef struct emsMakeOutMessDataS {
   short numAttachments;       /* the total number of attachments */
   void **attachSpecs;         /* the attachments */
   long inBoxNumber;           /* the mailbox the message is in */
-  FSSpec boxSpec;             /* FSSpec of the mailbox */
+  char boxSpec[PATH_MAX];             /* FSSpec of the mailbox */
   bool isSent;                /* Is this message a sent message? */
   long date;                  /* the date this message was sent */
 } emsMakeOutMessData;
@@ -1044,15 +1044,15 @@ typedef struct emsMakeMessageDataS {
   long offset;        /* offset into the file where the message can be found */
   long len;           /* length of the message to be read */
   short state;        /* the message state the plugin believes to see */
-  FSSpec boxSpec;     /* where the message should end up */
+  char boxSpec[PATH_MAX];     /* where the message should end up */
   void **attachments; /* the attachments to be stuck into this message */
 } emsMakeMessageData;
 
 /* ----- Import MBox Callback Data -------- */
 typedef struct emsImportMboxDataS {
   long size;         /* Size of this data structure */
-  FSSpec sourceMBox; /* The mbox file to read from */
-  FSSpec boxSpec;    /* where the messages should end up */
+  char sourceMBox[PATH_MAX]; /* The mbox file to read from */
+  char boxSpec[PATH_MAX];    /* where the messages should end up */
 } emsImportMboxData;
 
 // end IMPORTERS

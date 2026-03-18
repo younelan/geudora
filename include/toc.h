@@ -101,7 +101,7 @@ typedef struct TOCType {
 
   /* Mailbox specification */
   struct {
-    FSSpec spec;
+    char spec[PATH_MAX];
     struct {
       long specListCount;
       char * *specList;

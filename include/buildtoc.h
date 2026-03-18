@@ -47,20 +47,20 @@ TOCType * BuildTOC_Path(const char *path);
 TOCType * RebuildTOC(const char *path, TOCType * oldTocH, bool resource,
                      bool tempToc);
 int ReadSum(MSumPtr sum, bool isOut, LineIOP lip, bool lookEnvelope);
-int SumToFrom(MSumPtr sum, unsigned char * fromLine);
-void CopyHeaderLine(unsigned char * to, int size, unsigned char * from);
+int SumToFrom(MSumPtr sum, char *fromLine);
+void CopyHeaderLine(char *to, int size, char *from);
 long FindTOCSpot(TOCType * tocH, long length);
-void BeautifyFrom(unsigned char * fromStr);
-uint32_t BeautifyDate(unsigned char * dateStr, long *zoneSecs);
+void BeautifyFrom(char *fromStr);
+uint32_t BeautifyDate(char *dateStr, long *zoneSecs);
 uint32_t UnixDate2Secs(const char *date);
-void BeautifySubj(unsigned char *subject, short size);
-bool IsFromLine(unsigned char * line);
-bool IsBulk(unsigned char * line);
-void GleanFrom(unsigned char * line, MSumPtr sum);
+void BeautifySubj(char *subject, short size);
+bool IsFromLine(char *line);
+bool IsBulk(char *line);
+void GleanFrom(char *line, MSumPtr sum);
 short MonthNum(const char *cp);
 long CStr2Zone(const char *s);
-unsigned char *TrimWrap(unsigned char * str, int openC, int closeC);
-unsigned char *TrimNonWord(unsigned char *str);
+char *TrimWrap(char *str, int openC, int closeC);
+char *TrimNonWord(char *str);
 short SalvageTOC(TOCType * oldToc, TOCType * newToc);
 
 /* Unicode / UTF-8 helpers (GLib-based portable implementations) */
@@ -68,10 +68,10 @@ bool HasUnicode(void);
 typedef unsigned char *BytePtr;
 typedef unsigned long ByteCount;
 ByteCount GoodUTF8Len(BytePtr utf8, ByteCount bufLen);
-OSStatus HeaderToUTF8(unsigned char *head);
+OSStatus HeaderToUTF8(char *head);
 #define TrimUTF8(s) do { \
   size_t _tlen = strlen((const char *)(s)); \
-  size_t _good = GoodUTF8Len((s), _tlen); \
+  size_t _good = GoodUTF8Len((unsigned char *)(s), _tlen); \
   (s)[_good] = '\0'; \
 } while(0)
 

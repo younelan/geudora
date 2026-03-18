@@ -26,7 +26,7 @@ DAMAGE. */
 typedef struct PGPContextStruct
 {
 	PGPEnum type;
-	FSSpec spec;
+	char spec[PATH_MAX];
 	short refN;
 	char intro[32];	/* how we know it's pgp */
 	struct PGPContextStruct *next;

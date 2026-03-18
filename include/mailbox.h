@@ -230,7 +230,7 @@ typedef struct {
 
 /* CSpec: Counted file specification for tracking file references */
 typedef struct CountedSpecStruct {
-  FSSpec spec;
+  char spec[PATH_MAX];
   short count;
 } CSpec, *CSpecPtr;
 
@@ -280,7 +280,7 @@ typedef struct StandardFileReply {
   bool sfGood;
   bool sfReplacing;
   uint32_t sfType;
-  FSSpec sfFile;
+  char sfFile[PATH_MAX];
   uint32_t sfScript;
   int16_t sfFlags;
   bool sfIsFolder;
