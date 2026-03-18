@@ -101,7 +101,7 @@ int ReadHeaderLo(TransStream stream, HeaderDHandle hdh, long estSize, short refN
 	for (h=1;h<funFieldsLimit;h++)
 		GetRString(interesting[h],funFieldsID+h);
 	
-	if (err=AccuInit(&a)) {WarnUser(MEM_ERR,MemError());return(ErrorToken);}
+	if (err=AccuInit(&a)) {WarnUser(MEM_ERR,0);return(ErrorToken);}
 	
 	/*
 	 * initialize the attribute array
@@ -110,7 +110,7 @@ int ReadHeaderLo(TransStream stream, HeaderDHandle hdh, long estSize, short refN
 	if (!(grumble = (void*)AANew(GetRLong(MIME_ATTR_MAX),GetRLong(MIME_VAL_MAX))))
 	{
 		free(a.data); a.data = NULL; a.offset = a.size = 0;
-		WarnUser(MEM_ERR,MemError());
+		WarnUser(MEM_ERR,0);
 		return(ErrorToken);
 	}
 	hdh->contentAttributes = (void*)grumble;
@@ -121,7 +121,7 @@ int ReadHeaderLo(TransStream stream, HeaderDHandle hdh, long estSize, short refN
 	if (!(grumble = (void*)AANew(GetRLong(MIME_ATTR_MAX),256)))
 	{
 		free(a.data); a.data = NULL; a.offset = a.size = 0;
-		WarnUser(MEM_ERR,MemError());
+		WarnUser(MEM_ERR,0);
 		return(ErrorToken);
 	}
 	*GlobalTemp = 0;
@@ -798,7 +798,7 @@ int AddHeaderAttribute(HeaderDHandle hdh, char *value, bool etl)
 	g_strlcpy(truncated,value,dataSize < (short)sizeof(truncated) ? dataSize : (short)sizeof(truncated));
 	err = AAAddItem(hdh->contentAttributes,True,(void*)hdh->attributeName,(void*)truncated);
 
-	if (err) {return(WarnUser(MEM_ERR,MemError()));}
+	if (err) {return(WarnUser(MEM_ERR,0));}
 
 	switch (attributeNum = FindSTRNIndex(AttributeStrn,(void*)hdh->attributeName))
 	{
@@ -827,7 +827,7 @@ int AddFunField(HeaderDHandle hdh, char *value, short funFieldsID)
 	{
 		GetRString(fName,funFieldsID+hdh->hFound);
 		err = AAAddItem(hdh->funFields,True,fName,value);
-		if (err) return(WarnUser(MEM_ERR,MemError()));
+		if (err) return(WarnUser(MEM_ERR,0));
 	}
 		
 	return(noErr);
@@ -894,7 +894,7 @@ int ParseAHeaderLo(StringHandle h, HeaderDHandle *hdhp, short funFieldsID, short
 	HeaderDHandle hdh=NewHeaderDesc(nil);
 	TransVector	saveCurTrans = CurTrans;
 			
-	if(hdh == nil) return MemError();
+	if(hdh == nil) return 0;
 	
 	parseHeaderHandle = h;
 	parseHeaderOffset = 0L;
@@ -915,7 +915,7 @@ int ParseAHeaderLo(StringHandle h, HeaderDHandle *hdhp, short funFieldsID, short
 	}
 	else
 	{
-		int err = MemError();
+		int err = 0;
 		DisposeHeaderDesc(hdh);
 		return err ? err : paramErr;
 	}

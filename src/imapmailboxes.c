@@ -363,7 +363,7 @@ void AddMailbox(MAILSTREAM *mailStream, char *name, char delimiter,
     // add this mailbox to the list.
     LL_Queue(mailStream->fListResultsHandle, mbox, (MailboxNodeHandle));
   } else
-    WarnUser(MEM_ERR, MemError());
+    WarnUser(MEM_ERR, 0);
 }
 
 /**********************************************************************
@@ -392,7 +392,7 @@ bool GetIMAPMailboxes(IMAPStreamPtr imapStream, bool progress) {
   root = g_malloc0(sizeof(MailboxNode));
 
   if (!root)
-    WarnUser(MEM_ERR, MemError());
+    WarnUser(MEM_ERR, 0);
   else {
     // set up the root node ...
     root->attributes = LATT_ROOT;
@@ -1025,7 +1025,7 @@ int WriteIMAPMailboxInfo(char * spec, MailboxNodeHandle node) {
 
     // Add the name to the resource as well
     resource = malloc(0);
-    if (resource && (err = MemError()) == noErr) {
+    if (resource && (err = 0) == noErr) {
       if (!buf_append(resource, node->mailboxName, strlen(node->mailboxName) + 1))
         err = memFullErr;
       if (err == noErr) {
@@ -1101,7 +1101,7 @@ MailboxNodeHandle RebuildPersIMAPMailboxTree(PersHandle pers) {
 
   // make sure we got our first node.
   if (tree == 0)
-    WarnUser(MEM_ERR, MemError());
+    WarnUser(MEM_ERR, 0);
   else {
     tree->attributes = LATT_ROOT;
     tree->persId = pers->persId;
@@ -1180,7 +1180,7 @@ int RebuildIMAPMailboxTree(char * dir, PersHandle pers,
                                      bHasQueuedCommands);
             }
           } else
-            WarnUser(MEM_ERR, MemError());
+            WarnUser(MEM_ERR, 0);
         }
         // else
         // something wrong with this folder.  Skip it.
@@ -1896,7 +1896,7 @@ int BuildIMAPMailboxName(MailboxNodeHandle parent, char * newSpec,
         + (folder ? 1 : 0) // trailing delimiter if this is a folder
         + 1;               // null
 
-  if ((*newMailboxName = NuPtr(len)) != 0) {
+  if ((*newMailboxName = calloc(1, len)) != 0) {
     char *dest = (char *)*newMailboxName;
     if (parent->mailboxName != 0) {
       // the pathname of the new mailbox
@@ -1927,7 +1927,7 @@ int BuildIMAPMailboxName(MailboxNodeHandle parent, char * newSpec,
       dest[len - 1] = 0;
     }
   } else
-    err = MemError();
+    err = 0;
 
   return (err);
 }

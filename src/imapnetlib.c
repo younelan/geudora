@@ -1719,7 +1719,7 @@ void OrderedInsert(MAILSTREAM *mailStream, unsigned long uid, bool seen,
     // ordered insert this node into the list
     UID_LL_OrderedInsert(&(mailStream->fUIDResults), &node, true);
   } else {
-    WarnUser(MEM_ERR, MemError());
+    WarnUser(MEM_ERR, 0);
   }
 }
 

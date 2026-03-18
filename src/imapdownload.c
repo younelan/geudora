@@ -1316,7 +1316,7 @@ int SpecToUIDList(TOCType * tocH, UIDNodeHandle *list,
       // ordered insert this node into the list
       UID_LL_OrderedInsert(list, &node, false);
     } else {
-      err = MemError();
+      err = 0;
     }
   }
 
@@ -1337,7 +1337,7 @@ int SpecToUIDList(TOCType * tocH, UIDNodeHandle *list,
         // list
         UID_LL_OrderedInsert(list, &node, false);
       } else {
-        err = MemError();
+        err = 0;
       }
     }
     IMAPTocHBusy(hidTocH, false);
@@ -1784,9 +1784,9 @@ int SaveMinimalHeader(MAILSTREAM *stream) {
           goto done;
         }
       } else {
-        delivery->ta = NuHTempBetter(sizeof(MSumType));
+        delivery->ta = malloc(sizeof(MSumType));
         if (!delivery->ta) {
-          WarnUser(MEM_ERR, MemError());
+          WarnUser(MEM_ERR, 0);
           HSetState((void *)delivery, dState);
           goto done;
         }
@@ -2562,7 +2562,7 @@ int UIDDownloadMessage(TOCType * inToc, unsigned long uid,
     *((unsigned long *)uidH) = uid;
     err = UIDDownloadMessages(inToc, uidH, forceForeground, attachmentsToo);
   } else {
-    WarnUser(err = MemError(), MEM_ERR);
+    WarnUser(err = 0, MEM_ERR);
   }
 
   return (err);
@@ -3334,7 +3334,7 @@ bool IMAPDeleteMessage(TOCType * tocH, unsigned long uid, bool nuke,
     *((unsigned long  *)uidH) = uid;
     result = IMAPDeleteMessages(tocH, uidH, nuke, expunge, undelete, false);
   } else {
-    WarnUser(MemError(), MEM_ERR);
+    WarnUser(0, MEM_ERR);
   }
 
   return (result);
@@ -3841,7 +3841,7 @@ int IMAPTransferMessagesFromSearchWindow(TOCType * fromTocH, TOCType * toTocH,
                 free(ids);
             }
           } else
-            err = MemError();
+            err = 0;
         }
       }
     } else {
@@ -3915,7 +3915,7 @@ int IMAPMoveIMAPMessages(TOCType * fromTocH, TOCType * toTocH, bool copy) {
       err = IMAPTransferMessagesToServer(fromTocH, toTocH, uids, copy, false);
     }
   } else {
-    WarnUser(MemError(), MEM_ERR);
+    WarnUser(0, MEM_ERR);
   }
 
   return (err);
@@ -4198,7 +4198,7 @@ int IMAPTransferMessage(TOCType * fromTocH, TOCType * toTocH,
     // don't zap the handle.  Someone else
     // will.
   } else {
-    WarnUser(MemError(), MEM_ERR);
+    WarnUser(0, MEM_ERR);
   }
 
   return (err);
@@ -4496,7 +4496,7 @@ int TransferMessageBetweenServers(
       // set up the STRINGDataStruct we'll use
       // to read the source message
       Zero(msData);
-      msData.buffer = NuPtr((1024 * 1024) + 4);
+      msData.buffer = calloc(1, (1024 * 1024) + 4);
       if (msData.buffer) {
         msData.bufferSize = (1024 * 1024);
         msData.imapStream = fromStream;
@@ -4572,7 +4572,7 @@ int TransferMessageBetweenServers(
         ZapPtr(msData.buffer);
       } else {
         // failed to allocate buffer
-        WarnUser(MEM_ERR, err = MemError());
+        WarnUser(MEM_ERR, err = 0);
       }
     } else // failed to open destination.
            // Display some error message.
@@ -4661,7 +4661,7 @@ int IMAPTransferMessageToServer(TOCType * tocH, TOCType * toTocH,
     err = IMAPTransferMessagesToServer(tocH, toTocH, sumsH, copy,
                                        forceForeground);
   } else {
-    WarnUser(err = MemError(), MEM_ERR);
+    WarnUser(err = 0, MEM_ERR);
   }
 
   return (err);
@@ -4720,7 +4720,7 @@ int IMAPTransferMessagesToServer(TOCType * fromTocH, TOCType * toTocH,
 
   spoolData =
       (IMAPAppendHandle)calloc(1,numSums * sizeof(IMAPAppendStruct));
-  if (((err = MemError()) != noErr) || !spoolData)
+  if (((err = 0) != noErr) || !spoolData)
     return (err);
 
   // Keep the tocH around.  We'll let it go
@@ -5069,7 +5069,7 @@ int AppendSpoolFile(IMAPStreamPtr imapStream, IMAPAppendPtr spoolData) {
   // set up the STRINGFileStruct we'll use to
   // read the spool file
   Zero(msFile);
-  msFile.buffer = NuPtr((1024 * 1024) + 4);
+  msFile.buffer = calloc(1, (1024 * 1024) + 4);
   if (msFile.buffer) {
     msFile.bufferSize = (1024 * 1024);
     spec_make(spoolData->spoolSpec, spec_name(spoolData->spoolSpec), &(msFile.spoolSpec));
@@ -5106,7 +5106,7 @@ int AppendSpoolFile(IMAPStreamPtr imapStream, IMAPAppendPtr spoolData) {
     ZapPtr(msFile.buffer);
   } else {
     // failed to allocate buffer
-    WarnUser(MEM_ERR, err = MemError());
+    WarnUser(MEM_ERR, err = 0);
   }
 
   return (err);
@@ -5171,7 +5171,7 @@ bool CopyMessages(IMAPStreamPtr imapStream, MailboxNodeHandle mbox, void *uids,
               SetHandleBig_(node->tc,
                             (numCopies + 1) * sizeof(UIDCopyStruct));
             }
-            if (MemError() != noErr)
+            if (0 != noErr)
               free(node->tc);
 
             // Store the interesting bits about
@@ -5188,7 +5188,7 @@ bool CopyMessages(IMAPStreamPtr imapStream, MailboxNodeHandle mbox, void *uids,
               // around to transferring the
               // local cache.
               ucptr->hOldSums = calloc(1,numMessages * sizeof(MSumType));
-              if (MemError() == noErr) {
+              if (0 == noErr) {
                 for (i = 0; i < numMessages; i++) {
                   sumNum = UIDToSumNum(((unsigned long *)uids)[i], fromTocH);
                   if (sumNum != -1)
@@ -5213,7 +5213,7 @@ bool CopyMessages(IMAPStreamPtr imapStream, MailboxNodeHandle mbox, void *uids,
                 // new ones
                 ucptr->hNewUIDs =
                     calloc(1,numMessages * sizeof(unsigned long));
-                if (MemError() == noErr)
+                if (0 == noErr)
                   setup = true;
               }
             }
@@ -5493,7 +5493,7 @@ int UpdateLocalSummaries(TOCType * fromTocH, void *uids, bool undelete,
           TOCSetDirty(fromTocH, true);
           QueueDeliveryNode(node);
         } else {
-          IMAPError(kIMAPUpdateLocal, kIMAPMemErr, err = MemError());
+          IMAPError(kIMAPUpdateLocal, kIMAPMemErr, err = 0);
           free(node);
         }
       }
@@ -5529,12 +5529,12 @@ int UpdateLocalSummaries(TOCType * fromTocH, void *uids, bool undelete,
           TOCSetDirty(fromTocH, true);
           QueueDeliveryNode(node);
         } else {
-          IMAPError(kIMAPUpdateLocal, kIMAPMemErr, err = MemError());
+          IMAPError(kIMAPUpdateLocal, kIMAPMemErr, err = 0);
           free(node);
         }
       }
     } else {
-      IMAPError(kIMAPUpdateLocal, kIMAPMemErr, err = MemError());
+      IMAPError(kIMAPUpdateLocal, kIMAPMemErr, err = 0);
     }
   }
   return (err);
@@ -5723,7 +5723,7 @@ bool DoExpungeMailboxLo(TOCType * tocH, bool bCheckLocal) {
         }
         free(uids);
       } else {
-        IMAPError(kIMAPExpunge, kIMAPMemErr, MemError());
+        IMAPError(kIMAPExpunge, kIMAPMemErr, 0);
       }
     }
     // else
@@ -6264,7 +6264,7 @@ char *FlagsString(char **flags, bool seen, bool deleted, bool flagged,
 
     strcat(*flags, ")");
   } else {
-    WarnUser(MEM_ERR, MemError());
+    WarnUser(MEM_ERR, 0);
   }
 
   return (*flags);
@@ -6659,7 +6659,7 @@ int FTMExpunge(IMAPStreamPtr imapStream, TOCType * tocH) {
                     &((unsigned long *)uids)[--count],
                     sizeof(unsigned long));
           } else {
-            WarnUser(MemError(), MEM_ERR);
+            WarnUser(0, MEM_ERR);
             return (false);
           }
 
@@ -6991,7 +6991,7 @@ unsigned long DownloadIMAPAttachment(char * attachSpec,
   int err = noErr;
 
   attach = malloc(sizeof(FSSpec));
-  if (attach && (err = MemError()) == noErr) {
+  if (attach && (err = 0) == noErr) {
     memmove(attach, attachSpec, sizeof(FSSpec));
     result = DownloadIMAPAttachments(attach, mailbox, forceForeground);
   } else {
@@ -7703,7 +7703,7 @@ bool SpoolFileToAttachment(MailboxNodeHandle mailbox, unsigned long uid,
   static bool inUse = false;
 
   if (!hdh) {
-    IMAPError(kIMAPFetchAttachment, kIMAPMemErr, MemError());
+    IMAPError(kIMAPFetchAttachment, kIMAPMemErr, 0);
     return (false);
   }
 
@@ -7760,7 +7760,7 @@ bool SpoolFileToAttachment(MailboxNodeHandle mailbox, unsigned long uid,
   if (!Lip)
     Lip = NuPtrClear(sizeof(*Lip));
   if (!Lip) {
-    (WarnUser(MEM_ERR, MemError()));
+    (WarnUser(MEM_ERR, 0));
     goto msgDone;
   }
   if (FSpOpenLine(spoolSpec, fsRdWrPerm, Lip))
@@ -8209,7 +8209,6 @@ bool FetchAllIMAPAttachments(TOCType * tocH, short sumNum,
       CacheMessage(tocH, sumNum);
       if (!(text = tocH->sums[sumNum].cache))
         return false;
-      HNoPurge(text);
       offset = tocH->sums[sumNum].bodyOffset - 1;
 
       // scan message for attachments
@@ -8229,7 +8228,7 @@ bool FetchAllIMAPAttachments(TOCType * tocH, short sumNum,
               SetHandleSize(attachments, numSpecs * sizeof(FSSpec));
             }
 
-            if (!attachments || (err = MemError())) {
+            if (!attachments || (err = 0)) {
               WarnUser(MEM_ERR, err);
               free(attachments);
               break;
@@ -8339,7 +8338,6 @@ bool HasStubFileAttachment(TOCType * tocH, short sumNum) {
       CacheMessage(tocH, sumNum);
       if (!(text = tocH->sums[sumNum].cache))
         return false;
-      HNoPurge(text);
       offset = tocH->sums[sumNum].bodyOffset - 1;
 
       // scan message for attachments
@@ -8403,7 +8401,7 @@ bool IMAPSearch(TOCType * searchWin, BoxCountHandle boxesToSearch,
   for (pers = PersList; pers && (err == noErr); pers = pers->next) {
     // create a handle to store the indices
     // into boxesToSearch
-    if (!(toSearch = malloc(0)) || (err = MemError())) {
+    if (!(toSearch = malloc(0)) || (err = 0)) {
       WarnUser(MEM_ERR, err);
       return (false);
     }
@@ -8430,7 +8428,7 @@ bool IMAPSearch(TOCType * searchWin, BoxCountHandle boxesToSearch,
           // mailboxes to be searched
           numBoxesToSearch = (GetHandleSize(toSearch) / sizeof(short)) + 1;
           SetHandleSize(toSearch, numBoxesToSearch * sizeof(short));
-          if ((err = MemError())) {
+          if ((err = 0)) {
             WarnUser(MEM_ERR, err);
             free(toSearch);
             return (false);
@@ -8452,7 +8450,7 @@ bool IMAPSearch(TOCType * searchWin, BoxCountHandle boxesToSearch,
           // queue the delivery node
           QueueDeliveryNode(node);
         } else {
-          WarnUser(MEM_ERR, MemError());
+          WarnUser(MEM_ERR, 0);
           return (false);
         }
       }
@@ -8550,7 +8548,7 @@ bool IMAPSearchMailbox(TOCType * searchWin, BoxCountHandle allBoxes,
     } else
       free(node);
   } else
-    WarnUser(MEM_ERR, MemError());
+    WarnUser(MEM_ERR, 0);
 
   // Cleanup
   free(searchCriteria);
@@ -8630,7 +8628,7 @@ bool IMAPSearchServer(TOCType * searchWin, PersHandle pers,
     free(dupSearchCriteria);
     free(dupBoxes);
     free(dupSearch);
-    WarnUser(MEM_ERR, err = MemError());
+    WarnUser(MEM_ERR, err = 0);
   }
 
   return (result);
@@ -8962,7 +8960,7 @@ bool DoIMAPServerSearch(TOCType * searchWin, BoxCountHandle allBoxes,
         PROGRESS_MESSAGER(kpSubTitle, CLEANUP_CONNECTION);
       } // end connection
     } else {
-      WarnUser(MEM_ERR, MemError());
+      WarnUser(MEM_ERR, 0);
     }
 
     CleanupConnection(&imapStream);
@@ -9172,7 +9170,7 @@ bool ReturnSearchHits(IMAPStreamPtr imapStream, DeliveryNodeHandle searchNode,
       UID_LL_Zap(&uidsToFetch);
       uidsToFetch = nil;
     } else
-      WarnUser(MEM_ERR, MemError());
+      WarnUser(MEM_ERR, 0);
   }
 
   return (result);
@@ -9204,16 +9202,16 @@ void BuildSearchResults(DeliveryNodeHandle delivery, UIDNodeHandle results) {
         offset = GetHandleSize((void *)delivery->results);
         SetHandleBig_(delivery->results,
                       offset + (numResults * sizeof(IMAPSResultStruct)));
-        if ((err = MemError())) {
+        if ((err = 0)) {
           WarnUser(MEM_ERR, err);
           HSetState((void *)delivery, state);
           return;
         }
       } else {
-        delivery->results = (IMAPSResultHandle)NuHTempBetter(
+        delivery->results = (IMAPSResultHandle)malloc(
             numResults * sizeof(IMAPSResultStruct));
         if (!delivery->results) {
-          WarnUser(MEM_ERR, MemError());
+          WarnUser(MEM_ERR, 0);
           HSetState((void *)delivery, state);
           return;
         }
@@ -9332,7 +9330,7 @@ bool IMAPStartFiltering(TOCType * tocToFilter, bool connect) {
         UnlockMailboxNodeHandle(boxToFilter);
       } else {
         if (!CommandPeriod)
-          WarnUser(MEM_ERR, MemError());
+          WarnUser(MEM_ERR, 0);
         gFilteringUnderway = false;
         CommandPeriod = true; // stop all filtering
       }
@@ -10390,7 +10388,7 @@ void IMAPFetchSelectedMessages(TOCType * tocH, bool attach) {
       // attachments.
       UIDDownloadMessages(tocH, uids, false, attach);
     } else {
-      WarnUser(MemError(), MEM_ERR);
+      WarnUser(0, MEM_ERR);
     }
   }
 }
@@ -10494,12 +10492,12 @@ int QueueMessFlagChange(TOCType * tocH, short sumNum, StateEnum state,
         if (mb->queuedFlags == nil) {
           queuedFlagsSize = sizeof(LocalFlagChangeStruct);
           mb->queuedFlags = NewZH(LocalFlagChangeStruct);
-          err = MemError();
+          err = 0;
         } else {
           oldFlagSize = GetHandleSize((void *)mb->queuedFlags);
           queuedFlagsSize = oldFlagSize + sizeof(LocalFlagChangeStruct);
           SetHandleSize((void *)(mb->queuedFlags), queuedFlagsSize);
-          err = MemError();
+          err = 0;
         }
 
         // save the flag change

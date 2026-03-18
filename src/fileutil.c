@@ -941,7 +941,7 @@ int CopyFBytes(short fromRefN, long fromOffset, long length, short toRefN,
   if (size < 255) size = 255;
   buffer = malloc(size);
   if (!buffer)
-    return (WarnUser(MEM_ERR, MemError()));
+    return (WarnUser(MEM_ERR, 0));
 
   do {
     CycleBalls();
@@ -977,7 +977,7 @@ int HuntNewline(short refN, long aroundSpot, long *newline, bool *realNl) {
   short err;
 
   if (!buffer)
-    return (WarnUser(MEM_ERR, MemError()));
+    return (WarnUser(MEM_ERR, 0));
 
   /* read in a buffer containing aSpot */
   spot = MAX(0, aroundSpot - HNLSIZE / 2);
@@ -1231,9 +1231,9 @@ int Snarf(char *spec, void ***hp, long limit) {
     if (!((err = GetEOF(refN, &bytes)))) {
       if (limit)
         bytes = MIN(bytes, limit);
-      *hp = NuHTempOK(bytes);
+      *hp = malloc(bytes);
       if (!*hp)
-        err = MemError();
+        err = 0;
       else if ((err = ARead(refN, &bytes, (unsigned char *)(*hp)))) {
         free(*hp);
         *hp = NULL;
@@ -1949,7 +1949,7 @@ short CopyFork(short vRef, long dirId, const char *name, short fromVRef,
   long eof = 0;
 
   if (!buffer)
-    return (MemError());
+    return (0);
 
   // If resource fork requested, just return success (portable code has no
   // resource forks)
@@ -2428,7 +2428,7 @@ int WipeDiskArea(short refN, long offset, long len) {
     return (0);
   h = malloc((size_t)bSize);
   if (!h)
-    return (MemError());
+    return (0);
 
   /* fill it with returns */
   end = h + bSize;

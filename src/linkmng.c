@@ -334,9 +334,9 @@ int AddURLToHistory(short which, char * url, char * name, int urlOpenErr) {
     }
 
     // Turn the url into a handle
-    hUrl = NuHTempOK(0);
+    hUrl = malloc(0);
     if (!hUrl)
-      return (WarnUser(LINK_HISTORY_NEW_HISTORY_ERR, MemError()));
+      return (WarnUser(LINK_HISTORY_NEW_HISTORY_ERR, 0));
     err = (buf_append(hUrl, url + 1, url[0]) == NULL) ? -1 : 0;
     if (err)
       return (WarnUser(LINK_HISTORY_NEW_HISTORY_ERR, err));
@@ -473,9 +473,9 @@ int RegenerateLinkHistory(short which, bool rebuild) {
   if (!gHistories[which]
            .theData) // If handle for data doesn't exist, create it
   {
-    hand = NuHTempOK(0L);
+    hand = malloc(0L);
     if (!hand)
-      err = WarnUser(LINK_HISTORY_NEW_HISTORY_ERR, MemError());
+      err = WarnUser(LINK_HISTORY_NEW_HISTORY_ERR, 0);
     gHistories[which].theData = (HistoryStructHandle)hand;
   } else // void *exists
   {
@@ -557,7 +557,7 @@ int GenHistoriesList(void) {
    */
 
   if (!(gHistories = malloc(0L))) {
-    WarnUser(MEM_ERR, err = MemError());
+    WarnUser(MEM_ERR, err = 0);
     return (err);
   }
 
@@ -570,7 +570,7 @@ int GenHistoriesList(void) {
   GetRString(name, LINK_HISTORY_FILE);
   strncpy(spec_name(ad.spec), (char *)name, sizeof(spec_name(ad.spec)) - 1);
   if (buf_append(gHistories, &ad, sizeof(ad)) == NULL)
-    DieWithError(MEM_ERR, MemError());
+    DieWithError(MEM_ERR, 0);
   RegenerateLinkHistory(MAIN_HISTORY_FILE, true);
 
   /*
@@ -641,19 +641,18 @@ int AddHistoryToTOC(short which, char * name, long hashName,
   // Make room for the new history entry
   //
 
-  HUnlock((void *)histories);
   currHistCount = HistoryCount(which);
   if (currHistCount > 0) {
     { void *_r = realloc(histories, (currHistCount + 1) * sizeof(HistoryStruct));
       if (_r) histories = _r; }
-    if ((err = MemError()) != 0)
+    if ((err = 0) != 0)
       return (WarnUser(LINK_HISTORY_NEW_HISTORY_ERR, err));
 
   } else {
     free(gHistories[which].theData);
-    histories = NuHTempOK(sizeof(HistoryStruct));
+    histories = malloc(sizeof(HistoryStruct));
     if (!histories)
-      return (WarnUser(LINK_HISTORY_NEW_HISTORY_ERR, MemError()));
+      return (WarnUser(LINK_HISTORY_NEW_HISTORY_ERR, 0));
     else
       gHistories[which].theData = histories;
   }
@@ -773,7 +772,6 @@ int SaveIndHistoryFile(short which) {
 
   GetRString(aliasCmd, LINK_CMD);
   PCatC(aliasCmd, ' ');
-  HLock((void *)gHistories[which].theData);
   for (i = 0; !err && i < count; i++) {
     CycleBalls();
     if (gHistories[which].theData[i]
@@ -799,16 +797,13 @@ int SaveIndHistoryFile(short which) {
 
     if ((!gHistories[which].theData[i].deleted) && bytes > 0 &&
         !(err = FSWriteP(refN, aliasCmd))) {
-      HLock(tempHandle);
       if (!(err = AWrite(refN, &bytes, (unsigned char *)tempHandle))) {
         bytes = 1;
         err = AWrite(refN, &bytes, "\015");
       }
-      HUnlock(tempHandle);
     }
   }
 
-  HUnlock((void *)gHistories[which].theData);
 
   GetFPos(refN, &bytes);
   SetEOF(refN, bytes);
@@ -825,7 +820,6 @@ int SaveIndHistoryFile(short which) {
 
 done:
   if (gHistories[which].theData)
-    HUnlock((void *)gHistories[which].theData);
   if (refN)
     close(refN);
   if (err)
@@ -858,7 +852,7 @@ int WriteHistTOC(short which) {
   if (newData != NULL)
     err = noErr;
   else
-    err = MemError();
+    err = 0;
 
   if (!err) {
     IsAlias(&spec, &spec);
@@ -942,9 +936,9 @@ void *GetHistoryData(short which, short index, bool readFromDisk) {
       return (nil);
     }
 
-    dataHandle = NuHTempOK(0L);
+    dataHandle = malloc(0L);
     if (!dataHandle) {
-      WarnUser(LINK_HISTORY_GET_DATA_ERR, MemError());
+      WarnUser(LINK_HISTORY_GET_DATA_ERR, 0);
       return (nil);
     }
 
@@ -1046,8 +1040,8 @@ int ReadHistTOC(short which) {
     // got nothing from the resource file
     if (theToc == nil) {
       // create a new, empty handle.  No history entries are defined.
-      hand = NuHTempOK(0L);
-      err = MemError();
+      hand = malloc(0L);
+      err = 0;
       if (hand && (err == noErr))
         gHistories[which].theData = (HistoryStructHandle)hand;
     }
@@ -1256,7 +1250,7 @@ int BuildListOfHistoriesForWindow(ShortHistoryStructHandle *histories,
 
   // Make a new handle that's big enough for them all
   *histories = malloc(numEntries * sizeof(ShortHistoryStruct));
-  err = MemError();
+  err = 0;
   if (*histories && (err == noErr)) {
     // fill the new handle with all of the entries
     count = 0;
@@ -1571,7 +1565,6 @@ void *GetLHPreviewIcon(VLNodeID id) {
       if (iconCache = FindPVICache(adId)) {
         theIcon = iconCache->theIcon;
         if (theIcon) {
-          HNoPurge(theIcon); // don't purge this again until we're done with it.
           return (theIcon);
         }
         // else
@@ -1869,9 +1862,9 @@ int AddAdToLinkHistory(AdId adId, char *pUrl, char adTitle[256],
       hashName = NickHashString(pUrl);
 
       // Turn the url into a handle we can keep around ...
-      hUrl = NuHTempOK(0);
+      hUrl = malloc(0);
       if (!hUrl)
-        return (WarnUser(LINK_HISTORY_NEW_HISTORY_ERR, MemError()));
+        return (WarnUser(LINK_HISTORY_NEW_HISTORY_ERR, 0));
       if (buf_append(hUrl, pUrl + 1, pUrl[0]) == NULL)
         return (WarnUser(LINK_HISTORY_NEW_HISTORY_ERR, -1));
 

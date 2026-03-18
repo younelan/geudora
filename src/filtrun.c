@@ -371,7 +371,7 @@ int InitFPB(FilterPBPtr fpb, bool zapAddrs, bool listsToo)
 		fpb->mailbox = g_array_new(FALSE, FALSE, sizeof(CSpec));
 		fpb->report = g_array_new(FALSE, FALSE, sizeof(CSpec));
 		if (!fpb->message || !fpb->mailbox || !fpb->report)
-			return(MemError());
+			return(0);
 	}
 	else
 	{
@@ -453,7 +453,7 @@ int FilterSelectedMessages(FilterKeywordEnum fType, TOCType *tocH, FilterPBPtr f
 						{
 							if (!realTocH->sums[realSumNum].cache)
 							{
-								WarnUser(MEM_ERR, MemError());
+								WarnUser(MEM_ERR, 0);
 								err = 1;
 							}
 						}
@@ -555,7 +555,7 @@ int FilterFlaggedMessages(FilterKeywordEnum fType, TOCType *tocH, FilterPBPtr fp
 				{
 					if (!tocH->sums[sumNum].cache)
 					{
-						WarnUser(MEM_ERR, MemError());
+						WarnUser(MEM_ERR, 0);
 						err = 1;
 					}
 					else
@@ -809,7 +809,7 @@ int FilterMessagesFrom(FilterKeywordEnum fType, TOCType *tocH, short startWith, 
 				CacheMessage(tocH, sumNum);
 				if (!tocH->sums[sumNum].cache)
 				{
-					WarnUser(MEM_ERR, MemError());
+					WarnUser(MEM_ERR, 0);
 					err = 1;
 				}
 				else
@@ -953,7 +953,7 @@ int FilterMessageLo(FilterKeywordEnum fType, TOCType *tocH, short sumNum, Filter
 	{
 		if (!tocH->sums[sumNum].cache)
 		{
-			WarnUser(GENERAL, MemError());
+			WarnUser(GENERAL, 0);
 			return(1);
 		}
 	}

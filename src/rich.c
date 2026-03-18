@@ -721,8 +721,8 @@ int PeteRich(PETEHandle pte,long start,long stop,bool unwrap)
 	 */
 	PETEGetRawText(PETE,pte,&text);
 	len = stop ? stop-start : GetHandleSize_(text)-start;
-	enriched = NuHTempBetter(len);
-	if (!enriched) err = MemError();
+	enriched = malloc(len);
+	if (!enriched) err = 0;
 	else
 	{
 		BMD(text+start,enriched,len);

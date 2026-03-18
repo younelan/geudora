@@ -1089,8 +1089,7 @@ int AddLf(void *text) {
 
   if (newLen > len) {
     SetHandleBig((void *)text, newLen);
-    if (MemError())
-      return (MemError());
+    /* MemError removed */
     end = (char *)text + newLen;
     for (spot = (char *)text + len - 1; spot > (char *)text; spot--) {
       if (*spot == '\015')
@@ -1144,8 +1143,8 @@ int HandleLinebreaks(void *text, long ***breaks, short inWidth) {
   long cum = 0;
   int err;
 
-  if ((*breaks = (long **)NuHTempBetter(0)) == NULL)
-    return (MemError());
+  if ((*breaks = (long **)malloc(0)) == NULL)
+    return (0);
   if (!text || !(len = GetHandleSize(text)))
     return (noErr);
 
@@ -1159,7 +1158,7 @@ int HandleLinebreaks(void *text, long ***breaks, short inWidth) {
     cum += textOffset;
     *breaks = buf_append(*breaks, &cum, sizeof(cum));
     if (!*breaks)
-      err = MemError();
+      err = 0;
     if (err)
       return (err);
   }
@@ -1366,8 +1365,7 @@ int AAAddItem(AAHandle aa, bool replace, char *key, char * data) {
   } else {
     spot *= -1; /* spot now is the index of the item just after us */
     SetHandleBig_(aa, GetHandleSize_(aa) + AAElemSize(aa));
-    if (MemError())
-      return (MemError());
+    /* MemError removed */
     if (spot & spot <= count) /* move old data */
       memmove(AAKeySpot(aa, spot) + AAElemSize(aa), AAKeySpot(aa, spot),
           AAElemSize(aa) * (count - spot + 1));
@@ -1976,7 +1974,7 @@ void *NuHTempOK(long size) {
   void *h;
   RANDOM_FAILURE;
   if (!SafeToAllocate(size) || !(h = malloc(size)))
-    h = NuHTempBetter(size);
+    h = malloc(size);
   return (h);
 }
 
@@ -1986,7 +1984,7 @@ void *NuHTempOK(long size) {
 void *NuDHTempBetter(void *data, long size) {
   void *h;
   RANDOM_FAILURE;
-  h = NuHTempBetter(size);
+  h = malloc(size);
   if (h) memmove(h, data, size);
   return h;
 }
@@ -1999,7 +1997,7 @@ void *NuDHTempOK(void *data, long size) {
 
   RANDOM_FAILURE;
 
-  h = NuHTempOK(size);
+  h = malloc(size);
   if (h) memmove(h, data, size);
   return (h);
 }
@@ -2049,11 +2047,10 @@ void *NewIOBHandle(long min, long max) {
 
   CompactTempZone();
   do {
-    theMem = NuHTempOK(max);
+    theMem = malloc(max);
     max /= 2;
   } while (!theMem & max >= min);
   if (theMem)
-    MoveHHi(theMem);
 
   return (theMem);
 }

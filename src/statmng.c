@@ -698,7 +698,7 @@ int LoadStats(void) {
 
   gStatData = NewZH(StatData);
   if (!gStatData)
-    return MemError();
+    return 0;
 
   gStatData->startTime = gStatData->junkStartTime =
       gStatData->currentTime =
@@ -1971,8 +1971,8 @@ static int GetAbbrevNames(void **monthNames, void **dayNames) {
                      "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"};
   const char *d[] = {"Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"};
 
-  *monthNames = NuHTempBetter(2 + 12 * 4);
-  *dayNames = NuHTempBetter(2 + 7 * 4);
+  *monthNames = malloc(2 + 12 * 4);
+  *dayNames = malloc(2 + 7 * 4);
 
   if (!*monthNames || !*dayNames)
     return memFullErr;

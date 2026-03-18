@@ -942,10 +942,10 @@ short AbOpen(void)
 	FSSpec spec; g_strlcpy(spec, Spec, sizeof(spec));
 	
 	if (!Buffer)
-		if (buffer=NuHTempBetter(GetRLong(RCV_BUFFER_SIZE)))
+		if (buffer=malloc(GetRLong(RCV_BUFFER_SIZE)))
 			Buffer = buffer;
 		else
-			return(WarnUser(BINHEX_MEM,err=MemError()));
+			return(WarnUser(BINHEX_MEM,err=0));
 	BSize = GetHandleSize_(Buffer);
 	if (State == AbResFork) {
 		refN = -1; // No resource fork
@@ -1316,8 +1316,8 @@ int SendFromOpenFile(TransStream stream,DecoderFunc *encoder,short refN,long siz
 	bSize = GetRLong(BUFFER_SIZE);
 	bSize = MIN(bSize,size);
 	if (bSize<256) bSize = 256;
-	for (;bSize>255 && !(buffer=NuPtr(bSize));bSize/=2);
-	if (!buffer) {WarnUser(MEM_ERR,err=MemError()); return(err);}
+	for (;bSize>255 && !(buffer=calloc(1, bSize));bSize/=2);
+	if (!buffer) {WarnUser(MEM_ERR,err=0); return(err);}
 
 	while(size)
 	{

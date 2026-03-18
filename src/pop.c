@@ -1716,7 +1716,7 @@ int SaveAndSplit(TransStream stream, short refN, long estSize,
   fprintf(stderr, "SaveAndSplit: ENTERED refN=%d estSize=%ld isIMAP=%d\n", refN, estSize, isIMAP);
 
   if (!hdh) {
-    Prr = MemError();
+    Prr = 0;
     return (0);
   }
 
@@ -1727,7 +1727,7 @@ int SaveAndSplit(TransStream stream, short refN, long estSize,
 
 reRead:
   if (!hdh) {
-    Prr = MemError();
+    Prr = 0;
     return (0);
   }
 
@@ -1877,7 +1877,7 @@ short ReadEitherBody(TransStream stream, short refN, HeaderDHandle hdh,
   if (!NoAttachments && estSize >= 0) {
     mimeSList = NewMIMES(stream, hdh, False, context);
     if (!mimeSList)
-      return (Prr = MemError());
+      return (Prr = 0);
     if (mimeSList == kMIMEBoring)
       mimeSList = NULL;
     else if (mimeSList->readBody == READ_MESSAGE) {
@@ -2744,10 +2744,10 @@ short SplitMessage(short refN, long hStart, long hEnd, long msgEnd) {
   /*
    * Ok, now let's find all the split locations
    */
-  if (!(froms = NuPtr((count + 1) * sizeof(long *))) ||
-      !(tos = NuPtr((count + 1) * sizeof(long *))) ||
-      !(reals = NuPtr((count + 1) * sizeof(Boolean)))) {
-    WarnUser(MEM_ERR, err = MemError());
+  if (!(froms = calloc(1, (count + 1) * sizeof(long *))) ||
+      !(tos = calloc(1, (count + 1) * sizeof(long *))) ||
+      !(reals = calloc(1, (count + 1) * sizeof(Boolean)))) {
+    WarnUser(MEM_ERR, err = 0);
     goto done;
   }
 
@@ -3016,7 +3016,7 @@ int BuildPOPD(TransStream stream, POPDHandle *popDH, short count,
    * allocate it
    */
   if (!(*popDH = POPDNew(count)))
-    return (WarnUser(MEM_ERR, Prr = MemError()));
+    return (WarnUser(MEM_ERR, Prr = 0));
 
   if (Prr = FillSizesWithList(stream, *popDH))
     return (Prr);
@@ -3373,7 +3373,7 @@ int FillPOPDFromServer(TransStream stream, POPDHandle popDH, short spot) {
   ProgressMessage(kpSubTitle, scratch);
 
   if (!(hdh = NewHeaderDesc(NULL)))
-    return (WarnUser(MEM_ERR, Prr = MemError()));
+    return (WarnUser(MEM_ERR, Prr = 0));
 
   /*
    * get rest of message
@@ -3874,7 +3874,7 @@ int KerbGetTicket(char * serviceName, char * inHost, char * realm, char * versio
   bufLen = GetRLong(KERBEROS_BSIZE);
   *ticket = (unsigned char *)malloc(bufLen);
   if (!*ticket)
-    return (MemError());
+    return (0);
 
   /*
    * call the driver

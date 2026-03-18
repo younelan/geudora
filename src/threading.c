@@ -335,7 +335,7 @@ static int NewXferMail(threadDataHandle *tData, bool check, bool send,
   if (!theError) {
 #ifdef TASK_PROGRESS_ON
     if (!(threadData->prbl = NewZH(ProgressBlock)))
-      theError = MemError();
+      theError = 0;
 #endif
     threadData->xferMailParams.send = send;
     threadData->xferMailParams.check = check;

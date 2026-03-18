@@ -60,7 +60,7 @@ int NewTLMIME(emsMIMEHandle *tlMIME)
 {
 	if ((*tlMIME = NewZH(emsMIMEtype)))
 		(*(tlMIME))->size = sizeof(emsMIMEtype);
-	return(MemError());
+	return(0);
 }
 
 /**********************************************************************
@@ -128,7 +128,7 @@ int AddTLMIME(emsMIMEHandle tlMIME, short what, char * name, char * value)
 					if (value && valueLen > 0)
 					{
 						buf_append((void *)scan->value, value, (long)valueLen);
-						if (MemError()) return(MemError());
+						/* MemError removed */
 					}
 					return(noErr);
 				}
@@ -136,7 +136,7 @@ int AddTLMIME(emsMIMEHandle tlMIME, short what, char * name, char * value)
 
 			/* not in the list — make a new one */
 			h3 = NewZH(emsMIMEparam);
-			h2 = value ? NuHTempBetter((long)valueLen) : nil;
+			h2 = value ? malloc((long)valueLen) : nil;
 			if (h3 && (!value || h2))
 			{
 				spec_set_name(h3, (const char *)name);
@@ -161,7 +161,7 @@ int AddTLMIME(emsMIMEHandle tlMIME, short what, char * name, char * value)
 				h3 = nil;
 			}
 			else
-				err = MemError();
+				err = 0;
 			break;
 		}
 

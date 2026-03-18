@@ -445,7 +445,7 @@ void OpenLinkWin(void) {
 
     if (!(gWin.win = GetNewMyWindow(LINK_WIND, nil, nil, BehindModal, false,
                                     false, LINK_WIN))) {
-      err = MemError();
+      err = 0;
       goto fail;
     }
     gWinWinPtr = GetMyWindowWindowPtr(gWin.win);
@@ -481,7 +481,7 @@ void OpenLinkWin(void) {
 
     if (LVNewWithDetails(&gWin.list, gWin.win, &r, 1, ViewListCallBack,
                          flavorTypeText, &details)) {
-      err = MemError();
+      err = 0;
       goto fail;
     }
 
@@ -1180,7 +1180,6 @@ static long ViewListCallBack(ViewListPtr pView, VLCallbackMessage message,
   case kLVSendDragData:
     pSendData = (SendDragDataInfo *)data;
     hUrl = GetLinkURL(pSendData->info);
-    HLock(hUrl);
     err = 0; /* SetDragItemFlavorData(pSendData->drag, pSendData->itemRef,
                                 pSendData->flavor, *hUrl,
                                 InlineGetHandleSize((void *)hUrl), 0L); */

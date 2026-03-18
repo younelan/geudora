@@ -1891,7 +1891,7 @@ bool AddSigIntro(GtkWidget *pte, void **text) {
       char *ptr = (char *)text;
       if (len < introLen || memcmp(ptr, sigIntro, introLen) != 0) {
         { void *_r = realloc(text, len + introLen); if (_r) text = _r; }
-        if (!MemError()) {
+        {
           ptr = (char *)text;
           memmove(ptr + introLen, ptr, len);
           memmove(ptr, sigIntro, introLen);

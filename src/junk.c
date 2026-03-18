@@ -1317,7 +1317,6 @@ void ScoreOneMessage(TLMHandle tList, TOCType * tocH, short sumNum,
       messageHdr.rawHeaders = headers;
       //	Need to fill in more of mimeInfo and messageInfo
       //	And the fromAddressStatus, too!
-      HLock((void **)tList);
 
       numPlugins = HandleCount(tList) - 1; // don't call the sentinel!
       for (i = 0; i < numPlugins; ++i) {
@@ -1353,7 +1352,6 @@ void ScoreOneMessage(TLMHandle tList, TOCType * tocH, short sumNum,
           }
         }
       }
-      HUnlock((void **)tList);
     }
 
     if (body != NULL)
@@ -1654,7 +1652,6 @@ bool WhiteListByMID(TOCType * tocH, short sumNum) {
 
   if ((text = tocH->sums[sumNum].cache)) {
     void **references = NULL;
-    HNoPurge(text);
     if (!HandleHeadGetIdText(text, HeaderStrn + REFERENCES_HEAD, &references)) {
       char **addresses = NULL;
       Tr(references, (unsigned char *)" \t\r\n", (unsigned char *)",,,,");

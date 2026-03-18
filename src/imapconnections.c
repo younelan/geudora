@@ -90,7 +90,7 @@ int EnsureConnectionPool(PersHandle pers) {
 
       LL_Queue(gIMAPConnectionPool, node, (IMAPConnectionHandle));
     } else {
-      WarnUser(MEM_ERR, err = MemError());
+      WarnUser(MEM_ERR, err = 0);
       break;
     }
     numConnections--;
@@ -220,7 +220,7 @@ IMAPStreamPtr GetIMAPConnectionLo(TaskKindEnum forWhat, bool progress,
     // create a new one.
     NewImapStream(&stream, host, port);
     if (stream == nil) {
-      WarnUser(MEM_ERR, MemError());
+      WarnUser(MEM_ERR, 0);
     }
   } else {
     // locate an available connection

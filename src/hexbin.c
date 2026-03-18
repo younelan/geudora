@@ -441,10 +441,10 @@ reSwitch:
 int FoundHexBin(void)
 {
 	BSize = GetRLong(BUFFER_SIZE);
-	if (!Buffer) Buffer = (unsigned char *)NuHTempBetter(BSize);
+	if (!Buffer) Buffer = (unsigned char *)malloc(BSize);
 	if (!Buffer)
 	{
-		WarnUser(BINHEX_MEM,MemError());
+		WarnUser(BINHEX_MEM,0);
 		BadBinHex = True;
 		return(HexDone);
 	}

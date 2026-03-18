@@ -1052,7 +1052,7 @@ int AddFccToList(char * fcc, CSpecHandle list) {
 
   AddSpecToList(&spec, list);
 
-  if (err = MemError())
+  if (err = 0)
     WarnUser(MEM_ERR, err);
   return (err);
 }
@@ -3245,7 +3245,7 @@ char *GetFlatten(void) {
   void *flatH;
   char *flatten;
 
-  flatten = NuPtr(256);
+  flatten = calloc(1, 256);
   flatH = GetResource_('taBL', ktFlatten);
   if (flatH)
     memmove(flatten, flatH, 256);
@@ -3425,7 +3425,7 @@ int SendRawMIME(TransStream stream, char * spec) {
     }
     free(buffer);
   } else
-    WarnUser(BINHEX_READ, err = MemError());
+    WarnUser(BINHEX_READ, err = 0);
   return (err);
 }
 
@@ -4431,17 +4431,17 @@ int BufferSend(TransStream stream, DecoderFunc *encoder, char *data,
      */
     if (!EncoderGlobalsBuffers[0]) {
       bSize = 3 * GetRLong(BUFFER_SIZE);
-      while (!(EncoderGlobalsBuffers[0] = NuHTempOK(bSize)) && bSize > 256)
+      while (!(EncoderGlobalsBuffers[0] = malloc(bSize)) && bSize > 256)
         bSize /= 2;
       if (!EncoderGlobalsBuffers[0]) {
-        WarnUser(MEM_ERR, err = MemError());
+        WarnUser(MEM_ERR, err = 0);
         return (err);
       }
 #ifdef DEBUG
       if (!BUG5)
 #endif
         if (AsyncSendTrans)
-          EncoderGlobalsBuffers[1] = NuHTempOK(bSize);
+          EncoderGlobalsBuffers[1] = malloc(bSize);
       EncoderGlobalsBuffer = EncoderGlobalsBuffers[0];
       if (encoder)
         err = (*encoder)(kDecodeInit, &EncoderGlobalsPb);

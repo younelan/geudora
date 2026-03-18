@@ -781,11 +781,10 @@ int RegenerateAliases(short which, bool rebuild) {
 
   if (!This.theData) // If handle for data doesn't exist, create it
   {
-    hand = NuHTempOK(0L);
+    hand = malloc(0L);
     if (!hand)
-      err = WarnUser(ALLO_ALIAS, MemError());
+      err = WarnUser(ALLO_ALIAS, 0);
     This.theData = (NickStructHandle)hand;
-    HNoPurge_(This.theData);
   } else // void *exists
   {
     if (!rebuild)
@@ -800,11 +799,10 @@ int RegenerateAliases(short which, bool rebuild) {
       err = ReadNickTOC(which);
     if (err != noErr || rebuild) {
       free(This.theData);
-      hand = NuHTempOK(0L);
+      hand = malloc(0L);
       if (!hand)
-        err = WarnUser(ALLO_ALIAS, MemError());
+        err = WarnUser(ALLO_ALIAS, 0);
       This.theData = (NickStructHandle)hand;
-      HNoPurge_(This.theData);
       err = ReadNicknames(which);
       if (!err && !This.ro) {
         WriteNickTOC(which);
@@ -1093,7 +1091,7 @@ int SetTaggedFieldValueInNotes(void *notes, char * tag, char * value, long lengt
         if (ignored)
           *ignored = true;
       }
-      theError = MemError();
+      theError = 0;
     } else
       theError = AddAttributeValuePair(notes, tag, value, length);
   }
@@ -1198,7 +1196,6 @@ int RegenerateAllAliases(bool rebuild) {
         n = NAliases;
         for (i = which; i < n - 1; i++)
           Aliases[i] = Aliases[i + 1];
-        HUnlock((void *)Aliases);
         SetHandleBig((void *)Aliases, (n - 1) * sizeof(**Aliases));
         break;
       } else
@@ -1549,7 +1546,7 @@ int ReadNickTOC(short which) {
       if (err = ResError())
         goto theExit;
       else {
-        structR = NuHTempOK(structSize);
+        structR = malloc(structSize);
         if (!structR)
           goto theExit;
         else {
@@ -1589,7 +1586,7 @@ int ReadNickTOC(short which) {
 
           //	Load up the nick array
           SetHandleBig((void **)&theData, numberOfNicks * sizeof(NickStruct));
-          if (MemError())
+          if (0)
             goto theExit;
           WriteZero(theData, numberOfNicks * sizeof(NickStruct));
           eof = FSpDFSize(&lSpec);
@@ -1662,8 +1659,8 @@ int WriteNickTOC(short which) {
   struct stat st_1726;
   fileModDate = (stat(spec, &st_1726) == 0) ? st_1726.st_mtime : 0;
 
-  structR = NuHTempOK(0);
-  nameR = NuHTempOK(0);
+  structR = malloc(0);
+  nameR = malloc(0);
 
   Zero(structAcc);
   Zero(nameAcc);
@@ -1795,20 +1792,19 @@ static short AddNickToTOC(short which, char * name, void *hData,
 
   // Nickname doesn't exist...create new one and clear it out
   // If it doesn't exist, add it
-  HUnlock((void *)aliases);
   currNickCount = NNicknames; // Get nickname count
   if (currNickCount > 0) {
     { void *_r = realloc(aliases, (currNickCount + 1) * sizeof(NickStruct));
       if (_r) aliases = _r; }
-    if (err = MemError())
+    if (err = 0)
       return (WarnUser(ALIAS_NEW_NICK_ERR, err));
 
   } else {
     free(This.theData); // (jp) 7/31/99 Operate on This.theData instead of
                              // aliases
-    aliases = NuHTempOK(sizeof(NickStruct));
+    aliases = malloc(sizeof(NickStruct));
     if (!aliases)
-      return (WarnUser(ALIAS_NEW_NICK_ERR, MemError()));
+      return (WarnUser(ALIAS_NEW_NICK_ERR, 0));
     else
       This.theData = aliases; // (jp) 7/31/99 The newly created data handle
   }
@@ -1840,9 +1836,9 @@ static short AddNickToTOC(short which, char * name, void *hData,
   {
     void *hNewData;
 
-    hNewData = NuHTempOK(0);
+    hNewData = malloc(0);
     if (!hNewData)
-      return (WarnUser(ALIAS_NEW_NICK_ERR, MemError()));
+      return (WarnUser(ALIAS_NEW_NICK_ERR, 0));
     if (!buf_append(hNewData, hData, GetHandleSize_(hData)))
       return (WarnUser(ALIAS_NEW_NICK_ERR, memFullErr));
 
@@ -1860,7 +1856,6 @@ static short AddNickToTOC(short which, char * name, void *hData,
   aliases[currNickCount] = nickInfo;
 
   // This data CANNOT be purged because it hasn't been written to disk
-  HNoPurge((void *)aliases);
 
   return (0);
 }
@@ -1914,8 +1909,8 @@ int NickUniq(TextAddrHandle addresses, char * sep, bool wantErrors) {
   int ci;
 
   err = SuckAddresses(&cmntOrig, (char **)addresses, True, wantErrors, False, nil);
-  cmntNew = NuHTempOK(0);
-  unNew = NuHTempOK(0);
+  cmntNew = malloc(0);
+  unNew = malloc(0);
 
   if (!err && cmntNew && unNew && cmntOrig) {
     for (ci = 0; cmntOrig[ci] && !err; ci++) {
@@ -1950,9 +1945,8 @@ int NickUniq(TextAddrHandle addresses, char * sep, bool wantErrors) {
 
   if (!err) {
     size = GetHandleSize_(cmntNew);
-    HUnlock(addresses);
     SetHandleBig_(addresses, size);
-    if (!(err = MemError()))
+    if (!(err = 0))
       BlockMoveData(cmntNew, addresses, size);
   }
 
@@ -1999,11 +1993,11 @@ static short ReplaceNicknameInfo(short which, char * theName, TextAddrHandle tex
     if (text) {
       //	Make a copy of addresses
       textSize = GetHandleSize(text);
-      if (hTemp = NuHTempOK(textSize))
+      if (hTemp = malloc(textSize))
         BlockMoveData(text, hTemp, textSize);
       else
         //	Memory error
-        return (WarnUser(ALIAS_REPLACE_NICK_ERR, MemError()));
+        return (WarnUser(ALIAS_REPLACE_NICK_ERR, 0));
     } else
       hTemp = nil;
 
@@ -2034,9 +2028,7 @@ static short ReplaceNicknameInfo(short which, char * theName, TextAddrHandle tex
       tempNick.group = group;
     }
     if (tempNick.theAddresses)
-      HNoPurge(tempNick.theAddresses);
     if (tempNick.theNotes)
-      HNoPurge(tempNick.theNotes);
 
     tempNick.addressesDirty = true;
     tempNick.notesDirty = true;
@@ -2165,7 +2157,6 @@ void *GetNicknameData(short which, short index, bool wantAddresses,
 
   if (aliases[index].addressesDirty) {
     if (tempHandle)
-      HNoPurge(tempHandle);
     return (tempHandle);
   }
 
@@ -2192,9 +2183,9 @@ void *GetNicknameData(short which, short index, bool wantAddresses,
         FileSystemError(OPEN_ALIAS, spec_name(spec), err);
       return (nil);
     }
-    dataHandle = NuHTempOK(0L);
+    dataHandle = malloc(0L);
     if (!dataHandle) {
-      WarnUser(ALIAS_GET_NICK_DATA_ERR, MemError());
+      WarnUser(ALIAS_GET_NICK_DATA_ERR, 0);
       return (nil);
     }
     /*
@@ -2266,7 +2257,6 @@ void *GetNicknameData(short which, short index, bool wantAddresses,
       free(dataHandle);
       return (nil);
     }
-    HLock(dataHandle);
     len = GetHandleSize_(dataHandle);
     unsigned char *dataPtr = (unsigned char *)dataHandle;
     for (count = 0; count < len; count++)
@@ -2335,9 +2325,9 @@ void MakeCompNick(MyWindowPtr win)
   TextAddrHandle biglist;
   int err = noErr;
 
-  biglist = NuHTempOK(0);
+  biglist = malloc(0);
   if (!biglist) {
-    WarnUser(ALIAS_NEW_NICK_ERR, MemError());
+    WarnUser(ALIAS_NEW_NICK_ERR, 0);
     return;
   }
   if ((err = GatherCompAddresses(win, (char *)biglist))) {
@@ -2373,10 +2363,10 @@ void MakeNickFromSelection(MyWindowPtr win) {
   else {
     //	ALB 9/5/96, replaced this with SuckPtrAddresses for bug 602
     //		selEnd = MIN(selEnd,selStart+250);
-    //		list = ZeroHandle(NuHTempBetter(selEnd-selStart+3));
+    //		list = ZeroHandle(malloc(selEnd-selStart+3));
     //		if (!list)
     //			{
-    //				WarnUser(ALLO_ALIAS,MemError());
+    //				WarnUser(ALLO_ALIAS,0);
     //				return;
     //			}
     //		**list = len = selEnd-selStart;
@@ -2387,7 +2377,6 @@ void MakeNickFromSelection(MyWindowPtr win) {
     if (!HandToHand(&textCopy)) {
       Tr(textCopy, " 15", ",");
 
-      HLock(textCopy);
       if (!SuckPtrAddresses(&list, (char *)textCopy + selStart, selEnd - selStart,
                             True, True, False, nil)) {
         if (!list || !list[0] || !list[0][0])
@@ -2396,7 +2385,6 @@ void MakeNickFromSelection(MyWindowPtr win) {
           NewNick((void **)list, 0);
         g_strfreev(list); list = NULL;
       }
-      HUnlock(textCopy);
     }
     free(textCopy);
   }
@@ -2429,7 +2417,7 @@ int GatherCompAddresses(MyWindowPtr win, char *addrList) {
         for (int i = 0; littlelist[i]; i++) {
           size_t slen = strlen(littlelist[i]);
           if (!buf_append(biglist, littlelist[i], slen + 1)) {
-            err = MemError();
+            err = 0;
             break;
           }
         }
@@ -2466,7 +2454,6 @@ void MakeMessNick(MyWindowPtr win, short modifiers) {
     CacheMessage(tocH, sumNum);
     if (!(text = tocH->sums[sumNum].cache))
       return;
-    HNoPurge(text);
     offset = tocH->sums[sumNum].bodyOffset - 1;
     while (!foundVCard &&
            (0 <= (offset = FindAnAttachment(text, offset + 1, &attSpec, true,
@@ -2530,8 +2517,8 @@ int GatherBoxAddresses(TOCType * tocH, short modifiers, short from, short to,
 
   ReplyDefaults(modifiers, &all, &self, &quote);
 
-  if (!(*addresses = NuHTempOK(0)))
-    return (MemError());
+  if (!(*addresses = malloc(0)))
+    return (0);
   for (sumNum = from; !err && sumNum <= to; sumNum++) {
     MiniEvents();
     if (CommandPeriod)
@@ -2569,7 +2556,7 @@ int GatherBoxAddresses(TOCType * tocH, short modifiers, short from, short to,
  * MakeCboxNick - make a nickname out of the selected messages in Out
  ************************************************************************/
 void MakeCboxNick(MyWindowPtr win) {
-  void *addresses = NuHTempOK(0);
+  void *addresses = malloc(0);
   TOCType * tocH = (TOCType *)GetMyWindowPrivateData(win);
   MyWindowPtr compWin;
   short sumNum;
@@ -2794,7 +2781,6 @@ bool SaveIndNickFile(short which, bool saveChangeBits) {
 
   GetRString(aliasCmd, ALIAS_CMD);
   PCatC(aliasCmd, ' ');
-  HLock((void *)This.theData);
   for (i = 0; !err && i < count; i++) {
     CycleBalls();
     if (This.theData[i]
@@ -2803,7 +2789,6 @@ bool SaveIndNickFile(short which, bool saveChangeBits) {
     else // Nickname hasn't been modified, use on disk copy if necessary
       tempHandle = GetNicknameData(which, i, true, true);
 
-    HLock(tempHandle);
     bytes = (tempHandle && GetHandleSize_(tempHandle) > 0)
                 ? GetHandleSize_(tempHandle)
                 : 0;
@@ -2833,7 +2818,6 @@ bool SaveIndNickFile(short which, bool saveChangeBits) {
       }
       HPurge(tempHandle);
     }
-    HUnlock(tempHandle);
   }
 
   GetRString(aliasCmd, NOTE_CMD);
@@ -2853,7 +2837,6 @@ bool SaveIndNickFile(short which, bool saveChangeBits) {
     This.theData[i].addressesDirty = false;
     This.theData[i].notesDirty = false;
 
-    HLock(tempHandle);
     bytes = (tempHandle && GetHandleSize_(tempHandle) > 0)
                 ? GetHandleSize_(tempHandle)
                 : 0;
@@ -2881,7 +2864,6 @@ bool SaveIndNickFile(short which, bool saveChangeBits) {
       }
       HPurge(tempHandle);
     }
-    HUnlock(tempHandle);
     if (err) {
       FileSystemError(SAVE_ALIAS, spec_name(tmpSpec), err);
       goto done;
@@ -2947,8 +2929,8 @@ bool SaveFileFast(short which, bool saveChangeBits) {
     return (false);
 
   addressOffsetHandle =
-      NuHTempOK(sizeof(NickOffSetSortType) * (numOfNicks + 1));
-  notesOffsetHandle = NuHTempOK(sizeof(NickOffSetSortType) * (numOfNicks + 1));
+      malloc(sizeof(NickOffSetSortType) * (numOfNicks + 1));
+  notesOffsetHandle = malloc(sizeof(NickOffSetSortType) * (numOfNicks + 1));
 
   if (addressOffsetHandle == nil || notesOffsetHandle == nil) {
     err = fnfErr;
@@ -2957,8 +2939,6 @@ bool SaveFileFast(short which, bool saveChangeBits) {
 
   TotalNumOfNicks = numOfNicks;
 
-  HLock((void *)addressOffsetHandle);
-  HLock((void *)notesOffsetHandle);
   for (count = 0; count < numOfNicks; count++) {
     addressOffsetHandle[count].offset =
         This.theData[count].addressOffset;
@@ -2987,8 +2967,6 @@ bool SaveFileFast(short which, bool saveChangeBits) {
             (void (*)())NickOffsetSwap);
   { void *_r = realloc(notesOffsetHandle, theSize); if (_r) notesOffsetHandle = _r; }
 
-  HLock((void *)addressOffsetHandle);
-  HLock((void *)notesOffsetHandle);
 
   firstNoteStart = -1;
 
@@ -3042,12 +3020,11 @@ bool SaveFileFast(short which, bool saveChangeBits) {
   cleanStartIndex = -1;
   cleanStopIndex = -1;
 
-  tempHandle = NuHTempOK(0);
+  tempHandle = malloc(0);
   if (tempHandle == nil) {
     err = fnfErr;
     goto done;
   }
-  HLock((void *)This.theData);
 
   count = 0;
   while (count < numOfNicks)
@@ -3109,9 +3086,8 @@ bool SaveFileFast(short which, bool saveChangeBits) {
       long readBytes;
 
       SetHandleBig_(tempHandle, bytes);
-      if (err = MemError())
+      if (err = 0)
         goto done;
-      HLock(tempHandle);
       readBytes = bytes;
       if (err = ARead(nickRefN, &readBytes, tempHandle))
         goto done;
@@ -3121,7 +3097,6 @@ bool SaveFileFast(short which, bool saveChangeBits) {
       }
       if (err = AWrite(tempRefN, &bytes, tempHandle))
         goto done;
-      HUnlock(tempHandle);
 
       for (tempCount = cleanStartIndex; tempCount < cleanStopIndex;
            tempCount++) {
@@ -3148,7 +3123,6 @@ bool SaveFileFast(short which, bool saveChangeBits) {
 
   GetRString(aliasCmd, ALIAS_CMD);
   PCatC(aliasCmd, ' ');
-  HLock((void *)This.theData);
   for (i = 0; !err & i < numOfNicks; i++) {
     CycleBalls();
     if (This.theData[i].addressesDirty &&
@@ -3157,7 +3131,6 @@ bool SaveFileFast(short which, bool saveChangeBits) {
     {
       tempHandle = GetNicknameData(which, i, true, false);
 
-      HLock(tempHandle);
       if (tempHandle != nil & GetHandleSize_(tempHandle) > 0)
         bytes = GetHandleSize_(tempHandle);
       else
@@ -3187,14 +3160,13 @@ bool SaveFileFast(short which, bool saveChangeBits) {
         }
         HPurge(tempHandle);
       }
-      HUnlock(tempHandle);
     } else if (This.theData[i].deleted) {
       This.theData[i].addressOffset = -1;
       This.theData[i].group = false;
     }
   }
 
-  tempHandle = NuHTempOK(0);
+  tempHandle = malloc(0);
   if (tempHandle == nil)
     goto done;
 
@@ -3254,9 +3226,8 @@ bool SaveFileFast(short which, bool saveChangeBits) {
         long readBytes;
 
         SetHandleBig_(tempHandle, bytes);
-        if (err = MemError())
+        if (err = 0)
           goto done;
-        HLock(tempHandle);
         readBytes = bytes;
         if (err = ARead(nickRefN, &readBytes, tempHandle))
           goto done;
@@ -3266,7 +3237,6 @@ bool SaveFileFast(short which, bool saveChangeBits) {
         }
         if (err = AWrite(tempRefN, &bytes, tempHandle))
           goto done;
-        HUnlock(tempHandle);
         for (tempCount = cleanStartIndex; tempCount < cleanStopIndex;
              tempCount++) {
           theIndex = notesOffsetHandle[tempCount].nickIndex;
@@ -3295,7 +3265,6 @@ bool SaveFileFast(short which, bool saveChangeBits) {
   GetRString(aliasCmd, NOTE_CMD);
   PCatC(aliasCmd, ' ');
   if (This.theData) {
-    HLock((void *)This.theData);
     for (i = 0; !err & i < numOfNicks; i++) {
       CycleBalls();
       if (This.theData[i].addressesDirty) {
@@ -3309,7 +3278,6 @@ bool SaveFileFast(short which, bool saveChangeBits) {
         This.theData[i].addressesDirty = false;
         This.theData[i].notesDirty = false; // ...for now
 
-        HLock(tempHandle);
         if (tempHandle != nil & GetHandleSize_(tempHandle) > 0)
           bytes = GetHandleSize_(tempHandle);
         else
@@ -3340,7 +3308,6 @@ bool SaveFileFast(short which, bool saveChangeBits) {
         }
         if (tempHandle) {
           HPurge(tempHandle);
-          HUnlock(tempHandle);
         }
       }
     }
@@ -3600,7 +3567,7 @@ void ReadNickFileList(char *pSpec, AddressBookType type, bool reread) {
       if (!CanWrite(&ad.spec, &ad.ro)) {
         ad.ro = !ad.ro; /* opposite sense! */
         if (!buf_append(Aliases, (unsigned char *)&ad, sizeof(ad)))
-          DieWithError(MEM_ERR, MemError());
+          DieWithError(MEM_ERR, 0);
         if (type == pluginAddressBook & reread)
           FSpKillRFork(&ad.spec);
       } else {
@@ -4204,7 +4171,6 @@ int WhiteListTS(TOCType * tocH, short sumNum) {
     free(a.data); a.data = NULL; a.offset = a.size = 0;
   } else {
     if (!CacheMessage(tocH, sumNum)) {
-      HNoPurge(tocH->sums[sumNum].cache);
 
       HeaderName(FROM_HEAD); // weird--goes into scratch
       TrimWhite(scratch);

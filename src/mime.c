@@ -676,7 +676,7 @@ MIMESHandle NewMIMES(TransStream stream,HeaderDHandle hdh,bool forceMIME,short c
 	}
 		
 	msh = NewZHTB(MIMEState);
-	if (!msh) {WarnUser(MEM_ERR,MemError()); return(NULL);}
+	if (!msh) {WarnUser(MEM_ERR,0); return(NULL);}
 	msh->hdh = hdh;
 	msh->context = context;
 	
@@ -874,7 +874,7 @@ int B64Decoder(CallType callType,DecoderPBPtr pb)
 		{
 			case kDecodeInit:
 				d64p = NuPtrClear(sizeof(Dec64));
-				if (!d64p) WarnUser(MEM_ERR,err=MemError());
+				if (!d64p) WarnUser(MEM_ERR,err=0);
 				pb->refCon = (long)d64p;
 				break;
 			
@@ -914,7 +914,7 @@ int B64Encoder(CallType callType,DecoderPBPtr pb)
 		{
 			case kDecodeInit:
 				e64p = NuPtrClear(sizeof(Dec64));
-				if (!e64p) {WarnUser(MEM_ERR,err=MemError());return(err);}
+				if (!e64p) {WarnUser(MEM_ERR,err=0);return(err);}
 				pb->refCon = (long)e64p;
 				break;
 			
@@ -961,7 +961,7 @@ int QPDecoder(CallType callType,DecoderPBPtr pb)
 		{
 			case kDecodeInit:
 				dqpp = NuPtrClear(sizeof(DecQP));
-				if (!dqpp) WarnUser(MEM_ERR,err=MemError());
+				if (!dqpp) WarnUser(MEM_ERR,err=0);
 				pb->refCon = (long)dqpp;
 				break;
 			
@@ -1431,7 +1431,7 @@ BoundaryType ReadMulti(TransStream stream,short refN,MIMESHandle mimeSList,char 
 			 */
 			digestTop = True;
 		reRead:
-			if (!(innerHDH = NewHeaderDesc(hdh))) {WarnUser(MEM_ERR,err=MemError()); break;}
+			if (!(innerHDH = NewHeaderDesc(hdh))) {WarnUser(MEM_ERR,err=0); break;}
 			hState = ReadHeader(stream,innerHDH,0,refN,msh->isDigest || isDigest&digestTop);			
 			if (hState!=EndOfHeader)
 			{

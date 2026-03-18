@@ -206,7 +206,7 @@ PersHandle PersNew(void)
 		UpdatePersList();
 	}
 	else
-		WarnUser(MEM_ERR,MemError());
+		WarnUser(MEM_ERR,0);
 	return(newPers);
 }
 
@@ -294,7 +294,7 @@ void InitPersonalities(void)
 	/*
 	 * first, the dominant personality
 	 */
-	if (!pers) DieWithError(MEM_ERR,MemError());
+	if (!pers) DieWithError(MEM_ERR,0);
 	LL_Queue(PersList,pers,(PersHandle));
 	GetRString(dom,DOMINANT);
 	g_strlcpy((char *)(pers->name), (char *)(dom), sizeof(pers->name));

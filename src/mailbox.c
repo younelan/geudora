@@ -396,7 +396,7 @@ int AddMesgError(TOCType * tocH, short sum, unsigned char *errorStr,
   if (!mesgErrH) {
     mesgErrH = (mesgErrorHandle)calloc(1, sizeof(MesgErrorType));
     if (!mesgErrH)
-      err = MemError();
+      err = 0;
   }
   if (mesgErrH) {
     /* For the GTK port we do not write message-error resources to
@@ -491,9 +491,9 @@ int OpenMailbox(const char *path, bool showIt, TOCType * toc) {
                            // window is all set up.
   if ((win = GetNewMyWindow(MAILBOX_WIND, nil, nil, showIt ? BehindModal : 0,
                             True, True, MBOX_WIN)) == nil) {
-    WarnUser(COULDNT_WIN, MemError());
+    WarnUser(COULDNT_WIN, 0);
     MyThreadEndCritical();
-    return (MemError());
+    return (0);
   }
 
   winWP = GetMyWindowWindowPtr(win);
@@ -2689,7 +2689,7 @@ bool GetNewMailbox(short vRef, long inDirId, char * spec, bool *folder,
     *folderName = 0;
 
   if ((dgPtrWin = GetNewMyDialog(NEW_MAILBOX_DLOG, nil, nil, InFront)) == nil) {
-    WarnUser(GENERAL, MemError());
+    WarnUser(GENERAL, 0);
     return (False);
   }
 
@@ -2958,7 +2958,7 @@ void BuildBoxCount(void) {
   }
   BoxCount = malloc(0);
   if (!BoxCount) {
-    WarnUser(MEM_ERR, MemError());
+    WarnUser(MEM_ERR, 0);
     return;
   }
 
@@ -3029,7 +3029,7 @@ void AddBoxCountItem(short item, short vRef, long dirId) {
   bce.dirId = dirId;
   bce.vRef = vRef;
   if (buf_append(BoxCount, &bce, sizeof(bce)) == NULL)
-    WarnUser(MEM_ERR, MemError());
+    WarnUser(MEM_ERR, 0);
 }
 
 /**********************************************************************
@@ -3938,7 +3938,7 @@ TOCType * GetRealTOC(TOCType * tocH, short sum, short *realSum) {
       FSSpec spec; GetMailboxSpec(tocH, sum, spec);
       TOCType * realTocH;
 
-      if (!0)
+      
         goto error;
 
       realTocH = FindTOC(spec);
@@ -4389,7 +4389,7 @@ void DecodeIMAPMessages(TOCType * toc, char * spec) {
   if (!Lip)
     Lip = NuPtrClear(sizeof(*Lip));
   if (!Lip) {
-    (WarnUser(MEM_ERR, MemError()));
+    (WarnUser(MEM_ERR, 0));
     goto msgDone;
   }
   if (FSpOpenLine(spec, fsRdWrPerm, Lip))

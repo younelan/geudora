@@ -795,7 +795,7 @@ int CacheMessage(TOCType * tocH, short sumNum) {
   /*
    * allocate it
    */
-  if ((cache = NuHTempOK(GetMessageLength(tocH, sumNum)))) {
+  if ((cache = malloc(GetMessageLength(tocH, sumNum)))) {
     /*
      * read it
      */
@@ -813,7 +813,7 @@ int CacheMessage(TOCType * tocH, short sumNum) {
       long hsz = GetHandleSize(cache);
       if (hsz <= 0) {
         free(cache);
-        err = MemError();
+        err = 0;
       } else {
         unsigned char last = bufp[hsz - 1];
         if (last == '\015') {
@@ -836,7 +836,7 @@ int CacheMessage(TOCType * tocH, short sumNum) {
       }
     }
   } else
-    err = MemError();
+    err = 0;
 
   return (err);
 }
@@ -870,7 +870,7 @@ char *GetMessText(MessHandle messH) {
   buf = (char *)g_malloc(bufSize + 1);
   if (!buf) {
     if (!cache) {
-      WarnUser(NO_MESS_BUF, MemError());
+      WarnUser(NO_MESS_BUF, 0);
       return NULL;
     }
   }
@@ -1478,7 +1478,7 @@ int MoveSelectedMessagesLo(TOCType * tocH, char * toSpec, bool copy,
               UpdateIMAPMailbox(tocH);
           }
         } else {
-          err = MemError();
+          err = 0;
         }
       }
     }
@@ -1488,7 +1488,7 @@ int MoveSelectedMessagesLo(TOCType * tocH, char * toSpec, bool copy,
       // on the fly.
       uidsH = calloc(1,0);
       if (!uidsH)
-        err = MemError();
+        err = 0;
     }
 
     if (err != noErr) {
@@ -2142,9 +2142,9 @@ int RecordTransAttachments(const char *path) {
   if (InsertWin && GetWindowKind(InsertWinWP) == MESS_WIN) {
     messH = Win2MessH(InsertWin);
     if (!messH->etlFiles) {
-      h = NuHTempBetter(0);
+      h = malloc(0);
       if (!h)
-        return (MemError());
+        return (0);
       messH->etlFiles = h;
     }
     return (buf_append(messH->etlFiles, &tmpSpec, sizeof(tmpSpec)) != NULL)
@@ -2280,7 +2280,7 @@ void DoIterativeThingyLo(TOCType * tocH, int item, long modifiers,
             !(modifiers & shiftKey))
           Preview(tocH, sumNum);
       } else {
-        WarnUser(MemError(), MEM_ERR);
+        WarnUser(0, MEM_ERR);
       }
     }
 
@@ -2722,7 +2722,7 @@ MyWindowPtr DoSalvageMessageLo(MyWindowPtr win, bool forXfer, bool forIMAP) {
       /* Duplicate the translator handle */
       void *origH = (void *)origMessH->hTranslators;
       long hSize = GetHandleSize(origH);
-      void *dup = NuHTempBetter(hSize);
+      void *dup = malloc(hSize);
       if (dup) memcpy(dup, origH, hSize);
       newMessH->hTranslators = (void *)dup;
     } else if (!GetRHeaderAnywhere(origMessH, HEADER_STRN + TRANSLATOR_HEAD,
@@ -2978,7 +2978,7 @@ unsigned char * MessVisibleText(MessHandle messH) {
 
   /* Return a Handle (void **) wrapping the text string */
   long len = (long)strlen(rawText);
-  void *h = NuHTempBetter(len);
+  void *h = malloc(len);
   if (h) {
     memcpy(h, rawText, len);
   }
