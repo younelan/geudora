@@ -181,7 +181,7 @@ extern FSSpec AttFolderSpec;
 #define blServer 0
 /* InvalTocBox moved to imapdownload.h */
 /* ReZoomMyWindow: declared in mailbox.h, implemented in mywindow.c */
-static inline Rect CurState(WindowPtr w) {
+static inline Rect CurState(GtkWidget * w) {
   Rect r = {0};
   return r;
 }
@@ -757,7 +757,7 @@ bool ResyncCurrentIMAPMailbox(void) {
   PersHandle pers = CurPers;
   MailboxNodeHandle node;
   XferFlags flags;
-  WindowPtr winWP = MyFrontWindow();
+  GtkWidget * winWP = MyFrontWindow();
   MyWindowPtr win = GetWindowMyWindowPtr(winWP);
   short kind = winWP ? GetWindowKind(winWP) : 0;
   TOCType * tocH = nil;
@@ -4757,7 +4757,7 @@ int SpoolOnePopMessage(TOCType * fromTocH, short fromSumNum,
                          IMAPAppendPtr spoolData) {
   int err = 0;
   MyWindowPtr messWin = nil;
-  WindowPtr messWinWP;
+  GtkWidget * messWinWP;
   MessHandle messH = nil;
   bool openedMessage = false;
   char * spoolSpec = &(spoolData->spoolSpec);
@@ -6123,7 +6123,7 @@ bool IMAPMessageBeingPreviewed(TOCType * tocH, short sumNum) {
   bool previewed = false;
   TOCType *curToc = NULL, *realTocH = NULL;
   short curSum, realSumNum;
-  WindowPtr winWP;
+  GtkWidget * winWP;
 
   // must have a TOC
   if (!tocH)
@@ -7929,7 +7929,7 @@ void UpdateIMAPWindows(void) {
   long sumNum;
   MyWindowPtr win = nil;
   MessHandle messH = nil;
-  WindowPtr winWP;
+  GtkWidget * winWP;
   TOCType * searchTocH;
   short searchSum;
 
@@ -8029,7 +8029,7 @@ void UpdateIMAPWindows(void) {
  ************************************************************************/
 bool RedoIMAPAttachmentIcons(MyWindowPtr win, PETEHandle previewPte,
                              FSSpecHandle attachSpecs) {
-  WindowPtr winWP = nil;
+  GtkWidget * winWP = nil;
   short attachCount;
   void *textH;
   unsigned char *begin, *end;   /* beginning and end of all text */
@@ -8108,7 +8108,7 @@ bool RedoIMAPAttachmentIcons(MyWindowPtr win, PETEHandle previewPte,
  *message that has just come in
  ************************************************************************/
 void RedisplayIMAPMessage(MyWindowPtr win) {
-  WindowPtr winWP = GetMyWindowWindowPtr(win);
+  GtkWidget * winWP = GetMyWindowWindowPtr(win);
   ControlHandle blah;
   MessHandle messH;
 
@@ -8141,7 +8141,7 @@ bool FetchAllIMAPAttachments(TOCType * tocH, short sumNum,
                              bool forceForeground) {
   bool result = true;
   MyWindowPtr win = nil;
-  WindowPtr theWindow;
+  GtkWidget * theWindow;
   long offset;
   void *text;
   FSSpec attachSpec;
@@ -8276,7 +8276,7 @@ bool HasStubFileAttachment(TOCType * tocH, short sumNum) {
   PersHandle pers;
   MessHandle messH = nil;
   MyWindowPtr win = nil;
-  WindowPtr winWP;
+  GtkWidget * winWP;
   bool openedMessage = false;
   void *text;
   long offset;
@@ -11541,7 +11541,7 @@ void IMAPPollMailboxTree(IMAPStreamPtr imapStream, MailboxNodeHandle tree,
   TOCType *tocH = NULL, *hidTocH = NULL;
   char m[64];
   char s[256];
-  WindowPtr behindWP = OpenBehindMePlease();
+  GtkWidget * behindWP = OpenBehindMePlease();
   /* MailboxNodeHandle inbox =
    * LocateInboxForPers(CurPers); - UNUSED */
 

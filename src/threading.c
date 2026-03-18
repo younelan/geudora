@@ -1019,7 +1019,7 @@ void ThreadTermination(pthread_t threadTerminated, void *terminationProcParam) {
 
   DecrementNumBackgroundThreads();
   if ((threadData = (threadDataHandle)terminationProcParam)) {
-    WindowPtr TaskProgressWindowWP;
+    GtkWidget * TaskProgressWindowWP;
 #ifdef DEBUG
     long totalTicks = 0;
     long perc = 0;

@@ -108,7 +108,7 @@ struct MailboxNode {
   long attributes;             // IMAP mailbox attributes
   UIDVALIDITY uidValidity;     // uidValidity of the mailbox
   unsigned long messageCount;  // number of messages known to be in the mailbox
-  FSSpec mailboxSpec;          // where the local mailbox cache lives
+  char mailboxSpec[PATH_MAX];  // POSIX path to local mailbox cache
   MailboxNodeHandle next;      // next mailbox in the same directory
   MailboxNodeHandle childList; // first child
 
@@ -152,7 +152,7 @@ bool IsSpecialIMAPName(unsigned char *name, bool *bIsDir);
 bool IsIMAPSubPers(char * spec);
 int ReadIMAPMailboxAttributes(char * spec, long *attributes);
 void PathToMailboxName(CStr path, char mboxName[64], char delimiter);
-void PersNameToCacheName(PersHandle pers, unsigned char * cacheName);
+void PersNameToCacheName(PersHandle pers, char *cacheName);
 int CreateLocalCache(void);
 void DisposePersIMAPMailboxTrees(void);
 void DisposeMailboxTree(MailboxNodeHandle *tree);
@@ -162,7 +162,7 @@ int WriteIMAPMailboxInfo(char * spec, MailboxNodeHandle node);
 bool IMAPExists(void);
 int IMAPRefreshAllCaches(void);
 int IMAPRefreshPersCaches(void);
-int RemoveIMAPCacheDir(FSSpec toDelete);
+int RemoveIMAPCacheDir(const char *dirPath);
 bool CanModifyMailboxTrees(void);
 int UpdateLocalCache(bool progress);
 bool MailboxTreeGood(PersHandle pers);
@@ -258,7 +258,7 @@ void MarkSumAsDeleted(TOCType * tocH, short sumNum, bool bDeleted);
 
 // Hidden Summary Filtering
 bool ShowHideFilteredSummary(TOCType * toc, short sumNum);
-MailboxNodeHandle GetRealIMAPSpec(FSSpec orig, char * spec);
+MailboxNodeHandle GetRealIMAPSpec(const char *orig, char *spec);
 
 // IMAP Fancy Trash Mode
 bool IMAPEmptyTrash(bool localOnly, bool currentOnly, bool all);

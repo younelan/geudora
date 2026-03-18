@@ -278,7 +278,7 @@ void ShutdownStats(void) {
 void StatsIdle(void) {
   static uLong nextIdle, nextSaveStatus;
   short facetimeMode;
-  WindowPtr winWP;
+  GtkWidget * winWP;
   uLong seconds;
 
   if (!gStatData || InBG)

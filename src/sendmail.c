@@ -317,7 +317,7 @@ int StartSMTP(TransStream stream, char *serverName, long port) {
  ************************************************************************/
 int MySendMessage(TransStream stream, TOCType * tocH, int sumNum,
                   CSpecHandle specList) {
-  WindowPtr messWinWP;
+  GtkWidget * messWinWP;
   unsigned char buffer[256];
   unsigned char param[256];
   MessHandle messH;
@@ -3184,7 +3184,7 @@ int SendDigest(TransStream stream, char * spec) {
 
       win = GetAMessageLo(tocH, i, NULL, NULL, false, &newWin);
       if (win) {
-        WindowPtr winWP = GetMyWindowWindowPtr(win);
+        GtkWidget * winWP = GetMyWindowWindowPtr(win);
 
         sErr = TransmitMessageForSpool(stream, Win2MessH(win));
         if (newWin)

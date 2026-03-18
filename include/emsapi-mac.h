@@ -852,7 +852,7 @@ typedef struct emsEudoraModeNotificationDataS {
 // start MODELESS EMSAPI
 typedef struct emsPlugwindowDataS {
   long size;              /* IN: Size of this data structure */
-  void *nativeWindow;     /* reference to WindowPtr */
+  void *nativeWindow;     /* reference to GtkWidget * */
   long plugwindowID;      /* local id assigned by plug-in */
   unsigned long menuMask; /* Mask for menu items to be used */
   long top;               /* For saving size and position */
@@ -877,7 +877,7 @@ typedef struct emsPlugwindowMenuDataS {
 typedef struct emsPlugwindowDragDataS {
   long size;                   /* IN: Size of this data structure */
   DragTrackingMessage message; /* message of 0xfff means "drop" */
-  DragReference drag;          /* drag data */
+  void * drag;          /* drag data */
 } emsPlugwindowDragData, *emsPlugwindowDragDataP;
 
 typedef struct emsGDeviceRgnDataS {

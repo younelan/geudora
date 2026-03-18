@@ -240,9 +240,9 @@ typedef AppleEvent *AppleEventPtr;
 #define FindWindow_(p, w) FindWindow(p, w)
 #define GetDItem_(d, i, t, h, r) GetDialogItem(d, i, t, (void *)h, r)
 #ifdef FLOAT_WIN
-#define SelectWindow_(w) MySelectWindow(w)
+#define SelectWindow_(w) gtk_window_present(GTK_WINDOW(w))
 #else // FLOAT_WIN
-#define SelectWindow_(w) SelectWindow(w)
+#define gtk_window_present(GTK_WINDOW(w)) SelectWindow(w)
 #endif // FLOAT_WIN
 #ifdef FLOAT_WIN
 #define HideWindow_(w) MyHideWindow(w)

@@ -36,7 +36,7 @@ ADVISED OF THE POSSIBILITY OF SUCH DAMAGE. */
 #include "trans.h"
 
 // Mac types for portable layer
-typedef void *RgnHandle;
+/* RgnHandle typedef removed — use void * directly */
 bool MessClose(MyWindowPtr win);
 bool MessMenu(MyWindowPtr win, int menu, int item, short modifiers);
 void MessZoomSize(MyWindowPtr win, Rect *zoom);
@@ -92,7 +92,7 @@ int RelLine2Spec(unsigned char *line, char * spec, uLong *cid, uLong *relURL,
                  uLong *absURL);
 short AddXlateTables(bool isOut, short nowId, bool ph, void **pmh);
 void SetMessTable(TOCType * tocH, short sumNum, short tableId);
-RgnHandle MessBuildDragRgn(MessHandle messH);
+void * MessBuildDragRgn(MessHandle messH);
 bool Menu2TableId(TOCType * tocH, void **pmh, short item, short *tableId);
 void SetMessTable(TOCType * tocH, short sumNum, short newId);
 int ExportHTMLSum(TOCType * tocH, short sumNum);
@@ -106,7 +106,7 @@ void EzOpen(TOCType * tocH, short sumNum, uLong uidHash, long modifiers,
 void Fcc(MessHandle messH, char * box);
 short MessWi(MyWindowPtr win);
 #define IsArrowSwitch(m)                                                       \
-  (((m) & (shiftKey | optionKey | cmdKey | alphaLock | controlKey)) ==         \
+  (((m) & (GDK_SHIFT_MASK | GDK_ALT_MASK | GDK_META_MASK | GDK_LOCK_MASK | GDK_CONTROL_MASK)) ==         \
    GetPrefLong(PREF_SWITCH_MODIFIERS))
 #endif
 bool GetMesgErrorsRect(MyWindowPtr win, Rect *r);

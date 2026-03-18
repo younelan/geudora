@@ -28,7 +28,7 @@ ADVISED OF THE POSSIBILITY OF SUCH DAMAGE. */
 
 #ifndef MYWINDOWPTR_DEFINED
 #define MYWINDOWPTR_DEFINED
-typedef struct MyWindow *MyWindowPtr;
+/* WindowPtr typedef removed — use GtkWidget * directly */
 #endif
 
 #include "Globals.h"

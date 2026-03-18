@@ -546,7 +546,7 @@ char *LocalDateTimeShortStr(char *s) {
 
 short MenuWidth(MenuHandle mh) { return 0; }
 
-int MyTrackDrag(DragReference drag, void *event, RgnHandle rgn) { return 0; }
+int MyTrackDrag(void * drag, void *event, void * rgn) { return 0; }
 
 /**********************************************************************
  * HasDragManager - is the pestilent drag manager installed?
@@ -587,7 +587,7 @@ uint32_t MyGetDragItemFlavorType(void *drag, short item, short flavor) {
   return 0;
 }
 
-FlavorFlags MyGetDragItemFlavorFlags(DragReference drag, short item,
+FlavorFlags MyGetDragItemFlavorFlags(void * drag, short item,
                                      short flavor) {
   return 0;
 }
@@ -792,8 +792,8 @@ bool IsEnabled(short menu, short item) {
 /**********************************************************************
  *
  **********************************************************************/
-void ShowDragRectHilite(DragReference drag, Rect *r, bool inside) {
-  RgnHandle rgn = NULL;
+void ShowDragRectHilite(void * drag, Rect *r, bool inside) {
+  void * rgn = NULL;
   if (rgn) {
   }
 }
@@ -1936,7 +1936,7 @@ int Hex2Bytes(char * hex, long size, char * bytes) {
  ************************************************************************/
 #undef OSEventAvail
 bool MyOSEventAvail(short mask, void *event) {
-  EventRecord *event_rec = (EventRecord *)event;
+  void *event_rec = event;
   bool result;
   result = 0;
   return (result);
@@ -2071,16 +2071,14 @@ bool GetTableID(char *name, short *tid) {
  * EventPending - is an event waiting for us?
  ************************************************************************/
 bool EventPending(void) {
-  EventRecord event;
+  /* EventRecord removed */
   static gint64 ticks;
 
   if (g_get_monotonic_time() - ticks <= 133333)
     return (false);
   else {
     ticks = g_get_monotonic_time();
-    return (OSEventAvail(mUpMask | mDownMask | keyDownMask | updateMask |
-                             activMask | osMask,
-                         &event));
+    return false;
   }
 }
 #ifdef DEBUG
@@ -2153,7 +2151,7 @@ int MyRemoveResource(void *h) {
 /************************************************************************
  * FinderDragVoodoo - hack around a Finder 8.1 (at least) bug
  ************************************************************************/
-int FinderDragVoodoo(DragReference drag) {
+int FinderDragVoodoo(void * drag) {
   // This magic incantation seems to avoid a bug in (at least) the 8.1
   // finder which seems to sometimes go boom if the first drag it sees is
   // non-TEXT, promised, sender-only, and not saved.
@@ -2202,9 +2200,9 @@ short TimeCompare(DateTimeRec *date1, DateTimeRec *date2) {
 
 //#define IsColorWin(win) \
 //	(ThereIsColor & \
-//	 (((GrafPtr)(win))->portBits.rowBytes & 0xC000) & \
-//   ((**((CGrafPtr)(win))->portPixMap).pixelSize > 1))
-bool IsColorWin(WindowPtr winWP)
+//	 (((void *)(win))->portBits.rowBytes & 0xC000) & \
+//   ((**((void *)(win))->portPixMap).pixelSize > 1))
+bool IsColorWin(void *winWP)
 
 {
   return gdk_display_get_default() != NULL;

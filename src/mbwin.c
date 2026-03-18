@@ -639,7 +639,7 @@ void OpenMBWin(void) {
     if (!win)
       return;
 
-    WindowPtr winWP = GetMyWindowWindowPtr(win);
+    GtkWidget * winWP = GetMyWindowWindowPtr(win);
     MB.win = win;
 
     gtk_window_set_title(GTK_WINDOW(winWP), "Mailboxes");
@@ -735,7 +735,7 @@ void OpenMBWin(void) {
     ShowMyWindow(winWP);
     MB.inited = true;
   } else {
-    WindowPtr winWP = GetMyWindowWindowPtr(MB.win);
+    GtkWidget * winWP = GetMyWindowWindowPtr(MB.win);
     UserSelectWindow(winWP);
   }
 }

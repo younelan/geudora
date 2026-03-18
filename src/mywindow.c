@@ -135,7 +135,7 @@ bool ShowMyWindow(void *winWP) {
 /**********************************************************************
  * ShowMyWindowBehind - show window behind another (just shows it in GTK)
  **********************************************************************/
-void ShowMyWindowBehind(void *winWP, void *behindWP) {
+void ShowMyWindowBehind(GtkWidget *winWP, GtkWidget *behindWP) {
   (void)behindWP;
   ShowMyWindow(winWP);
 }
@@ -143,7 +143,7 @@ void ShowMyWindowBehind(void *winWP, void *behindWP) {
 /**********************************************************************
  * GetMyWindowWindowPtr - get the GtkWidget from a MyWindow
  **********************************************************************/
-WindowPtr GetMyWindowWindowPtr(MyWindowPtr win) {
+GtkWidget * GetMyWindowWindowPtr(MyWindowPtr win) {
   if (!win)
     return NULL;
   return win->window;
@@ -184,7 +184,7 @@ void UpdateMyWindow(void *winWP) {
 /**********************************************************************
  * MySelectWindow - bring window to front (SelectWindow_ macro maps here)
  **********************************************************************/
-void MySelectWindow(void *winWP) {
+void MySelectWindow(GtkWidget *winWP) {
   if (winWP && GTK_IS_WINDOW(winWP))
     gtk_window_present(GTK_WINDOW(winWP));
 }

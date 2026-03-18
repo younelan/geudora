@@ -89,12 +89,12 @@ extern void PopPers(void);
 extern void *Get1Resource(uint32_t type, short id);
 extern void SelectBoxRange(TOCType *toc, short a, short b, bool c, short d,
                            short e);
-extern void ScrollIt(WindowPtr w, short a, long b);
+extern void ScrollIt(GtkWidget * w, short a, long b);
 extern bool SortedDescending(TOCType *toc);
-extern void ShowMyWindowBehind(WindowPtr a, WindowPtr b);
+extern void ShowMyWindowBehind(GtkWidget *a, GtkWidget *b);
 extern void eudora_open_mailbox_by_name(const char *name);
 extern MyWindowPtr FindText(char * spec);
-extern void MySelectWindow(WindowPtr w);
+extern void MySelectWindow(GtkWidget * w);
 extern MyWindowPtr OpenText(char * spec, void *a, void *b, void *c, bool d,
                             void *e, bool f, bool g);
 extern int FindOpenWazoo(int win);
@@ -165,7 +165,7 @@ short ETLSendMessage(TransStream stream, MessHandle messH, bool chatter,
                      bool sendDataCmd) { return 0; }
 static void StartAuthenticatedSMTP(TransStream stream, unsigned char *server,
                                    long port) {}
-static void Type2Select(struct EventRecord *event) {}
+/* Type2Select removed — dead Mac code */
 static long GetDblTime(void) { return 0; }
 static void ResetAlertStage(void) {}
 static void TaskProgressRefresh(void) {}
@@ -229,7 +229,7 @@ bool OKToThread(bool check, bool send, bool manual, bool scripted);
 long FindTotalQueuedSize(TOCType * tocH, long gmtSecs);
 bool AddSigIntro(GtkWidget *pte, void **text);
 bool RemoveSigIntro(GtkWidget *pte, void **text);
-bool SpecialXferFilter(DialogPtr dgPtr, EventRecord *event, short *item);
+bool SpecialXferFilter(void *dgPtr, void *event, short *item);
 PersHandle SMTPRelayPers(void);
 int RememberMID(uint32_t midHash);
 long GlobalOpenUnreadCount();
@@ -287,7 +287,7 @@ short XferMail(bool check, bool send, bool manual, bool scripted, bool thread,
 
   // Cmd-Shift-M resyncs frontmost IMAP mailbox.
   if (!PrefIsSet(PREF_ALTERNATE_CHECK_MAIL_CMD))
-    if (!(modifiers && optionKey) && (modifiers && shiftKey) &&
+    if (!(modifiers && GDK_ALT_MASK) && (modifiers && GDK_SHIFT_MASK) &&
         ResyncCurrentIMAPMailbox())
       return (0);
 
@@ -385,7 +385,7 @@ short XferMailSetup(bool *check, bool *send, bool manual, bool scripted,
                     XferFlags *xFlags, short modifiers) {
   PersHandle oldCur = CurPers;
   XferFlags flags;
-  bool special = 0 != (modifiers & optionKey);
+  bool special = 0 != (modifiers & GDK_ALT_MASK);
   char pass[256];
   Zero(pass);
   uint32_t ticks, ivalTicks;
@@ -1150,7 +1150,7 @@ int SpecialXfer(struct XferFlags *flags) {
  * SendTheQueue - send queued messages, assuming cnxn is setup
  ************************************************************************/
 short SendTheQueue(TransStream stream, XferFlags flags) {
-  WindowPtr tocMessWinWP;
+  GtkWidget * tocMessWinWP;
   TOCType * tocH = NULL;
   int sumNum = -1;
   char server[256];
@@ -1590,7 +1590,7 @@ void NotifyNewMailLo(short gotSome, bool noXfer, TOCType * tocH,
                      FilterPB *fpbDelivery, bool OpenIn) {
   bool justTrash = false;
   bool soundAnyway = false;
-  WindowPtr oldFront = FrontWindow_();
+  GtkWidget * oldFront = FrontWindow_();
   FilterPB fpb;
 
   // display NoNewMail alert if no mail was received, and no other check
@@ -1694,9 +1694,9 @@ void NotifyNewMailLo(short gotSome, bool noXfer, TOCType * tocH,
 #endif
   } // Close NotifyNewMailLo
 }
-WindowPtr OpenBehindMePlease(void) {
+GtkWidget * OpenBehindMePlease(void) {
   MyWindowPtr win;
-  WindowPtr winWP, frontWP, returnWinWP = NULL;
+  GtkWidget *winWP, *frontWP, *returnWinWP = NULL;
 
   frontWP = NULL;
 
@@ -1776,8 +1776,8 @@ WindowPtr OpenBehindMePlease(void) {
 /************************************************************************
  * ShowBoxSel - show the mailbox with a selection
  ************************************************************************/
-void ShowBoxAt(TOCType * tocH, short selectMe, WindowPtr behindWin) {
-  WindowPtr tocWinWP = GetMyWindowWindowPtr(tocH->win);
+void ShowBoxAt(TOCType * tocH, short selectMe, GtkWidget * behindWin) {
+  GtkWidget * tocWinWP = GetMyWindowWindowPtr(tocH->win);
 
   if (selectMe >= 0)
     SelectBoxRange(tocH, selectMe, selectMe, false, -1, -1);
@@ -1788,7 +1788,7 @@ void ShowBoxAt(TOCType * tocH, short selectMe, WindowPtr behindWin) {
       if (behindWin != tocWinWP)
         SendBehind(tocWinWP, behindWin);
     } else
-      SelectWindow_(tocWinWP);
+      gtk_window_present(GTK_WINDOW(tocWinWP));
   } else
     ShowMyWindowBehind(tocWinWP, behindWin);
 }

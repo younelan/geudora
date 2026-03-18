@@ -256,7 +256,7 @@ long LogTicks = 0;
 bool LooseTrans = false;
 void MBTickle() {}
 RootSpec MailRoot = {0};
-EventRecord MainEvent = {0};
+/* MainEvent removed */
 short MatchAlias(char * spec, long flags, ...) {
   return 0;
 }

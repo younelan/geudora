@@ -130,8 +130,7 @@ extern void MessFocus(MessHandle messH, GtkWidget *pte);
 #endif
 
 /* Mac key modifier constants — mapped to GDK equivalents */
-#ifndef shiftKey
-#define shiftKey GDK_SHIFT_MASK
+#ifndef GDK_SHIFT_MASK
 #endif
 
 /************************************************************************
@@ -354,7 +353,7 @@ static void DoEnterSelection(void)
  * FIND_SEARCH_ITEM, etc). Called FindOpen, DoEnterSelection, SearchOpen,
  * DoWebFind, DoFindOK.
  *
- * Modifier check: shiftKey → also enter selection before action.
+ * Modifier check: GDK_SHIFT_MASK → also enter selection before action.
  ************************************************************************/
 void DoFind(short item, short modifiers)
 {
@@ -368,7 +367,7 @@ void DoFind(short item, short modifiers)
 
     switch (item) {
     case FIND_FIND_ITEM:
-        if (modifiers & shiftKey)
+        if (modifiers & GDK_SHIFT_MASK)
             DoEnterSelection();
         FindOpen();
         return;
@@ -379,7 +378,7 @@ void DoFind(short item, short modifiers)
     case FIND_SEARCH_ALL_ITEM:
     case FIND_SEARCH_BOX_ITEM:
     case FIND_SEARCH_FOLDER_ITEM:
-        if (modifiers & shiftKey)
+        if (modifiers & GDK_SHIFT_MASK)
             DoEnterSelection();
         SearchOpen(item);
         return;

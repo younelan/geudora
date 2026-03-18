@@ -21,19 +21,19 @@ DAMAGE. */
 #ifndef FLOATINGWIN_H
 #define FLOATINGWIN_H
 
-void MySelectWindow(WindowPtr winWP);
+void MySelectWindow(GtkWidget * winWP);
 MyWindowPtr FindLastFloater(void);
-void MyDragWindow (WindowPtr winWP, Point start, Rect *boundsRect);
-bool IsTopNonFloater(WindowPtr theWindow);
-WindowPtr MyFrontNonFloatingWindow(void);
+void MyDragWindow (GtkWidget * winWP, Point start, Rect *boundsRect);
+bool IsTopNonFloater(GtkWidget * theWindow);
+GtkWidget * MyFrontNonFloatingWindow(void);
 MyWindowPtr FloaterAtPoint(Point mouse);
-void MyHideWindow(WindowPtr theWindow);
-bool IsFloating(WindowPtr winWP);
+void MyHideWindow(GtkWidget * theWindow);
+bool IsFloating(GtkWidget * winWP);
 void SetKeyFocusedFloater(MyWindowPtr win);
-void PositionDockedWindow(WindowPtr winWP);
+void PositionDockedWindow(GtkWidget * winWP);
 void PositionDockedWindows(void);
-void DockedWinReduce(WindowPtr checkWinWP, Rect *winRect, Rect *r);
-void DockedWinRemove(RgnHandle rgn,WindowPtr ignoreWinWP);
+void DockedWinReduce(GtkWidget * checkWinWP, Rect *winRect, Rect *r);
+void DockedWinRemove(void * rgn,GtkWidget * ignoreWinWP);
 void FloatingWinIdle(void);
 		
 #endif	//FLOATINGWIN_H

@@ -281,7 +281,7 @@ void FilterPostprocess(FilterKeywordEnum fType, FilterPBPtr fpb)
 			{
 				if (!behindWP)
 				{
-					SelectWindow_(tocWinWP);
+					gtk_window_present(GTK_WINDOW(tocWinWP));
 					behindWP = GetMyWindowWindowPtr(tocH->win);
 				}
 				else SendBehind(tocWinWP, behindWP);

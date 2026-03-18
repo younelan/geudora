@@ -3456,7 +3456,7 @@ void DisposePOPD(POPDHandle *popDH) {
  * FixMessServerAreas - fix the server displays of message windows
  **********************************************************************/
 void FixMessServerAreas(void) {
-  WindowPtr winWP;
+  GtkWidget * winWP;
   MyWindowPtr win;
 
   for (winWP = FrontWindow_(); winWP; winWP = GetNextWindow(winWP))

@@ -429,7 +429,7 @@ void DisposePersonalities(void)
  **********************************************************************/
 int SetPers(TOCType * tocH,short sumNum,PersHandle pers,bool stationery)
 {
-	WindowPtr	messWinWP;
+	GtkWidget *	messWinWP;
 	MessHandle messH = tocH->sums[sumNum].messH;
 	bool opened = messH==nil;
 	char addr[256];
@@ -630,7 +630,7 @@ PersHandle Index2Pers(short n)
  ************************************************************************/
 void CheckPers(MyWindowPtr win,bool all)
 {
-	WindowPtr	winWP = GetMyWindowWindowPtr(win);
+	GtkWidget *	winWP = GetMyWindowWindowPtr(win);
 	MenuHandle mh;
 	MessHandle messH;
 	TOCType * tocH;

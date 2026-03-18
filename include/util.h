@@ -193,7 +193,7 @@ uint32_t GetRuint32_t(int index);
 int ResourceCpy(short toRef, short fromRef, long type, int id);
 void WhiteRect(Rect *r);
 void DrawTruncString(char *string, int len);
-// int CalcTextTrunc(unsigned char * text,short length,short width,GrafPtr
+// int CalcTextTrunc(unsigned char * text,short length,short width,void *
 // port); #define CalcTrunc(text,width,port)
 // CalcTextTrunc((text)+1,*(text),width,port)
 int WannaSave(MyWindowPtr win);
@@ -214,8 +214,8 @@ void BottomCenterRectIn(Rect *inner, Rect *outer);
 
 short MyUniqueID(uint32_t type);
 bool HasDragManager();
-typedef void *DragReference;
-// typedef void *RgnHandle;
+/* DragReference typedef removed — use void * directly */
+/* RgnHandle typedef removed — use void * directly */
 typedef uint32_t FlavorFlags;
 #ifndef RGBCOLOR_DEFINED
 #define RGBCOLOR_DEFINED
@@ -226,7 +226,7 @@ typedef struct RGBColor {
 typedef struct DateTimeRec {
   short year, month, day, hour, minute, second, dayOfWeek;
 } DateTimeRec;
-int FinderDragVoodoo(DragReference drag);
+int FinderDragVoodoo(void * drag);
 // typedef enum {Stop, Note, Caution, Normal} AlertEnum;
 void MyAppendMenu(MenuHandle menu, char *name);
 void MyInsMenuItem(MenuHandle menu, char *name, short afterItem);
@@ -257,12 +257,12 @@ long MyMenuKeyLo(void *event, bool enable);
 #define UnadornMessage(event) UnadornKey((event)->message, (event)->modifiers)
 long UnadornKey(long message, short modifiers);
 char *ChangeStrn(short resId, short num, char *string);
-typedef void *RgnHandle;
+/* RgnHandle typedef removed — use void * directly */
 
-int MyTrackDrag(DragReference drag, void *event, RgnHandle rgn);
-int MySetDragItemFlavorData(DragReference drag, short item, uint32_t type,
+int MyTrackDrag(void * drag, void *event, void * rgn);
+int MySetDragItemFlavorData(void * drag, short item, uint32_t type,
                             void *data, long len);
-short DragOrMods(DragReference drag);
+short DragOrMods(void * drag);
 bool RecountStrn(short resId);
 short CountStrn(short resId);
 void NukeMenuItemByName(short menuId, char *itemName);
@@ -272,10 +272,10 @@ int ComposeRTrans(TransStream stream, int format, ...);
 bool SetGreyControl(void *button, bool shdBeGrey);
 bool IsAUX(void);
 long ZoneSecs(void);
-short MyCountDragItems(DragReference drag);
-short MyCountDragItemFlavors(DragReference drag, short item);
-uint32_t MyGetDragItemFlavorType(DragReference drag, short item, short flavor);
-FlavorFlags MyGetDragItemFlavorFlags(DragReference drag, short item,
+short MyCountDragItems(void * drag);
+short MyCountDragItemFlavors(void * drag, short item);
+uint32_t MyGetDragItemFlavorType(void * drag, short item, short flavor);
+FlavorFlags MyGetDragItemFlavorFlags(void * drag, short item,
                                      short flavor);
 bool MyDragHas(void *drag, short item, uint32_t type);
 int MyGetDragItemData(void *drag, short item, uint32_t type, void **data);
@@ -311,7 +311,7 @@ long AFPopUpMenuSelect(MenuHandle mh, short top, short left, short item);
 bool GetTableCName(short tid, char *name);
 bool GetTableID(char *name, short *tid);
 bool EventPending(void);
-void ShowDragRectHilite(DragReference drag, Rect *r, bool inside);
+void ShowDragRectHilite(void * drag, Rect *r, bool inside);
 char *WeekDay(char *string, long secs);
 void TimeString(long secs, bool wantSeconds, char *str, void *intlHandle);
 int ZapResourceLo(uint32_t type, short id, bool one);
@@ -347,8 +347,8 @@ int HandleLinebreaks(void *text, long ***breaks, short inWidth);
 short MenuWidth(MenuHandle mh);
 //#define IsColorWin(win) \
 //	(ThereIsColor && \
-//	 (((GrafPtr)(win))->portBits.rowBytes & 0xC000) && \
-//   ((**((CGrafPtr)(win))->portPixMap).pixelSize > 1))
+//	 (((void *)(win))->portBits.rowBytes & 0xC000) && \
+//   ((**((void *)(win))->portPixMap).pixelSize > 1))
 bool IsColorWin(void *winWP);
 #define PurgeIfClean(h)                                                        \
   do {                                                                         \

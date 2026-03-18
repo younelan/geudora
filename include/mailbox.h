@@ -20,14 +20,6 @@
 
 typedef int OSStatus;
 
-/* Key modifier constants (GDK values) */
-#ifndef optionKey
-#define optionKey 0x0800
-#define shiftKey  0x0200
-#define cmdKey    0x0100
-#define controlKey 0x1000
-#define alphaLock 0x0400
-#endif
 
 /* Point and Rect — basic geometry types */
 #ifndef POINT_DEFINED
@@ -39,15 +31,7 @@ typedef struct Point { short v; short h; } Point;
 typedef struct Rect { short top; short left; short bottom; short right; } Rect;
 #endif
 
-/* Event record — minimal struct for legacy event handling */
-typedef struct EventRecord {
-  short what;
-  unsigned long message;
-  unsigned long when;
-  Point where;
-  short modifiers;
-} EventRecord;
-typedef EventRecord *EventPtr;
+/* EventRecord removed — GTK handles events natively */
 
 /* RGBColor */
 #ifndef RGBCOLOR_DEFINED
@@ -63,12 +47,6 @@ typedef long Fixed;
 /* LongDateRec removed — use struct tm from <time.h> */
 
 /* Event masks */
-#define mUpMask    0x0010
-#define mDownMask  0x0008
-#define keyDownMask 0x0004
-#define updateMask 0x0040
-#define activMask  0x0100
-#define osMask     0x0C00
 
 /* Utility stubs */
 #define RANDOM_FAILURE
@@ -202,8 +180,8 @@ typedef short ScriptCode;
 #define SIG_NONE ((uint32_t)-1)
 typedef void *FSSpecHandle;
 typedef void *ControlHandle;
+/* WindowPtr removed — use GtkWidget * directly */
 typedef struct MyWindow *MyWindowPtr;
-typedef void *WindowPtr;
 typedef struct TOCType TOCType, *TOCPtr;
 
 #ifndef RECT_DEFINED
@@ -371,7 +349,6 @@ typedef struct RGBColor {
 /* fsFromMark removed — use POSIX equivalent */
 
 #ifndef mDownMask
-#define mDownMask 0x0001
 #endif
 #define ktMacUSHidden 0
 
@@ -752,7 +729,7 @@ extern bool bHasFileIDs;
 /* Window management functions */
 void *MyFrontWindow(void);
 MyWindowPtr GetWindowMyWindowPtr(void *winWP);
-WindowPtr GetMyWindowWindowPtr(MyWindowPtr win);
+GtkWidget * GetMyWindowWindowPtr(MyWindowPtr win);
 short GetWindowKind(void *winWP);
 void SetWindowKind(void *winWP, short kind);
 void SetWindowMyWindowPtr(void *winWP, MyWindowPtr win);
@@ -764,8 +741,8 @@ MyWindowPtr GetNewMyWindow(short resId, void *wStorage, MyWindowPtr win,
                            void *behind, bool hBar, bool vBar,
                            short windowKind);
 bool ShowMyWindow(void *winWP);
-void ShowMyWindowBehind(void *winWP, void *behindWP);
-void MySelectWindow(void *winWP);
+void ShowMyWindowBehind(GtkWidget *winWP, GtkWidget *behindWP);
+void MySelectWindow(GtkWidget *winWP);
 void UserSelectWindow(void *winWP);
 void UpdateMyWindow(void *winWP);
 void InvalContent(MyWindowPtr win);

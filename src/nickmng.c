@@ -2562,7 +2562,7 @@ void MakeCboxNick(MyWindowPtr win) {
       break;
     if (tocH->sums[sumNum].selected)
       if (compWin = GetAMessage(tocH, sumNum, nil, nil, false)) {
-        WindowPtr compWinWP = GetMyWindowWindowPtr(compWin);
+        GtkWidget * compWinWP = GetMyWindowWindowPtr(compWin);
         err = GatherCompAddresses(compWin, addresses);
         if (!IsWindowVisible(compWinWP))
           CloseMyWindow(compWinWP);

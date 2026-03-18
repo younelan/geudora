@@ -220,11 +220,9 @@ bool UseFlowOutExcerpt = false;
 #define mcTrash 129
 #define PREF_SUBJECT_IN_INLINE 12345 /* Dummy value */
 /* Mac Event Macros */
-#ifndef optionKey
-#define optionKey 2048
+#ifndef GDK_ALT_MASK
 #endif
-#ifndef shiftKey
-#define shiftKey 512
+#ifndef GDK_SHIFT_MASK
 #endif
 
 /* PETE Macros */
@@ -2066,7 +2064,7 @@ int SetMessText(MessHandle messH, short whichTXE, char *string, long size) {
  * Fix1MessServerArea - fix the server display of a single message
  **********************************************************************/
 void Fix1MessServerArea(MyWindowPtr win) {
-  WindowPtr winWP = GetMyWindowWindowPtr(win);
+  GtkWidget * winWP = GetMyWindowWindowPtr(win);
   MessHandle messH;
 
   if (GetWindowKind(winWP) == MESS_WIN && IsWindowVisible(winWP)) {
@@ -2116,7 +2114,7 @@ void Fix1MessServerArea(MyWindowPtr win) {
  *translator
  **********************************************************************/
 int RecordTransAttachments(const char *path) {
-  WindowPtr InsertWinWP = GetMyWindowWindowPtr(InsertWin);
+  GtkWidget * InsertWinWP = GetMyWindowWindowPtr(InsertWin);
   MessHandle messH;
   FSSpecHandle h;
   FSSpec tmpSpec = {0};
@@ -2238,7 +2236,7 @@ void DoIterativeThingyLo(TOCType * tocH, int item, long modifiers,
   bool nuke =
       item == MESSAGE_DELETE_ITEM &&
       (tocH->which == TRASH ||
-       (optionKey | shiftKey) == (modifiers & (optionKey | shiftKey))) &&
+       (GDK_ALT_MASK | GDK_SHIFT_MASK) == (modifiers & (GDK_ALT_MASK | GDK_SHIFT_MASK))) &&
       (!tocH->imapTOC || PrefIsSet(PREF_ALLOW_IMAP_NUKE));
   bool busy = false;
   unsigned long oldEzOpenSerialNum = tocH->previewID ? tocH->ezOpenSerialNum : 0;
@@ -2271,7 +2269,7 @@ void DoIterativeThingyLo(TOCType * tocH, int item, long modifiers,
         // preview the next message ...
         if (oldEzOpenSerialNum &&
             (sumNum = FindSumBySerialNum(tocH, oldEzOpenSerialNum)) >= 0 &&
-            !(modifiers & shiftKey))
+            !(modifiers & GDK_SHIFT_MASK))
           Preview(tocH, sumNum);
       } else {
         WarnUser(0, MEM_ERR);
@@ -2287,9 +2285,9 @@ void DoIterativeThingyLo(TOCType * tocH, int item, long modifiers,
     MoveSelectedMessagesLo(tocH, &trashSpec, false, true, true, warnings);
     if (oldEzOpenSerialNum &&
         (sumNum = FindSumBySerialNum(tocH, oldEzOpenSerialNum)) >= 0 &&
-        !(modifiers & shiftKey))
+        !(modifiers & GDK_SHIFT_MASK))
       Preview(tocH, sumNum);
-    tocH->userActive = !(modifiers & shiftKey);
+    tocH->userActive = !(modifiers & GDK_SHIFT_MASK);
     return;
   }
 
@@ -2301,11 +2299,11 @@ void DoIterativeThingyLo(TOCType * tocH, int item, long modifiers,
   if (item == MESSAGE_FORWARD_ITEM || item == MESSAGE_REDISTRIBUTE_ITEM ||
       item == MESSAGE_REPLY_ITEM || item == MESSAGE_SALVAGE_ITEM) {
     if (item == MESSAGE_REDISTRIBUTE_ITEM &&
-        PrefIsSetOrNot(PREF_TURBO_REDIRECT, modifiers, optionKey) && toWhom)
+        PrefIsSetOrNot(PREF_TURBO_REDIRECT, modifiers, GDK_ALT_MASK) && toWhom)
       ; // nevermind, turbo redirect
     else {
       size = count * 7 K; // account just for the windows
-      if (item != MESSAGE_REPLY_ITEM || !(modifiers & shiftKey))
+      if (item != MESSAGE_REPLY_ITEM || !(modifiers & GDK_SHIFT_MASK))
         size += SizeSelectedMessages(tocH, true);
       if (MemoryPreflight(size))
         return; // too much memory asked for
@@ -2407,7 +2405,7 @@ void DoIterativeThingyLo(TOCType * tocH, int item, long modifiers,
   }
   if (oldEzOpenSerialNum && !tocH->previewID &&
       (sumNum = FindSumBySerialNum(tocH, oldEzOpenSerialNum)) >= 0 &&
-      !(modifiers & shiftKey))
+      !(modifiers & GDK_SHIFT_MASK))
     Preview(tocH, sumNum);
 }
 
@@ -2444,7 +2442,7 @@ bool DoMessageMenu(short item, TOCType * tocH, short sumNum, short toWhom,
     doVirtualMB = false; //	Already took care of this
     break;
   case SERVER_HIER_MENU:
-    ServerMenuChoice(tocH, sumNum, toWhom, (modifiers & shiftKey) != 0);
+    ServerMenuChoice(tocH, sumNum, toWhom, (modifiers & GDK_SHIFT_MASK) != 0);
     break;
   case TABLE_HIER_MENU:
     SetMessTable(tocH, sumNum, toWhom);
@@ -2462,7 +2460,7 @@ bool DoMessageMenu(short item, TOCType * tocH, short sumNum, short toWhom,
     // we're just replying.
     if (EnsureMsgDownloaded(tocH, sumNum, item != MESSAGE_REPLY_ITEM)) {
       if ((win = GetAMessage(tocH, sumNum, NULL, NULL, false))) {
-        WindowPtr winWP = GetMyWindowWindowPtr(win);
+        GtkWidget * winWP = GetMyWindowWindowPtr(win);
         switch (item) {
         case MESSAGE_SALVAGE_ITEM:
           if (!DoSalvageMessage(win, false))
@@ -2482,7 +2480,7 @@ bool DoMessageMenu(short item, TOCType * tocH, short sumNum, short toWhom,
         case MESSAGE_REDISTRIBUTE_ITEM:
           if (!DoRedistributeMessage(
                   win, addr,
-                  PrefIsSetOrNot(PREF_TURBO_REDIRECT, modifiers, optionKey),
+                  PrefIsSetOrNot(PREF_TURBO_REDIRECT, modifiers, GDK_ALT_MASK),
                   false, true))
             CommandPeriod = true;
           break;
@@ -2505,9 +2503,9 @@ bool DoMessageMenu(short item, TOCType * tocH, short sumNum, short toWhom,
  * ReplyDefaults - get the defaults for reply options
  ************************************************************************/
 void ReplyDefaults(short modifiers, bool *all, bool *self, bool *quote) {
-  *all = PrefIsSetOrNot(PREF_REPLY_ALL, modifiers, optionKey);
+  *all = PrefIsSetOrNot(PREF_REPLY_ALL, modifiers, GDK_ALT_MASK);
   *self = !PrefIsSet(PREF_NOT_ME);
-  *quote = (modifiers & shiftKey) == 0;
+  *quote = (modifiers & GDK_SHIFT_MASK) == 0;
 }
 
 /************************************************************************
@@ -2613,11 +2611,11 @@ MyWindowPtr DoSalvageMessage(MyWindowPtr win, bool forXfer) {
  * DoSalvageMessageLo - glean what you can from a bounced message's headers
  ************************************************************************/
 MyWindowPtr DoSalvageMessageLo(MyWindowPtr win, bool forXfer, bool forIMAP) {
-  WindowPtr winWP = GetMyWindowWindowPtr(win);
+  GtkWidget * winWP = GetMyWindowWindowPtr(win);
   MessHandle origMessH = (MessHandle)GetMyWindowPrivateData(win);
   MessHandle newMessH;
   MyWindowPtr newWin;
-  WindowPtr newWinWP;
+  GtkWidget * newWinWP;
   unsigned char scratch[256];
   short field;
   HeadSpec oldHS, newHS;
@@ -2985,7 +2983,7 @@ unsigned char * MessVisibleText(MessHandle messH) {
  * ReopenMessage - reopen the current message
  ************************************************************************/
 MyWindowPtr ReopenMessage(MyWindowPtr win) {
-  WindowPtr winWP = GetMyWindowWindowPtr(win);
+  GtkWidget * winWP = GetMyWindowWindowPtr(win);
   char *text;
   MessHandle messH = Win2MessH(win);
   int err = 0;
@@ -3231,13 +3229,13 @@ char *FindHeaderString(char *text, char *headerName, long *size, bool bodyToo) {
 MyWindowPtr DoReplyMessage(MyWindowPtr win, bool all, bool self, bool quote,
                            bool doFcc, short withWhich, bool vis, bool station,
                            bool caching) {
-  WindowPtr winWP = GetMyWindowWindowPtr(win);
+  GtkWidget * winWP = GetMyWindowWindowPtr(win);
   MessHandle origMessH = (MessHandle)GetMyWindowPrivateData(win);
   MessHandle newMessH;
   unsigned char subj[256], scratch[256], replyTo[256];
   long bodyOffset = -1;
   MyWindowPtr newWin = NULL;
-  WindowPtr newWinWP;
+  GtkWidget * newWinWP;
   short r;
   long len;
   gchar *text = NULL;
@@ -3705,7 +3703,7 @@ void Attribute(short attrId, MessHandle origMessH, MessHandle newMessH,
  * GrabAttribution - compute the attribution for a message
  ************************************************************************/
 char * GrabAttribution(short attrId, MyWindowPtr win, char * attribution) {
-  WindowPtr winWP = GetMyWindowWindowPtr(win);
+  GtkWidget * winWP = GetMyWindowWindowPtr(win);
   unsigned char template[256];
   unsigned char date[64], time[64];
   unsigned char who[128];
@@ -3748,7 +3746,7 @@ char * GrabAttribution(short attrId, MyWindowPtr win, char * attribution) {
 MyWindowPtr DoRedistributeMessage(MyWindowPtr win, void *toWhom, bool turbo,
                                   bool andDelete, bool showIt) {
   TextAddrHandle addr = (TextAddrHandle)toWhom;
-  WindowPtr winWP = GetMyWindowWindowPtr(win);
+  GtkWidget * winWP = GetMyWindowWindowPtr(win);
   MessHandle origMessH = (MessHandle)GetMyWindowPrivateData(win);
   MessHandle newMessH;
   unsigned char scratch[256];
@@ -3769,7 +3767,7 @@ MyWindowPtr DoRedistributeMessage(MyWindowPtr win, void *toWhom, bool turbo,
   PushPers(PERS_FORCE(MESS_TO_PERS(origMessH)));
 
   if ((newWin = DoComposeNew(0))) {
-    WindowPtr newWinWP = GetMyWindowWindowPtr(newWin);
+    GtkWidget * newWinWP = GetMyWindowWindowPtr(newWin);
     newMessH = (MessHandle)GetMyWindowPrivateData(newWin);
     XferCustomTable(origMessH, newMessH);
     SetMessOpt(newMessH, OPT_REDIRECTED);
@@ -3938,11 +3936,11 @@ int CopyAttachments(MessHandle messH) {
 MyWindowPtr DoForwardMessage(MyWindowPtr win, void *toWhom, bool turbo) {
   bool showIt = !turbo;
   TextAddrHandle addr = (TextAddrHandle)toWhom;
-  WindowPtr winWP = GetMyWindowWindowPtr(win);
+  GtkWidget * winWP = GetMyWindowWindowPtr(win);
   MessHandle origMessH = (MessHandle)GetMyWindowPrivateData(win);
   MessHandle newMessH;
   MyWindowPtr newWin = NULL;
-  WindowPtr newWinPtr;
+  GtkWidget * newWinPtr;
   unsigned char scratch[256], subj[256];
   long offset;
   PETETextStyle style;
@@ -4054,7 +4052,7 @@ MyWindowPtr DoForwardMessage(MyWindowPtr win, void *toWhom, bool turbo) {
     /*
      * quote them
      */
-    if (!rich && !(0 /* MainEvent.modifiers */ && optionKey))
+    if (!rich && true /* MainEvent check removed */)
       QuoteLines(newMessH->bodyPTE, CompBodyOffset(newMessH) - 1, 0x7fffffff,
                  FWD_QUOTE, NULL);
 
@@ -4638,7 +4636,7 @@ void Rehash(TOCType * tocH, int sumNum, unsigned char * buffer) {
  * Preview - preview a message, if desired
  ************************************************************************/
 void Preview(TOCType * tocH, short sumNum) {
-  WindowPtr tocWinWP = GetMyWindowWindowPtr(tocH->win);
+  GtkWidget * tocWinWP = GetMyWindowWindowPtr(tocH->win);
   MessHandle messH;
   long id;
   GtkWidget *pte; // gEditCtrl widget (was PETEHandle)

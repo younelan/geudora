@@ -24,7 +24,7 @@ DAMAGE. */
 
 /* Forward declarations */
 struct MyWindow;
-typedef struct MyWindow *MyWindowPtr;
+/* WindowPtr typedef removed — use GtkWidget * directly */
 
 /*
  * EmoInit - initialize the emoticon system.

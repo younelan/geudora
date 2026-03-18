@@ -12,7 +12,7 @@ typedef GtkWidget *ListHandle; /* GtkListBox */
 typedef GtkWidget *Cell;       /* GtkListBoxRow */
 
 /* Draw callback now takes the row widget and a cairo context */
-typedef void (*drawCellType)(MyWindowPtr win, GtkWidget *row, cairo_t *cr,
+/* WindowPtr typedef removed — use GtkWidget * directly */
                              void *data);
 
 int AddListItemEntry(short where, drawCellType draw, void *data,

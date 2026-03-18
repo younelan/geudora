@@ -86,7 +86,7 @@ short XferMailRun(bool check, bool send, bool manual, bool scripted, XferFlags f
 void GrabSignature(uint32_t fid);
 int TransmitMessageHi(TransStream stream, MessHandle messH, bool chatter,
                         bool sendDataCmd);
-void ShowBoxAt(TOCType * tocH, short selectMe, WindowPtr behindWin);
+void ShowBoxAt(TOCType * tocH, short selectMe, GtkWidget * behindWin);
 short FumLub(TOCType * tocH);
 void FilterXferMessages(void);
 void ResetCheckTime(bool force);
@@ -96,7 +96,7 @@ void NotifyNewMailLo(short gotSome, bool noXfer, TOCType * tocH,
                      FilterPB *fpbDelivery, bool OpenIn);
 int DoFcc(TOCType * tocH, short sumNum, CSpecHandle list);
 void CompAttDel(MessHandle messH);
-WindowPtr OpenBehindMePlease(void);
+GtkWidget * OpenBehindMePlease(void);
 void ProcessReceivedRegFiles(void);
 int OutgoingMIDListSave(void);
 int OutgoingMIDListLoad(void);

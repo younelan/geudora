@@ -457,14 +457,14 @@ bool TransferMenuChoice(short menu, short item, TOCType *tocH, short sumNum,
       if (HasFeature(featureFcc) && fcc)
         Fcc(tocH->sums[sumNum].messH, &toSpec);
       else if (sumNum >= 0) {
-        if (!(modifiers & optionKey)) {
+        if (!(modifiers & GDK_ALT_MASK)) {
           if (!tocH->imapTOC)
             AddXfUndo(tocH, TOCBySpec(&toSpec), sumNum);
           EzOpen(tocH, sumNum, 0, modifiers, true, true);
         }
-        MoveMessage(tocH, sumNum, &toSpec, (modifiers & optionKey) != 0);
+        MoveMessage(tocH, sumNum, &toSpec, (modifiers & GDK_ALT_MASK) != 0);
       } else
-        MoveSelectedMessages(tocH, &toSpec, (modifiers & optionKey) != 0);
+        MoveSelectedMessages(tocH, &toSpec, (modifiers & GDK_ALT_MASK) != 0);
     }
     return true;
   }
@@ -946,11 +946,11 @@ bool MessMenu(MyWindowPtr win, int menu, int item, short modifiers) {
     case FILE_PRINT_ITEM:
     case FILE_PRINT_ONE_ITEM:
       MessFocus(messH, TheBody);
-      if ((modifiers & shiftKey) &&
+      if ((modifiers & GDK_SHIFT_MASK) &&
           AttIsSelected(win, win->pte, -1, -1, attOpen + attPrint, nil, nil))
         ;
       else
-        PrintOneMessage(messH->win, (modifiers & shiftKey) != 0,
+        PrintOneMessage(messH->win, (modifiers & GDK_SHIFT_MASK) != 0,
                         item == FILE_PRINT_ONE_ITEM);
       result = true;
       break;
@@ -978,7 +978,7 @@ bool MessMenu(MyWindowPtr win, int menu, int item, short modifiers) {
 
   case SERVER_HIER_MENU:
     ServerMenuChoice(messH->tocH, messH->sumNum, item,
-                     (modifiers & shiftKey) != 0);
+                     (modifiers & GDK_SHIFT_MASK) != 0);
     result = true;
     break;
 
@@ -994,8 +994,8 @@ bool MessMenu(MyWindowPtr win, int menu, int item, short modifiers) {
     }
     case MESSAGE_REDISTRIBUTE_ITEM:
       DoRedistributeMessage(win, 0,
-          PrefIsSetOrNot(PREF_TURBO_REDIRECT, modifiers, optionKey),
-          !(modifiers & shiftKey), true);
+          PrefIsSetOrNot(PREF_TURBO_REDIRECT, modifiers, GDK_ALT_MASK),
+          !(modifiers & GDK_SHIFT_MASK), true);
       result = true;
       break;
     case MESSAGE_FORWARD_ITEM:
@@ -1017,7 +1017,7 @@ bool MessMenu(MyWindowPtr win, int menu, int item, short modifiers) {
       if (CloseMyWindow(win->window)) {
         AddXfUndo(tocH, GetTrashTOC(), sumNum);
         DeleteMessage(tocH, sumNum,
-            (modifiers & (optionKey | shiftKey)) == (optionKey | shiftKey));
+            (modifiers & (GDK_ALT_MASK | GDK_SHIFT_MASK)) == (GDK_ALT_MASK | GDK_SHIFT_MASK));
       }
       NoSaves = false;
       result = true;
@@ -1041,10 +1041,10 @@ bool MessMenu(MyWindowPtr win, int menu, int item, short modifiers) {
     break;
 
   case REDIST_TO_HIER_MENU:
-    turbo = PrefIsSetOrNot(PREF_TURBO_REDIRECT, modifiers, optionKey);
+    turbo = PrefIsSetOrNot(PREF_TURBO_REDIRECT, modifiers, GDK_ALT_MASK);
     if (turbo) EzOpen(tocH, sumNum, 0, modifiers, true, true);
     addr = MenuItem2Handle(menu, item);
-    DoRedistributeMessage(win, addr, turbo, !(modifiers & shiftKey), true);
+    DoRedistributeMessage(win, addr, turbo, !(modifiers & GDK_SHIFT_MASK), true);
     result = true;
     free(addr);
     break;
@@ -1069,7 +1069,7 @@ bool MessMenu(MyWindowPtr win, int menu, int item, short modifiers) {
   case SPECIAL_MENU:
     switch (AdjustSpecialMenuSelection(item)) {
     case SPECIAL_MAKE_NICK_ITEM:
-      if (modifiers & shiftKey)
+      if (modifiers & GDK_SHIFT_MASK)
         MakeNickFromSelection(win);
       else
         MakeMessNick(win, modifiers);
@@ -1211,7 +1211,7 @@ void EzOpen(TOCType *tocH, short sumNum, uLong serialNum, long modifiers,
 
   if (newSumNum >= 0) {
     ez = GetPrefLong(PREF_NO_EZ_OPEN);
-    if (modifiers & shiftKey) ez = 0;
+    if (modifiers & GDK_SHIFT_MASK) ez = 0;
     SelectBoxRange(tocH, newSumNum, newSumNum, false, -1, -1);
     if (ez) {
       if (preview) Preview(tocH, newSumNum);
@@ -1427,18 +1427,21 @@ uwdone:
  * MessKey - handle a keydown in a message window
  * ============================================================ */
 bool MessKey(MyWindowPtr win, void *eventPtr) {
-  EventRecord *event = (EventRecord *)eventPtr;
+  /* TODO: Rewrite to receive GDK keyval + modifiers when GTK key dispatch calls this */
+  (void)win; (void)eventPtr;
+  return false;
+#if 0 /* Dead until GTK key dispatch is connected */
   MessHandle messH = (MessHandle)GetMyWindowPrivateData(win);
   TOCType *tocH = messH->tocH;
-  long uLetter = UnadornMessage(event) & charCodeMask;
+  long uLetter = 0; /* was: UnadornMessage(event) & charCodeMask */
   bool bodyEdit = !win->ro & win->pte == TheBody;
-  bool shift = 0 != (event->modifiers & shiftKey);
+  bool shift = false;
 
   if (leftArrowChar <= uLetter & uLetter <= downArrowChar &&
       IsArrowSwitch(event->modifiers)) {
     NextMess(tocH, messH, uLetter, event->modifiers, false);
     return true;
-  } else if ((event->modifiers & cmdKey) &&
+  } else if ((event->modifiers & GDK_META_MASK) &&
              (uLetter == delChar || uLetter == deleteKey)) {
     MessMenu(win, MESSAGE_MENU, MESSAGE_DELETE_ITEM, event->modifiers);
     return true;
@@ -1451,7 +1454,7 @@ bool MessKey(MyWindowPtr win, void *eventPtr) {
       gtk_text_buffer_get_end_iter(buf, &end);
       gtk_text_buffer_select_range(buf, &start, &end);
     }
-  } else if (event->modifiers & cmdKey) {
+  } else if (event->modifiers & GDK_META_MASK) {
     return false;
   } else if (win->ro & uLetter == ' ') {
     PeteScroll(TheBody, 0, shift ? -1 : 1);
@@ -1468,8 +1471,8 @@ bool MessKey(MyWindowPtr win, void *eventPtr) {
   } else {
     PeteEdit(win, win->pte, peeEvent, (void *)event);
   }
-  PeteSetDirty_(win->pte);
-  return true;
+#endif
+  return false;
 }
 
 /* ============================================================
@@ -1482,7 +1485,7 @@ void NextMess(TOCType *tocH, MessHandle messH, short whichWay,
 
   if (IsArrowSwitch(modifiers))
     modifiers &= ~GetPrefLong(PREF_SWITCH_MODIFIERS);
-  close = !(modifiers & optionKey);
+  close = !(modifiers & GDK_ALT_MASK);
 
   if (ezOpen & tocH == messH->openedFromTocH) {
     EzOpen(tocH, messH->sumNum, 0, 0, true, false);
@@ -1982,7 +1985,7 @@ bool GetMesgErrorsRect(MyWindowPtr win, Rect *r) {
   return true;
 }
 
-RgnHandle MessBuildDragRgn(MessHandle messH) {
+void * MessBuildDragRgn(MessHandle messH) {
   (void)messH;
   return nil;
 }

@@ -414,7 +414,7 @@ static void draw_page(GtkPrintOperation *op, GtkPrintContext *context,
 
     /* ---- Body text ----
      * Original: PETEPrintPage(PETE, pte, printPort, &r, para, line)
-     * Rendered PETE text directly to the GrafPtr printer port, tracking
+     * Rendered PETE text directly to the void * printer port, tracking
      * paragraph and line offsets across pages.
      *
      * GTK4: We pre-split into lines and render with Pango line by line. */
@@ -619,7 +619,7 @@ static GtkWindow *GetParentWindow(MyWindowPtr win)
  * PrintOneMessage - print out a given message
  *
  * Original:
- *   - Got WindowPtr from MyWindowPtr via GetMyWindowWindowPtr
+ *   - Got GtkWidget * from MyWindowPtr via GetMyWindowWindowPtr
  *   - Checked for nickname scanning capability (NicknameWatcherFocusChange)
  *   - PushGWorld (save graphics state)
  *   - PrintPreamble (setup PM, show dialog unless 'now')

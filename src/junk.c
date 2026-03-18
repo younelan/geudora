@@ -106,13 +106,13 @@ short GetWindowKind(void *winWP);
 short BoxSpecByName(TOCType * *tocH, const char *name);
 int WriteTOC(TOCType * tocH);
 extern bool AmQuitting;
-/* optionKey/shiftKey are macros in legacy_shim.h, not variables */
+/* GDK_ALT_MASK/GDK_SHIFT_MASK are macros in legacy_shim.h, not variables */
 
 typedef enum { kAutoScore, kUserMarkJunk, kUserMarkNotJunk } TJunkType;
 
 void ScoreOneMessage(TLMHandle tList, TOCType * tocH, short sumNum,
                      TJunkType howToScore);
-bool NagHitReturnItem(EventRecord *event, DialogPtr theDialog, short itemHit,
+bool NagHitReturnItem(void *event, DialogPtr theDialog, short itemHit,
                       long dialogRefcon);
 void MarkOneAsJunk(TLMHandle tList, TOCType * tocH, short sumNum, bool isJunk);
 int JunkSetScoreLo(TOCType * tocH, short sumNum, short because, short score);
@@ -677,7 +677,7 @@ int ArchiveJunk(TOCType * tocH) {
 
     // if we're quitting and the trash will be emptied, we can just nuke now
     if (nuke)
-      DoIterativeThingyLo(tocH, MESSAGE_DELETE_ITEM, optionKey | shiftKey, 0,
+      DoIterativeThingyLo(tocH, MESSAGE_DELETE_ITEM, GDK_ALT_MASK | GDK_SHIFT_MASK, 0,
                           false);
     else if (trash)
       DoIterativeThingyLo(tocH, MESSAGE_DELETE_ITEM, 0, 0, false);
@@ -1117,7 +1117,7 @@ short JunkIntro(void) {
  * NagHitReturnItem - hit proc that stuffs the item hit into the refcon, used as
  *pointer to short
  ************************************************************************/
-bool NagHitReturnItem(EventRecord *event, DialogPtr theDialog, short itemHit,
+bool NagHitReturnItem(void *event, DialogPtr theDialog, short itemHit,
                       long dialogRefcon) {
   *(short *)dialogRefcon = itemHit;
   return (true);
@@ -1176,7 +1176,7 @@ void JunkReassignKeys(bool switchem) {
  * JunkItemEnable - should the junk menu item be enabled?
  ************************************************************************/
 bool JunkItemsEnable(MyWindowPtr win, bool not) {
-  WindowPtr winWP = GetMyWindowWindowPtr(win);
+  GtkWidget * winWP = GetMyWindowWindowPtr(win);
   TOCType * tocH;
   short sumNum;
   FSSpec spec;

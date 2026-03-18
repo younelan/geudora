@@ -183,10 +183,7 @@ extern TOCType * TOCList;
 #define SetMyCursor(c)
 #define arrowCursor 0
 #define FlushEvents(a, b)
-#define mUpMask 0
-#define keyDownMask 0
 #define WNE(a, b, c) 0
-#define updateMask 0
 #define updateEvt 0
 #define mouseDown 0
 #define keyDown 0
@@ -276,20 +273,20 @@ int CleanHiddenCacheMailbox(TOCType * hidTocH);
  * CreateIMAPMailFolder - make the folder to store the IMAP cache in
  **********************************************************************/
 void CreateIMAPMailFolder(void) {
-  FSSpec spec;
+  char spec[PATH_MAX];
   char folder[64];
-  long junk;
+
   int err;
   bool isFolder, boolJunk;
 
   // create the IMAP Folder
   err = spec_for(Root.path,
-                     (const char *)GetRString(folder, IMAP_MAIL_FOLDER_NAME), &spec);
+                     (const char *)GetRString(folder, IMAP_MAIL_FOLDER_NAME), spec);
   if (err == ENOENT)
     err = (mkdir(spec, 0777) == 0) ? 0 : EIO;
 
   if (!err) {
-    err = ResolveAliasFile(&spec, 1, &isFolder, &boolJunk);
+    err = ResolveAliasFile(spec, 1, &isFolder, &boolJunk);
     if (!err && !folder)
       err = ENOENT;
   }
@@ -297,7 +294,7 @@ void CreateIMAPMailFolder(void) {
     DieWithError(IMAP_MAIL_FOLDER_NAME, err);
 
   IMAPMailRoot.vRef = 0;
-  IMAPMailRoot.dirId = SpecDirId(&spec);
+  IMAPMailRoot.dirId = SpecDirId(spec);
 
   // clean up the IMAP Cache folder, removing all unused personality caches
   CleanIMAPFolder();
@@ -473,7 +470,7 @@ int CreateNewPersCaches(void) {
   IMAPStreamPtr iStream = 0;
   PersHandle oldPers = CurPers;
   char cacheName[256];
-  FSSpec spec;
+  char spec[PATH_MAX];
 
   for (CurPers = PersList; CurPers && (err == 0);
        CurPers = CurPers->next) {
@@ -483,11 +480,11 @@ int CreateNewPersCaches(void) {
       PersNameToCacheName(CurPers, cacheName);
 
       err =
-          spec_for(IMAPMailRoot.path, (const char *)cacheName, &spec);
+          spec_for(IMAPMailRoot.path, (const char *)cacheName, spec);
       if (err == ENOENT) // it doesn't.
       {
         // create a cache folder for this personality
-        if (!CreateIMAPCacheMailbox(&spec, 1)) {
+        if (!CreateIMAPCacheMailbox(spec, 1)) {
           // rebuild the mailbox menus to reflect the change.
           BuildBoxMenus();
           MBTickle(0, 0);
@@ -507,26 +504,25 @@ int CreateNewPersCaches(void) {
  **********************************************************************/
 int UpdateLocalCache(bool progress) {
   int err = 0;
-  FSSpec spec, itemSpec;
+  char spec[PATH_MAX]; char itemSpec[PATH_MAX];
   char cacheName[64];
   char name[64];
-  long junk;
 
   // pick the name for the cache
   PersNameToCacheName(CurPers, cacheName);
 
   // see if the personality already has a cache
-  err = spec_for(IMAPMailRoot.path, (const char *)cacheName, &spec);
+  err = spec_for(IMAPMailRoot.path, (const char *)cacheName, spec);
   if (err == ENOENT) // create it if we need to
   {
-    if (!CreateIMAPCacheMailbox(&spec, 1))
+    if (!CreateIMAPCacheMailbox(spec, 1))
       err = 0;
   }
 
   // see if the personality has an attachment folder.
   if (err == 0) {
     err = spec_for(spec,
-                       (const char *)GetRString(name, IMAP_ATTACH_FOLDER), &itemSpec);
+                       (const char *)GetRString(name, IMAP_ATTACH_FOLDER), itemSpec);
     if (err == ENOENT) {
       err = (mkdir(itemSpec, 0777) == 0) ? 0 : EIO;
     }
@@ -534,7 +530,7 @@ int UpdateLocalCache(bool progress) {
 
   // now go update this personality's cache mailboxes.
   if (err == 0) {
-    err = UpdateLocalCacheMailboxes(&CurPers->mailboxTree, &spec, progress);
+    err = UpdateLocalCacheMailboxes(&CurPers->mailboxTree, spec, progress);
   }
 
   // make sure the first node in the mailboxtree points inside the cache folder
@@ -560,7 +556,7 @@ int UpdateLocalCacheMailboxes(MailboxNodeHandle *tree, char * inSpec,
                                 bool progress) {
   int err = 0;
   MailboxNodeHandle node, scan;
-  FSSpec spec;
+  char spec[PATH_MAX];
   char mName[64]; // this is the mailbox's actual name
   char pInbox[256], cInbox[256];
   char progressMessage[256];
@@ -579,7 +575,7 @@ int UpdateLocalCacheMailboxes(MailboxNodeHandle *tree, char * inSpec,
       PathToMailboxName(node->mailboxName, mName, node->delimiter);
 
       // create the folder if we have to
-      err = spec_for(inSpec, (const char *)mName, &spec);
+      err = spec_for(inSpec, (const char *)mName, spec);
 
       // display some periodic progress if we're going to create a new mailbox
       if (progress && err) {
@@ -598,7 +594,7 @@ int UpdateLocalCacheMailboxes(MailboxNodeHandle *tree, char * inSpec,
       //
 
       // if a folder with that name was found ...
-      if ((err == 0) && AFSpIsItAFolder(&spec)) {
+      if ((err == 0) && AFSpIsItAFolder(spec)) {
         // and the name of the mailbox is inbox ...
         if (StringSame(pInbox, mName)) {
 
@@ -616,7 +612,7 @@ int UpdateLocalCacheMailboxes(MailboxNodeHandle *tree, char * inSpec,
             // and there IS another (real) inbox ...
             if (scan && LocateInboxForPers(CurPers)) {
               // ... then give this second inbox a unique name
-              UniqueSpec(&spec, MAX_BOX_NAME);
+              UniqueSpec(spec, MAX_BOX_NAME);
               g_strlcpy((char *)mName, (char *)spec_name(spec), 64);
               err = ENOENT; // and create it.
             }
@@ -626,27 +622,27 @@ int UpdateLocalCacheMailboxes(MailboxNodeHandle *tree, char * inSpec,
       }
 
       // we found something, but it's not a folder
-      if ((err == 0) && (!AFSpIsItAFolder(&spec))) {
+      if ((err == 0) && (!AFSpIsItAFolder(spec))) {
         // then try again with a unique name
-        if ((err = UniqueSpec(&spec, MAX_BOX_NAME)) == 0) {
+        if ((err = UniqueSpec(spec, MAX_BOX_NAME)) == 0) {
           g_strlcpy((char *)mName, (char *)spec_name(spec), 64);
-          err = spec_for(inSpec, (const char *)mName, &spec);
+          err = spec_for(inSpec, (const char *)mName, spec);
         }
       }
 
       if (err != 0) {
         // create a folder for this mailbox
         if (err == ENOENT) {
-          if (!CreateIMAPCacheMailbox(&spec, 1))
+          if (!CreateIMAPCacheMailbox(spec, 1))
             err = 0;
         }
         // else
         // stop processing this level.
       } else {
         // Look inside the folder since it already exists
-        if ((SpecDirId(&spec)) != 0) {
+        if ((SpecDirId(spec)) != 0) {
           // Remove from this folder all things that aren't on the server
-          err = CleanCacheFolder(&spec, node->childList);
+          err = CleanCacheFolder(spec, node->childList);
         }
       }
 
@@ -660,20 +656,20 @@ int UpdateLocalCacheMailboxes(MailboxNodeHandle *tree, char * inSpec,
         //
 
         err = spec_for(spec, (const char *)mName,
-                           &(node->mailboxSpec));
+                           node->mailboxSpec);
         if (err == ENOENT)
-          if (!CreateIMAPCacheMailbox(&(node->mailboxSpec), 0))
+          if (!CreateIMAPCacheMailbox(node->mailboxSpec, 0))
             err = 0;
 
         // update the mailbox imap information
         if (err == 0) {
-          err = WriteIMAPMailboxInfo(&(node->mailboxSpec), node);
+          err = WriteIMAPMailboxInfo(node->mailboxSpec, node);
         }
       }
 
       // now do this mailbox's children
       if ((err == 0) && (node->childList)) {
-        err = UpdateLocalCacheMailboxes(&(node->childList), &spec, progress);
+        err = UpdateLocalCacheMailboxes(&(node->childList), spec, progress);
       }
     }
     node = node->next;
@@ -732,7 +728,7 @@ int CleanIMAPFolder(void) {
   char name[64];
   char cacheName[64];
   bool current = 0;
-  FSSpec toDelete;
+  char toDelete[PATH_MAX];
   char IMAPAttachFolderName[64];
 
   // only wipe outdated IMAP caches if we have multiple personalities ...
@@ -743,7 +739,7 @@ int CleanIMAPFolder(void) {
 
   PushPers(0);
 
-  hfi.hFileInfo.ioNamePtr = name;
+  hfi.hFileInfo.ioNamePtr = (unsigned char *)name;
   hfi.hFileInfo.ioFDirIndex = 0;
   while (!DirIterate(IMAPMailRoot.vRef, IMAPMailRoot.dirId, &hfi)) {
     err = 0; // clear the error condition
@@ -762,7 +758,7 @@ int CleanIMAPFolder(void) {
     }
     if (!current) {
       if ((err = spec_for(IMAPMailRoot.path, (const char *)name,
-                              &toDelete)) == 0) {
+                              toDelete)) == 0) {
         if ((err = RemoveIMAPCacheDir(toDelete)) == 0)
           hfi.hFileInfo.ioFDirIndex--;
       }
@@ -784,7 +780,7 @@ int CleanCacheFolder(char * folderToClean, MailboxNodeHandle treeToClean) {
   char name[64];
   char cacheName[64];
   bool current = 0;
-  FSSpec toDelete;
+  char toDelete[PATH_MAX];
   MailboxNodeHandle node;
 
   // make sure we have a folder to clean AND a tree to clean.
@@ -792,7 +788,7 @@ int CleanCacheFolder(char * folderToClean, MailboxNodeHandle treeToClean) {
   ASSERT(!(0 == Root.dirId));
 #endif
 
-  hfi.hFileInfo.ioNamePtr = name;
+  hfi.hFileInfo.ioNamePtr = (unsigned char *)name;
   hfi.hFileInfo.ioFDirIndex = 0;
   while (!DirIterate(0, 0, &hfi)) {
     current = 0;
@@ -812,7 +808,7 @@ int CleanCacheFolder(char * folderToClean, MailboxNodeHandle treeToClean) {
                      ioDirMask)) // this folder wasn't found to belong
     {
       if ((err = spec_for(folderToClean, (const char *)name,
-                              &toDelete)) == 0) {
+                              toDelete)) == 0) {
         if ((err = RemoveIMAPCacheDir(toDelete)) == 0) {
           hfi.hFileInfo.ioFDirIndex--;
         }
@@ -828,35 +824,27 @@ int CleanCacheFolder(char * folderToClean, MailboxNodeHandle treeToClean) {
  * RemoveIMAPCacheDir - iterate through an IMAP cache folder, trashing
  *	everything.
  **********************************************************************/
-int RemoveIMAPCacheDir(FSSpec toDelete) {
+int RemoveIMAPCacheDir(const char *dirPath) {
+  DIR *d = opendir(dirPath);
+  if (!d) return errno;
+
+  struct dirent *entry;
   int err = 0;
-  CInfoPBRec hfi;
-  char name[64];
-  FSSpec child;
-  long targetDir = SpecDirId(&toDelete);
-
-  if (targetDir) {
-    hfi.hFileInfo.ioNamePtr = name;
-    hfi.hFileInfo.ioFDirIndex = 0;
-    while (!DirIterate(0, targetDir, &hfi) && err == 0) {
-      // Process subdirectories
-      if (hfi.hFileInfo.ioFlAttrib & ioDirMask) {
-        spec_make(toDelete, (const char *)name, &child);
-        err = RemoveIMAPCacheDir(child);
-        if (!err)
-          hfi.hFileInfo.ioFDirIndex--; //	Don't skip next entry
-      }
-    }
-
-    if (err == 0) // delete the folder itself
-    {
-      err = RemoveDir(&toDelete);
-      if (err)
-        err = FSpTrash(&toDelete);
-    }
+  while ((entry = readdir(d)) != NULL && err == 0) {
+    if (strcmp(entry->d_name, ".") == 0 || strcmp(entry->d_name, "..") == 0)
+      continue;
+    char child[PATH_MAX];
+    snprintf(child, sizeof(child), "%s/%s", dirPath, entry->d_name);
+    struct stat st;
+    if (stat(child, &st) == 0 && S_ISDIR(st.st_mode))
+      err = RemoveIMAPCacheDir(child);
+    else
+      err = unlink(child) ? errno : 0;
   }
-
-  return (err);
+  closedir(d);
+  if (!err)
+    err = rmdir(dirPath) ? errno : 0;
+  return err;
 }
 
 /**********************************************************************
@@ -944,11 +932,10 @@ bool IsIMAPSubPers(char * spec) {
  * PersNameToCacheName - given a personality, figure out the name of its
  *	imap cache folder.
  ***************************************************************************/
-void PersNameToCacheName(PersHandle pers, unsigned char * cacheName) {
+void PersNameToCacheName(PersHandle pers, char *cacheName) {
   unsigned char *spot;
-  char state = 0 /* HGetState removed */;
 
-  g_strlcpy((char *)cacheName, (char *)spec_name(pers), 32);
+  g_strlcpy((char *)cacheName, (char *)pers->name, 32);
   for (spot = cacheName; *spot; spot++)
     if (*spot == ':')
       *spot = '-';
@@ -960,8 +947,7 @@ void PersNameToCacheName(PersHandle pers, unsigned char * cacheName) {
 int WriteIMAPMailboxInfo(char * spec, MailboxNodeHandle node) {
   int err = 0;
   short refN = -1;
-  long count = 0;
-  short oldResFile = 0;
+
   void *resource = 0;
   size_t resource_sz = 0;
 
@@ -1049,7 +1035,7 @@ int WriteIMAPMailboxInfo(char * spec, MailboxNodeHandle node) {
 int UpdateIMAPMailboxInfo(TOCType * tocH) {
   int err = 0;
   MailboxNodeHandle node = 0;
-  FSSpec cacheSpec;
+  char cacheSpec[PATH_MAX];
 
   // must be an IMAP mailbox
   if (!tocH->imapTOC)
@@ -1061,7 +1047,7 @@ int UpdateIMAPMailboxInfo(TOCType * tocH) {
   node = TOCToMbox(tocH);
   if (node) {
     // save the info
-    err = WriteIMAPMailboxInfo(&cacheSpec, node);
+    err = WriteIMAPMailboxInfo(cacheSpec, node);
   }
 
   return (err);
@@ -1115,10 +1101,10 @@ MailboxNodeHandle RebuildPersIMAPMailboxTree(PersHandle pers) {
   if (err == 0) {
     // make sure the first node in the mailboxtree points inside the cache
     // folder itself.
-    (void)SpecDirId(&(tree->mailboxSpec));
+    (void)SpecDirId(tree->mailboxSpec);
 
     // rebuild the tree by reading through the cache.
-    err = RebuildIMAPMailboxTree(&(tree->mailboxSpec), pers, &tree,
+    err = RebuildIMAPMailboxTree(tree->mailboxSpec, pers, &tree,
                                  &bHasQueuedCommands);
   }
 
@@ -1139,12 +1125,12 @@ int RebuildIMAPMailboxTree(char * dir, PersHandle pers,
   int err = 0;
   CInfoPBRec hfi;
   char name[64], attachDirName[64];
-  FSSpec mboxFile, mboxFolder;
+  char mboxFile[PATH_MAX]; char mboxFolder[PATH_MAX];
   MailboxNodeHandle node;
 
   GetRString(attachDirName, IMAP_ATTACH_FOLDER);
 
-  hfi.hFileInfo.ioNamePtr = name;
+  hfi.hFileInfo.ioNamePtr = (unsigned char *)name;
   hfi.hFileInfo.ioFDirIndex = 0;
   while (!DirIterate(0, 0, &hfi)) {
     if (hfi.hFileInfo.ioFlAttrib & ioDirMask) // this is a directory
@@ -1154,13 +1140,13 @@ int RebuildIMAPMailboxTree(char * dir, PersHandle pers,
       {
         // it must be an imap mailbox.  Create an imap node from the file within
         // this folder
-        spec_make(dir, (const char *)name, &mboxFolder);
-        err = spec_for(mboxFolder, (const char *)name, &mboxFile);
+        spec_make(dir, (const char *)name, mboxFolder);
+        err = spec_for(mboxFolder, (const char *)name, mboxFile);
         if (err == 0) {
           // read in the mailbox info from the mailbox file
           node = g_malloc0(sizeof(MailboxNode));
           if (node) {
-            err = ReadIMAPMailboxInfo(&mboxFile, node);
+            err = ReadIMAPMailboxInfo(mboxFile, node);
             if (err == 0) {
               // attach the right personality to it
               node->persId = pers->persId;
@@ -1173,7 +1159,7 @@ int RebuildIMAPMailboxTree(char * dir, PersHandle pers,
                 *bHasQueuedCommands = 1;
 
               // and process any subfolders of this mailbox
-              RebuildIMAPMailboxTree(&mboxFile, pers, &(node->childList),
+              RebuildIMAPMailboxTree(mboxFile, pers, &(node->childList),
                                      bHasQueuedCommands);
             }
           } else
@@ -1195,7 +1181,7 @@ int RebuildIMAPMailboxTree(char * dir, PersHandle pers,
 int ReadIMAPMailboxInfo(char * spec, MailboxNodeHandle node) {
   int err = 0;
   short refN = -1;
-  short oldResFile = 0;
+
   void *resource = 0;
   size_t resource_sz = 0;
   char *mailboxName = 0;
@@ -1268,7 +1254,7 @@ int CreateLocalCache(void) {
   // Nothing to do if this isn't an IMAP personality
   if (PrefIsSet(PREF_IS_IMAP)) {
     // create a new imap stream.
-    if (iStream = GetIMAPConnection(UndefinedTask, 0)) {
+    if ((iStream = GetIMAPConnection(UndefinedTask, 0))) {
       if (progress)
         PROGRESS_MESSAGER(kpSubTitle, IMAP_MAILBOX_LIST_FETCH_GENERAL);
 
@@ -1356,7 +1342,7 @@ void DisposeMailboxTree(MailboxNodeHandle *tree) {
   // Kill the cache in LocateNodeBySpecInAllPersTrees
   (void)LocateNodeBySpecInAllPersTrees(0, 0, 0);
 
-  while (node = *tree) {
+  while ((node = *tree)) {
     LL_Remove(*tree, node, (MailboxNodeHandle));
     if (node->childList)
       DisposeMailboxTree(&(node->childList));
@@ -1380,14 +1366,14 @@ void ZapMailboxNode(MailboxNodeHandle *node) {
 }
 
 /***************************************************************************
- * LocateNodeBySpecInAllPersTrees - given an FSSpec, locate the node in
+ * LocateNodeBySpecInAllPersTrees - given a path, locate the node in
  *	all the personality trees with the same fsspec in them.
  ***************************************************************************/
 void LocateNodeBySpecInAllPersTrees(char * spec, MailboxNodeHandle *node,
                                     PersHandle *pers) {
   MailboxNodeHandle tree = 0;
   static MailboxNodeHandle oldNode;
-  static FSSpec oldSpec;
+  static char oldSpec[PATH_MAX];
   static PersHandle oldPers;
 
   // cache flush?
@@ -1405,7 +1391,7 @@ void LocateNodeBySpecInAllPersTrees(char * spec, MailboxNodeHandle *node,
   if (!PersList) return;
 
   // Is it in the cache?
-  if (!InAThread() && SameSpec(spec, &oldSpec)) {
+  if (!InAThread() && SameSpec(spec, oldSpec)) {
     *node = oldNode;
     *pers = oldPers;
     return;
@@ -1431,7 +1417,7 @@ void LocateNodeBySpecInAllPersTrees(char * spec, MailboxNodeHandle *node,
 }
 
 /***************************************************************************
- * LocateNodeBySpec - given an FSSpec, locate the node in the tree
+ * LocateNodeBySpec - given a path, locate the node in the tree
  ***************************************************************************/
 MailboxNodeHandle LocateNodeBySpec(MailboxNodeHandle tree, char * spec) {
   MailboxNodeHandle node = 0;
@@ -1439,7 +1425,7 @@ MailboxNodeHandle LocateNodeBySpec(MailboxNodeHandle tree, char * spec) {
   while (tree) {
     // is this the node we're looking for?
     LockMailboxNodeHandle(tree);
-    if (SameSpec(&(tree->mailboxSpec), spec)) {
+    if (SameSpec(tree->mailboxSpec, spec)) {
       node = tree;
       UnlockMailboxNodeHandle(tree);
       break;
@@ -1466,13 +1452,12 @@ MailboxNodeHandle LocateNodeBySpec(MailboxNodeHandle tree, char * spec) {
  ***************************************************************************/
 void LocateNodeByVDInAllPersTrees(short vRef, long dirId,
                                   MailboxNodeHandle *node, PersHandle *pers) {
-  char state;
 
   *node = 0;
   *pers = 0;
 
   for (*pers = PersList; *pers; *pers = (*pers)->next) {
-    state = 0; /* HGetState removed */
+    char state = 0;
     if ((*node = LocateNodeByVD((*pers)->mailboxTree, vRef, dirId)))
       break;
   }
@@ -1621,7 +1606,7 @@ int ReadIMAPMailboxAttributes(char * spec, long *attributes) {
 bool ReallyIsIMAPMailbox(char * spec) {
   int err = 0;
   short refN = -1;
-  short oldResFile = 0;
+
   short numResources = 0;
 
   // open the mailbox file for reading
@@ -1649,7 +1634,7 @@ bool MailboxAttributes(char * spec, IMAPMailboxAttributesPtr attributes) {
 
   LocateNodeBySpecInAllPersTrees(spec, &node, &pers);
 
-  if (node && !(node->attributes && LATT_ROOT)) {
+  if (node && !(node->attributes & LATT_ROOT)) {
     result = 1; // this was an IMAP mailbox
     attributes->noSelect = (node->attributes & LATT_NOSELECT);
     attributes->noInferiors = (node->attributes & LATT_NOINFERIORS);
@@ -1683,13 +1668,13 @@ bool IsIMAPMailboxFileLo(char * spec, MailboxNodeHandle *node) {
   LocateNodeBySpecInAllPersTrees(spec, node, &pers);
 
   if (*node == 0) {
-    FSSpec s; g_strlcpy(s, spec, sizeof(s));
+    char s[PATH_MAX]; g_strlcpy(s, spec, sizeof(s));
 
     // this might be a hidden toc file.  Find the mailbox file it belongs to
-    GetRealIMAPSpec(spec, &s); /* result goes to node */
+    GetRealIMAPSpec(spec, s); /* result goes to node */
   }
 
-  return ((*node != 0) && !((*node)->attributes && LATT_ROOT));
+  return ((*node != 0) && !((*node)->attributes & LATT_ROOT));
 }
 
 /***************************************************************************
@@ -1697,7 +1682,7 @@ bool IsIMAPMailboxFileLo(char * spec, MailboxNodeHandle *node) {
  *	Reads from IMAP mailbox tree.
  ***************************************************************************/
 bool IsIMAPCacheFolder(char * spec) {
-  FSSpec internalMailboxFileSpec;
+  char internalMailboxFileSpec[PATH_MAX];
   MailboxNodeHandle node = 0;
   PersHandle pers = 0;
   CInfoPBRec cinfo;
@@ -1708,8 +1693,8 @@ bool IsIMAPCacheFolder(char * spec) {
     return 0;
 
   spec_make(spec, (const char *)spec_name(spec),
-                   &internalMailboxFileSpec);
-  LocateNodeBySpecInAllPersTrees(&internalMailboxFileSpec, &node, &pers);
+                   internalMailboxFileSpec);
+  LocateNodeBySpecInAllPersTrees(internalMailboxFileSpec, &node, &pers);
 
   return (node != 0);
 }
@@ -1768,7 +1753,7 @@ bool IMAPAddMailbox(char * spec, bool folder, bool *success, bool silent) {
 
     // Set up to connect to the server
     CurPers = pers;
-    if (imapStream = GetIMAPConnection(UndefinedTask, CAN_PROGRESS)) {
+    if ((imapStream = GetIMAPConnection(UndefinedTask, CAN_PROGRESS))) {
       // we're going to need a delimiter if we're creating a folder or a
       // sub-mailbox.
       if (folder || node->mailboxName)
@@ -1785,7 +1770,7 @@ bool IMAPAddMailbox(char * spec, bool folder, bool *success, bool silent) {
         // create the mailbox on the server
         //
 
-        if (result = CreateIMAPMailbox(imapStream, newMailboxName)) {
+        if ((result = CreateIMAPMailbox(imapStream, newMailboxName))) {
           // fetch the attributes of the new mailbox to see if it exists
           result = FetchMailboxAttributes(imapStream, newMailboxName);
           if (result && (imapStream->mailStream->fListResultsHandle == 0)) {
@@ -1956,7 +1941,7 @@ bool IMAPDeleteMailbox(char * toDelete) {
     //
 
     CurPers = pers;
-    if (imapStream = GetIMAPConnection(UndefinedTask, CAN_PROGRESS)) {
+    if ((imapStream = GetIMAPConnection(UndefinedTask, CAN_PROGRESS))) {
       result = DeleteIMAPMailboxNode(imapStream, node);
       if (result) {
         //
@@ -2065,7 +2050,7 @@ long IMAPMailboxMessageCount(char * mailboxSpec, bool check) {
           if (!Offline || check) {
             // nor is it empty if the mailbox on the server claims it's not
             // empty
-            if (imapStream = GetIMAPConnection(UndefinedTask, CAN_PROGRESS)) {
+            if ((imapStream = GetIMAPConnection(UndefinedTask, CAN_PROGRESS))) {
               LockMailboxNodeHandle(node);
               // get the number of messages using the STATUS command
               if (FetchMailboxStatus(imapStream, node->mailboxName, flags)) {
@@ -2139,7 +2124,7 @@ bool FetchDelimiter(IMAPStreamPtr imapStream, MailboxNodeHandle node) {
     }
   }
   UnlockMailboxNodeHandle(node);
-  (node);
+
   return (result);
 }
 
@@ -2326,7 +2311,7 @@ bool IMAPRenameMailbox(char * cacheFolderSpec, unsigned char * name) {
   PersHandle oldPers = CurPers;
   int err = 0;
   char newName[MAILTMPLEN + 4];
-  FSSpec cacheFileSpec, newSpec;
+  char cacheFileSpec[PATH_MAX]; char newSpec[PATH_MAX];
   char newCacheName[64];
   TOCType * tocH = 0;
 
@@ -2336,8 +2321,8 @@ bool IMAPRenameMailbox(char * cacheFolderSpec, unsigned char * name) {
 
   // figure out who this mailbox belongs to
   spec_make(cacheFolderSpec, (const char *)spec_name(cacheFolderSpec),
-                   &cacheFileSpec);
-  LocateNodeBySpecInAllPersTrees(&cacheFileSpec, &node, &pers);
+                   cacheFileSpec);
+  LocateNodeBySpecInAllPersTrees(cacheFileSpec, &node, &pers);
 
   // figure out the new name of the mailbox
   if ((pers != 0) && (node != 0)) {
@@ -2360,7 +2345,7 @@ bool IMAPRenameMailbox(char * cacheFolderSpec, unsigned char * name) {
         // tell the filters we're about to rename a mailbox
         g_strlcpy(newSpec, cacheFileSpec, sizeof(newSpec));
         g_strlcpy((char *)spec_name(newSpec), (char *)newCacheName, 64);
-        TellFiltMBRename(&cacheFileSpec, &newSpec, 0, 1, 0);
+        TellFiltMBRename(cacheFileSpec, newSpec, 0, 1, 0);
 
         // Set up connection to the server
         CurPers = pers;
@@ -2397,7 +2382,7 @@ bool IMAPRenameMailbox(char * cacheFolderSpec, unsigned char * name) {
             CleanupConnection(&imapStream);
 
             // tell the filters about the renamed mailbox
-            TellFiltMBRename(&cacheFileSpec, &newSpec, 0, 0, 0);
+            TellFiltMBRename(cacheFileSpec, newSpec, 0, 0, 0);
 
             //
             // update the local cache
@@ -2447,7 +2432,7 @@ bool IMAPMoveMailbox(char * fromFolderSpec, char * toSpec,
   PersHandle oldPers = CurPers;
   int err = 0;
   char *newMailboxName = 0;
-  FSSpec fromSpec, newSpec;
+  char fromSpec[PATH_MAX]; char newSpec[PATH_MAX];
 
   // make sure we have an old name and a new name
   if (!fromFolderSpec || !toSpec)
@@ -2462,13 +2447,13 @@ bool IMAPMoveMailbox(char * fromFolderSpec, char * toSpec,
   {
     char pdir[1024];
     spec_parent(fromFolderSpec, pdir, sizeof(pdir));
-    spec_make(pdir, (const char *)spec_name(fromFolderSpec), &fromSpec);
+    spec_make(pdir, (const char *)spec_name(fromFolderSpec), fromSpec);
   }
 
   // figure out who the mailboxes belong to
   LocateNodeBySpecInAllPersTrees(toSpec, &toNode, &toPers);
   if (toNode && toPers) {
-    LocateNodeBySpecInAllPersTrees(&fromSpec, &fromNode, &fromPers);
+    LocateNodeBySpecInAllPersTrees(fromSpec, &fromNode, &fromPers);
     if (fromNode && fromPers) {
       // Currently only support moving mailboxes on the same server
       if (fromPers == toPers) {
@@ -2486,16 +2471,16 @@ bool IMAPMoveMailbox(char * fromFolderSpec, char * toSpec,
 
         CurPers = toPers;
         // the new mailbox name will be the destination plus the source name
-        if (BuildIMAPMailboxName(toNode, &fromSpec,
+        if (BuildIMAPMailboxName(toNode, fromSpec,
                                  (fromNode->childList != 0),
                                  &newMailboxName) == 0) {
           // Set up connection to the server
-          if (imapStream = GetIMAPConnection(UndefinedTask, CAN_PROGRESS)) {
+          if ((imapStream = GetIMAPConnection(UndefinedTask, CAN_PROGRESS))) {
             if ((result =
                      RenameIMAPMailbox(imapStream, fromNode->mailboxName,
                                        newMailboxName)) == 1) {
               // tell the filters we're about to move a mailbox
-              TellFiltMBRename(&fromSpec, &fromSpec, 0, 1, 0);
+              TellFiltMBRename(fromSpec, fromSpec, 0, 1, 0);
 
               // try to move the cache folder so we won't have to redownload
               // everything
@@ -2512,7 +2497,7 @@ bool IMAPMoveMailbox(char * fromFolderSpec, char * toSpec,
               g_strlcpy((char *)spec_name(newSpec), (char *)spec_name(fromSpec), 256);
 
               // and tell the filters about the renamed mailbox
-              TellFiltMBRename(&fromSpec, &newSpec, 0, 0, *dontWarn);
+              TellFiltMBRename(fromSpec, newSpec, 0, 0, *dontWarn);
 
               // and don't warn again.
               *dontWarn = 1;
@@ -2562,7 +2547,7 @@ char *NewIMAPMailboxName(MailboxNodeHandle node, unsigned char * name, char *new
     newName[strlen(newName) - 1] = 0;
   // chop off everything up until the last delimiter
   while ((scan = &newName[strlen(newName) - 1])) {
-    if ((*scan != node->delimiter) & scan >= newName)
+    if ((*scan != node->delimiter) && (scan >= newName))
       *scan = 0;
     else
       break;
@@ -2597,11 +2582,10 @@ MailboxNodeHandle GetSpecialMailbox(PersHandle pers, bool createIfNeeded,
                                     bool silent, long mboxAtt) {
   MailboxNodeHandle specialMBox = 0;
   PersHandle oldPers = CurPers;
-  char state;
 
   // locate the mailbox flagged as the trash mailbox.
   CurPers = pers;
-  state = 0 /* HGetState removed */;
+
   if ((specialMBox = LocateSpecialMailbox(CurPers->mailboxTree, mboxAtt)) ==
       0) {
     // node was found.  Try and create it if we were asked to
@@ -2630,11 +2614,9 @@ MailboxNodeHandle GetSpecialMailbox(PersHandle pers, bool createIfNeeded,
 void ResetSpecialMailbox(PersHandle pers, long mboxAtt) {
   MailboxNodeHandle specialMBox = 0;
   PersHandle oldPers = CurPers;
-  char state;
 
   // locate the mailbox flagged as the trash mailbox.
   CurPers = pers;
-  state = 0 /* HGetState removed */;
 
   while ((specialMBox =
               LocateSpecialMailbox(CurPers->mailboxTree, mboxAtt)) != 0)
@@ -2681,11 +2663,11 @@ MailboxNodeHandle LocateSpecialMailbox(MailboxNodeHandle tree, long mboxAtt) {
 MailboxNodeHandle CreateSpecialMailbox(bool tryCreate, long mboxAtt) {
   MailboxNodeHandle specialMbox = 0;
   MailboxNodeHandle inbox = 0;
-  FSSpec specialSpec;
+  char specialSpec[PATH_MAX];
   char specialMailboxName[256], scratch[256];
   int err = 0;
   bool created = 0;
-  char state;
+
   long reuseWarning, chooseMessage, selectMessage;
 
   // Don't do this if the user knows better.  Yeah right.
@@ -2718,14 +2700,14 @@ MailboxNodeHandle CreateSpecialMailbox(bool tryCreate, long mboxAtt) {
       // try to create the special mailbox at the same level as the inbox
       PersNameToCacheName(CurPers, scratch);
       err = spec_for(IMAPMailRoot.path,
-                         (const char *)scratch, &specialSpec);
+                         (const char *)scratch, specialSpec);
       if (err == 0) {
 
         g_strlcpy((char *)spec_name(specialSpec), (char *)specialMailboxName, 256);
-        IMAPAddMailbox(&specialSpec, 0, &created, 1);
+        IMAPAddMailbox(specialSpec, 0, &created, 1);
         if (created) {
           // locate the special mailbox we just created.
-          state = 0 /* HGetState removed */;
+
           specialMbox = LocateNodeByMailboxName(CurPers->mailboxTree,
                                                 (char *)specialMailboxName + 1);
         }
@@ -2737,7 +2719,7 @@ MailboxNodeHandle CreateSpecialMailbox(bool tryCreate, long mboxAtt) {
   // level
   if (!specialMbox) {
     // find the special mailbox
-    state = 0 /* HGetState removed */;
+
     specialMbox = LocateNodeByMailboxName(CurPers->mailboxTree,
                                           (char *)specialMailboxName + 1);
 
@@ -2745,7 +2727,7 @@ MailboxNodeHandle CreateSpecialMailbox(bool tryCreate, long mboxAtt) {
     if (specialMbox) {
       // warn the user about using it
       if (ComposeStdAlert(Note, reuseWarning, specialMailboxName,
-                          spec_name(CurPers)) == 2)
+                          CurPers->name) == 2)
         specialMbox = 0;
     }
   }
@@ -2753,14 +2735,14 @@ MailboxNodeHandle CreateSpecialMailbox(bool tryCreate, long mboxAtt) {
   // Still no special mailbox.  Have the user pick one from the menus, unless
   // we've failed before.
   if (!specialMbox) {
-    if (ChooseSpecialMailbox(CurPers, chooseMessage, &specialSpec)) {
-      state = 0 /* HGetState removed */;
-      specialMbox = LocateNodeBySpec(CurPers->mailboxTree, &specialSpec);
+    if (ChooseSpecialMailbox(CurPers, chooseMessage, specialSpec)) {
+
+      specialMbox = LocateNodeBySpec(CurPers->mailboxTree, specialSpec);
 
       // Make sure the user really wants to use this mailbox as the special
       // mailbox.
       if (specialMbox && (ComposeStdAlert(Note, selectMessage, spec_name(specialSpec),
-                                          spec_name(CurPers)) == 2))
+                                          CurPers->name) == 2))
         specialMbox = 0;
     }
   }
@@ -2770,7 +2752,7 @@ MailboxNodeHandle CreateSpecialMailbox(bool tryCreate, long mboxAtt) {
   if (specialMbox) {
     specialMbox->attributes |= mboxAtt;
     LockMailboxNodeHandle(specialMbox);
-    err = WriteIMAPMailboxInfo(&(specialMbox->mailboxSpec), specialMbox);
+    err = WriteIMAPMailboxInfo(specialMbox->mailboxSpec, specialMbox);
     UnlockMailboxNodeHandle(specialMbox);
   }
 
@@ -2836,7 +2818,7 @@ bool IMAPEmptyTrash(bool localOnly, bool currentOnly, bool all) {
     // empty current trash mailbox only
     //
 
-    WindowPtr winWP = MyFrontWindow();
+    GtkWidget * winWP = MyFrontWindow();
     MyWindowPtr win = GetWindowMyWindowPtr(winWP);
     short kind = winWP ? GetWindowKind(winWP) : 0;
     TOCType * tocH = 0;
@@ -2884,7 +2866,7 @@ short IMAPCountTrashMessages(bool localOnly, bool currentOnly, bool all) {
   MailboxNodeHandle trash = 0;
   TOCType * tocH = 0;
   PersHandle pers;
-  FSSpec mailboxSpec;
+  char mailboxSpec[PATH_MAX];
 
   if (!localOnly) {
     // We are checking remote IMAP mailboxes for messages, at least.  We must be
@@ -2897,7 +2879,7 @@ short IMAPCountTrashMessages(bool localOnly, bool currentOnly, bool all) {
       // Only Current trash mailbox
       //
 
-      WindowPtr winWP = MyFrontWindow();
+      GtkWidget * winWP = MyFrontWindow();
       MyWindowPtr win = GetWindowMyWindowPtr(winWP);
       short kind = winWP ? GetWindowKind(winWP) : 0;
       TOCType * tocH = 0;
@@ -2916,11 +2898,11 @@ short IMAPCountTrashMessages(bool localOnly, bool currentOnly, bool all) {
           if (trash) {
             // see how many messages are in the trash
             LockMailboxNodeHandle(trash);
-            trashToc = TOCBySpec(&(trash->mailboxSpec));
+            trashToc = TOCBySpec(trash->mailboxSpec);
             UnlockMailboxNodeHandle(trash);
             if (trashToc) {
               GetMailboxSpec(trashToc, -1, mailboxSpec);
-              totalFound += IMAPMailboxMessageCount(&mailboxSpec, 1);
+              totalFound += IMAPMailboxMessageCount(mailboxSpec, 1);
             }
           }
         }
@@ -2937,11 +2919,11 @@ short IMAPCountTrashMessages(bool localOnly, bool currentOnly, bool all) {
             trash = GetIMAPTrashMailbox(pers, 0, 1);
             if (trash) {
               LockMailboxNodeHandle(trash);
-              tocH = TOCBySpec(&(trash->mailboxSpec));
+              tocH = TOCBySpec(trash->mailboxSpec);
               UnlockMailboxNodeHandle(trash);
               if (tocH) {
                 GetMailboxSpec(tocH, -1, mailboxSpec);
-                totalFound += IMAPMailboxMessageCount(&mailboxSpec, 1);
+                totalFound += IMAPMailboxMessageCount(mailboxSpec, 1);
               }
             }
           }
@@ -2957,8 +2939,8 @@ short IMAPCountTrashMessages(bool localOnly, bool currentOnly, bool all) {
  ************************************************************************/
 bool ChooseSpecialMailbox(PersHandle pers, short msg, char * specialSpec) {
   short mId;
-  WindowPtr theWindow;
-  EventRecord event;
+  GtkWidget * theWindow;
+  /* EventRecord removed */
   MyWindowPtr dgPtrWin;
   DialogPtr dgPtr;
   bool rslt = 0;
@@ -2987,8 +2969,8 @@ bool ChooseSpecialMailbox(PersHandle pers, short msg, char * specialSpec) {
   // disable all the items in the Mailbox menu except for the personality cache
   for (count = 1; count <= CountMenuItems(mh); count++) {
     MyGetItem(mh, count, itemText);
-    EnableIf(mh, count, StringSame(spec_name(pers), (char *)itemText));
-    if (StringSame(spec_name(pers), (char *)itemText)) {
+    EnableIf(mh, count, StringSame(pers->name, (char *)itemText));
+    if (StringSame(pers->name, (char *)itemText)) {
       // disable the Inbox item within the personality cache, unless it has
       // children
       GetRString((char *)inboxStr, IMAP_INBOX_NAME);
@@ -3020,25 +3002,14 @@ bool ChooseSpecialMailbox(PersHandle pers, short msg, char * specialSpec) {
 
   // Forget about any clicking that was done to get here.
   // We may be doing this immediately after a drag, for example.
-  FlushEvents(mDownMask | mUpMask | keyDownMask, 0);
-
   //
   //  now, let the user choose something:
   //
 
-  for (;;) {
-    if (WNE(mDownMask | keyDownMask | updateMask, &event, REAL_BIG)) {
-      if (event.what == updateEvt)
-        MiniMainLoop(&event);
-      //	Check for mouseDown and keyDown events. WNE in OS X
-      //	is currently return more than what's in the event mask.
-      else if (event.what == mouseDown || event.what == keyDown)
-        break;
-    }
-  }
-  if (event.what == mouseDown) {
-    if (inMenuBar == FindWindow_(event.where, &theWindow)) {
-      long mSelect = MenuSelect(event.where);
+  /* Mac WNE event loop removed — GTK handles events natively */
+  {
+    if (inMenuBar == FindWindow_(((Point){0, 0}), &theWindow)) {
+      long mSelect = MenuSelect(((Point){0, 0}));
       short mnu, itm;
 
       mnu = (mSelect >> 16) & 0xffff;
@@ -3054,7 +3025,7 @@ bool ChooseSpecialMailbox(PersHandle pers, short msg, char * specialSpec) {
   for (count = 1; count <= CountMenuItems(mh); count++) {
     MyGetItem(mh, count, itemText);
     EnableIf(mh, count, 1);
-    if (StringSame(spec_name(pers), (char *)itemText)) {
+    if (StringSame(pers->name, (char *)itemText)) {
       // re-enable the Inbox item within the personality cache
       if ((submId = SubmenuId(mh, count))) {
         if ((submh = GetMHandle(submId))) {
@@ -3118,26 +3089,26 @@ bool MailboxTreeGood(PersHandle pers) {
  ************************************************************************/
 int GetIMAPAttachFolder(char * attachSpec) {
   int err = 0;
-  FSSpec spec, attachFolderSpec, imapStubSpec;
+  char spec[PATH_MAX]; char attachFolderSpec[PATH_MAX]; char imapStubSpec[PATH_MAX];
   char cacheName[256], name[256];
 
   PersNameToCacheName(CurPers, cacheName);
 
   // if the stub folder and attachment folder is on the same drive, use the IMAP
   // Attachments folder in the IMAP cache directory
-  GetAttFolderSpec(&attachFolderSpec);
+  GetAttFolderSpec(attachFolderSpec);
   if (0 == IMAPMailRoot.vRef) {
     if ((err = spec_for(IMAPMailRoot.path,
-                            (const char *)cacheName, &spec)) == 0) {
+                            (const char *)cacheName, spec)) == 0) {
       if ((err = spec_for(spec,
                               (const char *)GetRString((char *)name, IMAP_ATTACH_FOLDER),
-                              &spec)) == 0) {
+                              spec)) == 0) {
 
       }
     }
   } else {
     // otherwise, make sure there's a stub directory in the attachment folder
-    if ((err = EnsureIMAPCacheFolders(&attachFolderSpec, &imapStubSpec)) ==
+    if ((err = EnsureIMAPCacheFolders(attachFolderSpec, imapStubSpec)) ==
         0) {
       // and use the stub folder on the other volume
 
@@ -3155,8 +3126,7 @@ int EnsureIMAPCacheFolders(char * attach, char * imapAttach) {
   int err = 0;
   char name[256], cacheName[256];
   PersHandle oldPers = CurPers;
-  FSSpec spec, persSpec, stubSpec;
-  long junk;
+  char spec[PATH_MAX]; char persSpec[PATH_MAX]; char stubSpec[PATH_MAX];
 
   //
   // create a folder inside the attach folder to enclose the personality caches
@@ -3166,7 +3136,7 @@ int EnsureIMAPCacheFolders(char * attach, char * imapAttach) {
     char pdir[1024];
     spec_parent(attach, pdir, sizeof(pdir));
     err = spec_for(pdir,
-                     (const char *)GetRString((char *)name, IMAP_SAFE_ATTACH_FOLDER), &spec);
+                     (const char *)GetRString((char *)name, IMAP_SAFE_ATTACH_FOLDER), spec);
   }
   if (err == ENOENT) {
     // create a folder for all the personality caches
@@ -3187,7 +3157,7 @@ int EnsureIMAPCacheFolders(char * attach, char * imapAttach) {
         PersNameToCacheName(CurPers, cacheName);
 
         err = spec_for(spec, (const char *)cacheName,
-                           &persSpec);
+                           persSpec);
         if (err == ENOENT) // it doesn't.
         {
           // create a cache folder for this personality
@@ -3198,7 +3168,7 @@ int EnsureIMAPCacheFolders(char * attach, char * imapAttach) {
           // create an IMAP Attachments folder inside this folder
           err = spec_for(persSpec,
                              (const char *)GetRString((char *)name, IMAP_ATTACH_FOLDER),
-                             &stubSpec);
+                             stubSpec);
           if (err == ENOENT)
             err = (mkdir(stubSpec, 0777) == 0) ? 0 : EIO;
 
@@ -3362,7 +3332,7 @@ void IMAPCloseChildMailboxes(char * spec) {
   MailboxNodeHandle node;
   PersHandle pers;
   TOCType *tocH, *nextTocH;
-  FSSpec tocSpec;
+  char tocSpec[PATH_MAX];
 
   // does this mailbox have children?
   LocateNodeBySpecInAllPersTrees(spec, &node, &pers);
@@ -3373,7 +3343,7 @@ void IMAPCloseChildMailboxes(char * spec) {
 
       // should we close this toc?
       g_strlcpy(tocSpec, tocH->mailbox.spec, sizeof(tocSpec));
-      if (LocateNodeBySpec(node->childList, &tocSpec)) {
+      if (LocateNodeBySpec(node->childList, tocSpec)) {
         // close the IMAP mailbox, skip any final processing
         CloseIMAPMailboxImmediately(tocH, 0);
       }
@@ -3424,14 +3394,14 @@ void CloseIMAPMailboxImmediately(TOCType * tocH, bool bHiddenToo) {
 bool IMAPMailboxHasUnread(TOCType * tocH, bool itDoesNow) {
   int err = 0;
   CInfoPBRec mailboxFileInfo;
-  FSSpec boxSpec; g_strlcpy(boxSpec, tocH->mailbox.spec, sizeof(boxSpec));
-  short myMenu;
+  char boxSpec[PATH_MAX]; g_strlcpy(boxSpec, tocH->mailbox.spec, sizeof(boxSpec));
+
   short myItem;
   Style oldStyle;
   bool alreadyHadUnread = 0;
 
   myItem = 0;
-  Spec2Menu(&boxSpec, 0, &myMenu, &myItem);
+  Spec2Menu(boxSpec, 0, &myMenu, &myItem);
 
   // is the mailbox in the menus?
   if (myItem > 0) {
@@ -3508,12 +3478,12 @@ void AttachOpenTocsToIMAPMailboxTrees(void) {
   TOCType * tocH;
   PersHandle pers;
   MailboxNodeHandle mbox;
-  FSSpec mboxSpec;
+  char mboxSpec[PATH_MAX];
 
   for (tocH = TOCList; tocH; tocH = (TOCType *)tocH->next) {
     if (tocH->imapTOC) {
       g_strlcpy(mboxSpec, tocH->mailbox.spec, sizeof(mboxSpec));
-      LocateNodeBySpecInAllPersTrees(&mboxSpec, &mbox, &pers);
+      LocateNodeBySpecInAllPersTrees(mboxSpec, &mbox, &pers);
       tocH->imapMBH = mbox;
     }
   }
@@ -3575,7 +3545,7 @@ bool IMAPMailboxTitle(TOCType * tocH, char title[256]) {
     pers = TOCToPers(tocH);
     if (mbox && pers && (pers != PersList)) {
       ComposeRString(title, IMAP_MAILBOXTITLE_FMT, spec_name(tocH->mailbox.spec),
-                     spec_name(pers));
+                     pers->name);
       return (1);
     }
   }
@@ -3598,7 +3568,7 @@ bool IMAPMailboxExists(char mailboxName[256]) {
   memmove(cName, mailboxName + 1, mailboxName[0]);
 
   // Set up to connect to the server
-  if (imapStream = GetIMAPConnection(UndefinedTask, CAN_PROGRESS)) {
+  if ((imapStream = GetIMAPConnection(UndefinedTask, CAN_PROGRESS))) {
     // fetch the attributes of the new mailbox to see if it exists
     if (FetchMailboxAttributes(imapStream, cName)) {
       // the mailbox exists!  Add it to the tree
@@ -3623,16 +3593,16 @@ bool IMAPMailboxExists(char mailboxName[256]) {
 TOCType * GetHiddenCacheMailbox(MailboxNodeHandle mbox, bool bForce,
                                 bool bCreateIfNeeded) {
   TOCType * tocH = NULL;
-  FSSpec hidSpec;
+  char hidSpec[PATH_MAX];
   bool bExists;
 
   if (mbox && (bForce || !DoesIMAPMailboxNeed(mbox, kShowDeleted))) {
     // figure out what the deleted cache would be called
     g_strlcpy(hidSpec, mbox->mailboxSpec, sizeof(hidSpec));
-    GetRString(spec_name(hidSpec), IMAP_HIDDEN_TOC_NAME);
+    GetRString(hidSpec, IMAP_HIDDEN_TOC_NAME);
 
     // does it already exist?
-    bExists = (FSpExists(&hidSpec) == 0);
+    bExists = (FSpExists(hidSpec) == 0);
 
     // create it if needed
     if (bCreateIfNeeded & !bExists) {
@@ -3641,7 +3611,7 @@ TOCType * GetHiddenCacheMailbox(MailboxNodeHandle mbox, bool bForce,
 
     // open the mailbox
     if (bExists)
-      tocH = TOCBySpec(&hidSpec);
+      tocH = TOCBySpec(hidSpec);
 
     // and associate it with the mbox
     if (tocH)
@@ -3657,7 +3627,7 @@ TOCType * GetHiddenCacheMailbox(MailboxNodeHandle mbox, bool bForce,
  **********************************************************************/
 int CleanHiddenCacheMailbox(TOCType * hidTocH) {
   int err = 0;
-  FSSpec spec;
+  char spec[PATH_MAX];
   short mNum;
 
   // something happened to our hidden cache mailbox.
@@ -3669,7 +3639,7 @@ int CleanHiddenCacheMailbox(TOCType * hidTocH) {
 
   // is this really a hidden toc?
   GetMailboxSpec(hidTocH, -1, spec);
-  if (EqualStrRes(spec_name(spec), IMAP_HIDDEN_TOC_NAME)) {
+  if (EqualStrRes((char *)spec_name(spec), IMAP_HIDDEN_TOC_NAME)) {
     // close and remove all of its messages
     for (mNum = hidTocH->count - 1; mNum >= 0; mNum--) {
       if (hidTocH->sums[mNum].messH)
@@ -3679,7 +3649,7 @@ int CleanHiddenCacheMailbox(TOCType * hidTocH) {
     }
 
     // compact it to be sure to remove all leftovers
-    CompactMailbox(&spec, 0);
+    CompactMailbox(spec, 0);
   }
 
   return (err);
@@ -3867,7 +3837,7 @@ bool ShowHideFilteredSummary(TOCType * toc, short sumNum) {
  *
  *	Warning - this routine hits the disk.
  **********************************************************************/
-MailboxNodeHandle GetRealIMAPSpec(FSSpec orig, char * spec) {
+MailboxNodeHandle GetRealIMAPSpec(const char *orig, char * spec) {
   MailboxNodeHandle node = NULL; // initialize
   TOCType * tocH;
   PersHandle pers;
@@ -3878,7 +3848,7 @@ MailboxNodeHandle GetRealIMAPSpec(FSSpec orig, char * spec) {
   g_strlcpy(spec, orig, PATH_MAX);
 
   // don't do anything if it doesn't have the right name
-  if (EqualStrRes(spec_name(orig), IMAP_HIDDEN_TOC_NAME)) {
+  if (EqualStrRes((char *)spec_name(orig), IMAP_HIDDEN_TOC_NAME)) {
     // first, see if this is already open
     tocH = FindTOC(orig);
     if (tocH) {
@@ -3931,7 +3901,7 @@ bool EnsureSpecialMailboxes(PersHandle pers) {
             (GetIMAPTrashMailbox(CurPers, 1, 1) != NULL);
   if (!bGotBox) {
     // user has refused to pick a trash mailbox.  Offer to turn off FTM.
-    if (ComposeStdAlert(Stop, IMAP_MISSING_TRASH, spec_name(pers)) == 2) {
+    if (ComposeStdAlert(Stop, IMAP_MISSING_TRASH, pers->name) == 2) {
       SetPref(PREF_IMAP_NO_FANCY_TRASH, YesStr);
       bGotBox = 1;
     }
@@ -3943,7 +3913,7 @@ bool EnsureSpecialMailboxes(PersHandle pers) {
               (GetIMAPJunkMailbox(CurPers, 1, 1) != NULL);
     if (!bGotBox) {
       // user has refused to pick a junk mailbox.  Offter to turn off Junk.
-      if (ComposeStdAlert(Stop, IMAP_MISSING_JUNK, spec_name(pers)) == 2) {
+      if (ComposeStdAlert(Stop, IMAP_MISSING_JUNK, pers->name) == 2) {
         SetPrefLong(PREF_JUNK_MAILBOX,
                     GetPrefLong(PREF_JUNK_MAILBOX) | bJunkPrefIMAPNoRunPlugins);
         bGotBox = 1;
@@ -3976,7 +3946,7 @@ void IMAPAutoExpungeWarning(void) {
     // Are there any IMAP personalities defined?
     for (pers = PersList; pers && !bWarn; pers = pers->next) {
       CurPers = pers;
-      bWarn = PrefIsSet(PREF_IS_IMAP) & !IMAPAutoExpungeDisabled();
+      bWarn = PrefIsSet(PREF_IS_IMAP) && !IMAPAutoExpungeDisabled();
     }
 
     if (bWarn) {
@@ -4008,7 +3978,7 @@ void IMAPAutoExpungeWarning(void) {
  **********************************************************************/
 bool IMAPAutoExpungeMailbox(TOCType * tocH) {
   bool bNeeds = 0;
-  FSSpec spec;
+  char spec[PATH_MAX];
 
   // are we quitting?
   if (AmQuitting)
@@ -4026,7 +3996,7 @@ bool IMAPAutoExpungeMailbox(TOCType * tocH) {
   if (tocH && tocH->imapTOC) {
     // make sure this isn't a hidden cache mailbox.  We should ignore those.
     g_strlcpy(spec, tocH->mailbox.spec, sizeof(spec));
-    if (!EqualStrRes(spec_name(spec), IMAP_HIDDEN_TOC_NAME)) {
+    if (!EqualStrRes((char *)spec_name(spec), IMAP_HIDDEN_TOC_NAME)) {
       // is the auto expunge preference set?
       PushPers(CurPers);
       if (!IMAPAutoExpungeDisabled()) {
@@ -4048,8 +4018,8 @@ bool IMAPAutoExpungeMailbox(TOCType * tocH) {
 bool IMAPAutoExpunge(void) {
   static long throttle = 0;
   bool bPerformed = 0;
-  FSSpec spec;
-  FSSpecHandle mailboxes;
+  char spec[PATH_MAX];
+  void * mailboxes;
   int err;
 
   // don't do anything if there's a background thread runing,
@@ -4064,10 +4034,10 @@ bool IMAPAutoExpunge(void) {
     PushPers(0);
     for (CurPers = PersList; CurPers; CurPers = CurPers->next) {
       // is this personality set to automatically expunge IMAP mailboxes?
-      if (PrefIsSet(PREF_IS_IMAP) & !IMAPAutoExpungeDisabled()) {
+      if (PrefIsSet(PREF_IS_IMAP) && !IMAPAutoExpungeDisabled()) {
         // find the next mailbox to expunge ...
-        if (GetNextMailboxToExpunge(CurPers->mailboxTree, &spec)) {
-          mailboxes = malloc(sizeof(FSSpec));
+        if (GetNextMailboxToExpunge(CurPers->mailboxTree, spec)) {
+          mailboxes = malloc(PATH_MAX);
           if (mailboxes) {
             g_strlcpy((char *)mailboxes, spec, PATH_MAX);
             err = IMAPProcessMailboxes(mailboxes, IMAPExpungeTask);

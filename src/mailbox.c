@@ -83,10 +83,10 @@ int ReallyDoAnAlert(int templ, int which);
 #endif
 
 /* Missing Definitions */
-#ifndef WindowPtr
-typedef void *WindowPtr;
+#ifndef GtkWidget *
+/* WindowPtr typedef removed — use GtkWidget * directly */
 #endif
-typedef WindowPtr DialogPtr; /* Added */
+/* WindowPtr typedef removed — use GtkWidget * directly */
 
 #define kAMOAvoidAll 2
 #ifndef smSystemScript
@@ -178,15 +178,15 @@ short FindDirLevel(short vRefNum, long dirID);
 void HideDialogItem(DialogPtr dp, short item);
 /* MyParamText declared in log.h with char * params */
 void StartMovableModal(DialogPtr dp);
-void ShowWindow(WindowPtr win);
+void ShowWindow(GtkWidget * win);
 /* Cursor and Dialog Decls */
-WindowPtr GetDialogWindow(DialogPtr dp);
+GtkWidget * GetDialogWindow(DialogPtr dp);
 #define GetMyWindowDialogPtr(win) ((DialogPtr)GetMyWindowWindowPtr(win))
 /* Legacy Dialog Functions */
 /* CloseMyWindow provided by legacy_shim.h */
 TOCType * FindTOC(const char *path);
 void Box2TOCSpec(char * spec, char * tocSpec);
-void utl_SaveWindowPos(WindowPtr win, Rect *r, bool *zoomed);
+void utl_SaveWindowPos(GtkWidget * win, Rect *r, bool *zoomed);
 char *GetMailboxName(TOCType * tocH, short sum, char *name);
 /* UpdateIMAPMailbox declared in mailbox.h */
 
@@ -195,7 +195,7 @@ char *GetMailboxName(TOCType * tocH, short sum, char *name);
 typedef struct BoxMapStruct BoxCountElem; /* Guessing same layout */
 void GetMenuItemText(MenuHandle mh, short item, unsigned char *text);
 /* Restored Function Declarations */
-void utl_RestoreWindowPos(WindowPtr win, Rect *r, bool zoomed, short u1,
+void utl_RestoreWindowPos(GtkWidget * win, Rect *r, bool zoomed, short u1,
                           short u2, short u3, void *cb1, void *cb2);
 short MessWi(MyWindowPtr win);
 typedef struct BoxMapStruct BoxMapType;
@@ -448,7 +448,7 @@ int GetMailbox(const char *path, bool showIt) {
   if (IsIMAPCacheFolder(&tmpSpec))
 
   if ((toc = FindTOC(tmpSpec))) {
-    WindowPtr tocWinWP;
+    GtkWidget * tocWinWP;
     tocWinWP = GetMyWindowWindowPtr(toc->win);
     UsingWindow(tocWinWP);
     if (showIt) {
@@ -477,7 +477,7 @@ int GetMailbox(const char *path, bool showIt) {
  **********************************************************************/
 int OpenMailbox(const char *path, bool showIt, TOCType * toc) {
   MyWindow *win;
-  WindowPtr winWP;
+  GtkWidget * winWP;
   FSSpec tmpSpec;
   spec_make(NULL, path, &tmpSpec);
 
@@ -3721,7 +3721,7 @@ void AddBoxHigh(const char *specPath) {
  * PopupMailboxPath - popup a list of mailboxes and folders
  **********************************************************************/
 void PopupMailboxPath(MyWindowPtr win, TOCType * tocH, short sum, Point pt) {
-  WindowPtr winWP = GetMyWindowWindowPtr(win);
+  GtkWidget * winWP = GetMyWindowWindowPtr(win);
   MenuHandle hMenu;
   short top, left;
   Rect rStruct;
@@ -3797,7 +3797,7 @@ void PopupMailboxPath(MyWindowPtr win, TOCType * tocH, short sum, Point pt) {
     }
 
     switch (selection) {
-      WindowPtr tocWinWP;
+      GtkWidget * tocWinWP;
 
     case kSelMailbox:
       //	Open mailbox window

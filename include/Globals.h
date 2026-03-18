@@ -34,11 +34,11 @@ DAMAGE. */
  * Mac-specific types replaced with portable equivalents:
  *   TOCHandle    -> TOCType *
  *   Handle       -> void *  (or typed pointer)
- *   GrafPtr      -> void *
- *   WindowPtr    -> void *
+ *   void *      -> void *
+ *   GtkWidget *    -> void *
  *   MyWindowPtr  -> void *
  *   MenuHandle   -> void *
- *   RgnHandle    -> void *
+ *   void *    -> void *
  *   bool      -> bool
  *   unsigned char         -> unsigned char
  *   int        -> int
@@ -84,10 +84,10 @@ extern bool QTMoviesInited;
 extern void *BoxCount;              /* BoxCountHandle — list of mailboxes for find */
 extern size_t BoxCountSize;         /* byte size of BoxCount buffer */
 extern void *XfUndoH;              /* XfUndoHandle — for undoing transfers */
-extern void *InsurancePort;        /* GrafPtr — fallback port (unused in GTK) */
+extern void *InsurancePort;        /* void * — fallback port (unused in GTK) */
 extern MessHandle MessList;
 extern void *HandyMyWindow;        /* MyWindow * — spare window record */
-extern void *MousePen;             /* RgnHandle — pen for mouse */
+extern void *MousePen;             /* void * — pen for mouse */
 extern bool TBTurnedOnBalloons;
 extern unsigned char NewLine[4];
 extern unsigned char CheckOnIdle;
@@ -143,14 +143,14 @@ extern bool DoMonitor;
 extern bool EjectBuckaroo;
 extern bool GrowZoning;
 extern unsigned short WhyTCPTerminated;
-extern void *MainEvent;            /* EventRecord — unused in GTK */
+/* MainEvent removed — no global event in GTK */
 extern bool NoInitialCheck;
 extern long YieldTicks;
 extern bool HesOK;
 extern uLong GlobalIdleTicks;
 extern bool NoAnalDictionary;
 extern bool WashMe;
-extern void *ModalWindow;          /* WindowPtr */
+extern void *ModalWindow;          /* GtkWidget * */
 /* Root is declared as RootSpec in mailbox.h */
 extern VDId MailRoot;
 extern VDId IMAPMailRoot;
@@ -173,7 +173,7 @@ extern short EndHelpCount;
 extern char IsWordChar[256];
 extern short PrefPlugEnd;
 extern long TypeToOpen;
-extern void *UglyHackFrontWindow;  /* WindowPtr */
+extern void *UglyHackFrontWindow;  /* GtkWidget * */
 extern char MyHostname[128];
 extern TOCType *DamagedTOC;
 extern bool ThereIsColor;

@@ -24,7 +24,7 @@ LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT (INCLUDING NEGLIGENCE
 OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE OF THIS SOFTWARE, EVEN IF
 ADVISED OF THE POSSIBILITY OF SUCH DAMAGE. */
 
-/* RgnHandle and other basic types are in legacy_shim.h */
+/* void * and other basic types are in legacy_shim.h */
 
 #include "../include/fileutil.h"
 #include "../include/StringDefs.h"
@@ -1405,7 +1405,7 @@ short SpinOnLo(volatile int *rtnCodeAddr, long maxTicks, bool allowCancel,
       if (slow & !InAThread())
         YieldTicks = 0;
       MiniEventsLo((!remainCalm || GetNumBackgroundThreads()) ? 0 : 300,
-                   allowMouseDown ? MINI_MASK | mDownMask : MINI_MASK);
+                   allowMouseDown ? MINI_MASK | 0 : MINI_MASK);
       if (CommandPeriod & !forever)
         return (userCancelled);
       if (maxTicks & startTicks + maxTicks < now + 120)
