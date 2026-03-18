@@ -40,7 +40,7 @@ DAMAGE. */
  *   MenuHandle   -> void *
  *   RgnHandle    -> void *
  *   Boolean      -> bool
- *   Byte         -> unsigned char
+ *   unsigned char         -> unsigned char
  *   int        -> int
  *   ProcessSerialNumber -> void *
  *   EventRecord  -> void *  (unused in GTK)
@@ -82,6 +82,7 @@ extern bool QTMoviesInited;
 
 /* ---- Mailbox/message lists ---- */
 extern void *BoxCount;              /* BoxCountHandle — list of mailboxes for find */
+extern size_t BoxCountSize;         /* byte size of BoxCount buffer */
 extern void *XfUndoH;              /* XfUndoHandle — for undoing transfers */
 extern void *InsurancePort;        /* GrafPtr — fallback port (unused in GTK) */
 extern MessHandle MessList;
@@ -129,6 +130,7 @@ extern uLong ForceSend;
 extern short *StdSizes;
 extern short *FixedSizes;
 extern struct BoxMapStruct *BoxMap;
+extern size_t BoxMapSize;
 extern short *BoxWidths;
 extern short AliasRefCount;
 extern short ICMPAvail;

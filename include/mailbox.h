@@ -45,11 +45,7 @@ typedef enum {
   OUT_TYPE_ENUM_LIMIT
 } OutTypeEnum;
 
-#ifndef SIGNED_BYTE_DEFINED
-#define SIGNED_BYTE_DEFINED
-typedef int8_t SignedByte;
-typedef unsigned char Byte;
-#endif
+/* SignedByte/Byte typedefs removed — use char/unsigned char directly */
 
 
 #ifndef PSTR_DEFINED
@@ -652,15 +648,14 @@ void progress_DieWithError(short stringId, int err);
 void ThirdCenterRectIn(void *r, void *in);
 void GetQDGlobalsScreenBits(void *bits);
 int PtrToHand(const void *srcPtr, void **dstHndl, size_t size);
-size_t InlineGetHandleSize(void *h);
+/* InlineGetHandleSize REMOVED */
 void HLock(void *h);
 void HUnlock(void *h);
 void *ZeroHandle(void *h);
 void *NuHTempOK(long size);
 void *NuHTempBetter(long size);
 void *NuPtr(size_t size);
-void *buf_append(void *buf, const void *data, size_t n);
-void *buf_concat(void *dst, const void *src);
+void *buf_append(void *buf, size_t *bufSize, const void *data, size_t n);
 void BlockMoveData(const void *src, void *dest, size_t size);
 bool HaveOSX(void);
 void *NewIOBHandle(long min, long max);

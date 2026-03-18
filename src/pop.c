@@ -415,8 +415,7 @@ short GetMyMail(TransStream stream, bool quietly, short *gotSome,
   bool inThread = InAThread();
   bool capabilities[pcapaLimit + 1];
 
-  WriteZero(capabilities,
-            sizeof(capabilities)); // we don't know if we have them yet!!!
+  memset(capabilities, 0, sizeof(capabilities)); // we don't know if we have them yet!!!
 
   if (Prr = StackInit(sizeof(short), &POPCmds))
     return (Prr);
@@ -1199,7 +1198,7 @@ int POPGetReplyLo(TransStream stream, short cmd, unsigned char *buffer,
   //    might not have this problem anymore), and we can skip those, too
   // So when we see an actual valid POP error indicator (either + or -), we
   // know the true response has begun.  Hence, errChar.
-  Byte errChar = 0;
+  unsigned char errChar = 0;
 
   if (Prr = ReapCmds(stream, cmd))
     return (Prr);
@@ -1508,7 +1507,7 @@ int FetchMessageTextLo(TransStream stream, long estSize, POPDPtr pdp,
 
   eof = FindTOCSpot(tocH, estSize);
 
-  Prr = SetFPos(tocH->refN, fsFromStart, eof);
+  Prr = lseek(tocH->refN, eof, SEEK_SET);
   if (Prr) {
     FileSystemError(WRITE_MBOX, name, Prr);
     goto done;
@@ -1530,7 +1529,7 @@ int FetchMessageTextLo(TransStream stream, long estSize, POPDPtr pdp,
 
 done:
   if (!Prr && !GetFPos(tocH->refN, &chopHere))
-    SetEOF(tocH->refN, chopHere);
+    ftruncate(tocH->refN, chopHere);
 
   // if we're adding IMAP messages, or importing mail, we'll close and flush
   // later.
@@ -2062,12 +2061,12 @@ int DupHeader(short refN, unsigned char *buff, long bSize, long offset,
   if (Prr = GetFPos(refN, &currentOffset))
     return (FileSystemError(READ_MBOX, "", Prr));
   for (copied = 0; copied < headerSize; copied += readBytes) {
-    if (Prr = SetFPos(refN, fsFromStart, offset + copied))
+    if (Prr = lseek(refN, offset + copied, SEEK_SET))
       return (FileSystemError(READ_MBOX, "", Prr));
     readBytes = bSize < headerSize - copied ? bSize : headerSize - copied;
     if (Prr = ARead(refN, &readBytes, buff))
       return (FileSystemError(READ_MBOX, "", Prr));
-    if (Prr = SetFPos(refN, fsFromStart, currentOffset))
+    if (Prr = lseek(refN, currentOffset, SEEK_SET))
       return (FileSystemError(WRITE_MBOX, "", Prr));
     writeBytes = readBytes;
     if (Prr = FSZWrite(refN, &writeBytes, buff))
@@ -2805,7 +2804,7 @@ short SplitMessage(short refN, long hStart, long hEnd, long msgEnd) {
        * do we need to add an ending newline to the header?
        */
       if (headerNl) {
-        if (err = SetFPos(refN, fsFromStart, tos[i] - headerNl)) {
+        if (err = lseek(refN, tos[i] - headerNl, SEEK_SET)) {
           FileSystemError(WRITE_MBOX, "", err);
           goto done;
         }
@@ -2821,7 +2820,7 @@ short SplitMessage(short refN, long hStart, long hEnd, long msgEnd) {
      * do we need to add an ending newline to the body?
      */
     if (!reals[i + 1]) {
-      if (err = SetFPos(refN, fsFromStart, tos[i] + froms[i + 1] - froms[i])) {
+      if (err = lseek(refN, tos[i] + froms[i + 1] - froms[i], SEEK_SET)) {
         FileSystemError(WRITE_MBOX, "", err);
         goto done;
       }

@@ -946,7 +946,7 @@ bool IsIMAPSubPers(char * spec) {
  ***************************************************************************/
 void PersNameToCacheName(PersHandle pers, unsigned char * cacheName) {
   unsigned char *spot;
-  SignedByte state = HGetState((void *)pers);
+  char state = 0 /* HGetState removed */;
 
   g_strlcpy((char *)cacheName, (char *)spec_name(pers), 32);
   for (spot = cacheName; *spot; spot++)
@@ -961,7 +961,7 @@ int WriteIMAPMailboxInfo(char * spec, MailboxNodeHandle node) {
   int err = noErr;
   short refN = -1;
   long count = 0;
-  short oldResFile = CurResFile();
+  short oldResFile = 0;
   void *resource = 0;
   size_t resource_sz = 0;
 
@@ -970,21 +970,21 @@ int WriteIMAPMailboxInfo(char * spec, MailboxNodeHandle node) {
   // open the mailbox file for writing
   if ((refN = FSpOpenResFile(spec, fsRdWrPerm)) != -1) {
     LockMailboxNodeHandle(node);
-    UseResFile(refN);
+    /* UseResFile removed */
 
     // Zap the old info resource
-    SetResLoad(0);
+    /* SetResLoad removed */
     resource = Get1Resource(BOX_INFO_TYPE, IMAP_ID);
-    SetResLoad(1);
+    /* SetResLoad removed */
     if (resource) {
       RemoveResource(resource);
       free(resource);
     }
 
     // Zap the old name resource
-    SetResLoad(0);
+    /* SetResLoad removed */
     resource = Get1Resource(BOX_NAME_TYPE, IMAP_ID);
-    SetResLoad(1);
+    /* SetResLoad removed */
     if (resource) {
       RemoveResource(resource);
       free(resource);
@@ -994,16 +994,16 @@ int WriteIMAPMailboxInfo(char * spec, MailboxNodeHandle node) {
     resource = DupHandle((void *)node);
     if (resource) {
       AddResource(resource, BOX_INFO_TYPE, IMAP_ID, spec_name(node->mailboxSpec));
-      if ((err = ResError()) == noErr) {
-        WriteResource(resource);
-        err = ResError();
+      if ((err = 0) == noErr) {
+        /* WriteResource removed */
+        err = 0;
       }
     }
 
     // Zap the old flags resource
-    SetResLoad(0);
+    /* SetResLoad removed */
     resource = Get1Resource(BOX_FLAGS_TYPE, IMAP_ID);
-    SetResLoad(1);
+    /* SetResLoad removed */
     if (resource) {
       RemoveResource(resource);
       free(resource);
@@ -1016,9 +1016,9 @@ int WriteIMAPMailboxInfo(char * spec, MailboxNodeHandle node) {
       if (resource) {
         AddResource(resource, BOX_FLAGS_TYPE, IMAP_ID,
                     spec_name(node->mailboxSpec));
-        if ((err = ResError()) == noErr) {
-          WriteResource(resource);
-          err = ResError();
+        if ((err = 0) == noErr) {
+          /* WriteResource removed */
+          err = 0;
         }
       }
     }
@@ -1031,18 +1031,18 @@ int WriteIMAPMailboxInfo(char * spec, MailboxNodeHandle node) {
       if (err == noErr) {
         AddResource(resource, BOX_NAME_TYPE, IMAP_ID,
                     spec_name(node->mailboxSpec));
-        if ((err = ResError()) == noErr) {
-          WriteResource(resource);
-          err = ResError();
+        if ((err = 0) == noErr) {
+          /* WriteResource removed */
+          err = 0;
         }
       }
     }
     /* CloseResFile(refN); — Mac-only resource API, no-op in GTK port */
     UnlockMailboxNodeHandle(node);
   } else
-    err = ResError();
+    err = 0;
 
-  UseResFile(oldResFile);
+  /* UseResFile removed */
   return (err);
 }
 
@@ -1198,7 +1198,7 @@ int RebuildIMAPMailboxTree(char * dir, PersHandle pers,
 int ReadIMAPMailboxInfo(char * spec, MailboxNodeHandle node) {
   int err = noErr;
   short refN = -1;
-  short oldResFile = CurResFile();
+  short oldResFile = 0;
   void *resource = 0;
   size_t resource_sz = 0;
   char *mailboxName = 0;
@@ -1209,16 +1209,16 @@ int ReadIMAPMailboxInfo(char * spec, MailboxNodeHandle node) {
   if ((refN = FSpOpenResFile(spec, fsRdPerm)) != -1) {
     // read the full pathname from the mailbox.  Store it in some string
     // somewhere.
-    UseResFile(refN);
+    /* UseResFile removed */
     if ((resource = Get1Resource(BOX_NAME_TYPE, IMAP_ID)) == 0)
       err = resNotFound;
-    if ((err == noErr) && ((err = ResError()) == noErr) && resource != 0) {
+    if ((err == noErr) && ((err = 0) == noErr) && resource != 0) {
       mailboxName = cpystr((const char *)resource); // copy the pathname
 
       // read in the node from the mailbox.
       if ((resource = Get1Resource(BOX_INFO_TYPE, IMAP_ID)) == 0)
         err = resNotFound;
-      if ((err == noErr) && ((err = ResError()) == noErr) && resource != 0) {
+      if ((err == noErr) && ((err = 0) == noErr) && resource != 0) {
         BlockMove(resource, node,
                   MIN(resource_sz, sizeof(MailboxNode)));
 
@@ -1235,7 +1235,7 @@ int ReadIMAPMailboxInfo(char * spec, MailboxNodeHandle node) {
         // read in the queued flag info from the mailbox.  Don't care if it's
         // not there.
         resource = Get1Resource(BOX_FLAGS_TYPE, IMAP_ID);
-        if (((ResError()) == noErr) && resource != 0) {
+        if (((0) == noErr) && resource != 0) {
           DetachResource(resource);
           node->queuedFlags = resource;
         }
@@ -1243,9 +1243,9 @@ int ReadIMAPMailboxInfo(char * spec, MailboxNodeHandle node) {
     }
     /* CloseResFile(refN); — Mac-only resource API, no-op in GTK port */
   } else
-    err = ResError();
+    err = 0;
 
-  UseResFile(oldResFile);
+  /* UseResFile removed */
   return (err);
 }
 
@@ -1470,13 +1470,13 @@ MailboxNodeHandle LocateNodeBySpec(MailboxNodeHandle tree, char * spec) {
  ***************************************************************************/
 void LocateNodeByVDInAllPersTrees(short vRef, long dirId,
                                   MailboxNodeHandle *node, PersHandle *pers) {
-  SignedByte state;
+  char state;
 
   *node = 0;
   *pers = 0;
 
   for (*pers = PersList; *pers; *pers = (*pers)->next) {
-    state = HGetState((void *)*pers);
+    state = 0; /* HGetState removed */
     if ((*node = LocateNodeByVD((*pers)->mailboxTree, vRef, dirId)))
       break;
   }
@@ -1625,19 +1625,19 @@ int ReadIMAPMailboxAttributes(char * spec, long *attributes) {
 bool ReallyIsIMAPMailbox(char * spec) {
   int err = noErr;
   short refN = -1;
-  short oldResFile = CurResFile();
+  short oldResFile = 0;
   short numResources = 0;
 
   // open the mailbox file for reading
   if ((refN = FSpOpenResFile(spec, fsRdPerm)) != -1) {
     // read in the node from the mailbox.
     numResources = Count1Resources(BOX_INFO_TYPE);
-    err = ResError();
+    err = 0;
     /* CloseResFile(refN); — Mac-only resource API, no-op in GTK port */
   } else
-    err = ResError();
+    err = 0;
 
-  UseResFile(oldResFile);
+  /* UseResFile removed */
   return ((err == noErr) && (numResources > 0));
 }
 
@@ -1796,8 +1796,7 @@ bool IMAPAddMailbox(char * spec, bool folder, bool *success, bool silent) {
             // nothing came back.  Look for the mailbox, but forget about the
             // delimiter.
             Zero(scratch);
-            BMD(newMailboxName, scratch,
-                MIN(strlen(newMailboxName) - 1, 256));
+            memmove(scratch, newMailboxName, MIN(strlen(newMailboxName) - 1, 256));
             result = FetchMailboxAttributes(imapStream, scratch);
           }
           newNode = imapStream->mailStream->fListResultsHandle;
@@ -2602,11 +2601,11 @@ MailboxNodeHandle GetSpecialMailbox(PersHandle pers, bool createIfNeeded,
                                     bool silent, long mboxAtt) {
   MailboxNodeHandle specialMBox = 0;
   PersHandle oldPers = CurPers;
-  SignedByte state;
+  char state;
 
   // locate the mailbox flagged as the trash mailbox.
   CurPers = pers;
-  state = HGetState((void *)CurPers);
+  state = 0 /* HGetState removed */;
   if ((specialMBox = LocateSpecialMailbox(CurPers->mailboxTree, mboxAtt)) ==
       0) {
     // node was found.  Try and create it if we were asked to
@@ -2635,11 +2634,11 @@ MailboxNodeHandle GetSpecialMailbox(PersHandle pers, bool createIfNeeded,
 void ResetSpecialMailbox(PersHandle pers, long mboxAtt) {
   MailboxNodeHandle specialMBox = 0;
   PersHandle oldPers = CurPers;
-  SignedByte state;
+  char state;
 
   // locate the mailbox flagged as the trash mailbox.
   CurPers = pers;
-  state = HGetState((void *)CurPers);
+  state = 0 /* HGetState removed */;
 
   while ((specialMBox =
               LocateSpecialMailbox(CurPers->mailboxTree, mboxAtt)) != 0)
@@ -2690,7 +2689,7 @@ MailboxNodeHandle CreateSpecialMailbox(bool tryCreate, long mboxAtt) {
   char specialMailboxName[256], scratch[256];
   int err = noErr;
   bool created = 0;
-  SignedByte state;
+  char state;
   long reuseWarning, chooseMessage, selectMessage;
 
   // Don't do this if the user knows better.  Yeah right.
@@ -2730,7 +2729,7 @@ MailboxNodeHandle CreateSpecialMailbox(bool tryCreate, long mboxAtt) {
         IMAPAddMailbox(&specialSpec, 0, &created, 1);
         if (created) {
           // locate the special mailbox we just created.
-          state = HGetState((void *)CurPers);
+          state = 0 /* HGetState removed */;
           specialMbox = LocateNodeByMailboxName(CurPers->mailboxTree,
                                                 (char *)specialMailboxName + 1);
         }
@@ -2742,7 +2741,7 @@ MailboxNodeHandle CreateSpecialMailbox(bool tryCreate, long mboxAtt) {
   // level
   if (!specialMbox) {
     // find the special mailbox
-    state = HGetState((void *)CurPers);
+    state = 0 /* HGetState removed */;
     specialMbox = LocateNodeByMailboxName(CurPers->mailboxTree,
                                           (char *)specialMailboxName + 1);
 
@@ -2759,7 +2758,7 @@ MailboxNodeHandle CreateSpecialMailbox(bool tryCreate, long mboxAtt) {
   // we've failed before.
   if (!specialMbox) {
     if (ChooseSpecialMailbox(CurPers, chooseMessage, &specialSpec)) {
-      state = HGetState((void *)CurPers);
+      state = 0 /* HGetState removed */;
       specialMbox = LocateNodeBySpec(CurPers->mailboxTree, &specialSpec);
 
       // Make sure the user really wants to use this mailbox as the special

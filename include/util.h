@@ -242,7 +242,7 @@ void AttachHierMenu(short menu, short item, short hierId);
 void *NuDHTempBetter(void *data, long size);
 bool DirtyKey(long keyAndChar);
 long RemoveChar(unsigned char c, char *text, long size);
-long RemoveCharHandle(Byte c, unsigned char * text);
+long RemoveCharHandle(unsigned char c, unsigned char * text);
 
 char *GetRStr(char *string, short id);
 char *LocalDateTimeStr(char *string);

@@ -121,7 +121,7 @@ typedef struct {
   bool kill;
 } FilterRecord, *FRPtr, *FRHandle;
 
-#define NFilters (Filters ? GetHandleSize_(Filters) / sizeof(FilterRecord) : 0)
+#define NFilters (Filters ? malloc_size(Filters) / sizeof(FilterRecord) : 0)
 #define FR (*(FRHandle)Filters)
 
 typedef struct {

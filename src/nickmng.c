@@ -560,8 +560,7 @@ int ReadNicknames(short which) {
               This.theData[currNickIndex].addressOffset = firstOffset + 1;
 
               // trim off the command and alias
-              BMD(lineAcc.data + count + 1, lineAcc.data,
-                  lineAcc.offset - count - 1);
+              memmove(lineAcc.data, lineAcc.data + count + 1, lineAcc.offset - count - 1);
               lineAcc.offset -= count + 1;
               AccuTrim(&lineAcc);
 
@@ -576,8 +575,7 @@ int ReadNicknames(short which) {
               This.theData[currNickIndex].notesOffset = firstOffset + 1;
 
               // trim off the command and alias
-              BMD(lineAcc.data + count + 1, lineAcc.data,
-                  lineAcc.offset - count - 1);
+              memmove(lineAcc.data, lineAcc.data + count + 1, lineAcc.offset - count - 1);
               lineAcc.offset -= count + 1;
               AccuTrim(&lineAcc);
 
@@ -847,8 +845,7 @@ bool SplitNicknames(short ab)
       if (MaybeApplySplittingAlgorithm(notes) && !Aliases[ab]->ro) {
         ReplaceNicknameNotes(ab, GetNicknameNamePStr(ab, nick, name), notes);
         notesChanged = true;
-      } else
-        // If we did not split the name, restore the note's previous purge state
+      }
     }
   }
   return (notesChanged);
@@ -1501,7 +1498,7 @@ int ReadNickTOC(short which) {
   NickStructHandle theData;
   NickTOCStruct *pTOCInfo, *pTOCEnd;
   NickStruct *pNick;
-  short oldResF = CurResFile();
+  short oldResF = 0;
   short oldId;
 
   theData = Aliases[which]->theData;
@@ -1518,7 +1515,7 @@ int ReadNickTOC(short which) {
   } else if (-1 != (refN = FSpOpenResFile(&lSpec, fsRdPerm))) {
     void *hOldTOC;
 
-    SetResLoad(False); //	Don't load now so we can use temporary memory
+    /* SetResLoad removed */ //	Don't load now so we can use temporary memory
     if (hOldTOC = Get1Resource(OLD_NICK_TYPE, OLD_NICK_RESID1)) {
       //	Remove old-style TOC resources
       RemoveResource(hOldTOC);
@@ -1534,7 +1531,7 @@ int ReadNickTOC(short which) {
     }
 
     r1 = Get1Resource(NICK_TOC_TYPE, NICK_RESID);
-    SetResLoad(True);
+    /* SetResLoad removed */
     nameR = Get1Resource(NICK_NAMES_TYPE, NICK_RESID);
     free(This.hNames);
     if (r1 && nameR) {
@@ -1542,7 +1539,7 @@ int ReadNickTOC(short which) {
           nameR); //	Need to keep the names in memory after res file closes
       This.hNames = nameR; //	Save handle to nicknames
       structSize = GetResourceSizeOnDisk(r1);
-      if (err = ResError())
+      if (err = 0)
         goto theExit;
       else {
         structR = malloc(structSize);
@@ -1550,12 +1547,11 @@ int ReadNickTOC(short which) {
           goto theExit;
         else {
           ReadPartialResource(r1, 0, structR, structSize);
-          if (err = ResError())
+          if (err = 0)
             goto theExit;
 
           // See if file has been modified since TOC last modified
-          BlockMoveData((unsigned char *)structR + currentStructPos,
-                        &TOCModDate, sizeof(TOCModDate));
+          memmove(&TOCModDate, (unsigned char *)structR + currentStructPos, sizeof(TOCModDate));
           if (TOCModDate !=
               fileModDate) // Make sure the TOC is pretty much in synch
           {
@@ -1563,8 +1559,7 @@ int ReadNickTOC(short which) {
             goto theExit;
           }
           currentStructPos += sizeof(TOCModDate);
-          BlockMoveData((unsigned char *)structR + currentStructPos,
-                        &numberOfNicks, sizeof(numberOfNicks));
+          memmove(&numberOfNicks, (unsigned char *)structR + currentStructPos, sizeof(numberOfNicks));
           currentStructPos += sizeof(numberOfNicks);
 
           // Verify the size of the resource read in is actually the size of the
@@ -1628,7 +1623,7 @@ int ReadNickTOC(short which) {
   if (err)
     free(This.hNames);
   free(structR);
-  UseResFile(oldResF);
+  /* UseResFile removed */
   if (numberOfNicks == 0)
     return (-1);
   return (noErr);
@@ -1649,7 +1644,7 @@ int WriteNickTOC(short which) {
   NickStruct *pNickInfo;
   NickStructHandle theData;
   Boolean fSaved = false;
-  short oldResF = CurResFile();
+  short oldResF = 0;
 
   theData = Aliases[which]->theData;
   IsAlias(&spec, &spec);
@@ -1668,7 +1663,7 @@ int WriteNickTOC(short which) {
 
   if (!structR || !nameR) // SD and drop whichever one might not be nil
   {
-    UseResFile(oldResF);
+    /* UseResFile removed */
     return (-1);
   }
 
@@ -1715,21 +1710,21 @@ int WriteNickTOC(short which) {
 
   // FSpOpenResFile is no-op on POSIX
   if (-1 != (refN = -1)) {
-    AddResource(structR, NICK_TOC_TYPE, NICK_RESID, "");
-    if (!ResError())
-      AddResource(nameR, NICK_NAMES_TYPE, NICK_RESID, "");
+    /* AddResource removed */
+    if (!0)
+      /* AddResource removed */
 
-    err = ResError();
+    err = 0;
     if (!err) {
       UpdateResFile(refN);
-      err = ResError();
+      err = 0;
       fSaved = true;
     }
     //	ALB DetachResource(structR);
     //	ALB DetachResource(nameR);
     
   } else
-    err = ResError();
+    err = 0;
 
   if (!err)
     {
@@ -1745,7 +1740,7 @@ exit:
     free(structR);
     free(nameR);
   }
-  UseResFile(oldResF);
+  /* UseResFile removed */
   return (err);
 }
 
@@ -2146,7 +2141,7 @@ void *GetNicknameData(short which, short index, bool wantAddresses,
   LineIOD lid;
   long theOffset, count;
   char theCmd[32];
-  Byte lookingFor;
+  unsigned char lookingFor;
   bool group;
 
   g_strlcpy(spec, This.spec, sizeof(spec));
@@ -2597,7 +2592,7 @@ void MakeCboxNick(MyWindowPtr win) {
 /************************************************************************
  * FlattenListWith - make an address list one to a line
  ************************************************************************/
-void FlattenListWith(void *h, Byte c) {
+void FlattenListWith(void *h, unsigned char c) {
   char *from, *to;
   bool colon;
 
@@ -2877,7 +2872,7 @@ bool SaveIndNickFile(short which, bool saveChangeBits) {
   }
 
   GetFPos(refN, &bytes);
-  SetEOF(refN, bytes);
+  ftruncate(refN, bytes);
   close(refN);
   refN = 0;
 
@@ -2956,12 +2951,8 @@ bool SaveFileFast(short which, bool saveChangeBits) {
   dummyValue.offset = -1000;
   dummyValue.nickIndex = numOfNicks + 1000;
   theSize = malloc_size(addressOffsetHandle) - sizeof(NickOffSetSortType);
-  BlockMoveData(&dummyValue,
-                addressOffsetHandle + (theSize / sizeof(NickOffSetSortType)),
-                sizeof(NickOffSetSortType));
-  BlockMoveData(&dummyValue,
-                notesOffsetHandle + (theSize / sizeof(NickOffSetSortType)),
-                sizeof(NickOffSetSortType));
+  memmove(addressOffsetHandle + (theSize / sizeof(NickOffSetSortType)), &dummyValue, sizeof(NickOffSetSortType));
+  memmove(notesOffsetHandle + (theSize / sizeof(NickOffSetSortType)), &dummyValue, sizeof(NickOffSetSortType));
 
   QuickSort((char *)addressOffsetHandle, sizeof(NickOffSetSortType), 0,
             numOfNicks - 1, (int (*)())NickOffsetCompare,
@@ -3083,7 +3074,7 @@ bool SaveFileFast(short which, bool saveChangeBits) {
     if (cleanStartOffset <= 0)
       cleanStartOffset = 1;
 
-    if (err = SetFPos(nickRefN, fsFromStart, cleanStartOffset - 1))
+    if (err = lseek(nickRefN, cleanStartOffset - 1, SEEK_SET))
       goto done;
     GetFPos(tempRefN, &bytes);
     bytesToShift = cleanStartOffset - bytes - 1;
@@ -3117,11 +3108,11 @@ bool SaveFileFast(short which, bool saveChangeBits) {
 
   free(tempHandle); // leftover from last loop.  SD 4/16
 
-  SetFPos(tempRefN, fsFromLEOF, -1);
+  lseek(tempRefN, -1, SEEK_END);
   bytes = 1;
   ARead(tempRefN, &bytes, &theChar);
   GetEOF(tempRefN, &bytes);
-  SetFPos(tempRefN, fsFromStart, bytes);
+  lseek(tempRefN, bytes, SEEK_SET);
   if (theChar != '\015' & bytes > 0) {
     bytes = 1;
     err = AWrite(tempRefN, &bytes, "\015");
@@ -3223,7 +3214,7 @@ bool SaveFileFast(short which, bool saveChangeBits) {
     }
 
     if (cleanStartOffset > 0) {
-      if (err = SetFPos(nickRefN, fsFromStart, cleanStartOffset - 1))
+      if (err = lseek(nickRefN, cleanStartOffset - 1, SEEK_SET))
         goto done;
       GetFPos(tempRefN, &bytes);
       bytesToShift = cleanStartOffset - bytes - 1;
@@ -3258,11 +3249,11 @@ bool SaveFileFast(short which, bool saveChangeBits) {
 
   free(tempHandle);
 
-  SetFPos(tempRefN, fsFromLEOF, -1);
+  lseek(tempRefN, -1, SEEK_END);
   bytes = 1;
   ARead(tempRefN, &bytes, &theChar);
   GetEOF(tempRefN, &bytes);
-  SetFPos(tempRefN, fsFromStart, bytes);
+  lseek(tempRefN, bytes, SEEK_SET);
   if (theChar != '\015' & bytes > 0) {
     bytes = 1;
     err = AWrite(tempRefN, &bytes, "\015");
@@ -3322,7 +3313,7 @@ bool SaveFileFast(short which, bool saveChangeBits) {
   tempHandle = nil;
 
   GetFPos(tempRefN, &bytes);
-  SetEOF(tempRefN, bytes);
+  ftruncate(tempRefN, bytes);
   close(tempRefN);
   tempRefN = 0;
   close(nickRefN);

@@ -238,10 +238,10 @@ bool UpdatableIMAPState(StateEnum state);
 int SaveMinimalHeader(MAILSTREAM *stream);
 
 // Message downloading routines
-bool DoDownloadMessages(TOCType * toc, void *uids, bool attachmentsToo);
+bool DoDownloadMessages(TOCType * toc, GArray *uids, bool attachmentsToo);
 int UIDDownloadMessage(TOCType * inToc, unsigned long uid,
                          bool forceForeground, bool attachmentsToo);
-int UIDDownloadMessages(TOCType * inToc, void *uids, bool forceForeground,
+int UIDDownloadMessages(TOCType * inToc, GArray *uids, bool forceForeground,
                           bool attachmentsToo);
 bool EnsureMsgDownloaded(TOCType * tocH, int sumNum, bool attachmentsToo);
 int CacheMessage(TOCType * tocH, short sumNum);
@@ -283,9 +283,9 @@ bool IMAPMessageBeingDownloaded(TOCType * t, short s);
 // Message transfer
 int IMAPTransferMessage(TOCType * fromTocH, TOCType * toTocH,
                           unsigned long uid, bool copy, bool forceForeground);
-int IMAPTransferMessages(TOCType * fromTocH, TOCType * toTocH, void *uids,
+int IMAPTransferMessages(TOCType * fromTocH, TOCType * toTocH, GArray *uids,
                            bool copy, bool forceForeground);
-int DoTransferMessages(TOCType * fromTocH, TOCType * toTocH, void *uids,
+int DoTransferMessages(TOCType * fromTocH, TOCType * toTocH, GArray *uids,
                          bool copy);
 int IMAPTransferMessagesToServer(TOCType * fromTocH, TOCType * toTocH,
                                    void *sumNums, bool copy,
@@ -306,9 +306,9 @@ int IMAPMoveIMAPMessages(TOCType * fromTocH, TOCType * toTocH, bool copy);
 // Message deletion
 bool IMAPDeleteMessage(TOCType * tocH, unsigned long uid, bool nuke,
                        bool expunge, bool undelete);
-bool IMAPDeleteMessages(TOCType * tocH, void *uids, bool nuke, bool expunge,
+bool IMAPDeleteMessages(TOCType * tocH, GArray *uids, bool nuke, bool expunge,
                         bool undelete, bool forceForeground);
-bool DoDeleteMessage(TOCType * tocH, void *uids, bool nuke, bool expunge,
+bool DoDeleteMessage(TOCType * tocH, GArray *uids, bool nuke, bool expunge,
                      bool undelete);
 bool IMAPRemoveDeletedMessages(TOCType * tocH);
 bool DoExpungeMailbox(TOCType * tocH);

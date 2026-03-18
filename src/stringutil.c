@@ -702,7 +702,7 @@ char * PInsert(char * string, short size, char * insert, char * spot) {
 /**********************************************************************
  * PInsertC - insert a single character
  **********************************************************************/
-char * PInsertC(char * string, short size, Byte c, char * spot) {
+char * PInsertC(char * string, short size, unsigned char c, char * spot) {
   unsigned char s[2];
   s[0] = c;
   s[1] = '\0';
@@ -776,7 +776,7 @@ char * PPtrFindSub(char * sub, char * string, long len) {
   size_t subLen = strlen((const char *)sub);
   char * end = string + len - subLen + 1;
   char *stringSpot, *subSpot, *subEnd;
-  Byte c1, c2;
+  unsigned char c1, c2;
 
   if (subLen == 0) return string;
   subEnd = sub + subLen;
@@ -1082,7 +1082,7 @@ void RemoveParens(char * string) {
 /************************************************************************
  * PStripChar - remove all occurrences of a char from a string
  ************************************************************************/
-char * PStripChar(char * string, Byte c) {
+char * PStripChar(char * string, unsigned char c) {
   size_t newLen = StripChar((char *)string, strlen((const char *)string), c);
   string[newLen] = '\0';
   return (string);
@@ -1091,7 +1091,7 @@ char * PStripChar(char * string, Byte c) {
 /************************************************************************
  * StripChar - remove all occurrences of a char from text, return new length
  ************************************************************************/
-long StripChar(char * string, long len, Byte c) {
+long StripChar(char * string, long len, unsigned char c) {
   char *from, *to, *end;
 
   end = string + len;
@@ -1403,7 +1403,7 @@ char * Uncomma(char * name) {
  * CharWidthInFont - how wide is a character in a given font?
  * Uses Pango for font measurement (GTK port).
  ************************************************************************/
-short CharWidthInFont(Byte c, short font, short size) {
+short CharWidthInFont(unsigned char c, short font, short size) {
   PangoFontDescription *fdesc;
   PangoFont *pfont;
   PangoFontMetrics *metrics;
@@ -1445,7 +1445,7 @@ char * UTF8ToMac(char * string) {
  ************************************************************************/
 void UTF8To88591(char * inStr, long inLen, char * outStr, long *outLen) {
   long len;
-  Byte tempChar;
+  unsigned char tempChar;
 
   len = 0L;
   while (--inLen >= 0L) {
@@ -1552,7 +1552,7 @@ bool PPtrMatchLWSPSpot(char * look, char * text, uint32_t textLen, char * *match
   char * textEnd = text + textLen;
   char * lookEnd = look + strlen((const char *)look);
   char * lookSpot = look;
-  Byte c1, c2;
+  unsigned char c1, c2;
 
   while (1) {
     // advance text to next non-LWSP char
@@ -1574,9 +1574,9 @@ bool PPtrMatchLWSPSpot(char * look, char * text, uint32_t textLen, char * *match
     c1 = *lookSpot;
     c2 = (unsigned char)*text;
     if (isupper(c1))
-      c1 = (Byte)tolower(c1);
+      c1 = (unsigned char)tolower(c1);
     if (isupper(c2))
-      c2 = (Byte)tolower(c2);
+      c2 = (unsigned char)tolower(c2);
     if (c1 != c2)
       return false;
 

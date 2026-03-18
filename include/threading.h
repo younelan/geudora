@@ -208,7 +208,7 @@ struct IMAPTransferRec_ {
   bool expunge;        // expunge the mailbox
   bool copy;           // copy messages
   bool attachmentsToo; // download everything in one big chunk
-  void *uids;         // list of uids
+  GArray *uids;         // list of uids
   MailboxNodeHandle targetBox; // the interesting mailbox
   FSSpecHandle attachments;    // list of attachment stubs to fetch
   FSSpecHandle toResync;       // list of mailboxes to resync

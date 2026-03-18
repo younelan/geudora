@@ -708,9 +708,7 @@ long ZoneSecs(void) {
  * AddMyResource - add resource, but set Eudora Settings, too
  **********************************************************************/
 void AddMyResource(void *h, OSType type, short id, ConstStr255Param name) {
-  if (SettingsRefN)
-    UseResFile(SettingsRefN);
-  AddResource(h, type, id, name);
+  /* UseResFile/AddResource removed — resource fork not used */
 }
 
 /************************************************************************
@@ -1050,7 +1048,7 @@ OSType GetROSType(int index) {
 /************************************************************************
  * RemoveChar - remove a char from some text
  ************************************************************************/
-long RemoveChar(Byte c, char * text, long size) {
+long RemoveChar(unsigned char c, char * text, long size) {
   char *from, *to, *limit;
 
   for (to = text, limit = text + size; to < limit && *to != c; to++)
@@ -1065,7 +1063,7 @@ long RemoveChar(Byte c, char * text, long size) {
 /************************************************************************
  * RemoveCharHandle - remove a character from a handle
  ************************************************************************/
-long RemoveCharHandle(Byte c, unsigned char * text) {
+long RemoveCharHandle(unsigned char c, unsigned char * text) {
   long len = malloc_size(text);
   long newLen = RemoveChar(c, text, len);
 
@@ -1112,7 +1110,7 @@ char * GetRStr(char * string, short id) {
 /**********************************************************************
  * CountChars - count characters in a handle
  **********************************************************************/
-long CountChars(void *text, Byte c) {
+long CountChars(void *text, unsigned char c) {
   long count = CountCharsPtr(text, strlen((char *)text), c);
   return (count);
 }
@@ -1120,7 +1118,7 @@ long CountChars(void *text, Byte c) {
 /**********************************************************************
  * CountCharsPtr - count characters in a pointer
  **********************************************************************/
-long CountCharsPtr(char * ptr, long size, Byte c) {
+long CountCharsPtr(char * ptr, long size, unsigned char c) {
   short n __attribute__((unused)) = 0;
   char * end = ptr + size;
 
@@ -1539,7 +1537,7 @@ int AccuFSeek(AccuPtr a, short refN, long spot) {
     return (0);
   } else {
     a->offset = 0;
-    return (SetFPos(refN, fsFromStart, spot));
+    return (lseek(refN, spot, SEEK_SET));
   }
 }
 
@@ -1560,7 +1558,7 @@ void AccuTrim(AccuPtr a) {
 /**********************************************************************
  *
  **********************************************************************/
-int AccuAddChar(AccuPtr a, Byte c) { return (AccuAddPtr(a, &c, 1)); }
+int AccuAddChar(AccuPtr a, unsigned char c) { return (AccuAddPtr(a, &c, 1)); }
 
 /**********************************************************************
  *
@@ -1838,7 +1836,7 @@ short DecodeB64Accu(AccuPtr a, bool isText) {
 /**********************************************************************
  *
  **********************************************************************/
-int AccuInsertChar(AccuPtr a, Byte c, long offset) {
+int AccuInsertChar(AccuPtr a, unsigned char c, long offset) {
   return (AccuInsertPtr(a, (char *)&c, 1, offset));
 }
 
@@ -1894,7 +1892,7 @@ char *hexdig = "0123456789ABCDEF";
  * Bytes2Hex - encode some bytes in hex
  ************************************************************************/
 char * Bytes2Hex(char * bytes, long size, char * hex) {
-  Byte c;
+  unsigned char c;
   char * spot = hex;
 
   while (size--) {
@@ -1909,7 +1907,7 @@ char * Bytes2Hex(char * bytes, long size, char * hex) {
 /************************************************************************
  * IsHexDig - is a char a hex digit?
  ************************************************************************/
-bool IsHexDig(Byte c) {
+bool IsHexDig(unsigned char c) {
   if (islower(c))
     c = toupper(c);
   return (('0' <= c & c <= '9') || ('A' <= c & c <= 'F'));
@@ -1921,7 +1919,7 @@ bool IsHexDig(Byte c) {
  * Hex2Bytes - decode some bytes from hex
  ************************************************************************/
 int Hex2Bytes(char * hex, long size, char * bytes) {
-  Byte hi, lo;
+  unsigned char hi, lo;
 
   while (size >= 2) {
     hi = Hex2Nyb(*hex);
@@ -2095,7 +2093,7 @@ void MyUseResFile(short refN) {
   short oldRefN;
 
   if (BUG8) {
-    oldRefN = CurResFile();
+    oldRefN = 0;
     if (oldRefN != refN) {
       Zero(oldSpec);
       Zero(newSpec);
@@ -2104,7 +2102,7 @@ void MyUseResFile(short refN) {
       Dprintf("UseResFile �%p� -> �%p�;g", spec_name(oldSpec), spec_name(newSpec));
     }
   }
-  UseResFile(refN);
+  /* UseResFile removed */
 }
 
 /************************************************************************
@@ -2141,16 +2139,16 @@ bool IsVICOM(void) {
  ************************************************************************/
 #undef RemoveResource
 int MyRemoveResource(void *h) {
-  short useFile, saveFile = CurResFile();
+  short useFile, saveFile = 0;
   int err = noErr;
 
   if (h) {
-    useFile = HomeResFile(h);
-    if (!(err = ResError())) {
-      UseResFile(useFile);
+    useFile = 0;
+    if (!(err = 0)) {
+      /* UseResFile removed */
       RemoveResource(h);
-      err = ResError();
-      UseResFile(saveFile);
+      err = 0;
+      /* UseResFile removed */
     }
   }
   return err;

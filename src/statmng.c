@@ -586,8 +586,7 @@ void CheckTimeChange(void) {
          i++, pStats++) {
       //	Do year
       if (timeFlags & kNewYear) {
-        BMD(pStats->current.year, pStats->last.year,
-            sizeof(pStats->current.year));
+        memmove(pStats->last.year, pStats->current.year, sizeof(pStats->current.year));
         if (timeFlags & kStartYear)
           // don't use first partial month
           pStats->current.year[dtStart.ld.month - 1] = 0;
@@ -599,8 +598,7 @@ void CheckTimeChange(void) {
       }
       //	Do month
       if (timeFlags & kNewMonth) {
-        BMD(pStats->current.month, pStats->last.month,
-            sizeof(pStats->current.month));
+        memmove(pStats->last.month, pStats->current.month, sizeof(pStats->current.month));
         if (timeFlags & kStartMonth)
           // don't use first partial day
           pStats->current.month[dtStart.ld.day - 1] = 0;
@@ -612,8 +610,7 @@ void CheckTimeChange(void) {
       }
       //	Do week
       if (timeFlags & kNewWeek) {
-        BMD(pStats->current.week, pStats->last.week,
-            sizeof(pStats->current.week));
+        memmove(pStats->last.week, pStats->current.week, sizeof(pStats->current.week));
         if (timeFlags & kStartWeek)
           // don't use first partial day
           pStats->current.week[dtStart.ld.dayOfWeek - 1] = 0;

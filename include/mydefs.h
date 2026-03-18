@@ -41,6 +41,18 @@ ADVISED OF THE POSSIBILITY OF SUCH DAMAGE. */
 #include <stdint.h>
 #include <limits.h>
 
+/* Portable malloc_size: query usable size of a heap allocation */
+#if defined(__APPLE__)
+#include <malloc/malloc.h>
+/* malloc_size() already available */
+#elif defined(__linux__)
+#include <malloc.h>
+#define malloc_size(p) malloc_usable_size(p)
+#else
+/* Fallback: no way to query — return 0 */
+#define malloc_size(p) ((size_t)0)
+#endif
+
 #ifndef PATH_MAX
 #define PATH_MAX 4096
 #endif
@@ -54,9 +66,7 @@ typedef unsigned short uShort;
 #ifndef CStr
 typedef char *CStr;
 #endif
-#ifndef Byte
-typedef unsigned char Byte;
-#endif
+/* Byte typedef removed — use unsigned char directly */
 #ifndef SInt8
 typedef signed char SInt8;
 #endif
@@ -187,7 +197,7 @@ typedef AppleEvent *AppleEventPtr;
     DisposePtr((void *)aPtr);                                                  \
     aPtr = nil;                                                                \
   }
-#define HandleCount(h) ((h) ? (GetHandleSize_(h) / sizeof(*(h))) : 0)
+/* HandleCount REMOVED — use explicit count fields */
 #define DEC_STATE(h) char h##_state;
 #define L_STATE(h)                                                             \
   do {                                                                         \
@@ -219,7 +229,7 @@ typedef AppleEvent *AppleEventPtr;
   AEGetParamPtr((void *)e, (AEKeyword)k, (DescType)dt, (void *)t, (void *)p,   \
                 (Size)m, (void *)a)
 #define SetPort_(p) SetPort(p)
-#define GetHandleSize_(h) InlineGetHandleSize((void *)h)
+/* GetHandleSize_ REMOVED — use explicit size tracking */
 #define HNoPurge_(h) HNoPurge((void *)h)
 #define GetAuxWin_(w, h) GetAuxWin(w, h)
 #define GetNewControl_(i, w) GetNewControl(i, w)

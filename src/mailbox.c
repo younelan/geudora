@@ -2859,7 +2859,7 @@ bool BadMailboxNameChars(char * spec) {
  ************************************************************************/
 void ZeroMailbox(TOCType * tocH) {
   if (!BoxFOpen(tocH)) {
-    SetEOF(tocH->refN, 0L);
+    ftruncate(tocH->refN, 0L);
     BoxFClose(tocH, false);
   }
 }
@@ -4373,7 +4373,7 @@ void DecodeIMAPMessages(TOCType * toc, char * spec) {
   short curIMAPIndex;
   short countIMAP;
   TransVector saveCurTrans = CurTrans;
-  short saveRefN = CurResFile();
+  short saveRefN = 0;
   PersHandle oldPers = CurPers;
   static TransVector IMAPTrans = {nil, nil, nil, nil,          nil, nil,
                                   nil, nil, nil,
@@ -4528,7 +4528,7 @@ msgDone:
     hIMAPIndex = NULL;
   }
 
-  UseResFile(saveRefN);
+  /* UseResFile removed */
 
   CurPers = oldPers;
 

@@ -138,8 +138,8 @@ typedef struct {
   void *nicknameTags; // Concatenation of char *'s representing mapped nickname tags
 } NicknameTagMapRec, *NicknameTagMapRecPtr, *NicknameTagMapRecHandle;
 
-#define NAliases (GetHandleSize_(Aliases) / sizeof(AliasDesc))
-#define NNicknames (GetHandleSize_(This.theData) / sizeof(NickStruct))
+#define NAliases (Aliases ? malloc_size(Aliases) / sizeof(AliasDesc) : 0)
+#define NNicknames (This.theData ? malloc_size(This.theData) / sizeof(NickStruct) : 0)
 #define issep(c) (IsSpace(c) || (c) == ',')
 
 #define NICK_TOC_TYPE 'NToc'

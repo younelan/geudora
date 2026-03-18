@@ -980,8 +980,7 @@ int ReadMessage(TOCType * tocH, int sumN, unsigned char * buffer) {
   count = tocH->sums[sumNum].length;
 
   if (!(MessErr = BoxFOpenLo(tocH, sumNum)))
-    if ((MessErr = SetFPos(tocH->refN, fsFromStart,
-                           tocH->sums[sumNum].offset)) ||
+    if ((MessErr = lseek(tocH->refN, tocH->sums[sumNum].offset, SEEK_SET)) ||
         (MessErr = ARead(tocH->refN, &count, buffer)))
       FileSystemError(READ_MBOX, name, MessErr);
 
@@ -1213,7 +1212,7 @@ int AppendMessage(TOCType * fromTocH, int fromN, TOCType ** toTocHP, bool copy,
   } else {
     if (fromTocH->sums[fromN].cache) {
       count = fromTocH->sums[fromN].length;
-      MessErr = SetFPos(toTocH->refN, fsFromStart, eof);
+      MessErr = lseek(toTocH->refN, eof, SEEK_SET);
       if (!MessErr)
         MessErr = AWrite(toTocH->refN, &count,
              (unsigned char *)fromTocH->sums[fromN].cache);
@@ -1240,7 +1239,7 @@ int AppendMessage(TOCType * fromTocH, int fromN, TOCType ** toTocHP, bool copy,
       FileSystemError(COPY_FAILED, spec_name(toSpec), MessErr);
       return (MessErr);
     }
-    (void)SetEOF(toTocH->refN, eof + fromTocH->sums[fromN].length);
+    (void)ftruncate(toTocH->refN, eof + fromTocH->sums[fromN].length);
     newBodyOffset = fromTocH->sums[fromN].bodyOffset;
     newLength = fromTocH->sums[fromN].length;
 
@@ -2570,7 +2569,7 @@ int SavePtrAsMessage(unsigned char * preText, long preSize, unsigned char * text
    */
   if (!(err = BoxFOpen(tocH))) {
     eof = FindTOCSpot(tocH, size);
-    err = SetFPos(tocH->refN, fsFromStart, eof);
+    err = lseek(tocH->refN, eof, SEEK_SET);
     if (!err)
       err = PutOutFromLine(tocH->refN, fromLen);
     if (!err && preText)
@@ -3118,7 +3117,7 @@ void QuoteLines(GtkWidget *pte, long from, long to, short pfid, long *qEnd) {
   RGBColor color;
   bool withSpace = false;
   long numSpaces = 0;
-  Byte quoteChar;
+  unsigned char quoteChar;
 
   Zero(pse);
 
@@ -4559,8 +4558,7 @@ void SumInfoCpy(MSumPtr newSum, MSumPtr oldSum) {
   newSum->sigId = SigValidate(oldSum->sigId);
   newSum->priority = oldSum->priority;
   // newSum->origPriority = oldSum->origPriority;
-  // BMD(&oldSum->spareShort2, &newSum->spareShort2,
-  // sizeof(newSum->spareShort2));
+  // memmove(&newSum->spareShort2, &oldSum->spareShort2, // sizeof(newSum->spareShort2));
   if (oldSum->opts & OPT_INLINE_SIG)
     newSum->opts |= OPT_INLINE_SIG;
 }

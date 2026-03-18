@@ -45,10 +45,10 @@ DAMAGE. */
 /************************************************************************
  * Declarations for private routines
  ************************************************************************/
-	void HexBinInputChar(Byte c,long estMessageSize);
+	void HexBinInputChar(unsigned char c,long estMessageSize);
 	void HexBinDataChar(short d,long estMessageSize);
 	int FoundHexBin(void);
-	int HexBinDecode(Byte c,long estMessageSize);
+	int HexBinDecode(unsigned char c,long estMessageSize);
 	void AbortHexBin(bool error);
 	void OpenDataFork(void);
 	int ForkRoll(void);
@@ -81,10 +81,10 @@ struct HexBinGlobals_
 	long bSpot;
 	short refN;
 	FSSpec spec;
-	Byte lastData;
-	Byte state68;
-	Byte b8;
-	Byte runCount;
+	unsigned char lastData;
+	unsigned char state68;
+	unsigned char b8;
+	unsigned char runCount;
 	bool run;
 	HeaderDHandle hdh;	// enclosing header
 	long count;
@@ -96,7 +96,7 @@ struct HexBinGlobals_
 	union
 	{
 		HexBinHead bxHead;
-		Byte bxhBytes[sizeof(HexBinHead)];
+		unsigned char bxhBytes[sizeof(HexBinHead)];
 	} BHHUnion;
 	unsigned long calcCrc;
 	unsigned long crc;
@@ -138,7 +138,7 @@ struct HexBinGlobals_
 #define SKIP 0x7E
 #define FAIL 0x7D
 
-Byte HexBinTable[256] = {
+unsigned char HexBinTable[256] = {
 /* 0*/	FAIL, FAIL, FAIL, FAIL, FAIL, FAIL, FAIL, FAIL,
 /*							\t   \015								\012								*/
 				FAIL, SKIP, SKIP, FAIL, FAIL, SKIP, FAIL, FAIL,
@@ -214,8 +214,8 @@ bool ConvertHexBin(short refN,unsigned char * buf,long *size,POPLineType lineTyp
 			SaveHexBin(buf,*size,estSize);
 			if (State>CollectInfo & State!=HexDone)
 			{
-				SetFPos(refN,fsFromStart,OrigOffset);	/* toss the saved stuff */
-				SetEOF(refN,OrigOffset);
+				lseek(refN, OrigOffset, SEEK_SET);	/* toss the saved stuff */
+				ftruncate(refN, OrigOffset);
 				*size = 0;
 			}
 			break;
@@ -283,7 +283,7 @@ void BeginHexBin(HeaderDHandle hdh)
  * HexBinInputChar - read a char from the binhex data, decode it, and
  * let HexBinDataChar do (most of) the rest.
  ************************************************************************/
-void HexBinInputChar(Byte c,long estMessageSize)
+void HexBinInputChar(unsigned char c,long estMessageSize)
 {
 	short d;
 
@@ -465,9 +465,9 @@ int FoundHexBin(void)
  * data byte n times, where n is the value of the NEXT data byte.
  * If n is zero, 0x90 itself is output.
  ************************************************************************/
-int HexBinDecode(Byte c,long estMessageSize)
+int HexBinDecode(unsigned char c,long estMessageSize)
 {
-	Byte b6;
+	unsigned char b6;
 	short data;
 		
 	if ((b6=HexBinTable[c])>64)
@@ -652,7 +652,7 @@ int ForkRoll(void)
 			AbortHexBin(True);
 		else
 		{
-			if (!GetFPos(RefN,&pos)) SetEOF(RefN,pos);
+			if (!GetFPos(RefN,&pos)) ftruncate(RefN, pos);
 			if ((err=close(RefN)))
 			{
 				AbortHexBin(True);

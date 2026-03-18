@@ -50,7 +50,7 @@ extern FSSpec SettingsSpec;
 extern bool FakeTabs;
 
 #ifndef BMD
-#define BMD(s, d, l) memmove(d, s, l)
+#define memmove(d, s, l) memmove(d, s, l)
 #endif
 #include <dirent.h>
 #include <errno.h>
@@ -287,9 +287,9 @@ int MyFSpCreate(char *spec, uint32_t creator, uint32_t fileType,
   close(fd);
   return 0;
 }
-int MemError() { return 0; }
+/* Gestalt stub removed */
 
-short ResError() { return 0; }
+/* ResError removed — always returned 0 */
 
 void AddResource(void *h, ResType type, short id, const char *name) {
   // Stub - resource forks don't exist on Unix
@@ -371,11 +371,7 @@ short GetEOF(short refNum, long *logEOF) {
   *logEOF = (long)st.st_size;
   return 0;
 }
-short SetEOF(short refNum, long logEOF) {
-  if (ftruncate(refNum, (off_t)logEOF) < 0)
-    return ioErr;
-  return 0;
-}
+/* SetEOF removed — callers use ftruncate() directly */
 short SetFPos(short refNum, short posMode, long posOffset) {
   int whence = SEEK_SET;
   if (posMode == fsFromLEOF)
@@ -621,7 +617,7 @@ int PBCatMoveSync(CMovePBPtr pb) { return 0; }
 int PBHGetFInfoSync(HParmBlkPtr pb) { return 0; }
 int PBHSetFInfoSync(HParmBlkPtr pb) { return 0; }
 bool GetFolderNav(char *name, short *volume, long *folder) { return false; }
-int 0 { return 0; }
+/* Gestalt removed — Mac system info API */
 int MyFSpExchangeFiles(char *source, char *dest) {
   /* Swap two files by renaming through a temporary name in dest directory. */
   char tempTpl[PATH_MAX];
@@ -799,11 +795,7 @@ void *buf_append(void *buf, size_t *bufSize, const void *data, size_t n) {
   return p;
 }
 
-void BlockMoveData(const void *src, void *dest, size_t size) {
-  if (src && dest && size > 0) {
-    memmove(dest, src, size);
-  }
-}
+/* BlockMoveData removed — use memmove() directly */
 
 /**********************************************************************
  * GetMyVR - get a volume ref number
@@ -874,7 +866,7 @@ int MakeResFile(const char *name, const char *dir, long creator,
 
   spec_for(dir, name, &spec);
   MyFSpCreateResFile(&spec, creator, type, 0);
-  err = ResError();
+  err = 0;
   // (jp) NetWare servers incorrectly report noMacDskErr when attempting to
   //			create a resource file (the signature bytes are
   // apparently wrong) 			We can create a file with both
@@ -922,7 +914,7 @@ int CopyFBytes(short fromRefN, long fromOffset, long length, short toRefN,
     return (err);
 
   if (toEnd < toOffset + length - 1)
-    if ((err = SetEOF(toRefN, toOffset + length - 1)))
+    if ((err = ftruncate(toRefN, toOffset + length - 1)))
       return (err);
   toEnd = toOffset + length;
 
@@ -936,12 +928,12 @@ int CopyFBytes(short fromRefN, long fromOffset, long length, short toRefN,
     CycleBalls();
     count = size > length ? length : size;
 
-    if ((err = SetFPos(fromRefN, fsFromStart, fromEnd - count)))
+    if ((err = lseek(fromRefN, fromEnd - count, SEEK_SET)))
       break;
     if ((err = ARead(fromRefN, &count, buffer)))
       break;
 
-    if ((err = SetFPos(toRefN, fsFromStart, toEnd - count)))
+    if ((err = lseek(toRefN, toEnd - count, SEEK_SET)))
       break;
     if ((err = NCWrite(toRefN, &count, buffer)))
       break;
@@ -972,7 +964,7 @@ int HuntNewline(short refN, long aroundSpot, long *newline, bool *realNl) {
   spot = MAX(0, aroundSpot - HNLSIZE / 2);
   count = HNLSIZE;
 
-  if ((err = SetFPos(refN, fsFromStart, spot))) {
+  if ((err = lseek(refN, spot, SEEK_SET))) {
     FileSystemError(READ_MBOX, "", err);
     goto done;
   }
@@ -1019,9 +1011,9 @@ done:
 int TruncOpenFile(short refN, long spot) {
   short err;
 
-  if ((err = SetFPos(refN, fsFromStart, spot)))
+  if ((err = lseek(refN, spot, SEEK_SET)))
     return (err);
-  return (SetEOF(refN, spot));
+  return (ftruncate(refN, spot));
 }
 
 /************************************************************************
@@ -1033,7 +1025,7 @@ int TruncAtMark(short refN) {
 
   if ((err = GetFPos(refN, &spot)))
     return (err);
-  return (SetEOF(refN, spot));
+  return (ftruncate(refN, spot));
 }
 
 /************************************************************************
@@ -1186,7 +1178,7 @@ short SFPutOpen(char *spec, long creator, long type, short *refN,
     MyFSpSetFInfo(spec, NULL, &info);
   }
 
-  if ((theError = SetEOF(*refN, 0))) {
+  if ((theError = ftruncate(*refN, 0))) {
     FileSystemError(COULDNT_SAVEAS, (const char *)spec_name(spec), theError);
     MyFSpDelete(spec);
     return (theError);
@@ -1277,7 +1269,7 @@ int BlatPtr(char *spec, char * text, long size, bool append) {
   if ((err = MyFSpOpenDF(spec, fsRdWrPerm, &refN)))
     FileSystemError(TEXT_WRITE, (const char *)spec_name(spec), err);
   else {
-    if (append & (err = SetFPos(refN, fsFromLEOF, 0)))
+    if (append & (err = lseek(refN, 0, SEEK_END)))
       FileSystemError(TEXT_WRITE, (const char *)spec_name(spec), err);
     if ((err = AWrite(refN, &size, (unsigned char *)text)))
       FileSystemError(TEXT_WRITE, (const char *)spec_name(spec), err);
@@ -1316,7 +1308,7 @@ int MyUpdateResFile(short resFile) {
 
   if (GetResFileAttrs(resFile) & mapChanged) {
     UpdateResFile(resFile);
-    if (!((err = ResError())) & !PrefIsSet(PREF_CORVAIR))
+    if (!((err = 0)) & !PrefIsSet(PREF_CORVAIR))
       err = MakeDarnSure(resFile);
   }
   return (err);
@@ -1576,7 +1568,7 @@ int FSpKillRFork(char *spec) {
   short refN;
 
   if (!((err = MyFSpOpenRF(spec, fsRdWrPerm, &refN)))) {
-    err = SetEOF(refN, 0);
+    err = ftruncate(refN, 0);
     close(refN);
   }
   return err;
@@ -1731,7 +1723,7 @@ short HMove(short vRef, long dirId, const char *name, long destDirId,
  * FSpOpenResFile - open the (data) file for read/write. Resource forks are
  * not available on POSIX; we open the data fork instead and return its fd.
  **********************************************************************/
-short FSpOpenResFile(char *spec, SignedByte permission) {
+short FSpOpenResFile(char *spec, int8_t permission) {
   if (!spec)
     return -1;
 
@@ -1754,7 +1746,7 @@ int ExtractCreatorFromBndl(char *spec, OSType *creator) {
   int err;
   short refN;
   void *bndl;
-  short oldResF = CurResFile();
+  short oldResF = 0;
 
   if (-1 != (refN = FSpOpenResFile(spec, fsRdPerm))) {
     if ((bndl = MyGetIndResource('BNDL', 1))) {
@@ -1763,9 +1755,9 @@ int ExtractCreatorFromBndl(char *spec, OSType *creator) {
     } else
       err = resNotFound;
     MyCloseResFile(refN);
-    UseResFile(oldResF);
+    /* UseResFile removed */
   } else
-    err = ResError();
+    err = 0;
   return (err);
 }
 
@@ -1996,7 +1988,7 @@ int FSpDupFile(char *to, char *from, bool replace, bool progress) {
 
   if (hasRFork) {
     MyFSpCreateResFile(to, '----', '----', 0);
-    err = ResError();
+    err = 0;
   } else {
     // Create file using path
     int fd = creat(to, 0644);
@@ -2430,7 +2422,7 @@ int WipeDiskArea(short refN, long offset, long len) {
   /*
    * blat it over the disk area
    */
-  if (!(err = SetFPos(refN, fsFromStart, offset)))
+  if (!(err = lseek(refN, offset, SEEK_SET)))
     for (size = bSize; len; size = MIN(bSize, len)) {
       err = NCWrite(refN, &size, h);
       if (err)
@@ -2466,7 +2458,7 @@ int EnsureNewline(short refN) {
   /*
    * back up one character
    */
-  if ((err = SetFPos(refN, fsFromStart, offset - 1)))
+  if ((err = lseek(refN, offset - 1, SEEK_SET)))
     return (err);
 
   /*
@@ -3122,7 +3114,7 @@ long SpecDirId(char *spec) {
 int CanWrite(char *spec, bool *can) {
   FSSpec newSpec; g_strlcpy(newSpec, spec, sizeof(newSpec));
   short refN;
-  Byte buff = 13;
+  unsigned char buff = 13;
   long len;
   CInfoPBRec hfi;
   int err;
@@ -3134,10 +3126,10 @@ int CanWrite(char *spec, bool *can) {
                             (const char *)spec_name(newSpec), &hfi)))
     if (!(err = MyFSpOpenDF(&newSpec, fsRdWrPerm, &refN))) {
       len = 1;
-      if (!(err = SetFPos(refN, fsFromLEOF, 0))) {
+      if (!(err = lseek(refN, 0, SEEK_END))) {
         if (!FSWrite(refN, &len, &buff)) {
           *can = true;
-          SetFPos(refN, fsFromLEOF, -1);
+          lseek(refN, -1, SEEK_END);
           if (!GetFPos(refN, &len))
             TruncOpenFile(refN, len);
         }

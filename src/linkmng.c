@@ -806,7 +806,7 @@ int SaveIndHistoryFile(short which) {
 
 
   GetFPos(refN, &bytes);
-  SetEOF(refN, bytes);
+  ftruncate(refN, bytes);
   close(refN);
   refN = 0;
 
@@ -837,7 +837,7 @@ int WriteHistTOC(short which) {
   short refN;
   void **theData;
   void **newData;
-  short oldResF = CurResFile();
+  short oldResF = 0;
 
 #ifdef DEBUG
   if (InAThread())
@@ -863,15 +863,15 @@ int WriteHistTOC(short which) {
 
     // FSpOpenResFile is no-op on POSIX
     if (-1 != (refN = -1)) {
-      AddResource(newData, LINK_TOC_TYPE, LINK_RESID, "");
-      err = ResError();
+      /* AddResource removed */
+      err = 0;
       if (!err) {
         UpdateResFile(refN);
-        err = ResError();
+        err = 0;
       }
       /* CloseResFile(refN); */ /* Mac-only resource API, no-op in GTK port */
     } else
-      err = ResError();
+      err = 0;
 
     if (!err) {
       struct timeval tv[2];
@@ -883,7 +883,7 @@ int WriteHistTOC(short which) {
     }
 
     free(newData); // Dispose of the duplicated handle
-    UseResFile(oldResF);
+    /* UseResFile removed */
   }
 
   return (err);
@@ -998,7 +998,7 @@ int ReadHistTOC(short which) {
   FSSpec lSpec; g_strlcpy(lSpec, gHistories[which].spec, sizeof(lSpec));
   bool sane;
   short refN = 0;
-  short oldResF = CurResFile();
+  short oldResF = 0;
   HistoryStructHandle theToc = nil;
   unsigned char * hand = nil;
 
@@ -1018,7 +1018,7 @@ int ReadHistTOC(short which) {
     //
 
     theToc = Get1Resource(LINK_TOC_TYPE, LINK_RESID);
-    if (noErr == (err = ResError())) {
+    if (noErr == (err = 0)) {
       short i, count;
 
       if (theToc != nil) {
@@ -1057,7 +1057,7 @@ int ReadHistTOC(short which) {
 
   if (refN)
     /* CloseResFile(refN); */ /* Mac-only resource API, no-op in GTK port */
-  UseResFile(oldResF);
+  /* UseResFile removed */
 
   return (err);
 }
@@ -1577,7 +1577,7 @@ void *GetLHPreviewIcon(VLNodeID id) {
       AdIdToName(adId, adGraphicName);
       if (noErr == spec_for(gLinkHistoryFolder, adGraphicName,
                                 &adGraphicSpec)) {
-        short iconRes, oldResFile = CurResFile();
+        short iconRes, oldResFile = 0;
 
         // open the file
         iconRes = FSpOpenResFile(&adGraphicSpec, fsRdPerm);
@@ -1589,7 +1589,7 @@ void *GetLHPreviewIcon(VLNodeID id) {
 
           /* CloseResFile(iconRes); */ /* Mac-only resource API, no-op in GTK port */
         }
-        UseResFile(oldResFile);
+        /* UseResFile removed */
       }
     }
   }

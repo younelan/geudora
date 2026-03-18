@@ -57,7 +57,7 @@ typedef struct IMAPTransferRec_ {
   short command;
   FSSpec targetSpec;
   TOCType * destToc;
-  void *uids;
+  GArray *uids;
   bool attachmentsToo;
   TOCType * delToc;
   bool nuke;

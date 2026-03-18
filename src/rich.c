@@ -191,7 +191,7 @@ int BuildEnriched(AccuPtr enriched,PETEHandle pte,unsigned char * text,long len,
 {
 	long eSize = 0;
 	long eOffset = 0;
-	Byte c;
+	unsigned char c;
 	int err = noErr;
 	bool cr = False;
 	PETEStyleEntry oldStyle, newStyle;

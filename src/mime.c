@@ -307,14 +307,14 @@ long Encode64(char * bin,long len,char * sixFour,char * newLine,Enc64Ptr e64)
 long Decode64(char * sixFour,long sixFourLen,char * bin,long *binLen,Dec64Ptr d64,bool text)
 {
 	short decode;											/* the decoded short */
-	Byte c;														/* the decoded byte */
+	unsigned char c;														/* the decoded byte */
 		/* we separate the short & the byte to the compiler can worry about byteorder */
 	char * end = sixFour + sixFourLen;	/* stop decoding here */
 	char * binSpot = bin;								/* current output character */
 	short decoderState;	/* which of 4 bytes are we seeing now? */
 	long invalCount;		/* how many bad chars found this time around? */
 	long padCount;			/* how many pad chars found so far? */
-	Byte partial;				/* partially decoded byte from/for last/next time */
+	unsigned char partial;				/* partially decoded byte from/for last/next time */
 	bool wasCR;
 
 	/*
@@ -509,12 +509,12 @@ long EncodeQP(char * bin,long len,char * qp,char * newLine,long *bplp)
  ************************************************************************/
 long DecodeQP(char * qp,long qpLen,char * bin,long *binLen,DecQPPtr dqp)
 {
-	Byte c;									/* the decoded byte */
+	unsigned char c;									/* the decoded byte */
 	char * end;								/* stop decoding here */
 	char * binSpot = bin;			/* current output character */
 	char * qpSpot;
 	QPStates state;
-	Byte lastChar;
+	unsigned char lastChar;
 	short errs=0;
 	short upperNib, lowerNib;
 
@@ -1154,7 +1154,7 @@ long EncodeUU(char * input,long inlen,char * output,char * newline,UUStateHandle
 	else
 	{
 		char lineBuffer[64];
-		Byte c;
+		unsigned char c;
 		char *lineSpot, *lineEnd;
 		
 		lineSpot = lineBuffer;
@@ -1501,7 +1501,7 @@ BoundaryType ReadMulti(TransStream stream,short refN,MIMESHandle mimeSList,char 
 						/*
 						 * we like what we already have better than what we're getting now
 						 */
-						SetFPos(refN,fsFromStart,innerHDH->diskStart);	// toss header
+						lseek(refN, innerHDH->diskStart, SEEK_SET);	// toss header
 						innerMSH->readBody=ReadNothing;
 						if (newtype==HTMLTagsStrn+htmlTag) AnyHTML = False;
 					}
@@ -1764,7 +1764,7 @@ BoundaryType ReadMailServer(TransStream stream,short refN,MIMESHandle mimeSList,
 	char bound[256];
 	MIMESHandle parentMSH;
 	Accumulator url;
-	Byte separator='?';
+	unsigned char separator='?';
 	
 	
 	LL_Last(mimeSList,msh);
@@ -2189,8 +2189,8 @@ BoundaryType ReadText(TransStream stream,short refN,MIMESHandle mimeSList,char *
 	GetFPos(refN,&offsetWhenDone);
 	if (offsetWhenDone == offsetAfterMarkup+whiteCount)
 	{
-		SetFPos(refN,fsFromStart,offsetBeforeMarkup);
-		SetEOF(refN,offsetBeforeMarkup);
+		lseek(refN, offsetBeforeMarkup, SEEK_SET);
+		ftruncate(refN, offsetBeforeMarkup);
 		msh->hdh->hasRich = msh->hdh->hasHTML = msh->hdh->hasFlow = msh->hdh->hasCharset = false;
 	}
 	else
@@ -3223,23 +3223,23 @@ int RecordTLMIME(char * spec,emsMIMEHandle tlMIME)
 	FlatTLMIMEHandle flat;
 	short refN;
 	int err;
-	short oldResF = CurResFile();
+	short oldResF = 0;
 
 	if ((err=FlattenTLMIME(tlMIME,&flat))) return(err);
 	refN = -1; // FSpOpenResFile is no-op
-	if (refN==-1) err = ResError();
+	if (refN==-1) err = 0;
 	else
 	{
-		UseResFile(refN);
+		/* UseResFile removed */
 		AddResource((void *)flat,MIME_FTYPE,1001,"");
-		if ((err=ResError())) free(flat);
+		if ((err=0)) free(flat);
 		else
 		{
 			err = MyUpdateResFile(refN);
 		}
 		
 	}
-	UseResFile (oldResF);
+	/* UseResFile removed */
 	return(err);
 }
 

@@ -36,6 +36,7 @@ ADVISED OF THE POSSIBILITY OF SUCH DAMAGE. */
 /* Global IMAP error string set by mm_log, read by IE() */
 char gIMAPErrorString[256] = {0};
 
+#include <glib.h>
 #include "imapdownload.h"
 #include "auditdefs.h"
 #include "message.h"
@@ -957,7 +958,7 @@ MailboxNodeHandle DoFetchNewMessages(char * mailboxSpec, bool fetchFlags,
   char s[256];
   char m[256];
   DeliveryNodeHandle delivery = nil;
-  SignedByte dState;
+  char dState;
 
   // find the toc for this mailbox, open it if
   // we must.
@@ -1166,7 +1167,7 @@ MailboxNodeHandle DoFetchNewMessages(char * mailboxSpec, bool fetchFlags,
               }
 
               if (!delivery->aborted) {
-                dState = HGetState((void *)delivery);
+                dState = 0 /* HGetState removed */;
                 // create the list of summaries
                 // to be updated, destroy the
                 // updateList
@@ -1666,7 +1667,7 @@ int SaveMinimalHeader(MAILSTREAM *stream) {
   DeliveryNodeHandle delivery = (DeliveryNodeHandle)(stream->delivery);
   MSumType sum;
   long offset = 0;
-  SignedByte dState;
+  char dState;
   char buf[256];
   long ticks;
 
@@ -1770,7 +1771,7 @@ int SaveMinimalHeader(MAILSTREAM *stream) {
       // ported yet
 
       // stick the summary into the sum list
-      dState = HGetState((void *)delivery);
+      dState = 0 /* HGetState removed */;
       if (delivery->ta) {
         // Calculate current size using
         // InlineGetHandleSize
@@ -2130,7 +2131,7 @@ bool IMAPDelivery(TOCType * inToc, void **toAdd, void **toUpdate,
   DeliveryNodeHandle node = gDeliveryQueue;
   DeliveryNodeHandle next;
   PersHandle oldPers = CurPers;
-  SignedByte dState;
+  char dState;
 
   if (filter)
     *filter = false;
@@ -2138,7 +2139,7 @@ bool IMAPDelivery(TOCType * inToc, void **toAdd, void **toUpdate,
 
   // loop through list of deliveries
   while (node) {
-    dState = HGetState((void *)node);
+    dState = 0 /* HGetState removed */;
     if ((node->aborted == false) & (SameTOC(inToc, node->toc))) {
       // grab the lists of summaries built so
       // far
@@ -2232,7 +2233,7 @@ bool IMAPDelivery(TOCType * inToc, void **toAdd, void **toUpdate,
  ************************************************************************/
 void IMAPAbortResync(TOCType * toc) {
   DeliveryNodeHandle node = gDeliveryQueue;
-  SignedByte state;
+  char state;
 
   // Is there a resync going on this mailbox?
   while (node) {
@@ -2243,7 +2244,7 @@ void IMAPAbortResync(TOCType * toc) {
     // operations.  Ignore nodes that are
     // already aborted. jdboyd 03/22/02
     if (node->aborted == false) {
-      state = HGetState((void *)node);
+      state = 0 /* HGetState removed */;
       if (SameTOC(toc, node->toc)) {
         // is this mailbox done with the
         // network part of delivery?
@@ -2264,7 +2265,7 @@ void IMAPAbortResync(TOCType * toc) {
             ResetFilterFlags(toc);
         }
         break;
-      } else
+      }
     }
 
     node = node->next;
@@ -2383,10 +2384,10 @@ bool SameTOC(TOCType * toc1, TOCType * toc2) {
  ************************************************************************/
 DeliveryNodeHandle FindNodeByToc(TOCType * toc) {
   DeliveryNodeHandle node = gDeliveryQueue;
-  SignedByte state;
+  char state;
 
   while (node) {
-    state = HGetState((void *)node);
+    state = 0 /* HGetState removed */;
     if (SameTOC(toc, node->toc)) {
       break;
     }
@@ -2633,7 +2634,7 @@ bool DoDownloadMessages(TOCType * tocH, GArray *uids, bool attachmentsToo) {
   short numUids;
   long sumNum;
   unsigned long newUIDValidity;
-  SignedByte tstate;
+  char tstate;
   short totalUids;
   bool fetchedAtLeastOne = false;
 
@@ -2691,11 +2692,11 @@ bool DoDownloadMessages(TOCType * tocH, GArray *uids, bool attachmentsToo) {
                numUids++) {
             PROGRESS_BAR((100 * numUids) / totalUids, totalUids - numUids, nil,
                          nil, nil);
-            if (TOCFindMessByMID(g_array_index(uids, unsigned long, numUids), tocH,
+            if (TOCFindMessByMID(((unsigned long *)(uids->data))[numUids], tocH,
                                  &sumNum) == noErr) {
               // indicate which message we're
               // downloading
-              tstate = HGetState((void *)tocH);
+              tstate = 0 /* HGetState removed */;
               g_strlcpy((char *)progressMessage,
                     (char *)tocH->sums[sumNum].from, sizeof(progressMessage));
               *progressMessage = MIN(*progressMessage, 31);
@@ -2714,12 +2715,12 @@ bool DoDownloadMessages(TOCType * tocH, GArray *uids, bool attachmentsToo) {
               // tell the stream where to put
               // it.
               imapStream->mailStream->refN = OpenMessDestFile(
-                  mailboxNode, g_array_index(uids, unsigned long, numUids), &spoolSpec);
+                  mailboxNode, ((unsigned long *)(uids->data))[numUids], &spoolSpec);
 
               // get the message
               if (imapStream->mailStream->refN > 0) {
                 result = DoDownloadSingleMessage(
-                    imapStream, g_array_index(uids, unsigned long, numUids), true,
+                    imapStream, ((unsigned long *)(uids->data))[numUids], true,
                     attachmentsToo);
 
                 // if we failed to get the
@@ -2820,8 +2821,8 @@ short OpenMessDestFile(MailboxNodeHandle mailboxInfo, unsigned long uid,
 
         // Start writing at the beginning of
         // the file
-        if ((err = SetEOF(ref, 0)) == noErr)
-          err = SetFPos(ref, fsFromStart, 0);
+        if ((err = ftruncate(ref, 0)) == noErr)
+          err = lseek(ref, 0, SEEK_SET);
       }
     }
   }
@@ -3367,7 +3368,7 @@ bool IMAPDeleteMessages(TOCType * tocH, GArray *uids, bool nuke, bool expunge,
     for (count = 0; count < numUids; count++) {
       for (sumNum = 0; sumNum < tocH->count; sumNum++) {
         if (tocH->sums[sumNum].uidHash ==
-            g_array_index(uids, unsigned long, count)) {
+            ((unsigned long *)(uids->data))[count]) {
           if (tocH->sums[sumNum].messH)
             CloseMyWindow(
                 GetMyWindowWindowPtr(tocH->sums[sumNum].messH->win));
@@ -3598,9 +3599,7 @@ bool IMAPDeleteMessagesFromSearchWindow(TOCType * tocH) {
                   continue;
                 }
                 if (realTocH == curTocH) {
-                  BMD(&(curTocH->sums[realSum].uidHash),
-                      &g_array_index(uids, unsigned long, --count),
-                      sizeof(unsigned long));
+                  memmove(&((unsigned long *)(uids->data))[--count], &(curTocH->sums[realSum].uidHash), sizeof(unsigned long));
                   ((Boolean  *)selectedSearchMessages)[sumNum] = false;
 
                   // no matter if the message
@@ -3791,9 +3790,7 @@ int IMAPTransferMessagesFromSearchWindow(TOCType * fromTocH, TOCType * toTocH,
                 sum = tempSum2;
                 if (!(IMAPMessageBeingDownloaded(realTocH, sum) ||
                       IMAPMessageDownloaded(realTocH, sum)))
-                  BMD(&(realTocH->sums[sum].uidHash),
-                      &((unsigned long  *)idsToFetch)[idNum++],
-                      sizeof(unsigned long));
+                  memmove(&((unsigned long  *)idsToFetch)[idNum++], &(realTocH->sums[sum].uidHash), sizeof(unsigned long));
               }
 
               // copy the messages
@@ -3887,8 +3884,7 @@ int IMAPMoveIMAPMessages(TOCType * fromTocH, TOCType * toTocH, bool copy) {
       // build a list of uids to transfer
       for (sumNum = 0; sumNum < fromTocH->count & c; sumNum++)
         if (fromTocH->sums[sumNum].selected)
-          BMD(&(fromTocH->sums[sumNum].uidHash),
-              &g_array_index(uids, unsigned long, --c), sizeof(unsigned long));
+          memmove(&((unsigned long *)(uids->data))[--c], &(fromTocH->sums[sumNum].uidHash), sizeof(unsigned long));
 
       // and send them on their merry way ...
       err = IMAPTransferMessages(fromTocH, toTocH, uids, copy, false);
@@ -4142,7 +4138,7 @@ bool DoUIDMarkAsDeleted(IMAPStreamPtr stream, GArray *uids, bool undelete) {
     // build the range string for the command
     // ...
     if (PrefIsSet(PREF_IMAP_DONT_USE_UID_RANGE)) {
-      uid = g_array_index(uids, unsigned long, i);
+      uid = ((unsigned long *)(uids->data))[i];
       char uidStrC[64];
       snprintf(uidStrC, sizeof(uidStrC), "%lu", uid);
     } else
@@ -4231,7 +4227,7 @@ int IMAPTransferMessages(TOCType * fromTocH, TOCType * toTocH, GArray *uids,
     for (count = 0; count < numUids; count++) {
       for (sumNum = 0; sumNum < fromTocH->count; sumNum++) {
         if (fromTocH->sums[sumNum].uidHash ==
-            g_array_index(uids, unsigned long, count)) {
+            ((unsigned long *)(uids->data))[count]) {
           if (fromTocH->sums[sumNum].messH)
             CloseMyWindow(
                 GetMyWindowWindowPtr(fromTocH->sums[sumNum].messH->win));
@@ -4493,7 +4489,7 @@ int TransferMessageBetweenServers(
         // iterate through the list of messages
         // to be transferred
         for (count = 0; (count < numSums) & result; count++) {
-          uid = g_array_index(uids, unsigned long, count);
+          uid = ((unsigned long *)(uids->data))[count];
 
           PROGRESS_MESSAGER(kpSubTitle, LEFT_TO_TRANSFER);
           PROGRESS_BAR((100 * count) / numSums, numSums - count, nil, nil, nil);
@@ -5180,7 +5176,7 @@ bool CopyMessages(IMAPStreamPtr imapStream, MailboxNodeHandle mbox, GArray *uids
               ucptr->hOldSums = calloc(1,numMessages * sizeof(MSumType));
               if (0 == noErr) {
                 for (i = 0; i < numMessages; i++) {
-                  sumNum = UIDToSumNum(g_array_index(uids, unsigned long, i), fromTocH);
+                  sumNum = UIDToSumNum(((unsigned long *)(uids->data))[i], fromTocH);
                   if (sumNum != -1)
                     CopySum(&(fromTocH->sums[sumNum]),
                             &(((MSumPtr)(ucptr->hOldSums))[i]), 0);
@@ -5191,7 +5187,7 @@ bool CopyMessages(IMAPStreamPtr imapStream, MailboxNodeHandle mbox, GArray *uids
                         ((hidTocH = GetHiddenCacheMailbox(
                               TOCToMbox(fromTocH), false, false)) != NULL)) {
                       sumNum =
-                          UIDToSumNum(g_array_index(uids, unsigned long, i), hidTocH);
+                          UIDToSumNum(((unsigned long *)(uids->data))[i], hidTocH);
                       if (sumNum != -1)
                         CopySum(&(hidTocH->sums[sumNum]),
                                 &(((MSumPtr)(ucptr->hOldSums))[i]), 0);
@@ -5227,11 +5223,11 @@ bool CopyMessages(IMAPStreamPtr imapStream, MailboxNodeHandle mbox, GArray *uids
       if (PrefIsSet(PREF_IMAP_DONT_USE_UID_RANGE)) {
         // add the uid to the list of uids to
         // copy
-        uid = g_array_index(uids, unsigned long, i);
+        uid = ((unsigned long *)(uids->data))[i];
         sprintf((char *)uidStr, "%lu", uid);
         result = UIDCopy(imapStream, (char *)uidStr, mbox->mailboxName);
       } else {
-        uid = g_array_index(uids, unsigned long, i);
+        uid = ((unsigned long *)(uids->data))[i];
         i = GenerateUIDString(uids, i, uidStr);
         result = UIDCopy(imapStream, (char *)uidStr, mbox->mailboxName);
       }
@@ -5280,13 +5276,13 @@ bool CopyMessages(IMAPStreamPtr imapStream, MailboxNodeHandle mbox, GArray *uids
         // build the range string for the
         // command ...
         if (PrefIsSet(PREF_IMAP_DONT_USE_UID_RANGE)) {
-          uid = g_array_index(uids, unsigned long, i);
+          uid = ((unsigned long *)(uids->data))[i];
           sprintf((char *)uidStr, "%lu", uid);
           // add the uid to the list of uids to
           // copy
           result = UIDDeleteMessages(imapStream, (char *)uidStr, false);
         } else {
-          uid = g_array_index(uids, unsigned long, i);
+          uid = ((unsigned long *)(uids->data))[i];
           i = GenerateUIDString(uids, i, uidStr);
           // mark the message for deletion.  Do
           // not expunge here.
@@ -5320,12 +5316,12 @@ short GenerateUIDString(GArray *uids, short index, char uidStr[256]) {
   unsigned long uid, lastUid, nextUid;
   short numMessages = uids->len;
 
-  uid = g_array_index(uids, unsigned long, index);
+  uid = ((unsigned long *)(uids->data))[index];
   lastUid = uid;
 
   // Is there a message after this one?
   if (index < (numMessages - 1)) {
-    nextUid = g_array_index(uids, unsigned long, index + 1);
+    nextUid = ((unsigned long *)(uids->data))[index + 1];
     lastUid = uid;
 
     // Increment through the list until we find
@@ -5333,7 +5329,7 @@ short GenerateUIDString(GArray *uids, short index, char uidStr[256]) {
     while (((nextUid - lastUid) == 1) & (index < (numMessages - 1))) {
       index++;
       lastUid = nextUid;
-      nextUid = g_array_index(uids, unsigned long, index + 1);
+      nextUid = ((unsigned long *)(uids->data))[index + 1];
     }
   }
 
@@ -5449,7 +5445,7 @@ int UpdateLocalSummaries(TOCType * fromTocH, GArray *uids, bool undelete,
   short numUids = uids->len;
   short sumNum, count;
   MSumType sum;
-  SignedByte state;
+  char state;
 
   // mus thave a list of UIDs to work with, and
   // a toc to transfer from.
@@ -5462,7 +5458,7 @@ int UpdateLocalSummaries(TOCType * fromTocH, GArray *uids, bool undelete,
       // expunge?  Then remove the summaries
       // from the sourcemailbox
       if (expunge) {
-        state = HGetState((void *)node);
+        state = 0 /* HGetState removed */;
         node->td = malloc(numUids * sizeof(MSumType));
         if (node->td) {
           Zero(sum);
@@ -5473,7 +5469,7 @@ int UpdateLocalSummaries(TOCType * fromTocH, GArray *uids, bool undelete,
           // summaries from there to the new
           // tocH
           for (count = 0; count < numUids; count++) {
-            sum.uidHash = g_array_index(uids, unsigned long, count);
+            sum.uidHash = ((unsigned long *)(uids->data))[count];
             memmove(&((MSumPtr)(node->td))[count], &sum, sizeof(MSumType));
           }
           node->finished = true;
@@ -5486,7 +5482,7 @@ int UpdateLocalSummaries(TOCType * fromTocH, GArray *uids, bool undelete,
       }
       // just mark as deleted.
       else {
-        state = HGetState((void *)node);
+        state = 0 /* HGetState removed */;
         node->tu = malloc(numUids * sizeof(MSumType));
         if (node->tu) {
           Zero(sum);
@@ -5497,7 +5493,7 @@ int UpdateLocalSummaries(TOCType * fromTocH, GArray *uids, bool undelete,
           for (count = 0; count < numUids; count++) {
             for (sumNum = 0; sumNum < fromTocH->count; sumNum++) {
               if (fromTocH->sums[sumNum].uidHash ==
-                  g_array_index(uids, unsigned long, count)) {
+                  ((unsigned long *)(uids->data))[count]) {
                 sum.uidHash = fromTocH->sums[sumNum].uidHash;
                 if (undelete) {
                   sum.opts = fromTocH->sums[sumNum].opts & ~OPT_DELETED;
@@ -5505,8 +5501,7 @@ int UpdateLocalSummaries(TOCType * fromTocH, GArray *uids, bool undelete,
                   sum.opts = fromTocH->sums[sumNum].opts | OPT_DELETED;
                 }
                 sum.state = fromTocH->sums[sumNum].state;
-                BMD(&sum, &((MSumPtr)(node->tu))[count],
-                    sizeof(MSumType));
+                memmove(&((MSumPtr)(node->tu))[count], &sum, sizeof(MSumType));
                 sumNum = fromTocH->count;
               }
             }
@@ -5648,7 +5643,7 @@ bool DoExpungeMailboxLo(TOCType * tocH, bool bCheckLocal) {
         // the EXPUNGE completes.
         for (count = 0; (count < tocH->count) & (sumNum > 0); count++) {
           if (tocH->sums[count].opts && OPT_DELETED) {
-            g_array_index(uids, unsigned long, sumNum - 1) =
+            ((unsigned long *)(uids->data))[sumNum - 1] =
                 tocH->sums[count].uidHash;
             sumNum--;
           }
@@ -5658,7 +5653,7 @@ bool DoExpungeMailboxLo(TOCType * tocH, bool bCheckLocal) {
         for (count = 0; hidTocH && (count < hidTocH->count) && (sumNum > 0);
              count++) {
           if (hidTocH->sums[count].opts & OPT_DELETED) {
-            g_array_index(uids, unsigned long, sumNum - 1) =
+            ((unsigned long *)(uids->data))[sumNum - 1] =
                 hidTocH->sums[count].uidHash;
             sumNum--;
           }
@@ -5942,7 +5937,7 @@ static char FileAppendDriverNext(STRING *s) {
     err = ioErr;
   }
   if (err == noErr) {
-    if (!(err = SetFPos(refN, fsFromStart, msDataPtr->bytesRead))) {
+    if (!(err = lseek(refN, msDataPtr->bytesRead, SEEK_SET))) {
       err = ARead(refN, (long *)&nBytes, msDataPtr->buffer);
     }
 
@@ -5997,7 +5992,7 @@ bool IMAPMessageBeingDownloaded(TOCType * tocH, short s) {
   PersHandle oldPers = CurPers;
   threadDataHandle index;
   short numUids;
-  SignedByte state;
+  char state;
 
   // it's not being downloaded if it's not an
   // IMAP message
@@ -6040,7 +6035,7 @@ bool IMAPMessageBeingDownloaded(TOCType * tocH, short s) {
     // downloading this message?
     for (index = gThreadData; index && !onItsWay; index = index->next) {
       if (index->currentTask == IMAPFetchingTask) {
-        state = HGetState((void *)index);
+        state = 0 /* HGetState removed */;
         if (SameTOC(index->imapInfo.destToc, tocH)) {
           if (index->imapInfo.uids) {
             for (numUids = 0;
@@ -6068,7 +6063,7 @@ bool IMAPMessageBeingDownloaded(TOCType * tocH, short s) {
 void IMAPAbortMessageFetch(TOCType * tocH, short sumNum) {
   threadDataHandle index;
   short numUids;
-  SignedByte state;
+  char state;
 
   // must have a TOC
   if (!tocH)
@@ -6102,7 +6097,7 @@ void IMAPAbortMessageFetch(TOCType * tocH, short sumNum) {
   // downloading this message?
   for (index = gThreadData; index; index = index->next) {
     if (index->currentTask == IMAPFetchingTask) {
-      state = HGetState((void *)index);
+      state = 0 /* HGetState removed */;
       if (SameTOC(index->imapInfo.destToc, tocH)) {
         if (index->imapInfo.uids) {
           for (numUids = 0; numUids < (malloc_size(index->imapInfo.uids) /
@@ -6638,9 +6633,7 @@ int FTMExpunge(IMAPStreamPtr imapStream, TOCType * tocH) {
             count = messageCount;
             for (sumNum = 0; sumNum < tocH->count & count; sumNum++)
               if (tocH->sums[sumNum].opts && OPT_DELETED)
-                BMD(&(tocH->sums[sumNum].uidHash),
-                    &g_array_index(uids, unsigned long, --count),
-                    sizeof(unsigned long));
+                memmove(&((unsigned long *)(uids->data))[--count], &(tocH->sums[sumNum].uidHash), sizeof(unsigned long));
           } else {
             WarnUser(0, MEM_ERR);
             return (false);
@@ -6656,7 +6649,7 @@ int FTMExpunge(IMAPStreamPtr imapStream, TOCType * tocH) {
             while (count--) {
               // mark the message for deletion.
               // Do not expunge.
-              uid = g_array_index(uids, unsigned long, count);
+              uid = ((unsigned long *)(uids->data))[count];
               sprintf(uidStr, "%lu", uid);
               UIDUnDeleteMessages(imapStream, uidStr);
             }
@@ -6670,7 +6663,7 @@ int FTMExpunge(IMAPStreamPtr imapStream, TOCType * tocH) {
             while (count--) {
               // mark the message for deletion.
               // Do not expunge.
-              uid = g_array_index(uids, unsigned long, count);
+              uid = ((unsigned long *)(uids->data))[count];
               sprintf(uidStr, "%lu", uid);
               UIDDeleteMessages(imapStream, uidStr, false);
             }
@@ -7135,8 +7128,8 @@ unsigned long DoDownloadIMAPAttachments(FSSpecHandle attachments,
                 // no resource fork on POSIX — skip FSpKillRFork
 
                 // truncate and seek to start
-                if ((err = SetEOF(ref, 0)) == noErr)
-                  err = SetFPos(ref, fsFromStart, 0);
+                if ((err = ftruncate(ref, 0)) == noErr)
+                  err = lseek(ref, 0, SEEK_SET);
 
                 // tell the imap stream where
                 // to put it
@@ -7896,7 +7889,7 @@ bool CanFetchAttachment(char * spec) {
   bool result = false;
   threadDataHandle index;
   short ascan;
-  SignedByte state;
+  char state;
 
   if (spec && spec_name(spec)[0]) {
     if (IsIMAPAttachmentStub(spec)) {
@@ -7905,7 +7898,7 @@ bool CanFetchAttachment(char * spec) {
       // are there any threads currently
       // operating on this stub?
       for (index = gThreadData; index && result; index = index->next) {
-        state = HGetState((void *)index);
+        state = 0 /* HGetState removed */;
         // scan through this thread's
         // attachments specs
         if (index->imapInfo.attachments) {
@@ -8045,7 +8038,7 @@ bool RedoIMAPAttachmentIcons(MyWindowPtr win, PETEHandle previewPte,
   unsigned char *lBegin, *lEnd; /* beginning and end of
                         current line */
   char line[256];
-  Byte state;
+  unsigned char state;
   bool found = false;
   FSSpec spec, curAtt;
   short i;
@@ -8645,7 +8638,7 @@ bool DoIMAPServerSearch(TOCType * searchWin, BoxCountHandle allBoxes,
   DeliveryNodeHandle delivery = FindNodeByToc(searchWin);
   FSSpec specToSearch;
   short menuId;
-  SignedByte pState;
+  char pState;
   unsigned long start, next, last;
   unsigned long chunkLen = GetRLong(IMAP_SEARCH_CHUNK_SIZE);
 
@@ -8686,7 +8679,7 @@ bool DoIMAPServerSearch(TOCType * searchWin, BoxCountHandle allBoxes,
   if (CurPers) {
     // display some progress indicating which
     // server we're searching
-    pState = HGetState((void *)CurPers);
+    pState = 0; /* HGetState removed */
     ComposeRString(progressMessage, IMAP_SEARCHING_PERS, spec_name(CurPers));
     PROGRESS_START;
     PROGRESS_MESSAGE(kpTitle, progressMessage);
@@ -9167,7 +9160,7 @@ void BuildSearchResults(DeliveryNodeHandle delivery, UIDNodeHandle results) {
   UIDNodeHandle resultScan;
   IMAPSResultStruct imapResult;
   int err = noErr;
-  SignedByte state;
+  char state;
 
   // must have some results
   if (results) {
@@ -9177,7 +9170,7 @@ void BuildSearchResults(DeliveryNodeHandle delivery, UIDNodeHandle results) {
       // the results
       for (resultScan = results; resultScan; resultScan = resultScan->next)
         numResults++;
-      state = HGetState((void *)delivery);
+      state = 0 /* HGetState removed */;
       if (delivery->results) {
         offset = malloc_size(delivery->results);
         SetHandleBig_(delivery->results,
@@ -9200,8 +9193,7 @@ void BuildSearchResults(DeliveryNodeHandle delivery, UIDNodeHandle results) {
            (resultScan = resultScan->next) && offset++) {
         imapResult.box = resultScan->boxIndex;
         imapResult.uidHash = resultScan->uid;
-        BMD(&imapResult, (delivery->results) + offset,
-            sizeof(IMAPSResultStruct));
+        memmove((delivery->results) + offset, &imapResult, sizeof(IMAPSResultStruct));
       }
     }
   }
@@ -9215,7 +9207,7 @@ void IMAPAbortSearch(TOCType * searchWin) {
   DeliveryNodeHandle node = FindNodeByToc(searchWin);
   /* int err = noErr; - UNUSED */
   threadDataHandle index;
-  SignedByte state;
+  char state;
 
   // Is there a search going on this window?
   if (node) {
@@ -9231,7 +9223,7 @@ void IMAPAbortSearch(TOCType * searchWin) {
         if (index->currentTask == IMAPSearchTask) {
           // does this search thread belong to
           // the current search window?
-          state = HGetState((void *)index);
+          state = 0 /* HGetState removed */;
           if (SameTOC(index->imapInfo.destToc, searchWin)) {
             // cancel the thread
             SetThreadGlobalCommandPeriod(index->threadID, true);
@@ -9480,14 +9472,14 @@ bool IMAPFilteringWarnOffline(void) {
  **********************************************************************/
 void IMAPProccessBoxesMainThread(bool bResync, bool bExpunge, bool bSearch) {
   PersHandle pers;
-  SignedByte state;
+  char state;
 
   // go through all mailboxes, resynching and
   // expunging the ones that need it.
   for (pers = PersList; pers; pers = pers->next) {
     if (IsIMAPPers(pers)) {
       if (pers->mailboxTree) {
-        state = HGetState((void *)pers);
+        state = 0 /* HGetState removed */;
         IMAPMailboxPostProcess(pers->mailboxTree, bResync, bExpunge,
                                bSearch);
       }
@@ -9847,10 +9839,10 @@ void GetNextWaitingIMAPToc(TOCType * *toc) {
   PersHandle pers;
   MailboxNodeHandle scan = nil;
   TOCType *tocH = NULL, *hidTocH = NULL;
-  SignedByte state;
+  char state;
 
   for (pers = PersList; pers; pers = pers->next) {
-    state = HGetState((void *)pers);
+    state = 0 /* HGetState removed */;
     scan = GetNextWaitingMailboxNode(pers->mailboxTree);
 
     if (scan)
@@ -10056,7 +10048,7 @@ void IMAPFilteringCancelled(bool bOverride) {
  *received on the network.
  **********************************************************************/
 void RNtoR(void *text) {
-  SignedByte state;
+  char state;
   long textSize;
   char *scan, *fix;
 
@@ -10353,8 +10345,7 @@ void IMAPFetchSelectedMessages(TOCType * tocH, bool attach) {
         if (tocH->sums[sumNum].selected)
           if (!IMAPMessageBeingDownloaded(tocH, sumNum) &&
               !IMAPMessageDownloaded(tocH, sumNum))
-            BMD(&(tocH->sums[sumNum].uidHash),
-                &g_array_index(uids, unsigned long, --c), sizeof(unsigned long));
+            memmove(&((unsigned long *)(uids->data))[--c], &(tocH->sums[sumNum].uidHash), sizeof(unsigned long));
 
       // fetch the messages all in the
       // background.  Fetch completely if doing
@@ -10475,10 +10466,8 @@ int QueueMessFlagChange(TOCType * tocH, short sumNum, StateEnum state,
 
         // save the flag change
         if ((mb->queuedFlags) && (err == noErr))
-          BMD(&flags,
-              &(((LocalFlagChangePtr)(mb->queuedFlags))[(
-                  oldFlagSize / sizeof(LocalFlagChangeStruct))]),
-              sizeof(LocalFlagChangeStruct));
+          memmove(&(((LocalFlagChangePtr)(mb->queuedFlags))[(
+                  oldFlagSize / sizeof(LocalFlagChangeStruct))]), &flags, sizeof(LocalFlagChangeStruct));
         else
           err = IMAPError(kIMAPQueueFlagChange, kIMAPMemErr, err);
       }
@@ -11010,7 +10999,7 @@ bool FastIMAPMessageDelete(TOCType * tocH, GArray *uids, bool bFTM) {
     return false;
 
   for (count = 0; count < numUids; count++) {
-    sumNum = UIDToSumNum(g_array_index(uids, unsigned long, count), tocH);
+    sumNum = UIDToSumNum(((unsigned long *)(uids->data))[count], tocH);
     if (sumNum < tocH->count) {
       // Queue delete request.
 
@@ -11765,7 +11754,7 @@ bool IMAPDoQuit(void) {
 void IMAPCollectFlags(void) {
   IMAPStreamPtr imapStream = nil;
   PersHandle oldPers = CurPers;
-  SignedByte state;
+  char state;
   char p[256];
   short flagsFileRefN = OpenFlagsFile();
 
@@ -11781,7 +11770,7 @@ void IMAPCollectFlags(void) {
 
         imapStream = GetIMAPConnection(IMAPResyncTask, CAN_PROGRESS);
         if (imapStream) {
-          state = HGetState((void *)CurPers);
+          state = 0; /* HGetState removed */
           IMAPCollectFlagsFromTree(imapStream, CurPers->mailboxTree,
                                    flagsFileRefN);
         }
@@ -11869,7 +11858,7 @@ short OpenFlagsFile(void) {
     WarnUser(NO_TEMP_FILE, err);
     ref = -1;
   } else
-    SetFPos(ref, fsFromLEOF, 0);
+    lseek(ref, 0, SEEK_END);
 
   return (ref);
 }

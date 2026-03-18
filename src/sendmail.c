@@ -628,7 +628,7 @@ int SayByeBye(TransStream stream) {
  * SendCmd - send an smtp command, with optional arguments
  ************************************************************************/
 int SendCmd(TransStream stream, int cmd, char *args, AccuPtr argsAcc) {
-  Byte buffer[CMD_BUFFER];
+  unsigned char buffer[CMD_BUFFER];
 
   GetRString(buffer, SMTP_STRN + cmd);
   if (args && *args)
@@ -2511,7 +2511,7 @@ int SendBodyLines(TransStream stream, char *text, long length, long offset,
   int lineLimit;        /* # of chars at which to wrap */
   int hardLimit; /* limit for hard returns; don't wrap if para < hardLimit */
   static short quoteLevel; /* the # of quote chars at start of line */
-  Byte suspendChar;        /* the quote character */
+  unsigned char suspendChar;        /* the quote character */
   static short
       partialSize;         /* the size of the last line output, if it
                                                                                                             was an incomplete line */
@@ -3391,11 +3391,11 @@ int SendRawMIME(TransStream stream, char * spec) {
       if (count < 2)
         needNL = true;
       else {
-        SetFPos(refN, fsFromLEOF, -2);
+        lseek(refN, -2, SEEK_END);
         count = 2;
         ARead(refN, &count, buffer);
         needNL = buffer[0] != '\015' || buffer[1] != '\012';
-        SetFPos(refN, fsFromStart, 0);
+        lseek(refN, 0, SEEK_SET);
       }
 
       // send the file
@@ -4082,7 +4082,7 @@ void Next1342Word(char **startP, char *end,
   unsigned char word[64];
   short wordLim = 48;
   Enum1342 wordType;
-  Byte c;
+  unsigned char c;
   char *source = *startP;
   bool justSpace;
   bool newWasQuote;
@@ -4205,7 +4205,7 @@ char *Encode1342(char *source, long len, short lineLimit,
   long encodedLen = 0;
   long encodedCap = 0;
   bool wrapped;
-  Byte c;
+  unsigned char c;
 
   if (outLen) *outLen = 0;
 
@@ -4329,7 +4329,7 @@ void Encode1342String(char * s, short tid) {
   unsigned char encoded[256];
   unsigned char name[64];
   char *from, *to, *end;
-  Byte c;
+  unsigned char c;
 
   /*
    * first, we translit to ISO-latin1
@@ -4609,7 +4609,7 @@ int GetIndAttachmentLo(void *text, short index, char * spec, HSPtr where,
 /************************************************************************
  * PriorityHeader: Build a priority header
  ************************************************************************/
-char *PriorityHeader(char *buffer, Byte priority) {
+char *PriorityHeader(char *buffer, unsigned char priority) {
   return (ComposeRString(buffer, PRIORITY_FMT, HEADER_STRN + PRIORITY_HEAD,
                          priority, PRIOR_STRN + priority));
 }

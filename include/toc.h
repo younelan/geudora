@@ -59,8 +59,8 @@ typedef struct {
     Rect savedPos;          /* saved window position */
     VirtualMessData virtualMess;
   } u;
-  Byte priority;            /* display as 1-5, keep as 1-200 */
-  Byte origPriority;
+  unsigned char priority;            /* display as 1-5, keep as 1-200 */
+  unsigned char origPriority;
   short tableId;            /* resid of xlate table to use */
   short score:4;            /* for the text analysis engine */
   short outType:4;          /* for statistics: forward, reply, redirect */

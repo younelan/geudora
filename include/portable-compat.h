@@ -12,7 +12,7 @@
 typedef char *StringHandle;
 #endif
 
-typedef unsigned char Byte;
+/* Byte typedef removed */
 
 #ifndef noErr
 #define noErr 0

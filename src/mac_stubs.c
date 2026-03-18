@@ -56,7 +56,7 @@ void CacheRecentNickname(unsigned char *name) {
 void Cell1Rect() {}
 /* CheckAddNotifyControls — real implementation elsewhere */
 /* CheckNow — defined in globals.c */
-Byte CheckOnIdle = 0;     /* global variable, not a function */
+unsigned char CheckOnIdle = 0;     /* global variable, not a function */
 /* CheckThreadError — real implementation elsewhere */
 /* CheckThreadRunning — real implementation elsewhere */
 void ClearPrefBit() {}

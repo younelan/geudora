@@ -562,7 +562,7 @@ int ScriptSetMessageProperty(const char *mailboxPath, long index,
 	switch (prop) {
 	case kScriptPropPriority:
 		if (in->type != kScriptValLong) return -50;
-		sum->priority = (Byte)in->u.num;
+		sum->priority = (unsigned char)in->u.num;
 		TOCSetDirty(tocH, true);
 		break;
 	case kScriptPropStatus:
