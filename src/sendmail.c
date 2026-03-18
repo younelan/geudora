@@ -24,6 +24,7 @@ OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE OF THIS SOFTWARE, EVEN IF
 ADVISED OF THE POSSIBILITY OF SUCH DAMAGE. */
 
 #include "sendmail.h"
+#include <glib/gstdio.h>
 #include "Globals.h"
 #include "MyRes.h"
 #include "StringDefs.h"
@@ -178,7 +179,7 @@ typedef enum {
 
 typedef enum { k1342LWSP, k1342Word, k1342Plain, k1342End } Enum1342;
 typedef struct {
-  unsigned char word[256];
+  char word[256];
   Enum1342 wordType;
 } Token1342, *Token1342Ptr;
 
@@ -189,7 +190,7 @@ typedef struct {
   bool pipeline;
   SASLEnum saslMech;
   bool starttls;
-  unsigned char digest[256];
+  char digest[256];
 } EhloStuff, *EhloStuffPtr, *EhloStuffHandle;
 
 EhloStuffHandle Ehlo;
@@ -318,8 +319,8 @@ int StartSMTP(TransStream stream, char *serverName, long port) {
 int MySendMessage(TransStream stream, TOCType * tocH, int sumNum,
                   CSpecHandle specList) {
   GtkWidget * messWinWP;
-  unsigned char buffer[256];
-  unsigned char param[256];
+  char buffer[256];
+  char param[256];
   MessHandle messH;
   Accumulator newsGroupAcc;
 
@@ -335,7 +336,7 @@ int MySendMessage(TransStream stream, TOCType * tocH, int sumNum,
   /*
    * Log, if we must
    */
-  g_debug("log: %d", SENDING, buffer);
+  g_debug("log: %d %s", SENDING, buffer);
 
   if (PrefIsSet(PREF_POP_SEND)) {
     long size = sizeof(buffer);
@@ -383,12 +384,12 @@ int MySendMessage(TransStream stream, TOCType * tocH, int sumNum,
     if (WrapWrong)
       OffsetWindow(messWinWP);
 
-    if (sErr = DoRcptTos(stream, messH, true, specList, &newsGroupAcc))
+    if ((sErr = DoRcptTos(stream, messH, true, specList, &newsGroupAcc)))
       goto done;
   }
 
   messH->newsGroupAcc = newsGroupAcc;
-  if (sErr = TransmitMessageHi(stream, messH, true, !PrefIsSet(PREF_POP_SEND)))
+  if ((sErr = TransmitMessageHi(stream, messH, true, !PrefIsSet(PREF_POP_SEND))))
     goto done;
   free(newsGroupAcc.data); newsGroupAcc.data = NULL; newsGroupAcc.offset = newsGroupAcc.size = 0;
   Zero(messH->newsGroupAcc);
@@ -396,7 +397,7 @@ int MySendMessage(TransStream stream, TOCType * tocH, int sumNum,
   // TimeStamp(tocH,sumNum,GMTDateTime(),ZoneSecs());
 
 done:
-  (void)g_debug("log: %d", sErr ? LOG_FAILED : LOG_SUCCEEDED, sErr);
+  (void)g_debug("log: %d %d", sErr ? LOG_FAILED : LOG_SUCCEEDED, sErr);
   free(newsGroupAcc.data); newsGroupAcc.data = NULL; newsGroupAcc.offset = newsGroupAcc.size = 0;
   return (sErr);
 }
@@ -406,8 +407,8 @@ done:
  *  is in "Me" nickname, returns from addr.  Else returns configured addr
  **********************************************************************/
 char * MessReturnAddr(MessHandle messH, char * buffer) {
-  unsigned char from[256];
-  unsigned char returnAddr[256];
+  char from[256];
+  char returnAddr[256];
   short template =
       MessOptIsSet(messH, OPT_RECEIPT) && MessOptIsSet(messH, OPT_BULK)
           ? EMPTY_MFROM
@@ -444,10 +445,10 @@ int EndSMTP(TransStream stream) {
       DisTrans(stream);
     sErr = DestroyTrans(stream);
   }
-  free(eSignature);
-  free(RichSignature);
-  free(HTMLSignature);
-  free(Ehlo);
+  free(eSignature); eSignature = NULL;
+  free(RichSignature); RichSignature = NULL;
+  free(HTMLSignature); HTMLSignature = NULL;
+  free(Ehlo); Ehlo = NULL;
   return (sErr);
 }
 
@@ -463,7 +464,7 @@ int SMTPError(TransStream stream) { return (sErr); }
  * DoIntroductions - take care of the beginning of the SMTP protocol
  ************************************************************************/
 int DoIntroductions(TransStream stream) {
-  unsigned char buffer[256];
+  char buffer[256];
 
   Ehlo = NewZH(EhloStuff);
 
@@ -485,7 +486,7 @@ SayHello:
 
   if (sErr / 100 == 2) {
 #ifdef ESSL
-    if (ShouldUseSSL(stream) && !(stream->ESSLSetting && esslSSLInUse)) {
+    if (ShouldUseSSL(stream) && !(stream->ESSLSetting & esslSSLInUse)) {
       if (!Ehlo->starttls) {
         if (!(stream->ESSLSetting & esslOptional)) {
           sErr = 502;
@@ -508,7 +509,7 @@ SayHello:
                            GetRString(buffer, SSL_ERR_STRING));
             }
           } else if (stream->ESSLSetting & esslSSLInUse) {
-            ZeroHandle(Ehlo);
+            memset(Ehlo, 0, sizeof(*Ehlo));
             goto SayHello;
           }
         } else if (!(stream->ESSLSetting & esslOptional)) {
@@ -551,7 +552,7 @@ SayHello:
 int DoSMTPAuth(TransStream stream) {
   Accumulator chalAcc, respAcc;
   short rounds = 0;
-  unsigned char service[64];
+  char service[64];
   long state;
 
   Zero(chalAcc);
@@ -578,7 +579,7 @@ int DoSMTPAuth(TransStream stream) {
         // get the reply
         sErr = GetReplyLo(stream, NULL, 0, &respAcc, false, false);
         chalAcc.offset = 0;
-        if (sErr == 334) {
+if (sErr == 334) {
           char *spot;
 
           // extract the challenge token
@@ -589,8 +590,8 @@ int DoSMTPAuth(TransStream stream) {
 
           // rest will be base64 or whitespace, the decoder won't care
           AccuAddFromHandle(
-              &chalAcc, respAcc.data, spot - (char *)*respAcc.data,
-              respAcc.offset - (spot - (char *)*respAcc.data) - 1);
+              &chalAcc, respAcc.data, spot - respAcc.data,
+              respAcc.offset - (spot - respAcc.data) - 1);
         }
       }
     }
@@ -626,7 +627,7 @@ int SayByeBye(TransStream stream) {
  * SendCmd - send an smtp command, with optional arguments
  ************************************************************************/
 int SendCmd(TransStream stream, int cmd, char *args, AccuPtr argsAcc) {
-  unsigned char buffer[CMD_BUFFER];
+  char buffer[CMD_BUFFER];
 
   GetRString(buffer, SMTP_STRN + cmd);
   if (args && *args)
@@ -636,13 +637,13 @@ int SendCmd(TransStream stream, int cmd, char *args, AccuPtr argsAcc) {
 
   if (!argsAcc) {
     g_strlcat(buffer, NewLine, sizeof(buffer));
-    if (sErr = SendPString(stream, buffer))
+    if ((sErr = SendPString(stream, buffer)))
       return (sErr);
   } else {
     // send the command
     if (cmd)
       PCatC(buffer, ' ');
-    if (sErr = SendPString(stream, buffer))
+    if ((sErr = SendPString(stream, buffer)))
       return (sErr);
 
     // add a newline to the accumulator
@@ -652,7 +653,7 @@ int SendCmd(TransStream stream, int cmd, char *args, AccuPtr argsAcc) {
     sErr = SendTrans(stream, argsAcc->data, argsAcc->offset, NULL);
 
     // erase what we did to the accumulator
-    argsAcc->offset -= strlen((const char *)NewLine);
+    argsAcc->offset -= strlen(NewLine);
 
     if (sErr)
       return sErr;
@@ -665,8 +666,8 @@ int SendCmd(TransStream stream, int cmd, char *args, AccuPtr argsAcc) {
  * SMTPCmdError - report an error for an SMTP command
  ************************************************************************/
 int SMTPCmdError(int cmd, char *args, char *message) {
-  unsigned char theCmd[256];
-  unsigned char theError[256];
+  char theCmd[256];
+  char theError[256];
   int err;
 
   GetRString(theCmd, 2800 + cmd);
@@ -691,12 +692,12 @@ int SMTPCmdError(int cmd, char *args, char *message) {
  ************************************************************************/
 int SendCmdGetReply(TransStream stream, int cmd, char *args,
                     bool chatter, MessHandle messH) {
-  unsigned char buffer[CMD_BUFFER];
+  char buffer[CMD_BUFFER];
 
-  if (sErr = SendCmd(stream, cmd, args, NULL))
+  if ((sErr = SendCmd(stream, cmd, args, NULL)))
     return (601); /* error in transmission */
   sErr = GetReply(stream, buffer, sizeof(buffer), false, cmd == smtpEhlo);
-  if (cmd == smtpRcpt && sErr > 499 && sErr < 600)
+if (cmd == smtpRcpt && sErr > 499 && sErr < 600)
     sErr = 550;
   if (sErr > 399 && sErr <= 600 && (IsAddrErr(sErr) || cmd != smtpRcpt) &&
       cmd != smtpEhlo && chatter)
@@ -715,15 +716,16 @@ int SendCmdGetReply(TransStream stream, int cmd, char *args,
  * EhloLine - process an Ehlo return
  ************************************************************************/
 void EhloLine(char *line, long size) {
-  unsigned char directive[64];
-  unsigned char value[256], digest;
+  char directive[64];
+  char value[256], digest[33];
   char *start, *end, *stop;
   long longVal;
 
   if (!Ehlo)
     return;
 
-  if (Ehlo->sawGreeting) {
+  if (!Ehlo->sawGreeting) {
+    /* First line of EHLO response is the server greeting — skip it */
     Ehlo->sawGreeting = true;
     return;
   }
@@ -731,7 +733,7 @@ void EhloLine(char *line, long size) {
   // Stupid AUTH= nonsense
   GetRString(value, EsmtpStrn + esmtpAuth);
   PCatC(value, '=');
-  if (start = PPtrFindSub(value, line, size))
+  if ((start = PPtrFindSub(value, line, size)))
     start[4] = ' ';
 
   /*
@@ -766,7 +768,7 @@ void EhloLine(char *line, long size) {
       StringToNum(value, &longVal);
       if (longVal > 1024)
         Ehlo->maxSize = longVal;
-      g_debug("ESMTP size %d", longVal);
+      g_debug("ESMTP size %ld", longVal);
     } else
       g_debug("ESMTP size invalid (%p)", value);
     break;
@@ -777,7 +779,7 @@ void EhloLine(char *line, long size) {
   case esmtpAuth: {
     SASLEnum mech = Ehlo->saslMech;
     char *spot = value;
-    unsigned char service[32];
+    char service[32];
 
     GetRString(service, K5_SMTP_SERVICE);
 
@@ -790,9 +792,9 @@ void EhloLine(char *line, long size) {
   } break;
   case esmtpAmd5:
     SetPref(PREF_SMTP_DOES_AUTH, YesStr);
-    g_strlcpy((char *)(directive), (char *)(CurPers->password), sizeof(directive));
-    GenDigest(value, directive, (char *)digest);
-    g_strlcpy((char *)Ehlo->digest, (const char *)digest, sizeof(Ehlo->digest));
+    g_strlcpy(directive, CurPers->password, sizeof(directive));
+    GenDigest(value, directive, digest);
+    g_strlcpy(Ehlo->digest, digest, sizeof(Ehlo->digest));
     g_debug("ESMTP AMD5 auth found");
     break;
   case esmtpPipeline:
@@ -830,7 +832,7 @@ int DoRcptTos(TransStream stream, MessHandle messH, bool chatter,
  ************************************************************************/
 int DoRcptTosFrom(TransStream stream, MessHandle messH, short index,
                   bool chatter, CSpecHandle fccSpecs, AccuPtr newsGroupAcc) {
-  unsigned char toWhom[256];
+  char toWhom[256];
   char **addresses = NULL;
   char **rawAddresses = NULL;
   char *address;
@@ -838,7 +840,7 @@ int DoRcptTosFrom(TransStream stream, MessHandle messH, short index,
   void *text;
   bool evilSendmail = PrefIsSet(PREF_EVIL_SENDMAIL);
   char *spot;
-  unsigned char server[256];
+  char server[256];
   long junk;
   Accumulator pipe;
   short err;
@@ -857,7 +859,7 @@ int DoRcptTosFrom(TransStream stream, MessHandle messH, short index,
   sErr = 550;
   if (CompHeadFind(messH, index, &hs) &&
       !CompHeadGetText(TheBody, &hs, &text)) {
-    if (!(sErr = SuckAddresses(&rawAddresses, (char **)text, false, true, false, NULL))) {
+    if (!(sErr = SuckAddresses(&rawAddresses, (char **)&text, false, true, false, NULL))) {
       sErr = 200;
       if (rawAddresses && rawAddresses[0] && rawAddresses[0][0]) {
         ExpandAliases((void **)&addresses, (void *)rawAddresses, 0, false);
@@ -886,7 +888,7 @@ int DoRcptTosFrom(TransStream stream, MessHandle messH, short index,
           if (HasFeature(featureFcc)) {
             if (IsFCCAddr(address)) {
               if (fccSpecs) {
-                if (sErr = AddFccToList(address, fccSpecs))
+                if ((sErr = AddFccToList(address, fccSpecs)))
                   break;
               }
               continue;
@@ -913,7 +915,7 @@ int DoRcptTosFrom(TransStream stream, MessHandle messH, short index,
             break;
           }
           if (UUPCOut) {
-            if (sErr = UUPCWriteAddr(address))
+            if ((sErr = UUPCWriteAddr(address)))
               break;
           } else {
             toWhom[0] = '<';
@@ -933,9 +935,9 @@ int DoRcptTosFrom(TransStream stream, MessHandle messH, short index,
             if (Ehlo && Ehlo->pipeline)
               sErr = SendPipeRCPT(stream, toWhom, &pipe, chatter, messH);
             else {
-              unsigned char buffer[CMD_BUFFER];
+              char buffer[CMD_BUFFER];
 
-              if (sErr = SendCmd(stream, smtpRcpt, toWhom, NULL))
+              if ((sErr = SendCmd(stream, smtpRcpt, toWhom, NULL)))
                 sErr = 601; /* error in transmission */
               sErr = GetReply(stream, buffer, sizeof(buffer), false, false);
               if (sErr > 499 && sErr < 600)
@@ -982,13 +984,13 @@ int SendPipeRCPT(TransStream stream, char * newRecip, AccuPtr pipe,
                    bool chatter, MessHandle messH) {
   int err = 200;
   int firstErr = 200;
-  unsigned char buffer[CMD_BUFFER];
-  unsigned char address[256];
+  char buffer[CMD_BUFFER];
+  char address[256];
 
   /*
    * reap outstanding rcpts if need be
    */
-  while (!newRecip && pipe->offset || pipe->offset > 3 K) {
+  while ((!newRecip && pipe->offset) || pipe->offset > 3 K) {
     g_strlcpy(address, pipe->data, sizeof(address));
     err = GetReply(stream, buffer, sizeof(buffer), chatter, false);
     if (err > 499 && err < 600)
@@ -1018,9 +1020,9 @@ int SendPipeRCPT(TransStream stream, char * newRecip, AccuPtr pipe,
    * send current address
    */
   if (err / 100 == 2 && newRecip) {
-    if (err = SendCmd(stream, smtpRcpt, newRecip, NULL))
+    if ((err = SendCmd(stream, smtpRcpt, newRecip, NULL)))
       return (601); /* error in transmission */
-    if (err = AccuAddPtr(pipe, newRecip, strlen((const char *)newRecip) + 1)) {
+    if ((err = AccuAddPtr(pipe, newRecip, strlen((const char *)newRecip) + 1))) {
       WarnUser(MEM_ERR, err);
       return (601);
     }
@@ -1032,9 +1034,9 @@ int SendPipeRCPT(TransStream stream, char * newRecip, AccuPtr pipe,
  * AddFccToList - add a mailbox to the fcc list.
  **********************************************************************/
 int AddFccToList(char * fcc, CSpecHandle list) {
-  FSSpec spec;
-  unsigned char name[256];
-  unsigned char prefix[16];
+  char spec[PATH_MAX];
+  char name[256];
+  char prefix[16];
   int err;
 
   UseFeature(featureFcc);
@@ -1045,12 +1047,12 @@ int AddFccToList(char * fcc, CSpecHandle list) {
 
   TrimPrefix(name, GetRString(prefix, FCC_PREFIX));
 
-  if (err = BoxSpecByName(&spec, name))
+  if ((err = BoxSpecByName(spec, name)))
     return (FileSystemError(NOT_MAILBOX, name, err));
 
-  AddSpecToList(&spec, list);
+  AddSpecToList(spec, list);
 
-  if (err = 0)
+if ((err = 0))
     WarnUser(MEM_ERR, err);
   return (err);
 }
@@ -1072,9 +1074,9 @@ int TransmitMessageLo(TransStream stream, MessHandle messH, bool chatter,
                       bool mime, bool others, emsMIMEHandle *tlMIME,
                       bool sendDataCmd, bool finishSMTP, bool doTopLevel) {
   TransmitPB pb;
-  FSSpec spec;
-  unsigned char scratch[256];
-  FSSpec errSpec;
+  char spec[PATH_MAX];
+  char scratch[256];
+  char errSpec[PATH_MAX];
 
   Zero(pb);
   pb.messH = messH;
@@ -1084,7 +1086,7 @@ int TransmitMessageLo(TransStream stream, MessHandle messH, bool chatter,
       MessOptIsSet(messH, OPT_BULK) && MessOptIsSet(messH, OPT_RECEIPT);
   pb.parts = NULL;
   pb.isRelated = false;
-  pb.hasAttachments = 1 != GetIndAttachment(messH, 1, &spec, &pb.hs);
+  pb.hasAttachments = 1 != GetIndAttachment(messH, 1, spec, &pb.hs);
   pb.flags = SumOf(messH)->flags;
   pb.opts = SumOf(messH)->opts;
   pb.stream = stream;
@@ -1096,7 +1098,7 @@ int TransmitMessageLo(TransStream stream, MessHandle messH, bool chatter,
   pb.hasSig = !pb.allLWSP && (SumOf(messH)->sigId != -1) &&
               !MessOptIsSet(messH, OPT_INLINE_SIG) && eSignature &&
               *eSignature && strlen((char *)eSignature);
-  pb.strip = !pb.allLWSP && MessOptIsSet(messH, OPT_STRIP) ||
+  pb.strip = (!pb.allLWSP && MessOptIsSet(messH, OPT_STRIP)) ||
              MessOptIsSet(messH, OPT_JUST_EXCERPT);
   pb.bloat = !pb.allLWSP && MessOptIsSet(messH, OPT_BLOAT);
   if (pb.allLWSP)
@@ -1109,7 +1111,7 @@ int TransmitMessageLo(TransStream stream, MessHandle messH, bool chatter,
   PrimeProgress(messH);
 
   // Make sure we have all the attachments
-  if (sErr = AllAttachOnBoard(messH))
+  if ((sErr = AllAttachOnBoard(messH)))
     goto fail;
 
   CompHeadFind(messH, 0, &pb.hs);
@@ -1121,23 +1123,23 @@ int TransmitMessageLo(TransStream stream, MessHandle messH, bool chatter,
    * rich?
    */
   if (pb.mime && !pb.strip && pb.html) {
-    if (sErr = AccuInit(&pb.enriched))
+    if ((sErr = AccuInit(&pb.enriched)))
       goto fail;
-    g_strlcpy((char *)scratch, (const char *)SumOf(messH)->subj, sizeof(scratch));
-    if (sErr = HTMLPreamble(&pb.enriched, scratch, 0,
-                            false))
+    g_strlcpy(scratch, (const char *)SumOf(messH)->subj, sizeof(scratch));
+    if ((sErr = HTMLPreamble(&pb.enriched, scratch, 0,
+                            false)))
       goto fail;
-    if (sErr = StackInit(sizeof(FSSpec), &pb.parts))
+    if ((sErr = StackInit(sizeof(FSSpec), &pb.parts)))
       goto fail;
     Zero(errSpec);
-    if (sErr =
+    if ((sErr =
             BuildHTML(&pb.enriched, TheBody, NULL, pb.hs.stop, pb.hs.value, NULL,
-                      NULL, 1, CompGetMID(messH, scratch), pb.parts, &errSpec)) {
+                      NULL, 1, CompGetMID(messH, scratch), pb.parts, &errSpec))) {
       if (errSpec[0]) {
         //	Report error with graphic file
         AddOutgoingMesgError(messH->sumNum,
                              messH->tocH->sums[messH->sumNum].uidHash,
-                             sErr, GRAPHIC_FILE_ERR, sErr, spec_name(errSpec));
+                             sErr, GRAPHIC_FILE_ERR, sErr, path_basename(errSpec));
       }
       sErr = 543;
       goto fail;
@@ -1145,7 +1147,7 @@ int TransmitMessageLo(TransStream stream, MessHandle messH, bool chatter,
     AccuTrim(&pb.enriched);
     pb.isRelated = pb.parts && pb.parts->elCount > 0;
   } else if (pb.mime && !pb.strip && pb.rich) {
-    if (sErr = AccuInit(&pb.enriched))
+    if ((sErr = AccuInit(&pb.enriched)))
       goto fail;
     if (BuildEnriched(&pb.enriched, TheBody, NULL, pb.hs.stop, pb.hs.value, NULL,
                       false))
@@ -1192,19 +1194,19 @@ fail:
  ************************************************************************/
 int AllAttachOnBoardLo(MessHandle messH, bool errReport) {
   short index;
-  FSSpec spec;
+  char spec[PATH_MAX];
   int err = 0;
 
   for (index = 1; !err; index++) {
-    if (err = GetIndAttachment(messH, index, &spec, NULL))
+    if ((err = GetIndAttachment(messH, index, spec, NULL)))
       if ((err != 1) && errReport) {
         AddOutgoingMesgError(messH->sumNum,
                              messH->tocH->sums[messH->sumNum].uidHash,
-                             err, ATTACH_MESS_ERR, err, spec_name(spec));
-        FileSystemError(BINHEX_OPEN, spec_name(spec), err);
+                             err, ATTACH_MESS_ERR, err, path_basename(spec));
+        FileSystemError(BINHEX_OPEN, path_basename(spec), err);
       }
   }
-  if (err == 1)
+if (err == 1)
     err = 0;
   else if (err)
     err = 543;
@@ -1230,12 +1232,12 @@ int TransmitMessageMixed(TransmitPBPtr pb, bool topLevel) {
 
   // mime-version first of all
   if (topLevel)
-    if (err = TransmitMimeVersion(pb))
+    if ((err = TransmitMimeVersion(pb)))
       return (err);
 
   // send the non-mime headers
   if (topLevel)
-    if (err = TransmitTopHeaders(pb))
+    if ((err = TransmitTopHeaders(pb)))
       return (err);
 
   // send the mime headers
@@ -1245,11 +1247,11 @@ int TransmitMessageMixed(TransmitPBPtr pb, bool topLevel) {
 
   if (pb->mime) {
     // send the header/body separator
-    if (err = SendPString(pb->stream, NewLine))
+    if ((err = SendPString(pb->stream, NewLine)))
       return (err);
 
     // send the first boundary
-    if (err = SendBoundary(pb->stream))
+    if ((err = SendBoundary(pb->stream)))
       return (err);
 
     // send the message itself
@@ -1270,15 +1272,15 @@ int TransmitMessageMixed(TransmitPBPtr pb, bool topLevel) {
     // signature?
     if (pb->hasSig) {
       // attachment/signature boundary
-      if (err = SendBoundary(pb->stream))
+      if ((err = SendBoundary(pb->stream)))
         return (err);
-      if (err = TransmitMessageSig(pb))
+      if ((err = TransmitMessageSig(pb)))
         return (err);
     }
 
     // and the final boundary
     g_strlcat(boundary, "--", sizeof(boundary));
-    if (err = SendBoundary(pb->stream))
+    if ((err = SendBoundary(pb->stream)))
       return (err);
   }
 
@@ -1291,36 +1293,36 @@ int TransmitMessageMixed(TransmitPBPtr pb, bool topLevel) {
 int TransmitMessageRelated(TransmitPBPtr pb, bool topLevel) {
   int err;
   char boundary[128];
-  unsigned char textSlashHtml[32];
+  char textSlashHtml[32];
 
   // build the boundary
   BuildBoundary(pb->messH, boundary, "mr");
 
   // mime-version first of all
   if (topLevel)
-    if (err = TransmitMimeVersion(pb))
+    if ((err = TransmitMimeVersion(pb)))
       return (err);
 
   // send the non-mime headers
   if (topLevel)
-    if (err = TransmitTopHeaders(pb))
+    if ((err = TransmitTopHeaders(pb)))
       return (err);
 
   // send the mime headers
   if (pb->mime)
-    if (err = TransmitMultiHeaders(
+    if ((err = TransmitMultiHeaders(
             pb, MIME_RELATED, boundary, AttributeStrn + aType,
             ComposeRString(textSlashHtml, THING_SLASH_THING, MIME_TEXT,
-                           HTMLTagsStrn + htmlTag)))
+                           HTMLTagsStrn + htmlTag))))
       return (err);
 
   if (pb->mime) {
     // send the header/body separator
-    if (err = SendPString(pb->stream, NewLine))
+    if ((err = SendPString(pb->stream, NewLine)))
       return (err);
 
     // send the first boundary
-    if (err = SendBoundary(pb->stream))
+    if ((err = SendBoundary(pb->stream)))
       return (err);
 
     // send the message itself
@@ -1336,7 +1338,7 @@ int TransmitMessageRelated(TransmitPBPtr pb, bool topLevel) {
 
     // and the final boundary
     g_strlcat(boundary, "--", sizeof(boundary));
-    if (err = SendBoundary(pb->stream))
+    if ((err = SendBoundary(pb->stream)))
       return (err);
   }
 
@@ -1351,15 +1353,15 @@ int TransmitMessageText(TransmitPBPtr pb, bool sigToo, bool topLevel) {
 
   if (pb->bloat && !pb->strip && (pb->html || pb->rich)) {
     // The user wants multipart/alternative
-    if (err = TransmitMessageTextBloat(pb, sigToo, topLevel))
+    if ((err = TransmitMessageTextBloat(pb, sigToo, topLevel)))
       return (err);
   } else if (!pb->strip && (pb->html || pb->rich)) {
     // The user wants the rich version
-    if (err = TransmitMessageTextRich(pb, sigToo, topLevel))
+    if ((err = TransmitMessageTextRich(pb, sigToo, topLevel)))
       return (err);
   } else {
     // The user is chicken
-    if (err = TransmitMessageTextStrip(pb, sigToo, topLevel))
+    if ((err = TransmitMessageTextStrip(pb, sigToo, topLevel)))
       return (err);
   }
   return (0);
@@ -1377,41 +1379,41 @@ int TransmitMessageTextBloat(TransmitPBPtr pb, bool sigToo, bool topLevel) {
 
   // mime-version first of all
   if (topLevel)
-    if (err = TransmitMimeVersion(pb))
+    if ((err = TransmitMimeVersion(pb)))
       return (err);
 
   // send the non-mime headers
   if (topLevel)
-    if (err = TransmitTopHeaders(pb))
+    if ((err = TransmitTopHeaders(pb)))
       return (err);
 
   // send the part headers, header/body separator, and initial boundary
   if (pb->mime)
-    if (err = TransmitMultiHeaders(pb, MIME_ALTERNATIVE, boundary, 0, NULL))
+    if ((err = TransmitMultiHeaders(pb, MIME_ALTERNATIVE, boundary, 0, NULL)))
       return (err);
 
   if (pb->mime) {
     // now the header/body separator and the initial boundary
-    if (err = SendPString(pb->stream, NewLine))
+    if ((err = SendPString(pb->stream, NewLine)))
       return (err);
-    if (err = SendBoundary(pb->stream))
+    if ((err = SendBoundary(pb->stream)))
       return (err);
 
     // send the stripped version, not top-level
-    if (err = TransmitMessageTextStrip(pb, sigToo, false))
+    if ((err = TransmitMessageTextStrip(pb, sigToo, false)))
       return (err);
 
     // now the mid boundary
-    if (err = SendBoundary(pb->stream))
+    if ((err = SendBoundary(pb->stream)))
       return (err);
 
     // send the rich version, not top-level
-    if (err = TransmitMessageTextRich(pb, sigToo, false))
+    if ((err = TransmitMessageTextRich(pb, sigToo, false)))
       return (err);
 
     // and the final boundary
     g_strlcat(boundary, "--", sizeof(boundary));
-    if (err = SendBoundary(pb->stream))
+    if ((err = SendBoundary(pb->stream)))
       return (err);
   }
 
@@ -1427,7 +1429,7 @@ int TransmitMessageTextStrip(TransmitPBPtr pb, bool sigToo, bool topLevel) {
 
   if ((pb->opts & OPT_BLOAT) || MessOptIsSet(pb->messH, FLAG_WRAP_OUT))
     pb->flags |= FLAG_WRAP_OUT; // force wrapping on plain part of m/a
-  if ((pb->opts && OPT_BLOAT) && !Flatten)
+  if ((pb->opts & OPT_BLOAT) && !Flatten)
     Flatten = GetFlatten(); // force flattening
   ConvertExcerpt(pb->messH->bodyPTE, pb->hs.value, 0x7fffffff, NULL,
                  NULL); // and convert the excerpts
@@ -1436,7 +1438,7 @@ int TransmitMessageTextStrip(TransmitPBPtr pb, bool sigToo, bool topLevel) {
   pb->messH->win->isDirty = false;
 
   // send it
-  if (err = TransmitMessageTextPlain(pb, sigToo, topLevel))
+  if ((err = TransmitMessageTextPlain(pb, sigToo, topLevel)))
     return (err);
 
   // put flatten back
@@ -1461,23 +1463,23 @@ int TransmitMessageTextPlain(TransmitPBPtr pb, bool sigToo, bool topLevel) {
 
   // mime-version first of all
   if (topLevel)
-    if (err = TransmitMimeVersion(pb))
+    if ((err = TransmitMimeVersion(pb)))
       return (err);
 
   // send the non-mime headers
   if (topLevel)
-    if (err = TransmitTopHeaders(pb))
+    if ((err = TransmitTopHeaders(pb)))
       return (err);
 
   // send the mime headers
   if (pb->mime && !pb->receipt)
-    if (err = TransmitMessageBodyHeaders(pb, sigToo, topLevel))
+    if ((err = TransmitMessageBodyHeaders(pb, sigToo, topLevel)))
       return (err);
 
   if (pb->mime) {
     // send the header/body separator
     if (!pb->receipt)
-      if (err = SendPString(pb->stream, NewLine))
+      if ((err = SendPString(pb->stream, NewLine)))
         return (err);
 
     // send the message itself
@@ -1487,7 +1489,7 @@ int TransmitMessageTextPlain(TransmitPBPtr pb, bool sigToo, bool topLevel) {
 
     // signature?  Do not generate headers.
     if (sigToo && pb->hasSig)
-      if (err = TransmitMessageSigBody(pb, false))
+      if ((err = TransmitMessageSigBody(pb, false)))
         return (err);
   }
 
@@ -1510,22 +1512,22 @@ int TransmitMessageTextRich(TransmitPBPtr pb, bool sigToo, bool topLevel) {
 
   // mime-version first of all
   if (topLevel)
-    if (err = TransmitMimeVersion(pb))
+    if ((err = TransmitMimeVersion(pb)))
       return (err);
 
   // send the non-mime headers
   if (topLevel)
-    if (err = TransmitTopHeaders(pb))
+    if ((err = TransmitTopHeaders(pb)))
       return (err);
 
   // send the mime headers
   if (pb->mime)
-    if (err = TransmitMessageBodyHeaders(pb, sigToo, topLevel))
+    if ((err = TransmitMessageBodyHeaders(pb, sigToo, topLevel)))
       return (err);
 
   if (pb->mime) {
     // send the header/body separator
-    if (err = SendPString(pb->stream, NewLine))
+    if ((err = SendPString(pb->stream, NewLine)))
       return (err);
 
     // send the message itself; close out html if no signature
@@ -1535,7 +1537,7 @@ int TransmitMessageTextRich(TransmitPBPtr pb, bool sigToo, bool topLevel) {
 
     // signature?  Do not generate headers & preamble
     if (sigToo && pb->hasSig)
-      if (err = TransmitMessageSigBody(pb, false))
+      if ((err = TransmitMessageSigBody(pb, false)))
         return (err);
   }
   return (0);
@@ -1547,9 +1549,9 @@ int TransmitMessageTextRich(TransmitPBPtr pb, bool sigToo, bool topLevel) {
 int TransmitMimeVersion(TransmitPBPtr pb) {
   int err;
 
-  if (err =
+  if ((err =
           ComposeRTrans(pb->stream, MIME_V_FMT, InterestHeadStrn + hMimeVersion,
-                        MIME_VERSION, NewLine))
+                        MIME_VERSION, NewLine)))
     return (err);
 
   return (0);
@@ -1560,8 +1562,8 @@ int TransmitMimeVersion(TransmitPBPtr pb) {
  ************************************************************************/
 int TransmitTopHeaders(TransmitPBPtr pb) {
   int sErr = 0;
-  unsigned char buffer[256];
-  unsigned char scratch[256];
+  char buffer[256];
+  char scratch[256];
   short header;
   short tid = EffectiveTID(SumOf(pb->messH)->tableId);
   short priority;
@@ -1573,7 +1575,7 @@ int TransmitTopHeaders(TransmitPBPtr pb) {
   /*
    * The dreaded X-Sender:
    */
-  if (sErr = SendXSender(pb->stream, pb->messH))
+  if ((sErr = SendXSender(pb->stream, pb->messH)))
     return (sErr);
 
   /*
@@ -1602,12 +1604,12 @@ int TransmitTopHeaders(TransmitPBPtr pb) {
       !MessOptIsSet(pb->messH, OPT_RECEIPT)) {
     UseFeature(featureReturnReceiptTo);
     if (PrefIsSet(PREF_RRT)) {
-      if (sErr = ComposeRTrans(pb->stream, RRT_FMT,
-                               GetReturnAddr(scratch, true), NewLine))
+      if ((sErr = ComposeRTrans(pb->stream, RRT_FMT,
+                               GetReturnAddr(scratch, true), NewLine)))
         return (sErr);
     }
-    if (sErr = ComposeRTrans(pb->stream, MIME_P_FMT, InterestHeadStrn + hMDN,
-                             GetReturnAddr(scratch, true), NewLine))
+    if ((sErr = ComposeRTrans(pb->stream, MIME_P_FMT, InterestHeadStrn + hMDN,
+                             GetReturnAddr(scratch, true), NewLine)))
       return (sErr);
   }
 
@@ -1615,8 +1617,8 @@ int TransmitTopHeaders(TransmitPBPtr pb) {
    * Bulk?
    */
   if (MessOptIsSet(pb->messH, OPT_BULK))
-    if (sErr = ComposeRTrans(pb->stream, IMPORTANCE_FMT,
-                             TOCHeaderStrn + tchPrecedence, BULK, NewLine))
+    if ((sErr = ComposeRTrans(pb->stream, IMPORTANCE_FMT,
+                             TOCHeaderStrn + tchPrecedence, BULK, NewLine)))
       return (sErr);
 
   /*
@@ -1625,7 +1627,7 @@ int TransmitTopHeaders(TransmitPBPtr pb) {
   if (GetResource_('STR#', EX_HEADERS_STRN)) {
     for (header = 1;; header++) {
       if (*GetRString(buffer, EX_HEADERS_STRN + header)) {
-        if (sErr = SendTrans(pb->stream, buffer, strlen((const char *)buffer), NewLine, strlen((const char *)NewLine), NULL))
+        if ((sErr = SendTrans(pb->stream, buffer, strlen((const char *)buffer), NewLine, strlen(NewLine), NULL)))
           return (sErr);
       } else
         break;
@@ -1643,19 +1645,19 @@ int TransmitTopHeaders(TransmitPBPtr pb) {
 
     GetRegFirst(state, scratch);
     GetRString(buffer, RegCodeHeadStrn + hRegFirst);
-    strcat((char *)buffer, ":");
+    strcat(buffer, ":");
     SendPtrHead(pb->stream, buffer, strlen((const char *)buffer), scratch, strlen((const char *)scratch),
                 (pb->flags & FLAG_CAN_ENC) != 0, tid);
 
     GetRegLast(state, scratch);
     GetRString(buffer, RegCodeHeadStrn + hRegLast);
-    strcat((char *)buffer, ":");
+    strcat(buffer, ":");
     SendPtrHead(pb->stream, buffer, strlen((const char *)buffer), scratch, strlen((const char *)scratch),
                 (pb->flags & FLAG_CAN_ENC) != 0, tid);
 
     GetRegCode(state, scratch);
     GetRString(buffer, RegCodeHeadStrn + hRegCode);
-    strcat((char *)buffer, ":");
+    strcat(buffer, ":");
     SendPtrHead(pb->stream, buffer, strlen((const char *)buffer), scratch, strlen((const char *)scratch),
                 (pb->flags & FLAG_CAN_ENC) != 0, tid);
 
@@ -1672,7 +1674,7 @@ int TransmitTopHeaders(TransmitPBPtr pb) {
   if (priority != 3) {
     if (!PrefIsSet(PREF_SUP_PRIORITY)) {
       PriorityHeader(buffer, priority);
-      if (sErr = SendTrans(pb->stream, buffer, strlen((const char *)buffer), NewLine, strlen((const char *)NewLine), NULL))
+      if ((sErr = SendTrans(pb->stream, buffer, strlen((const char *)buffer), NewLine, strlen(NewLine), NULL)))
         return (sErr);
     }
 
@@ -1687,7 +1689,7 @@ int TransmitTopHeaders(TransmitPBPtr pb) {
   // date
   BuildDateHeader(buffer, SumOf(pb->messH)->seconds);
   if (*buffer &&
-      SendTrans(pb->stream, buffer, strlen((const char *)buffer), NewLine, strlen((const char *)NewLine), NULL))
+      SendTrans(pb->stream, buffer, strlen((const char *)buffer), NewLine, strlen(NewLine), NULL))
     return (600);
 
   BufferSendRelease(pb->stream);
@@ -1696,8 +1698,8 @@ int TransmitTopHeaders(TransmitPBPtr pb) {
   for (header = 1; header < BODY_HEAD; header++)
     if (header != ATTACH_HEAD &&
         (PrefIsSet(PREF_POP_SEND) || header != BCC_HEAD))
-      if (sErr = SendHeaderLine(pb->stream, pb->messH, header,
-                                (pb->flags & FLAG_CAN_ENC) != 0, tid))
+      if ((sErr = SendHeaderLine(pb->stream, pb->messH, header,
+                                (pb->flags & FLAG_CAN_ENC) != 0, tid)))
         return (sErr);
   BSCLOSE(pb->stream, 0);
 
@@ -1711,15 +1713,15 @@ done:
 int TransmitMultiHeaders(TransmitPBPtr pb, short subType, char * boundary,
                            short otherParam, char * otherVal) {
   int err;
-  unsigned char scratch[256];
+  char scratch[256];
   MessHandle messH = pb->messH;
   void *headerContent = NULL;
 
   // The multipart header
-  if (err =
+  if ((err =
           ComposeRTrans(pb->stream, MIME_MP_FMT,
                         InterestHeadStrn + hContentType, MIME_MULTIPART,
-                        subType, AttributeStrn + aBoundary, boundary, NewLine))
+                        subType, AttributeStrn + aBoundary, boundary, NewLine)))
     return (err);
   if (otherParam && (err = ComposeRTrans(pb->stream, MIME_CT_ANNOTATE,
                                          otherParam, otherVal, NewLine)))
@@ -1728,8 +1730,8 @@ int TransmitMultiHeaders(TransmitPBPtr pb, short subType, char * boundary,
   if (!GetRHeaderAnywhere(messH, PLUGIN_INFO, &headerContent)) {
     { size_t _mpl = (strlen((char *)headerContent) - 2); memcpy(scratch, headerContent + 2, _mpl); ((char*)(scratch))[_mpl] = '\0'; } // 2 adjusts for colon-space
     free(headerContent);
-    if (err = ComposeRTrans(pb->stream, MIME_CT_ANNOTATE, PLUGIN_INFO, scratch,
-                            NewLine))
+    if ((err = ComposeRTrans(pb->stream, MIME_CT_ANNOTATE, PLUGIN_INFO, scratch,
+                            NewLine)))
       return err;
   }
 
@@ -1760,7 +1762,7 @@ int TransmitMessageBodyHeaders(TransmitPBPtr pb, bool withSignature,
     sig = withSignature ? eSignature : NULL;
     { long _tlen = PETEGetTextLen(PETE, TheBody);
       long _slen = sig ? (long)malloc_size(sig) : 0;
-      err = SendContentType(pb->stream, (char *)text, _tlen, BodyOffset((char *)text),
+      err = SendContentType(pb->stream, text, _tlen, BodyOffset(text),
                             sig ? (char *)sig : NULL, _slen, 0,
                             SumOf(messH)->tableId, &pb->flags, &pb->opts, NULL,
                             topLevel ? pb->tlMIME : NULL, NULL); }
@@ -1793,7 +1795,7 @@ int TransmitMessageBody(TransmitPBPtr pb, bool withClosure) {
     if (pb->html) {
       // gotta close out the html?
       if (withClosure)
-        if (sErr = HTMLPostamble(&pb->enriched, false))
+        if ((sErr = HTMLPostamble(&pb->enriched, false)))
           return (sErr);
 
       // send the html
@@ -1871,35 +1873,35 @@ int TransmitMessageSigBloat(TransmitPBPtr pb) {
   BuildBoundary(pb->messH, boundary, "ma");
 
   // send the part headers, header/body separator, and initial boundary
-  if (err = TransmitMultiHeaders(pb, MIME_ALTERNATIVE, boundary, 0, NULL))
+  if ((err = TransmitMultiHeaders(pb, MIME_ALTERNATIVE, boundary, 0, NULL)))
     return (err);
 
   // now the header/body separator and the initial boundary
-  if (err = SendPString(pb->stream, NewLine))
+  if ((err = SendPString(pb->stream, NewLine)))
     return (err);
-  if (err = SendBoundary(pb->stream))
+  if ((err = SendBoundary(pb->stream)))
     return (err);
 
   // send the plain version
   pb->flags |= FLAG_WRAP_OUT; // force wrapping on plain part
   if (!Flatten)
     Flatten = GetFlatten(); // force flattening
-  if (err = TransmitMessageSigBodyPlain(pb))
+  if ((err = TransmitMessageSigBodyPlain(pb)))
     return (err);
   if (!oldFlat)
     ZapPtr(Flatten);
 
   // now the mid boundary
-  if (err = SendBoundary(pb->stream))
+  if ((err = SendBoundary(pb->stream)))
     return (err);
 
   // send the rich version
-  if (err = TransmitMessageSigBody(pb, true))
+  if ((err = TransmitMessageSigBody(pb, true)))
     return (err);
 
   // and the final boundary
   g_strlcat(boundary, "--", sizeof(boundary));
-  if (err = SendBoundary(pb->stream))
+  if ((err = SendBoundary(pb->stream)))
     return (err);
 
   return (0);
@@ -1912,10 +1914,10 @@ int TransmitMessageSigBody(TransmitPBPtr pb, bool withHeaders) {
   void *sigSrc = NULL;
   char *sigBuf = NULL;
   long sigLen = 0;
-  unsigned char scratch[64];
+  char scratch[64];
 
   // which sig do we want?
-  if (!SigStyled && withHeaders || pb->strip || !(pb->rich || pb->html))
+  if ((!SigStyled && withHeaders) || pb->strip || !(pb->rich || pb->html))
     sigSrc = eSignature;
   else if (pb->html)
     sigSrc = HTMLSignature;
@@ -1932,23 +1934,23 @@ int TransmitMessageSigBody(TransmitPBPtr pb, bool withHeaders) {
 
   // send headers if we must
   if (withHeaders) {
-    if (sErr = SendContentType(pb->stream, sigBuf, sigLen, 0, NULL, 0, 0,
+    if ((sErr = SendContentType(pb->stream, sigBuf, sigLen, 0, NULL, 0, 0,
                                SumOf(pb->messH)->tableId, &pb->flags, &pb->opts,
-                               NULL, NULL, NULL))
+                               NULL, NULL, NULL)))
       goto done;
     pb->encoder =
         (pb->receipt || 0 == (pb->flags & FLAG_ENCBOD)) ? NULL : QPEncoder;
 
     // header/body separator
     if (withHeaders)
-      if (sErr = SendPString(pb->stream, NewLine))
+      if ((sErr = SendPString(pb->stream, NewLine)))
         goto done;
 
     // preamble if html
     if (!pb->strip && pb->html) {
       // generate the preamble
       free(pb->enriched.data); pb->enriched.data = NULL; pb->enriched.offset = pb->enriched.size = 0;
-      if (sErr = AccuInit(&pb->enriched))
+      if ((sErr = AccuInit(&pb->enriched)))
         goto done;
       sErr =
           HTMLPreamble(&pb->enriched, GetRString(scratch, SIGNATURE), 0, false);
@@ -1971,8 +1973,8 @@ int TransmitMessageSigBody(TransmitPBPtr pb, bool withHeaders) {
   }
 
   // and finally, send it
-  if (sErr = SendBodyLines(pb->stream, sigBuf, sigLen, 0,
-                           pb->flags, true, NULL, 0, false, pb->encoder))
+  if ((sErr = SendBodyLines(pb->stream, sigBuf, sigLen, 0,
+                           pb->flags, true, NULL, 0, false, pb->encoder)))
     goto done;
   BSCLOSE(pb->stream, pb->encoder);
   pb->encoder = NULL;
@@ -1991,7 +1993,7 @@ int SendEnriched(TransStream stream, char *text, long textLen, DecoderFunc *enco
   bool wasNl = true;
   long lastLen, lastC;
   short nofill = 0;
-  unsigned char dir[32];
+  char dir[32];
 
   end = text + textLen;
 
@@ -2024,7 +2026,7 @@ int SendEnriched(TransStream stream, char *text, long textLen, DecoderFunc *enco
           nofill++;
       }
     }
-    BS(stream, encoder, NewLine, strlen((const char *)NewLine));
+    BS(stream, encoder, NewLine, strlen(NewLine));
     if (space > start && spot == space && spot < end - 1 && spot[1] == '\015')
       spot++; // we already sent a newline, don't want to send another.
   }
@@ -2037,11 +2039,11 @@ done:
  * SMTPFinish - close out the SMTP session
  **********************************************************************/
 int FinishSMTP(TransStream stream, MessHandle messH) {
-  unsigned char buffer[256];
+  char buffer[256];
 
   if (!UUPCOut) {
     ComposeString(buffer, ".%p", NewLine);
-    if (sErr = SendTrans(stream, buffer, strlen((const char *)buffer), NULL))
+    if ((sErr = SendTrans(stream, buffer, strlen((const char *)buffer), NULL)))
       return (600);
   }
 
@@ -2066,8 +2068,8 @@ int FinishSMTP(TransStream stream, MessHandle messH) {
  ************************************************************************/
 int SendHeaderLine(TransStream stream, MessHandle messH, short header,
                    bool allowQP, short tid) {
-  unsigned char note[64];
-  unsigned char label[64];
+  char note[64];
+  char label[64];
   HeadSpec hs;
 
   if (!CompHeadFind(messH, header, &hs)) {
@@ -2080,7 +2082,7 @@ int SendHeaderLine(TransStream stream, MessHandle messH, short header,
   }
 
   if (hs.stop == hs.value) {
-    if (header == TO_HEAD && *GetRString(note, BCC_ONLY)) {
+if (header == TO_HEAD && *GetRString(note, BCC_ONLY)) {
       GetRString(label, HEADER_STRN + TO_HEAD);
       return (sErr = SendPtrHead(stream, label, strlen((const char *)label), note, strlen((const char *)note),
                                  allowQP, tid));
@@ -2120,11 +2122,11 @@ int SendAddressHead(TransStream stream, PETEHandle pte, HSPtr hs,
   int err;
   bool popSend = PrefIsSet(PREF_POP_SEND);
   bool wasGroup = false;
-  unsigned char dontHide[32];
+  char dontHide[32];
 
   PETEGetRawText(PETE, pte, &text);
   GetRString(dontHide, GROUP_DONT_HIDE);
-  { char *tp = (char *)text;
+  { char *tp = text;
 
   /*
    * start by sending the label
@@ -2165,7 +2167,7 @@ int SendAddressHead(TransStream stream, PETEHandle pte, HSPtr hs,
            * the first line, period.  If it's the trailing semicolon, it goes on
            * this line, period.
            */
-          if (first || strlen((const char *)start) == 1 && start[0] == ';')
+          if (first || (strlen((const char *)start) == 1 && start[0] == ';'))
             first = false;
           else {
             if (!wasGroup && start[strlen((const char *)start) - 1] != ';') {
@@ -2176,7 +2178,7 @@ int SendAddressHead(TransStream stream, PETEHandle pte, HSPtr hs,
                  (long)strlen((const char *)start) + charsOnLine > lineLimit) || /* overflow */
                 (high || wasHigh)) /* 1522 stuff gets own line always */
             {
-              BS(stream, NULL, NewLine, strlen((const char *)NewLine));
+              BS(stream, NULL, NewLine, strlen(NewLine));
               charsOnLine = 0;
             }
           }
@@ -2214,7 +2216,7 @@ int SendAddressHead(TransStream stream, PETEHandle pte, HSPtr hs,
           }
           free(fix); fix = NULL; fixLen = 0;
         }
-        if (wasGroup = start[strlen((const char *)start) - 1] == ':')
+if ((wasGroup = start[strlen((const char *)start) - 1] == ':'))
           if (!PFindSub(dontHide, start))
             inGroup++;
       }
@@ -2222,7 +2224,7 @@ int SendAddressHead(TransStream stream, PETEHandle pte, HSPtr hs,
       /*
        * finish off header with newline
        */
-      BS(stream, NULL, NewLine, strlen((const char *)NewLine));
+      BS(stream, NULL, NewLine, strlen(NewLine));
     }
     g_strfreev(addresses); addresses = NULL;
   } else
@@ -2240,15 +2242,15 @@ done:
 int SendNormalHead(TransStream stream, PETEHandle pte, HSPtr hs, bool allowQP,
                      short tid) {
   void *text;
-  unsigned char kiran[16];
+  char kiran[16];
 
   if (hs->index == SUBJ_HEAD && *GetRString(kiran, JUST_FOR_KIRAN))
     return (SendSubjectHead(stream, pte, hs, allowQP, tid));
 
   PETEGetRawText(PETE, pte, &text);
 
-  sErr = SendPtrHead(stream, (char *)text + hs->start, hs->value - hs->start - 1,
-                     (char *)text + hs->value, hs->stop - hs->value, allowQP, tid);
+  sErr = SendPtrHead(stream, text + hs->start, hs->value - hs->start - 1,
+                     text + hs->value, hs->stop - hs->value, allowQP, tid);
 
   return (sErr);
 }
@@ -2259,7 +2261,7 @@ int SendNormalHead(TransStream stream, PETEHandle pte, HSPtr hs, bool allowQP,
 int SendSubjectHead(TransStream stream, PETEHandle pte, HSPtr hs,
                       bool allowQP, short tid) {
   void *text;
-  unsigned char kiran[16];
+  char kiran[16];
   long offset;
   long len;
   long stop;
@@ -2270,7 +2272,7 @@ int SendSubjectHead(TransStream stream, PETEHandle pte, HSPtr hs,
 
   PETEGetRawText(PETE, pte, &text);
 
-  { char *tp = (char *)text;
+  { char *tp = text;
   len = hs->stop;
   offset = hs->start;
 
@@ -2344,7 +2346,7 @@ int SendPtrHead(TransStream stream, char * label, long labelLen, char * body,
         Flatten); /* yes, tromps on in-memory copy;
                                                                                                                                                    doesn't matter, will get pitched at close anyway */
   if (allowQP && AnyHighBits(start, stop - start)) {
-    if (fix = Encode1342(start, stop - start, lineLimit, NULL, NewLine, tid, &fixLen)) {
+    if ((fix = Encode1342(start, stop - start, lineLimit, NULL, NewLine, tid, &fixLen))) {
       BS(stream, NULL, " ", 1);
       BS(stream, NULL, fix, fixLen);
       start = stop;
@@ -2360,7 +2362,7 @@ int SendPtrHead(TransStream stream, char * label, long labelLen, char * body,
       if (IsSpace(*end))
         space = end;
     if (!shortLine && space == start && charsOnLine && *end != '\015') {
-      BS(stream, NULL, NewLine, strlen((const char *)NewLine));
+      BS(stream, NULL, NewLine, strlen(NewLine));
       charsOnLine = 0; /* charsOnLine used only for header label */
       goto restart;
     }
@@ -2371,12 +2373,12 @@ int SendPtrHead(TransStream stream, char * label, long labelLen, char * body,
     BS(stream, NULL, " ", 1);
     BS(stream, NULL, start, end - start);
     if (end < stop) {
-      BS(stream, NULL, NewLine, strlen((const char *)NewLine));
+      BS(stream, NULL, NewLine, strlen(NewLine));
       if (!IsSpace(*end))
         end--;
     }
   }
-  BS(stream, NULL, NewLine, strlen((const char *)NewLine));
+  BS(stream, NULL, NewLine, strlen(NewLine));
 done:
   free(fix);
   return (sErr);
@@ -2388,12 +2390,12 @@ done:
 int SendExtras(TransStream stream, void *extras, bool allowQP, short tid) {
   char *start, *stop, *limit;
   char *labelStart, *labelStop;
-  unsigned char label[32];
-  unsigned char uglyStupidHackForWindowsIMAP[32];
+  char label[32];
+  char uglyStupidHackForWindowsIMAP[32];
 
   GetRString(uglyStupidHackForWindowsIMAP, PLUGIN_INFO);
 
-  start = (unsigned char *)extras;
+  start = extras;
   limit = start + strlen((char *)extras);
 
   for (; start < limit; start = stop + 1) {
@@ -2406,7 +2408,7 @@ int SendExtras(TransStream stream, void *extras, bool allowQP, short tid) {
        */
       for (stop = start; stop < limit && *stop != ':'; stop++)
         ;
-      if (stop == limit)
+if (stop == limit)
         break;
       labelStop = stop + 1;
       if (labelStop - labelStart > 2)
@@ -2428,8 +2430,8 @@ int SendExtras(TransStream stream, void *extras, bool allowQP, short tid) {
      * send the header
      */
     if (!StringSame(label, uglyStupidHackForWindowsIMAP))
-      if (sErr = SendPtrHead(stream, labelStart, labelStop - labelStart, start,
-                             stop - start, allowQP, tid))
+      if ((sErr = SendPtrHead(stream, labelStart, labelStop - labelStart, start,
+                             stop - start, allowQP, tid)))
         break;
   }
   return (sErr);
@@ -2439,7 +2441,7 @@ int SendExtras(TransStream stream, void *extras, bool allowQP, short tid) {
  * SendNewsGroups - send the NewsGroups header
  ************************************************************************/
 int SendNewsGroups(TransStream stream, AccuPtr newsGroupAcc, short tid) {
-  unsigned char headerName[64];
+  char headerName[64];
 
   AccuAddChar(newsGroupAcc, '\015');
   AccuTrim(newsGroupAcc);
@@ -2454,8 +2456,8 @@ int SendNewsGroups(TransStream stream, AccuPtr newsGroupAcc, short tid) {
  ************************************************************************/
 short SendXSender(TransStream stream, MessHandle messH) {
   char **popCanon = NULL, **returnCanon = NULL;
-  unsigned char buffer[256];
-  unsigned char from[256];
+  char buffer[256];
+  char from[256];
   short err = 0;
 
   if (CurPers->popSecure) {
@@ -2509,12 +2511,12 @@ int SendBodyLines(TransStream stream, char *text, long length, long offset,
   int lineLimit;        /* # of chars at which to wrap */
   int hardLimit; /* limit for hard returns; don't wrap if para < hardLimit */
   static short quoteLevel; /* the # of quote chars at start of line */
-  unsigned char suspendChar;        /* the quote character */
+  char suspendChar;        /* the quote character */
   static short
       partialSize;         /* the size of the last line output, if it
                                                                                                             was an incomplete line */
   static bool softNewline; /* was the last newline added by us? */
-  unsigned char scratch[32];
+  char scratch[32];
   short i;
   char *nl;
   bool doWrap = 0 != (flags & FLAG_WRAP_OUT);
@@ -2525,7 +2527,7 @@ int SendBodyLines(TransStream stream, char *text, long length, long offset,
   bool flowed = doWrap && UseFlowOut;
   bool withSpace;
   int smtpMaxLen = GetRLong(MAX_SMTP_LINE);
-  unsigned char spaceNewLine[16];
+  char spaceNewLine[16];
 
   if (flowed) {
     *spaceNewLine = 0;
@@ -2587,7 +2589,7 @@ int SendBodyLines(TransStream stream, char *text, long length, long offset,
         while (*start == ' ' && start < stop)
           start++; /* skip leading spaces after a soft newline */
       for (space = nl = start; nl < stop && *nl != '\015'; nl++) {
-        if ((curLen < lineLimit || space == start && curLen < smtpMaxLen) &&
+        if ((curLen < lineLimit || (space == start && curLen < smtpMaxLen)) &&
             (*nl == ' ' || *nl == '\t') && (nl == stop - 1 || nl[1] != '>'))
           space = nl;
         if (*nl == '\t')
@@ -2695,7 +2697,7 @@ int SendBodyLines(TransStream stream, char *text, long length, long offset,
         BS(stream, encoder, spaceNewLine,
            strlen((const char *)spaceNewLine)); // indicate that the newline is soft
       else
-        BS(stream, encoder, NewLine, strlen((const char *)NewLine));
+        BS(stream, encoder, NewLine, strlen(NewLine));
     }
 
     /*
@@ -2749,10 +2751,10 @@ int SendBodyLines(TransStream stream, char *text, long length, long offset,
    * newline-terminate, else we want to remember how long the line
    * fragment we sent was
    */
-  { size_t _nllen = strlen((const char *)NewLine);
-    if (_nllen == 0 || lastC != NewLine[_nllen - 1]) {
+  { size_t _nllen = strlen(NewLine);
+if (_nllen == 0 || lastC != NewLine[_nllen - 1]) {
       if (forceLines)
-        BS(stream, encoder, NewLine, strlen((const char *)NewLine));
+        BS(stream, encoder, NewLine, strlen(NewLine));
       else
         partialSize = lastLen;
     }
@@ -2768,7 +2770,7 @@ done:
  * PrimeProgress - get the progress window started.
  ************************************************************************/
 void PrimeProgress(MessHandle messH) {
-  unsigned char buff[256];
+  char buff[256];
 
   MyGetWTitle(GetMyWindowWindowPtr(messH->win), buff);
   //	ByteProgress(buff,0,CountCompBytes(messH));
@@ -2779,7 +2781,7 @@ void PrimeProgress(MessHandle messH) {
  * WannaSend - find out of the user wants to send a dirty window
  ************************************************************************/
 int WannaSend(MyWindowPtr win) {
-  unsigned char title[256];
+  char title[256];
 
   MyGetWTitle(GetMyWindowWindowPtr(win), title);
   AlertStr(WANNA_SEND_ALRT, Stop, title);
@@ -2791,38 +2793,38 @@ int WannaSend(MyWindowPtr win) {
  ************************************************************************/
 int SendAttachments(TransStream stream, MessHandle messH, long flags,
                     char * boundary, short tableID, short idBase) {
-  FSSpec spec;
+  char spec[PATH_MAX];
   short index;
   short err = 0;
   bool plainText = 0 == (flags & FLAG_BX_TEXT);
   bool canQP = 0 != (flags & FLAG_CAN_ENC);
   bool isUU;
   CInfoPBRec hfi;
-  unsigned char name[32];
+  char name[32];
   short aType;
 
   aType = AttachOptNumber(flags);
   isUU = aType + 1 == atmUU;
   hfi.hFileInfo.ioNamePtr = name;
   for (index = 1; !err; index++) {
-    if (err = GetIndAttachment(messH, index, &spec, NULL))
-      if (err == 1)
+    if ((err = GetIndAttachment(messH, index, spec, NULL)))
+if (err == 1)
         break;
       else
-        return (FileSystemError(BINHEX_OPEN, spec_name(spec), err));
-    IsAlias(&spec, &spec);
-    struct stat st_2873;
-  if (stat(spec, &st_2873) == 0 && S_ISDIR(st_2873.st_mode))
+        return (FileSystemError(BINHEX_OPEN, path_basename(spec), err));
+    IsAlias(spec, spec);
+    GStatBuf st_2873;
+  if (g_stat(spec, &st_2873) == 0 && S_ISDIR(st_2873.st_mode))
       err = SendAttachmentFolder(stream, messH, flags, canQP, plainText,
-                                 tableID, boundary, &spec, 0,
+                                 tableID, boundary, spec, 0,
                                  idBase + index - 1, &idBase, &hfi);
     else
       err = SendAnAttachment(stream, messH, flags, canQP, plainText, tableID,
-                             boundary, &spec, 0, idBase + index - 1);
+                             boundary, spec, 0, idBase + index - 1);
   }
   if (index - 1)
     UpdateNumStat(ksStatSentAttach, index - 1);
-  if (err == 1)
+if (err == 1)
     err = 0;
   return (err);
 }
@@ -2832,22 +2834,22 @@ int SendAttachments(TransStream stream, MessHandle messH, long flags,
  ************************************************************************/
 int SendRelatedParts(TransStream stream, MessHandle messH, long flags,
                      StackHandle stack, char * boundary) {
-  FSSpec origSpec, spec;
+  char origSpec[PATH_MAX]; char spec[PATH_MAX];
   short index;
   short err = 0;
 
   for (index = stack->elCount; !err && index--;) {
-    if (err = StackItem(&origSpec, index, stack))
+    if ((err = StackItem(&origSpec, index, stack)))
       err = 1;
     else {
-      IsAlias(&origSpec, &spec);
-      ConvertPictPart(&origSpec, &spec);
-      if (err = SendAnAttachment(stream, messH, flags, true, true, 0, boundary,
-                                 &spec, 1, stack->elCount - index - 1))
+      IsAlias(origSpec, spec);
+      ConvertPictPart(origSpec, spec);
+      if ((err = SendAnAttachment(stream, messH, flags, true, true, 0, boundary,
+                                 spec, 1, stack->elCount - index - 1)))
         break;
     }
   }
-  if (err == 1)
+if (err == 1)
     err = 0;
   return (err);
 }
@@ -2858,8 +2860,8 @@ int SendRelatedParts(TransStream stream, MessHandle messH, long flags,
 void ConvertPictPart(char * origSpec, char * spec) {
 #ifdef HAVE_QUICKTIME
   static uint32_t exportType;
-  unsigned char scratch[256];
-  unsigned char token[32];
+  char scratch[256];
+  char token[32];
   GraphicsExportComponent exCI = NULL;
   int err;
 
@@ -2884,8 +2886,8 @@ void ConvertPictPart(char * origSpec, char * spec) {
       for (spot = scratch; PToken(scratch, token, &spot, ",");) {
         if (strlen((const char *)token) == sizeof(thisType)) {
           memcpy(&thisType, token, sizeof(thisType));
-          if (exCI = OpenDefaultComponent(GraphicsExporterComponentType,
-                                          thisType)) {
+          if ((exCI = OpenDefaultComponent(GraphicsExporterComponentType,
+                                          thisType))) {
             //	Found one!
             exportType = thisType;
             break;
@@ -2907,13 +2909,13 @@ void ConvertPictPart(char * origSpec, char * spec) {
     GraphicsImportComponent imCI;
 
     if (!GetGraphicsImporterForFile(spec, &imCI)) {
-      FSSpec tempSpec;
+      char tempSpec[PATH_MAX];
 
       g_strlcpy(tempSpec, origSpec, sizeof(tempSpec));
       UniqueSpec(&tempSpec, 31);
       GraphicsExportSetOutputFile(exCI, &tempSpec);
       GraphicsExportSetInputGraphicsImporter(exCI, imCI);
-      if (exportType == 'PNGf') {
+if (exportType == 'PNGf') {
         //	Don't allow alpha channel. QuickTime PNG exporter messes up
         // alpha channel with 	PICT vector images rendering them invisible when
         // not viewing with QuickTime
@@ -2924,18 +2926,18 @@ void ConvertPictPart(char * origSpec, char * spec) {
       CloseComponent(exCI);
       if (!err) {
         //	Replace old PICT file (or alias)
-        unlink(origSpec);
+        g_unlink(origSpec);
         // FSpRename(tempSpec, name) renames tempSpec to a new name in the same dir
         char newPath[1024];
         char *lastSlash = strrchr(tempSpec, '/');
         if (lastSlash) {
           int dirLen = lastSlash - tempSpec + 1;
           strncpy(newPath, tempSpec, dirLen);
-          strcpy(newPath + dirLen, (char *)spec_name(origSpec) + 1);
+          strcpy(newPath + dirLen, (char *)path_basename(origSpec) + 1);
         } else {
-          strcpy(newPath, (char *)spec_name(origSpec) + 1);
+          strcpy(newPath, (char *)path_basename(origSpec) + 1);
         }
-        rename(tempSpec, newPath);
+        g_rename(tempSpec, newPath);
         *spec = *origSpec;
       }
     } else
@@ -2956,26 +2958,26 @@ int SendAttachmentFolder(TransStream stream, MessHandle messH, long flags,
                          short partID, short *partBase, CInfoPBRec *hfi) {
   short err = 0;
   short index;
-  FSSpec spec;
+  char spec[PATH_MAX];
   char ourBoundary[128];
   long dirId;
 
   // start by sending a boundary for the outer multipart
-  if (err = SendBoundary(stream))
+  if ((err = SendBoundary(stream)))
     return err;
   // and a content-id, why not?
-  if (err = SendCID(stream, messH, multiID, partID))
+  if ((err = SendCID(stream, messH, multiID, partID)))
     return (err);
 
   // now, let's compose our boundary
   sprintf((char *)spec, "%ld", (long)(partID));
-  BuildBoundary(NULL, ourBoundary, spec_name(spec));
+  BuildBoundary(NULL, ourBoundary, path_basename(spec));
   /*
    * send the multipart header
    */
-  if (err = ComposeRTrans(stream, MIME_MP_FMT, InterestHeadStrn + hContentType,
+  if ((err = ComposeRTrans(stream, MIME_MP_FMT, InterestHeadStrn + hContentType,
                           MIME_MULTIPART, MIME_X_FOLDER,
-                          AttributeStrn + aBoundary, ourBoundary, NewLine))
+                          AttributeStrn + aBoundary, ourBoundary, NewLine)))
     return (err);
 
   /*
@@ -2984,10 +2986,10 @@ int SendAttachmentFolder(TransStream stream, MessHandle messH, long flags,
   if (!err)
     err = ComposeRTrans(stream, MIME_CD_FMT,
                         InterestHeadStrn + hContentDisposition, ATTACHMENT,
-                        AttributeStrn + aFilename, spec_name(folderSpec), NewLine);
+                        AttributeStrn + aFilename, path_basename(folderSpec), NewLine);
 
   // header/body separator
-  if (err = SendPString(stream, NewLine))
+  if ((err = SendPString(stream, NewLine)))
     return (err);
 
   // get our dirID
@@ -3007,7 +3009,7 @@ int SendAttachmentFolder(TransStream stream, MessHandle messH, long flags,
   // we need to send our final boundary
   if (!err)
     err = SendTrans(stream, "--", 2, ourBoundary, strlen((const char *)ourBoundary), "--", 2,
-                    NewLine, strlen((const char *)NewLine), NULL);
+                    NewLine, strlen(NewLine), NULL);
 
   return err;
 }
@@ -3021,47 +3023,47 @@ int SendAnAttachment(TransStream stream, MessHandle messH, long flags,
   short err = 0;
   bool isUU;
   CInfoPBRec hfi;
-  unsigned char s[256];
-  unsigned char name[32];
+  char s[256];
+  char name[32];
   short aType;
   AttMap am;
   int64_t startTime_us;
   bool flat = false;
-  FSSpec local;
+  char local[PATH_MAX];
   bool noRFork;
 
   aType = AttachOptNumber(flags);
   isUU = aType + 1 == atmUU;
   hfi.hFileInfo.ioNamePtr = name;
-  struct stat st_3084;
-  if (stat(spec, &st_3084) == 0)
+  GStatBuf st_3084;
+  if (g_stat(spec, &st_3084) == 0)
     err = 0;
   else
     err = EIO;
   if (err)
-    return (FileSystemError(BINHEX_OPEN, spec_name(spec), err));
-  ComposeRString(s, BINHEX_PROG_FMT, spec_name(spec));
+    return (FileSystemError(BINHEX_OPEN, path_basename(spec), err));
+  ComposeRString(s, BINHEX_PROG_FMT, path_basename(spec));
   Progress(NoChange, NoChange, NULL, NULL, s);
   noRFork = hfi.hFileInfo.ioFlRLgLen == 0;
 
   startTime_us = g_get_monotonic_time();
-  if (err = SendBoundary(stream))
+  if ((err = SendBoundary(stream)))
     return (err);
-  if (err = SendCID(stream, messH, multiID, partID))
+  if ((err = SendCID(stream, messH, multiID, partID)))
     return (err);
-  if (err = FindAttMap(spec, &am))
+  if ((err = FindAttMap(spec, &am)))
     return (err);
 
   if (am.mm.specialId == 'flat') {
     g_strlcpy(local, spec, sizeof(local));
-    if (!FlattenAndSpool(&local)) {
-      spec = &local; // send the spooled copy
+    if (!FlattenAndSpool(local)) {
+      spec = local; // send the spooled copy
       flat = true;
     }
     am.mm.specialId = 0; // special processing done
   }
 
-  if (plainText && am.mm.specialId && am.mm.specialId != '    ' ||
+  if ((plainText && am.mm.specialId && am.mm.specialId != '    ') ||
       am.mm.specialId == 'MiME')
     err = SendSpecial(stream, spec, &am);
   else
@@ -3070,8 +3072,8 @@ int SendAnAttachment(TransStream stream, MessHandle messH, long flags,
     ;
   else if (plainText && IsMailbox(spec) && hfi.hFileInfo.ioFlLgLen)
     err = SendDigest(stream, spec);
-  else if (plainText && (am.isPostScript && !canQP ||
-                         EqualStrRes(am.mm.mimetype, MIME_TEXT) && am.isBasic))
+  else if (plainText && ((am.isPostScript && !canQP) ||
+                         (EqualStrRes(am.mm.mimetype, MIME_TEXT) && am.isBasic)))
     err = SendPlain(stream, spec, flags, tableID, &am);
   else if (!isUU && plainText && (am.isBasic || noRFork))
     err = SendDataFork(stream, spec, flags, tableID, &am);
@@ -3097,12 +3099,12 @@ int SendAnAttachment(TransStream stream, MessHandle messH, long flags,
     if (elapsed_ms < 1) elapsed_ms = 1;
     long rate = (10 * (hfi.hFileInfo.ioFlLgLen + hfi.hFileInfo.ioFlRLgLen)) /
                 (elapsed_ms * 1024);
-    g_debug("%p: %d %d.%d KBps", spec_name(spec), aType,
+    g_debug("%p: %d %d.%d KBps", path_basename(spec), aType,
                 rate / 10, rate % 10);
   }
 
   if (flat)
-    unlink(spec);
+    g_unlink(spec);
   return (err);
 }
 
@@ -3110,7 +3112,7 @@ int SendAnAttachment(TransStream stream, MessHandle messH, long flags,
  * SendCID - send a content-id
  ************************************************************************/
 int SendCID(TransStream stream, MessHandle messH, long part, short n) {
-  unsigned char mid[256], cid[256];
+  char mid[256], cid[256];
   int err = 0;
 
   if (*CompGetMID(messH, mid)) {
@@ -3135,8 +3137,8 @@ char * BuildContentID(char * into, char * mid, long part, short i) {
  **********************************************************************/
 int SendDigest(TransStream stream, char * spec) {
   TOCType * tocH = TOCBySpec(spec);
-  unsigned char boundary[256];
-  unsigned char date[64];
+  char boundary[256];
+  char date[64];
   short i;
   MyWindowPtr win;
   bool newWin;
@@ -3155,9 +3157,9 @@ int SendDigest(TransStream stream, char * spec) {
   if (!sErr)
     sErr = ComposeRTrans(stream, MIME_CD_FMT,
                          InterestHeadStrn + hContentDisposition, ATTACHMENT,
-                         AttributeStrn + aFilename, spec_name(spec), NewLine);
-  struct stat st_3202;
-  stat(spec, &st_3202);
+                         AttributeStrn + aFilename, path_basename(spec), NewLine);
+  GStatBuf st_3202;
+  g_stat(spec, &st_3202);
   if (!sErr && *R822Date(date, st_3202.st_mtime - ZoneSecs()))
     sErr = ComposeRTrans(stream, MIME_CT_ANNOTATE, AttributeStrn + aModDate,
                          date, NewLine);
@@ -3179,7 +3181,7 @@ int SendDigest(TransStream stream, char * spec) {
       /*
        * send a boundary
        */
-      if (sErr = SendBoundary(stream))
+      if ((sErr = SendBoundary(stream)))
         break;
 
       win = GetAMessageLo(tocH, i, NULL, NULL, false, &newWin);
@@ -3260,15 +3262,15 @@ int SendAnonFTP(TransStream stream, char * spec) {
   int err;
   void *text;
   char type[128], ftp[128], host[128], dir[128], name[128], token[128];
-  unsigned char data[256];
+  char data[256];
   char *spot;
   short size;
 
-  if (err = Snarf(spec, &text, 254))
-    FileSystemError(BINHEX_READ, spec_name(spec), err);
+  if ((err = Snarf(spec, &text, 254)))
+    FileSystemError(BINHEX_READ, path_basename(spec), err);
   else {
-    size = strlen((char *)text);
-    { size_t _mpl = (size); memcpy(data, (char *)text, _mpl); ((char*)(data))[_mpl] = '\0'; }
+    size = strlen(text);
+    { size_t _mpl = (size); memcpy(data, text, _mpl); ((char*)(data))[_mpl] = '\0'; }
 
     /*
      * parse the string
@@ -3282,11 +3284,11 @@ int SendAnonFTP(TransStream stream, char * spec) {
         while (PToken(data, token, &spot, "/")) {
           {
             size_t _dlen = strlen((const char *)dir);
-            if (_dlen == 0 || dir[_dlen - 1] != '/')
+if (_dlen == 0 || dir[_dlen - 1] != '/')
               PCatC(dir, '/');
           }
           g_strlcat((char *)dir, (const char *)token, sizeof(dir));
-          g_strlcpy((char *)name, (const char *)token, sizeof(name));
+          g_strlcpy(name, (const char *)token, sizeof(name));
         }
         if (*name) {
           {
@@ -3365,8 +3367,8 @@ int SendRawMIME(TransStream stream, char * spec) {
 
   bSize = MIN(size, GetRLong(BUFFER_SIZE));
 
-  struct stat st_3397;
-  stat(spec, &st_3397);
+  GStatBuf st_3397;
+  g_stat(spec, &st_3397);
   size = st_3397.st_size;
   refN = 0;
   err = 0;
@@ -3400,20 +3402,20 @@ int SendRawMIME(TransStream stream, char * spec) {
       while (!err && size > 0) {
         count = MIN(size, bSize);
         if (!(err = file_read(refN, &count, buffer))) {
-          if (strlen((const char *)NewLine) == 1 && NewLine[0] == '\015')
+          if (strlen(NewLine) == 1 && NewLine[0] == '\015')
             sendCount = RemoveChar('\012', buffer, count);
-          else if (strlen((const char *)NewLine) == 1 && NewLine[0] == '\012')
+          else if (strlen(NewLine) == 1 && NewLine[0] == '\012')
             sendCount = RemoveChar('\015', buffer, count);
           else
             sendCount = count;
           err = BufferSend(stream, encoder, buffer, sendCount, true);
         } else
-          FileSystemError(BINHEX_READ, spec_name(spec), err);
+          FileSystemError(BINHEX_READ, path_basename(spec), err);
         size -= count;
       }
       // if the file didn't end with a newline, add one
       if (!err && needNL)
-        err = BufferSend(stream, encoder, NewLine, strlen((const char *)NewLine), true);
+        err = BufferSend(stream, encoder, NewLine, strlen(NewLine), true);
 
       // send any remainder
       if (!err)
@@ -3436,7 +3438,7 @@ int PeriodEncoder(CallType callType, DecoderPBPtr pb) {
   if (pb) {
     switch (callType) {
     case kDecodeInit:
-      nlState = strlen((const char *)NewLine);
+      nlState = strlen(NewLine);
       break;
 
     case kDecodeDone:
@@ -3473,7 +3475,7 @@ long StuffPeriods(char *in, long inLen, char *out,
       *out++ = '.';
       nlState = 0;
     } else {
-      if (nlState == newLineLen)
+if (nlState == newLineLen)
         nlState = 0; // start over again
 
       if (*in == newLine[nlState])
@@ -3493,8 +3495,8 @@ long StuffPeriods(char *in, long inLen, char *out,
  ************************************************************************/
 bool IsPostScript(char * spec) {
   short refN;
-  unsigned char psMagic[32];
-  unsigned char fileMagic[32];
+  char psMagic[32];
+  char fileMagic[32];
   long count;
   bool result = false;
 
@@ -3519,7 +3521,7 @@ short SendPlain(TransStream stream, char *spec, long flags, short tableId,
   int err;
   DecoderFunc *encoder = NULL;
   void *taste = NULL;
-  unsigned char scratch[32];
+  char scratch[32];
   FInfo info;
 
   /*
@@ -3530,13 +3532,13 @@ short SendPlain(TransStream stream, char *spec, long flags, short tableId,
       encoder = B64Encoder;
       flags |= FLAG_ENCBOD;
     }
-    struct stat st_3560;
-    stat(spec, &st_3560);
-    if (err = MIMEFileHeader(stream, amp, POSTSCRIPT, st_3560.st_mtime))
+    GStatBuf st_3560;
+    g_stat(spec, &st_3560);
+    if ((err = MIMEFileHeader(stream, amp, POSTSCRIPT, st_3560.st_mtime)))
       goto done;
-    if (err = ComposeRTrans(stream, MIME_V_FMT,
+    if ((err = ComposeRTrans(stream, MIME_V_FMT,
                             InterestHeadStrn + hContentEncoding,
-                            encoder ? MIME_BASE64 : MIME_BINARY, NewLine))
+                            encoder ? MIME_BASE64 : MIME_BINARY, NewLine)))
       goto done;
     DontTranslate = true;
     flags &= ~FLAG_WRAP_OUT;
@@ -3545,19 +3547,19 @@ short SendPlain(TransStream stream, char *spec, long flags, short tableId,
         ~FLAG_ENCBOD; /* we may not need to encode this; we'll find out later */
     Snarf(spec, &taste, GetRLong(TEXT_QP_TASTE));
     { long _tlen = taste ? (long)malloc_size(taste) : 0;
-      if (err = SendContentType(stream, taste ? (char *)taste : NULL, _tlen, 0,
+      if ((err = SendContentType(stream, taste ? (char *)taste : NULL, _tlen, 0,
                                 NULL, 0, 0, tableId, &flags, NULL,
-                                ATT_MAP_NAME(amp), NULL, amp->mm.subtype))
+                                ATT_MAP_NAME(amp), NULL, amp->mm.subtype)))
         goto done;
     }
     free(taste);
     encoder = flags & FLAG_ENCBOD ? QPEncoder : NULL;
-    if (err = ComposeRTrans(
+    if ((err = ComposeRTrans(
             stream, MIME_CD_FMT, InterestHeadStrn + hContentDisposition,
-            ATTACHMENT, AttributeStrn + aFilename, ATT_MAP_NAME(amp), NewLine))
+            ATTACHMENT, AttributeStrn + aFilename, ATT_MAP_NAME(amp), NewLine)))
       goto done;
-    struct stat st_3581;
-    stat(spec, &st_3581);
+    GStatBuf st_3581;
+    g_stat(spec, &st_3581);
     if (*R822Date(scratch, st_3581.st_mtime - ZoneSecs()) &&
         (err = ComposeRTrans(stream, MIME_CT_ANNOTATE, AttributeStrn + aModDate,
                              scratch, NewLine)))
@@ -3571,7 +3573,7 @@ short SendPlain(TransStream stream, char *spec, long flags, short tableId,
     err = ComposeRTrans(stream, MIME_CT_ANNOTATE, AttributeStrn + aMacCreator,
                         Long2Hex(scratch, info.fdCreator), NewLine);
 
-  if (err = SendPString(stream, NewLine))
+  if ((err = SendPString(stream, NewLine)))
     goto done;
 
   err = SendTextFile(stream, spec, flags, encoder);
@@ -3613,11 +3615,11 @@ int SendTextFile(TransStream stream, char * spec, long flags,
     err = 0;
   }
   if (err) {
-    FileSystemError(BINHEX_OPEN, spec_name(spec), err);
+    FileSystemError(BINHEX_OPEN, path_basename(spec), err);
     goto done;
   }
-  if (err = file_size(refN, &fileSize)) {
-    FileSystemError(BINHEX_OPEN, spec_name(spec), err);
+  if ((err = file_size(refN, &fileSize))) {
+    FileSystemError(BINHEX_OPEN, path_basename(spec), err);
     goto done;
   }
 
@@ -3627,12 +3629,12 @@ int SendTextFile(TransStream stream, char * spec, long flags,
   for (; fileSize; fileSize -= readSize) {
     readSize = MIN(dataSize, fileSize);
     sendSize = readSize;
-    if (err = file_read(refN, &sendSize, dataBuffer)) {
-      FileSystemError(BINHEX_READ, spec_name(spec), err);
+    if ((err = file_read(refN, &sendSize, dataBuffer))) {
+      FileSystemError(BINHEX_READ, path_basename(spec), err);
       goto done;
     }
-    if (err = SendBodyLines(stream, (void *)dataBuffer, sendSize, 0, flags, false, NULL,
-                            0, partial, encoder))
+    if ((err = SendBodyLines(stream, (void *)dataBuffer, sendSize, 0, flags, false, NULL,
+                            0, partial, encoder)))
       goto done;
     partial = dataBuffer[sendSize - 1] != '\015';
   }
@@ -3654,7 +3656,7 @@ done:
  * BuildDateHeader - build an RFC 822 date header
  ************************************************************************/
 void BuildDateHeader(char *buffer, long seconds) {
-  unsigned char date[64];
+  char date[64];
   if (*R822Date(date, seconds))
     ComposeRString(buffer, DATE_HEADER, HeaderStrn + DATE_HEAD, date);
   else
@@ -3675,7 +3677,7 @@ MessHandle SaveB4Send(TOCType * tocH, short sumNum) {
 
   if (messH && messH->win->isDirty) {
     which = WannaSend(messH->win);
-    if (which == CANCEL_ITEM || which == WANNA_SAVE_CANCEL)
+if (which == CANCEL_ITEM || which == WANNA_SAVE_CANCEL)
       return (NULL);
     else if (which == WANNA_SAVE_SAVE && !SaveComp(messH->win))
       return (NULL);
@@ -3720,17 +3722,17 @@ int SendContentType(TransStream stream, char *text1, long text1Len, long offset1
                       char * subtype) {
   short etid = EffectiveTID(tableID);
   char scratch[128];
-  unsigned char flowed[64];
+  char flowed[64];
 #ifdef ETL
-  unsigned char s2[64];
+  char s2[64];
 #endif
   bool anyfunny;
   bool any2022;
   short err;
   short encId;
-  bool strip = 0 != (opts && (*opts && OPT_STRIP));
-  bool rich = !strip && 0 != (flags && (*flags && FLAG_RICH));
-  bool html = !strip && 0 != (opts && (*opts && OPT_HTML));
+  bool strip = 0 != (opts && (*opts & OPT_STRIP));
+  bool rich = !strip && 0 != (flags && (*flags & FLAG_RICH));
+  bool html = !strip && 0 != (opts && (*opts & OPT_HTML));
   short computedSubType =
       html ? HTMLTagsStrn + htmlTag : (rich ? MIME_RICHTEXT : MIME_PLAIN);
 
@@ -3738,9 +3740,9 @@ int SendContentType(TransStream stream, char *text1, long text1Len, long offset1
     *flags &= ~FLAG_WRAP_OUT;
 
   anyfunny =
-      !text1 || AnyFunny(text1, text1Len, offset1) || text2 && AnyFunny(text2, text2Len, offset2);
-  any2022 = !PrefIsSet(PREF_NO_2022) && (text1 && Any2022(text1, text1Len, offset1) ||
-                                         text2 && Any2022(text2, text2Len, offset2));
+      !text1 || AnyFunny(text1, text1Len, offset1) || (text2 && AnyFunny(text2, text2Len, offset2));
+  any2022 = !PrefIsSet(PREF_NO_2022) && ((text1 && Any2022(text1, text1Len, offset1)) ||
+                                          (text2 && Any2022(text2, text2Len, offset2)));
 
   /*
    * figure out proper charset
@@ -3752,7 +3754,7 @@ int SendContentType(TransStream stream, char *text1, long text1Len, long offset1
   else
     NameCharset(scratch, ktMacUS, tlMIME);
 
-  if (0 != (*flags && FLAG_WRAP_OUT) && UseFlowOut) {
+  if (0 != (*flags & FLAG_WRAP_OUT) && UseFlowOut) {
     if (tlMIME)
       AddTLMIME(*tlMIME, TLMIME_PARAM,
                 GetRString(flowed, AttributeStrn + aFormat),
@@ -3810,16 +3812,16 @@ int SendContentType(TransStream stream, char *text1, long text1Len, long offset1
                             *flags); /* determine automatically */
 
   if (0 != (*flags & FLAG_ENCBOD)) {
-    if ((*flags && FLAG_CAN_ENC) && (UUPCOut || (Ehlo && !Ehlo->mime8bit) ||
+    if ((*flags & FLAG_CAN_ENC) && (UUPCOut || (Ehlo && !Ehlo->mime8bit) ||
                                     !PrefIsSet(PREF_ALLOW_8BITMIME)))
       encId = MIME_QP;
     else {
       encId = MIME_8BIT;
       *flags &= ~FLAG_ENCBOD;
     }
-    if (err =
+    if ((err =
             ComposeRTrans(stream, MIME_V_FMT,
-                          InterestHeadStrn + hContentEncoding, encId, NewLine))
+                          InterestHeadStrn + hContentEncoding, encId, NewLine)))
       return (err);
 #ifdef ETL
     if (tlMIME) {
@@ -3837,18 +3839,18 @@ int SendContentType(TransStream stream, char *text1, long text1Len, long offset1
  ************************************************************************/
 long DecideEncoding(char *text1, long text1Len, char *text2, long text2Len,
                     bool anyfunny, short etid, long flags) {
-  if (etid == ktMacUS)
+if (etid == ktMacUS)
     anyfunny = false;
 
   if (anyfunny)
     flags |= FLAG_ENCBOD; /* encode funny chars in QP */
-  else if (0 == (flags && FLAG_WRAP_OUT) && !(flags && FLAG_RICH)) {
+  else if (0 == (flags & FLAG_WRAP_OUT) && !(flags & FLAG_RICH)) {
     if (!text1 || LongerThan(text1, text1Len, GetRLong(MAX_SMTP_LINE)) ||
-        text2 && LongerThan(text2, text2Len, GetRLong(MAX_SMTP_LINE)))
+        (text2 && LongerThan(text2, text2Len, GetRLong(MAX_SMTP_LINE))))
       flags |= FLAG_ENCBOD;
-  } else if (0 == (flags && FLAG_ENCBOD) && (flags && FLAG_RICH)) {
+  } else if (0 == (flags & FLAG_ENCBOD) && (flags & FLAG_RICH)) {
     if (!text1 || LongerWordThan(text1, text1Len, GetRLong(ENRICHED_MAX_WORD)) ||
-        text2 && LongerWordThan(text1, text1Len, GetRLong(ENRICHED_MAX_WORD)))
+        (text2 && LongerWordThan(text1, text1Len, GetRLong(ENRICHED_MAX_WORD))))
       flags |= FLAG_ENCBOD;
   }
   return (flags);
@@ -3876,7 +3878,7 @@ bool SevenBitTable(short tableID) {
  ************************************************************************/
 bool AnyFunny(char *text, long textLen, long offset) {
   char *spot, *end;
-  unsigned char line[256];
+  char line[256];
 
   if (!text)
     return (true);
@@ -3930,13 +3932,13 @@ bool Any2022(char *text, long textLen, long offset) {
  * EffectiveTID - what is the effective table id?
  ************************************************************************/
 short EffectiveTID(short tid) {
-  unsigned char pTable[32];
+  char pTable[32];
 
   if (!NewTables)
     return (TransOutTablID());
-  if (tid == NO_TABLE)
+if (tid == NO_TABLE)
     return (0);
-  if (tid == DEFAULT_TABLE)
+if (tid == DEFAULT_TABLE)
     return (*GetPref(pTable, PREF_OUT_XLATE) ? GetPrefLong(PREF_OUT_XLATE)
                                              : TransOutTablID());
   else
@@ -3948,7 +3950,7 @@ short EffectiveTID(short tid) {
  *   when not using the new table support.  Pretty hacky, I'm afraid.
  ************************************************************************/
 short TransOutTablID(void) {
-  unsigned char name[256];
+  char name[256];
   GetPref(name, PREF_SEND_CSET);
   if (EqualStrRes(name, MIME_ISO_LATIN1))
     return TRANS_OUT_TABL_8859_1;
@@ -3982,9 +3984,9 @@ char * TransOutTablName(char * name) {
  * NameCharset - build a charset= parameter
  ************************************************************************/
 char * NameCharset(char * charset, short tid, emsMIMEHandle *tlMIME) {
-  unsigned char scratch[64];
+  char scratch[64];
 #ifdef ETL
-  unsigned char header[64];
+  char header[64];
 #endif
 
   if (*SimpleNameCharset(scratch, tid)) {
@@ -4077,10 +4079,10 @@ bool LongerWordThan(char *text, long textLen, short len) {
 void Next1342Word(char **startP, char *end,
                   Token1342Ptr current, char * delim, bool *wasQuote,
                   bool *encQuote) {
-  unsigned char word[64];
+  char word[64];
   short wordLim = 48;
   Enum1342 wordType;
-  unsigned char c;
+  char c;
   char *source = *startP;
   bool justSpace;
   bool newWasQuote;
@@ -4109,7 +4111,7 @@ void Next1342Word(char **startP, char *end,
       newWasQuote = true;
       while (source < end && (wlen = strlen((const char *)word)) < wordLim) {
         PCatC(word, *source);
-        if (*source >= 0x80)
+        if ((unsigned char)*source >= 0x80)
           wordLim -= 2; /* allow space for encoding */
         if (*source++ == '"' && wlen >= 2 && word[wlen - 1] != '\\') {
           newWasQuote = false;
@@ -4138,7 +4140,7 @@ void Next1342Word(char **startP, char *end,
       short oldWordSize;
 
       while (source < end && (wlen = strlen((const char *)word)) < wordLim)
-        if (whichDelim = (char *)strchr((const char *)delim, *source)) {
+if ((whichDelim = (char *)strchr((const char *)delim, *source))) {
           if (*whichDelim == ' ') {
             if (!AnyHighBits(word, wlen))
               break;
@@ -4156,7 +4158,7 @@ void Next1342Word(char **startP, char *end,
           } else
             break;
         } else {
-          if (*source >= 0x80)
+          if ((unsigned char)*source >= 0x80)
             wordLim -= 2; /* allow space for encoding */
           PCatC(word, *source);
           source++;
@@ -4174,7 +4176,7 @@ void Next1342Word(char **startP, char *end,
 
       wordType = AnyHighBits(word, wlen) ? k1342Word : k1342Plain;
       // trim trailing spaces from encoded words
-      if (wordType == k1342Word)
+if (wordType == k1342Word)
         while (wlen > 0 && word[wlen - 1] == ' ') {
           word[--wlen] = '\0';
           --source;
@@ -4194,7 +4196,7 @@ char *Encode1342(char *source, long len, short lineLimit,
                  short *charsOnLine, char * nl, short tid, long *outLen) {
   Token1342 tokens[3];
   Token1342Ptr prev, curr, next;
-  unsigned char dl1342[32];
+  char dl1342[32];
   bool continueQuote = false;
   bool encQuote = false;
   char *spot = source;
@@ -4203,7 +4205,7 @@ char *Encode1342(char *source, long len, short lineLimit,
   long encodedLen = 0;
   long encodedCap = 0;
   bool wrapped;
-  unsigned char c;
+  char c;
 
   if (outLen) *outLen = 0;
 
@@ -4281,7 +4283,7 @@ char *Encode1342(char *source, long len, short lineLimit,
     { size_t _pwlen = strlen((const char *)prev->word); c = _pwlen ? prev->word[_pwlen - 1] : 0; }
     if (!wrapped && curr->wordType == k1342Word &&
         (prev->wordType == k1342Word ||
-         prev->wordType == k1342Plain && c != ' ' && c != ')')) {
+         (prev->wordType == k1342Plain && c != ' ' && c != ')'))) {
       { size_t _cwlen = strlen((const char *)curr->word);
         memmove(curr->word + 1, curr->word, _cwlen + 1);
         curr->word[0] = ' '; }
@@ -4324,10 +4326,10 @@ fail:
  * Encode1342String - encode a string in 1342-speak
  ************************************************************************/
 void Encode1342String(char * s, short tid) {
-  unsigned char encoded[256];
-  unsigned char name[64];
+  char encoded[256];
+  char name[64];
   char *from, *to, *end;
-  unsigned char c;
+  char c;
 
   /*
    * first, we translit to ISO-latin1
@@ -4342,7 +4344,7 @@ void Encode1342String(char * s, short tid) {
   end = s + strlen((const char *)s);
   for (from = s; from < end; from++) {
     c = *from;
-    if ('a' <= c && c <= 'z' || 'A' <= c && c <= 'Z' || '0' <= c && c <= '9')
+    if (('a' <= c && c <= 'z') || ('A' <= c && c <= 'Z') || ('0' <= c && c <= '9'))
       *to++ = c;
     else if (c == ' ')
       *to++ = '_';
@@ -4455,11 +4457,11 @@ int BufferSend(TransStream stream, DecoderFunc *encoder, char *data,
 
     if (!DontTranslate && Flatten)
       for (spot = data, end = data + dataLen; spot < end; spot++)
-        *spot = Flatten[*spot];
+        *spot = Flatten[(unsigned char)*spot];
 
     if (!DontTranslate && TransOut)
       for (spot = data, end = data + dataLen; spot < end; spot++)
-        *spot = TransOut[*spot];
+        *spot = TransOut[(unsigned char)*spot];
 
     while (dataLen) {
       progBytes = consumed = 0;
@@ -4469,7 +4471,7 @@ int BufferSend(TransStream stream, DecoderFunc *encoder, char *data,
        */
       if (encoder) {
         if ((!used || bSize - used > 4 * dataLen)) {
-          EncoderGlobalsPb.output = (unsigned char *)EncoderGlobalsBuffer + used;
+          EncoderGlobalsPb.output = EncoderGlobalsBuffer + used;
           consumed = EncoderGlobalsPb.inlen = MIN((bSize - used) / 4, dataLen);
           EncoderGlobalsPb.input = data;
           err = (*encoder)(kDecodeData, &EncoderGlobalsPb);
@@ -4484,7 +4486,7 @@ int BufferSend(TransStream stream, DecoderFunc *encoder, char *data,
        */
       else {
         consumed = MIN(bSize - used, dataLen);
-        memmove((unsigned char *)EncoderGlobalsBuffer + used, data, consumed);
+        memmove(EncoderGlobalsBuffer + used, data, consumed);
         used += consumed;
       }
 
@@ -4565,8 +4567,8 @@ int GetIndAttachmentLo(void *text, short index, char * spec, HSPtr where,
                          HeadSpec *hs) {
   short colons[4];
   short onColon;
-  unsigned char name[32];
-  unsigned char volName[32];
+  char name[32];
+  char volName[32];
   long id;
   int onChar;
   int err;
@@ -4580,17 +4582,17 @@ int GetIndAttachmentLo(void *text, short index, char * spec, HSPtr where,
         onColon = 0;
         if (!index) {
           { short _len = colons[1] - colons[0];
-          memmove(volName, (char *)text + colons[0] + 1, _len);
+          memmove(volName, text + colons[0] + 1, _len);
           volName[_len] = 0; }
-          id = Atoi((char *)text + colons[1] + 1);
+          id = Atoi(text + colons[1] + 1);
           { short _len = colons[3] - colons[2] - 1;
-          memmove(name, (char *)text + colons[2] + 1, _len);
+          memmove(name, text + colons[2] + 1, _len);
           name[_len] = 0; }
           if (where) {
             where->start = where->value = colons[0];
             where->stop = colons[3] + 1;
           }
-          if (err = spec_for(Root.path, (const char *)name, spec)) {
+          if ((err = spec_for(Root.path, (const char *)name, spec))) {
             // This file probably wasn't found. Go ahead and
             // build spec manually. May need name later on.
             spec_make(Root.path, (const char *)name, spec);
@@ -4607,7 +4609,7 @@ int GetIndAttachmentLo(void *text, short index, char * spec, HSPtr where,
 /************************************************************************
  * PriorityHeader: Build a priority header
  ************************************************************************/
-char *PriorityHeader(char *buffer, unsigned char priority) {
+char *PriorityHeader(char *buffer, uint8_t priority) {
   return (ComposeRString(buffer, PRIORITY_FMT, HEADER_STRN + PRIORITY_HEAD,
                          priority, PRIOR_STRN + priority));
 }
@@ -4621,7 +4623,7 @@ int GetReplyLo(TransStream stream, char *buffer, int size,
   char scratch[128];
   char *cp;
   short err;
-  unsigned char tempBuffer[256];
+  char tempBuffer[256];
 
   // if a buffer was not passed in...
   if (!buffer) {
@@ -4670,7 +4672,7 @@ int GetReplyLo(TransStream stream, char *buffer, int size,
         // Ick - not all of the reply will fit in the buffer, and we
         // weren't given an accumulator to keep it in.  Throw stuff away until
         // we find the end of the line
-        unsigned char dumpBuffer[64];
+        char dumpBuffer[64];
         long dumpSize;
 
         do {
@@ -4678,13 +4680,13 @@ int GetReplyLo(TransStream stream, char *buffer, int size,
           sErr = RecvLine(stream, dumpBuffer, &dumpSize);
           if (CommandPeriod || sErr)
             return 602;
-          g_debug("log: %d", DISCARD_LOG_FMT, dumpBuffer, dumpSize);
+          g_debug("log: %d %.*s", DISCARD_LOG_FMT, (int)dumpSize, dumpBuffer);
         } while (dumpBuffer[dumpSize - 1] != '\r');
       }
 
       if (verbose) {
         { size_t _cplen = MIN(127, rSize);
-          strncpy((char *)scratch, (const char *)buffer, _cplen);
+          strncpy(scratch, (const char *)buffer, _cplen);
           scratch[_cplen] = '\0'; }
         ProgressMessage(kpMessage, scratch);
       }
@@ -4694,14 +4696,14 @@ int GetReplyLo(TransStream stream, char *buffer, int size,
         EhloLine(buffer, rSize);
       rSize -= cp - buffer;
     } while (rSize < 3 || !isdigit(cp[0]) || !isdigit(cp[1]) ||
-             !isdigit(cp[2]) || rSize > 3 && cp[3] == '-');
+             !isdigit(cp[2]) || (rSize > 3 && cp[3] == '-'));
   cp[rSize] = 0;
   err = Atoi(cp);
   if (verbose && err > 399 && err < 600)
     SMTPCmdError(0, NULL, buffer);
-  if (err == 505 || err == 530)
+if (err == 505 || err == 530)
     SetPref(PREF_SMTP_GAVE_530, YesStr);
-  if (err == 452)
+if (err == 452)
     err = 552; // Goddam stupid SMTP spec gave a 4xx series response
                // to a permanent error code
   return (err);
@@ -4712,14 +4714,14 @@ int GetReplyLo(TransStream stream, char *buffer, int size,
  * Changes the filespec passed to it!
  ************************************************************************/
 int FlattenAndSpool(char * spec) {
-  FSSpec tempSpec;
-  int err = NewTempSpec(0, 0, spec_name(spec), &tempSpec);
+  char tempSpec[PATH_MAX];
+  int err = NewTempSpec(0, 0, path_basename(spec), tempSpec);
 
   if (!err) {
-    if (err = FlattenQTMovie(spec, &tempSpec))
-      unlink(tempSpec);
+    if ((err = FlattenQTMovie(spec, tempSpec)))
+      g_unlink(tempSpec);
     else {
-      unlink(tempSpec);
+      g_unlink(tempSpec);
     }
     // FSpKillRFork is no-op
   }
@@ -4779,7 +4781,7 @@ char * R822Date(char * date, long seconds) {
   struct tm tmBuf;
   time_t t;
 
-  if (delta == -1) {
+if (delta == -1) {
     *date = 0;
     return date;
   }

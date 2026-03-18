@@ -573,7 +573,7 @@ typedef struct TransStreamStruct TransStreamStruct;
 typedef TransStreamStruct *TransStream;
 #define TRANSSTREAM_PTR_DEFINED 1
 #endif
-typedef POPLineType LineReader(TransStream stream, unsigned char *buf,
+typedef POPLineType LineReader(TransStream stream, char *buf,
                                long bSize, long *len);
 typedef char *TextAddrHandle;  /* C string handle for address text */
 typedef const char *TextAddrPtr;

@@ -67,15 +67,15 @@ void POPDFree(POPDHandle *pH);
 int POPDAppend(POPDHandle h, const POPDesc *item);
 void POPDRemoveAt(POPDHandle h, int index);
 
-bool GenKeyedDigest(unsigned char *banner, unsigned char *secret,
-                    unsigned char *digest);
-bool GenDigest(unsigned char *banner, unsigned char *secret,
-               unsigned char *digest);
+bool GenKeyedDigest(char *banner, char *secret,
+                    char *digest);
+bool GenDigest(char *banner, char *secret,
+               char *digest);
 void FixMessServerAreas(void);
 int RoomForMessage(long msgsize);
 short ReadEitherBody(TransStream stream, short refN, HeaderDHandle hdh,
                      char *buf, long bSize, long estSize, long context);
-POPLineType ReadPOPLine(TransStream stream, unsigned char *buf, long bSize,
+POPLineType ReadPOPLine(TransStream stream, char *buf, long bSize,
                         long *len);
 short GetMyMail(TransStream stream, bool quietly, short *gotSome,
                 XferFlags *flags);

@@ -25,7 +25,7 @@ int FontAscent;
 bool FontIsFixed;
 
 /* ---- Network newline (CRLF for SMTP/POP) ---- */
-unsigned char NewLine[4] = "\r\n";
+char NewLine[4] = "\r\n";
 
 /* ---- Application state ---- */
 bool Done;           /* set to true when we're done */
@@ -136,21 +136,21 @@ bool TaskDontAutoClose;
 bool DFWTC;
 
 /* ---- Translation tables ---- */
-unsigned char *TransOut;
-unsigned char *TransIn;
-unsigned char *Flatten;
+char *TransOut;
+char *TransIn;
+char *Flatten;
 bool NewTables;
 bool UseCTB;
 int CTBTimeout;
 
 /* ---- Misc globals ---- */
 void *ModalWindow;
-unsigned char NoStr[2];
-unsigned char YesStr[2];
-unsigned char Cr_bytes[2];
-unsigned char Lf[2];
-unsigned char CrLf[3];
-unsigned char Slash[3];
+char NoStr[2];
+char YesStr[2];
+char Cr_bytes[2];
+char Lf[2];
+char CrLf[3];
+char Slash[3];
 bool CheckNow;
 bool OpenAddrErrs;
 bool AttentionNeeded;

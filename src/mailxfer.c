@@ -24,6 +24,7 @@ OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE OF THIS SOFTWARE, EVEN IF
 ADVISED OF THE POSSIBILITY OF SUCH DAMAGE. */
 
 #include "mailxfer.h"
+#include <glib/gstdio.h>
 #include "compact.h"
 #include "ends.h"
 #include "filtrun.h"
@@ -69,9 +70,9 @@ extern int NewTransStream(TransStream *stream);
 extern long ReportStreamAudit(TransStream stream);
 extern void StartStreamAudit(TransStream theStream, StreamAuditTypeEnum what);
 extern int StartSMTP(TransStream stream, char *server, long port);
-extern int StartPOP(TransStream stream, unsigned char *server, long port);
+extern int StartPOP(TransStream stream, char *server, long port);
 extern int EndPOP(TransStream stream);
-extern void POPIntroductions(TransStream stream, unsigned char *s, void *p);
+extern void POPIntroductions(TransStream stream, char *s, void *p);
 extern int POPrror(void);
 extern int MySendMessage(TransStream stream, TOCType *toc, int sum,
                          CSpecHandle list);
@@ -163,7 +164,7 @@ static int UUPCSendMessage(TOCType *toc, int sum, CSpecHandle list) { return 0; 
 static void RegisterSuccess(int val) {}
 short ETLSendMessage(TransStream stream, MessHandle messH, bool chatter,
                      bool sendDataCmd) { return 0; }
-static void StartAuthenticatedSMTP(TransStream stream, unsigned char *server,
+static void StartAuthenticatedSMTP(TransStream stream, char *server,
                                    long port) {}
 /* Type2Select removed — dead Mac code */
 static long GetDblTime(void) { return 0; }
@@ -189,11 +190,11 @@ long GetSMTPPort(void) {
   return p ? p : defaultPort;
 }
 
-int GetSMTPInfoLo(unsigned char *server, long *port) {
+int GetSMTPInfoLo(char *server, long *port) {
   gchar *smtp = prefs_get_string(PREFS_GROUP_SENDING_MAIL, "smtp_server", "");
   if (server) {
-    strncpy((char *)server, smtp, 255);
-    ((char *)server)[255] = '\0';
+    strncpy(server, smtp, 255);
+    server[255] = '\0';
   }
   g_free(smtp);
   if (!server || !server[0])
@@ -201,7 +202,7 @@ int GetSMTPInfoLo(unsigned char *server, long *port) {
   return 0;
 }
 
-int GetPOPInfoLo(unsigned char *user, unsigned char *host, long *port) {
+int GetPOPInfoLo(char *user, char *host, long *port) {
   GetPOPInfo(user, host);
   if (!host || !host[0])
     return 1;
@@ -287,7 +288,7 @@ short XferMail(bool check, bool send, bool manual, bool scripted, bool thread,
 
   // Cmd-Shift-M resyncs frontmost IMAP mailbox.
   if (!PrefIsSet(PREF_ALTERNATE_CHECK_MAIL_CMD))
-    if (!(modifiers && GDK_ALT_MASK) && (modifiers && GDK_SHIFT_MASK) &&
+    if (!(modifiers & GDK_ALT_MASK) && (modifiers & GDK_SHIFT_MASK) &&
         ResyncCurrentIMAPMailbox())
       return (0);
 
@@ -553,7 +554,7 @@ short XferMailRun(bool check, bool send, bool manual, bool scripted, XferFlags f
     // personality.
     case IMAPResyncTask: {
       err =
-          DoFetchNewMessages(&(imapInfo->targetSpec), true, false) ? 0 : 1;
+          DoFetchNewMessages(imapInfo->targetSpec, true, false) ? 0 : 1;
       check = true;
       gotSome++;
       break;
@@ -804,8 +805,8 @@ short XferMailLo(bool check, bool send, bool manual, XferFlags flags,
 
         // locate the inbox, and resync it.
         if ((imapNode = LocateInboxForPers(CurPers))) {
-          FSSpec inboxSpec; g_strlcpy(inboxSpec, imapNode->mailboxSpec, sizeof(inboxSpec));
-          tocH = TOCBySpec(&inboxSpec);
+          char inboxSpec[PATH_MAX]; g_strlcpy(inboxSpec, imapNode->mailboxSpec, sizeof(inboxSpec));
+          tocH = TOCBySpec(inboxSpec);
           IMAPCheckThreadRunning++;
           if (FetchNewMessages(tocH, true, true, true, !manual)) {
             // remember if this was a manual mail check.  the No New mail
@@ -896,7 +897,7 @@ bool NeedPassword(bool check, bool send) {
 
   /* Need password for POP or IMAP check */
   needPW = !PrefIsSet(PREF_KERBEROS) && check &&
-           *GetPOPPref((unsigned char *)s);
+           *GetPOPPref(s);
 
   // Are we going to send in a potentially auth-able way?
   if (!needPW && (doesAuth || xtndXmit) && send && !UUPCOut && !doggieStyle) {
@@ -907,7 +908,7 @@ bool NeedPassword(bool check, bool send) {
       // If the server says yes but the user says no,
       // better ask the user to change their mind
       if (gave530 && !authOK) {
-        g_strlcpy(s, spec_name(CurPers), sizeof(s));
+        g_strlcpy(s, CurPers->name, sizeof(s));
         switch (ComposeStdAlert(Note, RECONSIDER_AUTH, s)) {
         // user will give us the password.  Yippee.
         case kAlertStdAlertOKButton:
@@ -1051,7 +1052,7 @@ int SpecialXfer(struct XferFlags *flags) {
     for (pers = PersList; pers; pers = pers->next) {
       char name[64];
       // Copy personality name (C string)
-      strncpy(name, (const char *)spec_name(pers), 63);
+      strncpy(name, (const char *)pers->name, 63);
       name[63] = '\0';
 
       GtkWidget *pers_chk = gtk_check_button_new_with_label(name);
@@ -1161,7 +1162,7 @@ short SendTheQueue(TransStream stream, XferFlags flags) {
   short tableId;
   uint32_t gmtSecs = GMTDateTime();
   short defltTableId;
-  unsigned char *tablePtr = malloc(256);
+  char *tablePtr = malloc(256);
   short lastId = 0;
   uint32_t lastSig = 0xffffffff;
   short stayed = 0;
@@ -1187,7 +1188,7 @@ short SendTheQueue(TransStream stream, XferFlags flags) {
   if (PersCount() == 1)
     GetRString(s, SENDING_MAIL);
   else {
-    ComposeRString(s, PERS_SENDING_MAIL, (unsigned char *)spec_name(CurPers));
+    ComposeRString(s, PERS_SENDING_MAIL, CurPers->name);
   }
   g_print("SendTheQueue: [B2] calling ProgressMessage s='%s'\n", s);
   ProgressMessage(kpTitle, s);
@@ -1300,7 +1301,7 @@ short SendTheQueue(TransStream stream, XferFlags flags) {
             actualBytes = GetProgressBytes() - beforeBytes;
             rate =
                 (actualBytes * 600) / ((TickCount() - beforeTicks + 1) * 1024);
-            ComposeLogS(LOG_TPUT, NULL, (unsigned char *)"%d.%d KBps", rate / 10, rate % 10);
+            ComposeLogS(LOG_TPUT, NULL, "%d.%d KBps", rate / 10, rate % 10);
             approxBytes = (ApproxMessageSize(messH) K);
             if (actualBytes < approxBytes)
               ByteProgress(NULL, actualBytes - approxBytes, 0);
@@ -1330,7 +1331,7 @@ short SendTheQueue(TransStream stream, XferFlags flags) {
             stayed++;
           /* don't delete message if we're in a thread. we'll do that from the
            * main thread. */
-          if (!inThread && (tocH->sums[sumNum].flags && FLAG_KEEP_COPY) == 0)
+          if (!inThread && (tocH->sums[sumNum].flags & FLAG_KEEP_COPY) == 0)
           {
             if (messH && MessOptIsSet(messH, OPT_ATT_DEL))
               CompAttDel(messH);
@@ -1433,11 +1434,11 @@ long FindTotalQueuedSize(TOCType * tocH, long gmtSecs) {
  **********************************************************************/
 void CompAttDel(MessHandle messH) {
   short index;
-  FSSpec spec;
+  char spec[PATH_MAX];
   int err;
 
-  for (index = 1; !(err = GetIndAttachment(messH, index, &spec, NULL)); index++)
-    FSpTrash(&spec);
+  for (index = 1; !(err = GetIndAttachment(messH, index, spec, NULL)); index++)
+    FSpTrash(spec);
 }
 
 /**********************************************************************
@@ -1452,7 +1453,7 @@ int DoFcc(TOCType * tocH, short sumNum, CSpecHandle list) {
   UseFeature(featureFcc);
   while (n--) {
     spec = CSpecAt(list, n);
-    if ((oneErr = MoveMessageLo(tocH, sumNum, &spec.spec, true, false, true))) {
+    if ((oneErr = MoveMessageLo(tocH, sumNum, spec.spec, true, false, true))) {
       tocH->sums[sumNum].flags |= FLAG_KEEP_COPY;
       TOCSetDirty(tocH, true);
       if (!err)
@@ -1481,7 +1482,7 @@ short CheckForMail(TransStream stream, short *gotSome, XferFlags *flags) {
   if (PersCount() == 1)
     GetRString(s, CHECKING_MAIL);
   else {
-    ComposeRString(s, PERS_CHECKING_MAIL, spec_name(CurPers));
+    ComposeRString(s, PERS_CHECKING_MAIL, CurPers->name);
   }
   ProgressMessage(kpTitle, s);
 
@@ -1518,7 +1519,7 @@ short CheckForMail(TransStream stream, short *gotSome, XferFlags *flags) {
   err = UUPCIn ? GetUUPCMail(true, gotSome)
                : GetMyMail(stream, true, gotSome, flags);
 
-  if (gotSome)
+  if (*gotSome)
     RegisterSuccess(2);
 
   /*
@@ -1631,8 +1632,10 @@ void NotifyNewMailLo(short gotSome, bool noXfer, TOCType * tocH,
         // causes some window layering confusion in the Carbon version.
         // -jdboyd
         //
-        if (fpb.mailbox && (malloc_size((void *)fpb.mailbox) == 0))
+        if (fpb.mailbox) {
           free(fpb.mailbox);
+          fpb.mailbox = NULL;
+        }
 
         // Show NoNewMail if no mail arrived, and there's no other check
         // threads running only do this if a manual IMAP check happened
@@ -1867,7 +1870,7 @@ void GrabSignature(uint32_t fid) {
      but eSignature is typed as unsigned char * (void**) in Globals.h for legacy
      compatibility. For now, store the raw text pointer. Callers that
      use eSignature will need to treat it as a plain char* buffer. */
-  eSignature = (void *)sigText;
+  eSignature = sigText;
 }
 
 /************************************************************************
@@ -1875,22 +1878,22 @@ void GrabSignature(uint32_t fid) {
  * The sig intro is typically "-- \r" — prepended before the signature.
  ************************************************************************/
 bool AddSigIntro(GtkWidget *pte, void **text) {
-  unsigned char sigIntro[32];
+  char sigIntro[32];
   bool didIt = false;
   long len;
 
   if (!*GetRString(sigIntro, SIG_INTRO))
     return false;
 
-  long introLen = strlen((char *)sigIntro);
+  long introLen = strlen(sigIntro);
   if (text && *text) {
-    len = malloc_size(text);
+    len = strlen((char *)*text);
     if (len > 0) {
-      char *ptr = (char *)text;
+      char *ptr = (char *)*text;
       if (len < introLen || memcmp(ptr, sigIntro, introLen) != 0) {
-        { void *_r = realloc(text, len + introLen); if (_r) text = _r; }
+        { void *_r = realloc(*text, len + introLen); if (_r) *text = _r; }
         {
-          ptr = (char *)text;
+          ptr = (char *)*text;
           memmove(ptr + introLen, ptr, len);
           memmove(ptr, sigIntro, introLen);
           didIt = true;
@@ -1915,18 +1918,18 @@ bool AddSigIntro(GtkWidget *pte, void **text) {
  * RemoveSigIntro - remove the sig introducer from text or pte
  ************************************************************************/
 bool RemoveSigIntro(GtkWidget *pte, void **text) {
-  unsigned char sigIntro[32];
+  char sigIntro[32];
   long len;
   bool didIt = false;
 
   if (!*GetRString(sigIntro, SIG_INTRO))
     return false;
 
-  long introLen = strlen((char *)sigIntro);
+  long introLen = strlen(sigIntro);
   if (text && *text) {
-    len = malloc_size(text);
+    len = strlen((char *)*text);
     if (len >= introLen) {
-      char *ptr = (char *)text;
+      char *ptr = (char *)*text;
       if (memcmp(ptr, sigIntro, MIN(introLen, 4)) == 0) {
         memmove(ptr, ptr + introLen, len - introLen);
         { void *_r = realloc(text, len - introLen); if (_r) text = _r; }
@@ -1990,7 +1993,7 @@ PersHandle SMTPRelayPers(void) {
   if (PrefIsSet(PREF_NO_RELAY_PARTICIPATE))
     return NULL;
 
-  return FindPersByName(GetPref((unsigned char *)persName, PREF_RELAY_PERSONALITY));
+  return FindPersByName(GetPref(persName, PREF_RELAY_PERSONALITY));
 }
 
 /************************************************************************
@@ -2009,7 +2012,7 @@ int RememberMID(uint32_t midHash) {
  ************************************************************************/
 int OutgoingMIDListSave(void) {
   int err = 0;
-  FSSpec spec;
+  char spec[PATH_MAX];
 
   if (!OutgoingMIDListDirty)
     return 0;
@@ -2022,9 +2025,9 @@ int OutgoingMIDListSave(void) {
       g_array_remove_range(OutgoingMIDList, 0, OutgoingMIDList->len - limit);
 
     /* Write to file in mail root */
-    if (!SubFolderSpec(0, &spec)) {
+    if (!SubFolderSpec(0, spec)) {
       char path[512];
-      snprintf(path, sizeof(path), "%s/outgoing_mids.dat", spec_name(spec));
+      snprintf(path, sizeof(path), "%s/outgoing_mids.dat", path_basename(spec));
       FILE *f = fopen(path, "wb");
       if (f) {
         fwrite(OutgoingMIDList->data, sizeof(uint32_t), OutgoingMIDList->len, f);
@@ -2043,7 +2046,7 @@ int OutgoingMIDListSave(void) {
  ************************************************************************/
 int OutgoingMIDListLoad(void) {
   int err = 0;
-  FSSpec spec;
+  char spec[PATH_MAX];
 
   if (OutgoingMIDList) {
     g_array_free(OutgoingMIDList, TRUE);
@@ -2051,11 +2054,11 @@ int OutgoingMIDListLoad(void) {
   }
   OutgoingMIDListDirty = false;
 
-  if (!SubFolderSpec(0, &spec)) {
+  if (!SubFolderSpec(0, spec)) {
     char path[512];
-    struct stat st;
-    snprintf(path, sizeof(path), "%s/outgoing_mids.dat", spec_name(spec));
-    if (stat(path, &st) == 0 && st.st_size > 0) {
+    GStatBuf st;
+    snprintf(path, sizeof(path), "%s/outgoing_mids.dat", path_basename(spec));
+    if (g_stat(path, &st) == 0 && st.st_size > 0) {
       long count = st.st_size / sizeof(uint32_t);
       FILE *f = fopen(path, "rb");
       if (f) {
@@ -2114,8 +2117,8 @@ long GlobalInUnreadCount(void) {
       continue;
 
     if ((node = LocateInboxForPers(pers))) {
-      FSSpec inboxSpec; g_strlcpy(inboxSpec, node->mailboxSpec, sizeof(inboxSpec));
-      count += TOCUnreadCount(TOCBySpec(&inboxSpec), PrefBadgeRecent());
+      char inboxSpec[PATH_MAX]; g_strlcpy(inboxSpec, node->mailboxSpec, sizeof(inboxSpec));
+      count += TOCUnreadCount(TOCBySpec(inboxSpec), PrefBadgeRecent());
     }
   }
 

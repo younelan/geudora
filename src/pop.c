@@ -24,6 +24,7 @@ OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE OF THIS SOFTWARE, EVEN IF
 ADVISED OF THE POSSIBILITY OF SUCH DAMAGE. */
 #include "pop.h"
 #include "message.h"    /* For Hash, MIDHash, HashWithSeedLo */
+#include <glib/gstdio.h>
 #include "Globals.h"    /* For BUG15 */
 #include "MyRes.h"      /* For POPD_ID, FETCH_ID, DELETE_ID */
 #include "StringDefs.h" /* For POP_PORT, KERB_POP_PORT, POP_SSL_PORT, etc. */
@@ -37,18 +38,16 @@ ADVISED OF THE POSSIBILITY OF SUCH DAMAGE. */
 #include "log.h"
 #include "statmng.h"
 #include "utl.h"
-#include <dirent.h>
-#include <libgen.h>
 #include <stdbool.h>
 #include <stddef.h>
 #include <stdint.h>
 #include <stdlib.h>
 #include <string.h>
-#include <malloc/malloc.h>
-#include <sys/time.h>
-#include <sys/stat.h>
-#include <sys/statvfs.h>
+#include <fcntl.h>
+#include <time.h>
+#ifndef _WIN32
 #include <unistd.h>
+#endif
 #ifndef DisposePtr
 #define DisposePtr free
 #endif
@@ -88,7 +87,7 @@ static inline char *URLEscape(char *s) { return s; }
 /* c2pstr removed - all strings are C strings now */
 /* IsWindowVisible provided by mailbox.h as static inline */
 /* MIDHash is implemented in message.c */
-unsigned long MIDHash(unsigned char *s, long len);
+unsigned long MIDHash(char *s, long len);
 #ifndef kUnresolvedCFragSymbolAddress
 #define kUnresolvedCFragSymbolAddress 0
 #endif
@@ -134,7 +133,7 @@ int ReallyDoAnAlert(int templ, int which);
 #endif
 extern long GetPrefLong(short prefId);
 extern bool PrefIsSet(short prefId);
-extern int GetPOPInfoLo(unsigned char *server, unsigned char *s2, long *port);
+extern int GetPOPInfoLo(char *server, char *s2, long *port);
 extern void Dprintf(const char *fmt, ...);
 extern void *GetResource(uint32_t type, short id);
 extern void DeleteSum(void *tocH, short sumNum);
@@ -146,7 +145,7 @@ extern int StackQueue(void *what, StackHandle *pStack);
 extern int StackTop(void *into, StackHandle stack);
 extern bool ValidHash(uint32_t hash);
 extern void RemoveUTF8FromSum(void *sum);
-void MakeMessTitle(unsigned char *title, TOCType * tocH, int sumNum,
+void MakeMessTitle(char *title, TOCType * tocH, int sumNum,
                    bool useSummary);
 extern void MyParamText(const char *p1, const char *p2, const char *p3, const char *p4);
 extern void BeginHexBin(HeaderDHandle hdh);
@@ -303,18 +302,18 @@ void GrowBuf_Free(GrowBuf *buf) {
 void POPDelDup(POPDHandle popDH);
 int POPPreFetch(TransStream stream, POPDHandle popDH, short message,
                   bool *capabilities);
-int POPGetReplyLo(TransStream stream, short cmd, unsigned char *buffer,
+int POPGetReplyLo(TransStream stream, short cmd, char *buffer,
                   long *size, AccuPtr resAcc);
 #define POPGetReply(stream, cmd, buffer, size)                                 \
   POPGetReplyLo(stream, cmd, buffer, size, NULL)
 void RelatedNote(const char *path, HeaderDHandle hdh, const char *theMessage);
 int POPByeBye(TransStream stream);
-int POPCmdLo(TransStream stream, short cmd, unsigned char *args,
+int POPCmdLo(TransStream stream, short cmd, char *args,
              AccuPtr argsAcc);
 #define POPCmd(stream, cmd, args) POPCmdLo(stream, cmd, args, NULL)
 int POPGetMessage(TransStream, long messageNumber, short *gotSome,
                   POPDHandle popDH, bool *capabilities);
-int DupHeader(short refN, unsigned char *buff, long bSize, long offset,
+int DupHeader(short refN, char *buff, long bSize, long offset,
               long headerSize);
 int SaveAndSplit(TransStream stream, short refN, long estSize,
                  HeaderDHandle *hdhp, bool isIMAP);
@@ -323,7 +322,7 @@ bool PopConnected;
 int FirstUnread(TransStream stream, int count);
 bool HasBeenRead(TransStream stream, short msgNum, short count);
 void StampPartNumber(MSumPtr sum, short part, short count);
-unsigned char *ExtractStamp(unsigned char *stamp, unsigned char *banner);
+char *ExtractStamp(char *stamp, char *banner);
 short POPLast(TransStream, short *lastRead);
 BoundaryType ReadPlainBody(TransStream stream, short refN, char *buf, long bSize,
                           long estSize);
@@ -355,18 +354,18 @@ int KerbGetTicket(char * popName, char * host, char * realm, char * version,
 int SendPOPTicket(TransStream stream);
 void LogPOPD(char * intro, POPDHandle newDH);
 void Log1POPD(char * intro, char * which, POPDHandle popDH);
-bool NoClearPass(bool *capabilities, unsigned char *response, short len);
+bool NoClearPass(bool *capabilities, char *response, short len);
 void PrunePOPD(uint32_t listType, short listId, POPDHandle onServer);
 int ReapCmds(TransStream stream, short cmd);
 void PopCapabilities(TransStream stream, bool *capabilities, SASLEnum *mechPtr);
 int POPSasl(TransStream stream, bool *capabilities, SASLEnum mech,
                    char *buffer, long *size);
 int FixLongFilename(HeaderDHandle hdh, const char *path);
-unsigned char *Un2184Append(unsigned char *dest, short sizeofDest,
-                            unsigned char *orig, unsigned char *charset,
+char *Un2184Append(char *dest, short sizeofDest,
+                            char *orig, char *charset,
                             bool isEncoded);
-unsigned char *Un2184(unsigned char *dest, unsigned char *orig,
-                      unsigned char *charset);
+char *Un2184(char *dest, char *orig,
+                      char *charset);
 
 /* stack sniffer defines */
 
@@ -395,8 +394,8 @@ short GetMyMail(TransStream stream, bool quietly, short *gotSome,
                 struct XferFlags *flags) {
   (void)quietly;
   int messageCount;
-  unsigned char msgname[256];
-  unsigned char hostName[256];
+  char msgname[256];
+  char hostName[256];
   long port;
   TOCType * tocH;
   short err;
@@ -409,7 +408,7 @@ short GetMyMail(TransStream stream, bool quietly, short *gotSome,
 
   memset(capabilities, 0, sizeof(capabilities)); // we don't know if we have them yet!!!
 
-  if (Prr = StackInit(sizeof(short), &POPCmds))
+  if ((Prr = StackInit(sizeof(short), &POPCmds)))
     return (Prr);
 
   *gotSome = 0;
@@ -461,8 +460,8 @@ short GetMyMail(TransStream stream, bool quietly, short *gotSome,
 
           ComposeLogR(LOG_RETR, NULL, START_POP_LOG, hostName, port,
                       messageCount);
-          if (tocH = GetInTOC()) {
-            g_print("GetMyMail: GetInTOC returned tocH=%p count=%d path='%s'\n", (void*)tocH, tocH->count, tocH);
+          if ((tocH = GetInTOC())) {
+            g_print("GetMyMail: GetInTOC returned tocH=%p count=%d path='%s'\n", (void*)tocH, tocH->count, tocH->path);
             /*
              * run through the pure deletes
              */
@@ -582,7 +581,7 @@ short GetMyMail(TransStream stream, bool quietly, short *gotSome,
  * RenameInTemp
  **********************************************************************/
 TOCType * RenameInTemp(TOCType * tocH) {
-  unsigned char name[64];
+  char name[64];
   FSSpec deliverSpec, inSpec, deliverFolder;
   FSSpec deliverTOCSpec, tocSpec;
   long maxFileNum = 0;
@@ -592,7 +591,7 @@ TOCType * RenameInTemp(TOCType * tocH) {
 
   if (!tocH || !tocH->count)
     return tocH;
-  if ((err = SubFolderSpec(DELIVERY_FOLDER, &deliverFolder))) {
+  if ((err = SubFolderSpec(DELIVERY_FOLDER, deliverFolder))) {
     g_print("RenameInTemp: SubFolderSpec(DELIVERY_FOLDER) failed err=%d\n", err);
     Aprintf(OK_ALRT, Note, THREAD_SUBFOLDER_ERR, DELIVERY_FOLDER, err);
     return tocH;
@@ -601,22 +600,21 @@ TOCType * RenameInTemp(TOCType * tocH) {
 
   // make sure the toc is written
   if (TOCIsDirty(tocH) || tocH->reallyDirty)
-    if (err = WriteTOC(tocH))
+    if ((err = WriteTOC(tocH)))
       return tocH;
 
   /* find highest-numbered file in delivery folder */
   maxFileNum = 0;
   {
-    DIR *dp = opendir(deliverFolder);
+    GDir *dp = g_dir_open(deliverFolder, 0, NULL);
     if (dp) {
-      struct dirent *entry;
-      while ((entry = readdir(dp)) != NULL) {
-        if (entry->d_name[0] == '.') continue;
-        long num = strtol(entry->d_name, NULL, 10);
+      const char *dname;
+      while ((dname = g_dir_read_name(dp)) != NULL) {
+        long num = strtol(dname, NULL, 10);
         if (num > maxFileNum)
           maxFileNum = num;
       }
-      closedir(dp);
+      g_dir_close(dp);
     }
   }
 
@@ -625,14 +623,13 @@ TOCType * RenameInTemp(TOCType * tocH) {
   sprintf(name, "%ld", (long)(maxFileNum + 1));
   while (strlen((const char *)name) < 6)
     PInsertC(name, sizeof(name), '0', name);
-  spec_for(deliverFolder, (const char *)name, &deliverSpec);
+  spec_for(deliverFolder, (const char *)name, deliverSpec);
 
   // toc file?
-  g_strlcpy(tocSpec, inSpec, sizeof(tocSpec));
-  PCatR(spec_name(tocSpec), TOC_SUFFIX);
-  if (!FSpExists(&tocSpec)) {
-    spec_for(deliverFolder, (const char *)name, &deliverTOCSpec);
-    { char _fn[256]; g_strlcpy(_fn, spec_name(deliverTOCSpec), sizeof(_fn)); PCatR(_fn, TOC_SUFFIX); spec_set_name(deliverTOCSpec, _fn); }
+  snprintf(tocSpec, sizeof(tocSpec), "%s.toc", inSpec);
+  if (!FSpExists(tocSpec)) {
+    spec_for(deliverFolder, (const char *)name, deliverTOCSpec);
+    { char _fn[256]; g_strlcpy(_fn, path_basename(deliverTOCSpec), sizeof(_fn)); PCatR(_fn, TOC_SUFFIX); spec_set_name(deliverTOCSpec, _fn); }
   } else
     /* clear filename */ { char *_sn = strrchr(tocSpec, '/'); if (_sn) _sn[1] = '\0'; else tocSpec[0] = '\0'; }
 
@@ -641,24 +638,24 @@ TOCType * RenameInTemp(TOCType * tocH) {
   // Move files
   if (tocH->win)
     CloseMyWindow(GetMyWindowWindowPtr(tocH->win));
-  if ((err = SpecMoveAndRename(&inSpec, &deliverSpec))) {
+  if ((err = SpecMoveAndRename(inSpec, deliverSpec))) {
     g_print("RenameInTemp: SpecMoveAndRename failed err=%d\n", err);
-    Aprintf(OK_ALRT, Note, THREAD_DELIVER_CREATE_ERR, spec_name(deliverSpec), err);
+    Aprintf(OK_ALRT, Note, THREAD_DELIVER_CREATE_ERR, path_basename(deliverSpec), err);
   } else {
     g_print("RenameInTemp: moved successfully, NeedToFilterIn will be %d\n", NeedToFilterIn + 1);
-    if (*spec_name(tocSpec)) {
-      if ((err = SpecMoveAndRename(&tocSpec, &deliverTOCSpec))) {
-        Aprintf(OK_ALRT, Note, THREAD_DELIVER_CREATE_ERR, spec_name(deliverTOCSpec),
+    if (*path_basename(tocSpec)) {
+      if ((err = SpecMoveAndRename(tocSpec, deliverTOCSpec))) {
+        Aprintf(OK_ALRT, Note, THREAD_DELIVER_CREATE_ERR, path_basename(deliverTOCSpec),
                 err);
-        unlink(tocSpec); // hell with it.  We can rebuild it
+        g_unlink(tocSpec); // hell with it.  We can rebuild it
       }
     }
 
     // Ok, we have moved the temp.in.  Make a new one
-    { char pdir[1024]; spec_parent(&inSpec, pdir, sizeof(pdir));
-    if (err = MakeResFile(spec_name(inSpec), pdir, CREATOR,
-                          MAILBOX_TYPE)) {
-      Aprintf(OK_ALRT, Note, THREAD_DELIVER_CREATE_ERR, spec_name(inSpec), err);
+    { char pdir[1024]; spec_parent(inSpec, pdir, sizeof(pdir));
+    if ((err = MakeResFile(path_basename(inSpec), pdir, CREATOR,
+                          MAILBOX_TYPE))) {
+      Aprintf(OK_ALRT, Note, THREAD_DELIVER_CREATE_ERR, path_basename(inSpec), err);
       // this is bad
     } }
 
@@ -676,8 +673,8 @@ TOCType * RenameInTemp(TOCType * tocH) {
 int POPPreFetch(TransStream stream, POPDHandle popDH, short message,
                   bool *capabilities) {
   short messageCount = popDH->count;
-  unsigned char args[64];
-  unsigned char top[16];
+  char args[64];
+  char top[16];
   int err = 0;
   short cmd;
 
@@ -750,11 +747,11 @@ int POPIntroductions(TransStream stream, char * user, bool *capabilities) {
   int result = -1;
   bool useAPOP = PrefIsSet(PREF_APOP);
   bool kerb4 = PrefIsSet(PREF_KERBEROS) && !PrefIsSet(PREF_K5_POP);
-  unsigned char digest[256];
+  char digest[256];
   SASLEnum mech = 0;
 
   if (kerb4)
-    if (Prr = SendPOPTicket(stream)) {
+    if ((Prr = SendPOPTicket(stream))) {
       CurPers->popSecure = false;
       goto done;
     }
@@ -782,7 +779,7 @@ int POPIntroductions(TransStream stream, char * user, bool *capabilities) {
     PopCapabilities(stream, capabilities, &mech);
 
 #ifdef ESSL
-  if (ShouldUseSSL(stream) && !(stream->ESSLSetting && esslSSLInUse)) {
+  if (ShouldUseSSL(stream) && !(stream->ESSLSetting & esslSSLInUse)) {
     if (!capabilities || !capabilities[pcapaSTLS]) {
       if (!(stream->ESSLSetting & esslOptional)) {
         Prr = unimpErr;
@@ -903,11 +900,11 @@ done:
 void PopCapabilities(TransStream stream, bool *capabilities,
                      SASLEnum *mechPtr) {
   short i;
-  unsigned char buffer[256];
+  char buffer[256];
   long size;
-  unsigned char *spot;
-  unsigned char token[32];
-  unsigned char service[32];
+  char *spot;
+  char token[32];
+  char service[32];
 
   for (i = 0; i <= pcapaLimit; i++)
     capabilities[i] = 0;
@@ -954,9 +951,9 @@ int POPSasl(TransStream stream, bool *capabilities, SASLEnum mech,
   short rounds = 0;
   long bSize = *size;
   short smtpEquivCode = 501;
-  unsigned char service[64];
+  char service[64];
   long state = 0;
-  unsigned char scratch[256];
+  char scratch[256];
 
   Zero(chalAcc);
   Zero(respAcc);
@@ -982,9 +979,8 @@ int POPSasl(TransStream stream, bool *capabilities, SASLEnum mech,
         bSize = *size;
         Prr = POPGetReplyLo(stream, kpcAuth, buffer, &bSize, &respAcc);
         chalAcc.offset = 0;
-        if (!Prr && respAcc.offset && **(unsigned char **)respAcc.data == '+') {
-          if (respAcc.offset > 1 &&
-              (*(unsigned char **)respAcc.data)[1] != ' ') {
+        if (!Prr && respAcc.offset && respAcc.data[0] == '+') {
+          if (respAcc.offset > 1 && respAcc.data[1] != ' ') {
             // We win!  We win!
             Prr = 0;
           } else {
@@ -998,7 +994,7 @@ int POPSasl(TransStream stream, bool *capabilities, SASLEnum mech,
     }
   } while (Prr == ' ');
 
-  if (Prr || **(unsigned char **)respAcc.data != '+') {
+  if (Prr || !respAcc.data || respAcc.data[0] != '+') {
     CurPers->popSecure = false;
     AccuToStr(&respAcc, scratch);
     POPCmdError(kpcAuth, NULL, scratch);
@@ -1019,8 +1015,8 @@ int POPSasl(TransStream stream, bool *capabilities, SASLEnum mech,
 /**********************************************************************
  * NoClearPass - is a pass error one that should not reset the password?
  **********************************************************************/
-bool NoClearPass(bool *capabilities, unsigned char *response, short len) {
-  unsigned char string[256];
+bool NoClearPass(bool *capabilities, char *response, short len) {
+  char string[256];
   short i;
 
   // If the pop server has the AUTH_RESP_CODE caapability,
@@ -1067,7 +1063,7 @@ int POPByeBye(TransStream stream) {
 /************************************************************************
  * POPCmd - Send a command to the POP server
  ************************************************************************/
-int POPCmdLo(TransStream stream, short cmd, unsigned char *args,
+int POPCmdLo(TransStream stream, short cmd, char *args,
              AccuPtr argsAcc) {
   char buffer[CMD_BUFFER];
   short err;
@@ -1127,7 +1123,7 @@ int POPCmdLo(TransStream stream, short cmd, unsigned char *args,
  *            of the stack, ready to be handled
  **********************************************************************/
 int ReapCmds(TransStream stream, short cmd) {
-  unsigned char buffer[256];
+  char buffer[256];
   long size;
   int err = 0;
   short thisCmd = 0;
@@ -1178,7 +1174,7 @@ int POPCmdGetReply(TransStream stream, short cmd, char *args,
 /************************************************************************
  * POPGetReply - get a reply to a POP command
  ************************************************************************/
-int POPGetReplyLo(TransStream stream, short cmd, unsigned char *buffer,
+int POPGetReplyLo(TransStream stream, short cmd, char *buffer,
                   long *size, AccuPtr resAcc) {
   long rSize;
 
@@ -1192,7 +1188,7 @@ int POPGetReplyLo(TransStream stream, short cmd, unsigned char *buffer,
   // know the true response has begun.  Hence, errChar.
   unsigned char errChar = 0;
 
-  if (Prr = ReapCmds(stream, cmd))
+  if ((Prr = ReapCmds(stream, cmd)))
     return (Prr);
   if (resAcc)
     resAcc->offset = 0;
@@ -1337,8 +1333,8 @@ int POPGetMessage(TransStream stream, long messageNumber, short *gotSome,
  * DeletePOPMessage - delete a message from the POP server
  ************************************************************************/
 int DeletePOPMessage(TransStream stream, short number, long uidHash) {
-  unsigned char buffer[256];
-  unsigned char args[64];
+  char buffer[256];
+  char args[64];
   long size;
 
   sprintf(args, "%ld", (long)(number + 1));
@@ -1353,13 +1349,13 @@ int DeletePOPMessage(TransStream stream, short number, long uidHash) {
  * FillSizesWithList - fill message sizes with the LIST command
  ************************************************************************/
 int FillSizesWithList(TransStream stream, POPDHandle popDH) {
-  unsigned char buffer[128];
+  char buffer[128];
   long size = sizeof(buffer);
   short msgNum;
-  unsigned char *spot;
+  char *spot;
   short n = popDH->count;
 
-  if (Prr = POPCmdGetReply(stream, kpcList, NULL, buffer, &size))
+  if ((Prr = POPCmdGetReply(stream, kpcList, NULL, buffer, &size)))
     return (Prr);
 
   if (*buffer != '+') {
@@ -1407,8 +1403,8 @@ int FillSizesWithList(TransStream stream, POPDHandle popDH) {
  * POPCmdError - report an error for an POP command
  ************************************************************************/
 int POPCmdError(short cmd, char *args, char *message) {
-  unsigned char theCmd[256];
-  unsigned char theError[256];
+  char theCmd[256];
+  char theError[256];
   int err;
 
   *theCmd = 0;
@@ -1449,18 +1445,18 @@ int FetchMessageText(TransStream stream, long estSize, POPDPtr pdp,
 int FetchMessageTextLo(TransStream stream, long estSize, POPDPtr pdp,
                        short messageNumber, TOCType * useTocH, bool imap,
                        bool import) {
-  unsigned char *text = NULL;
+  char *text = NULL;
   TOCType * tocH;
   MSumType sum;
   long eof, chopHere;
-  unsigned char name[256];
+  char name[256];
   short count = 0, part;
   HeaderDHandle hdh = NULL;
   LineIOD lid;
   int err;
-  FSSpec spec;
+  char spec[PATH_MAX];
   extern int ImportErr;
-  unsigned char savedSub[64];
+  char savedSub[64];
 
   /*
    * make the message summary
@@ -1485,7 +1481,7 @@ int FetchMessageTextLo(TransStream stream, long estSize, POPDPtr pdp,
     return (0);
   }
   GetMailboxSpec(tocH, -1, spec);
-  g_strlcpy((char *)(name), (char *)(spec_name(spec)), sizeof(name));
+  g_strlcpy((char *)(name), (char *)(path_basename(spec)), sizeof(name));
 
   // if we're adding IMAP messages or importing mail, we've taken care of
   // opening the mailbox already
@@ -1534,12 +1530,12 @@ done:
   /*
    * now, read it back from the file
    */
-  if (Prr = OpenLine(spec, (imap || import) ? O_RDONLY : O_RDWR,
-                     &lid)) {
+  if ((Prr = OpenLine(spec, (imap || import) ? O_RDONLY : O_RDWR,
+                     &lid))) {
     FileSystemError(READ_MBOX, name, Prr);
     return (0);
   }
-  if (Prr = SeekLine(eof, &lid)) {
+  if ((Prr = SeekLine(eof, &lid))) {
     FileSystemError(READ_MBOX, name, Prr);
     return (0);
   }
@@ -1641,11 +1637,11 @@ done:
   if (ETLDeleteRequest)
     ComposeLogS(LOG_PLUG, NULL,
                 (unsigned char *)"A plugin has requested the deletion of '%p' in '%p'",
-                savedSub, spec_name(spec));
+                savedSub, path_basename(spec));
 #endif
 
   if (BadBinHex || BadEncoding) {
-    unsigned char hex[256], enc[256], errorStr[256];
+    char hex[256], enc[256], errorStr[256];
 
     if (BadBinHex)
       GetRString(hex, BAD_HEX_MSG);
@@ -1694,12 +1690,12 @@ done:
  ************************************************************************/
 int SaveAndSplit(TransStream stream, short refN, long estSize,
                  HeaderDHandle *hdhp, bool isIMAP) {
-  unsigned char buf[256];
+  char buf[256];
   short count = 0;
   HeaderDHandle hdh = NewHeaderDesc(NULL);
   long fromSize;
   long end;
-  long oldStart;
+  long oldStart = 0;
   short lastHeaderTokenType;
   int64_t startTime_us = g_get_monotonic_time();
   fprintf(stderr, "SaveAndSplit: ENTERED refN=%d estSize=%ld isIMAP=%d\n", refN, estSize, isIMAP);
@@ -1711,7 +1707,7 @@ int SaveAndSplit(TransStream stream, short refN, long estSize,
 
   //	if (estSize>0) ByteProgress(NULL,0,estSize);
 
-  if (Prr = PutOutFromLine(refN, &fromSize))
+  if ((Prr = PutOutFromLine(refN, &fromSize)))
     return (0);
 
 reRead:
@@ -1747,21 +1743,21 @@ reRead:
     /*
      * I've wanted to do this for years.  say who it's from!
      */
-    g_strlcpy((char *)buf, (char *)hdh->who, sizeof(buf));
+    g_strlcpy(buf, (char *)hdh->who, sizeof(buf));
     { size_t _l = strlen((const char *)buf); if (_l > 31) buf[31] = '\0'; } // not too long here...
     PCatC(buf, ',');
     PCatC(buf, ' ');
-    g_strlcat((char *)buf, (char *)hdh->subj, sizeof(buf));
+    g_strlcat(buf, (char *)hdh->subj, sizeof(buf));
     if (!hdh->isMIME)
       TransLitString(buf);
     ProgressMessage(kpMessage, buf);
 
     // regenerate full info for comment
-    g_strlcpy((char *)buf, (char *)hdh->who, sizeof(buf));
+    g_strlcpy(buf, (char *)hdh->who, sizeof(buf));
     PCatC(buf, ',');
     PCatC(buf, ' ');
-    g_strlcat((char *)buf, (char *)hdh->subj, sizeof(buf));
-    g_strlcpy((char *)hdh->summaryInfo, (char *)buf, 128);
+    g_strlcat(buf, (char *)hdh->subj, sizeof(buf));
+    g_strlcpy((char *)hdh->summaryInfo, buf, 128);
 
     /*
      * now, go save the body
@@ -1788,7 +1784,7 @@ reRead:
       oldStart = hdh->diskStart;
       ZapHeaderDesc(hdh);
       hdh = NewHeaderDesc(NULL);
-      g_strlcpy((char *)hdh->summaryInfo, (char *)buf, 128);
+      g_strlcpy((char *)hdh->summaryInfo, buf, 128);
       Prr = 0;
       goto reRead;
     }
@@ -1896,10 +1892,10 @@ short ReadEitherBody(TransStream stream, short refN, HeaderDHandle hdh,
       int drainCount = 0;
       do {
         drainSize = bSize;
-        Prr = RecvLine(stream, (unsigned char *)buf, &drainSize);
+        Prr = RecvLine(stream, buf, &drainSize);
         if (Prr || drainSize <= 0) break;
         drainCount++;
-      } while (!POP_TERM((unsigned char *)buf, drainSize));
+      } while (!POP_TERM(buf, drainSize));
       fprintf(stderr, "ReadEitherBody: drained %d lines, Prr=%d\n", drainCount, Prr);
       /* Reset ReadPOPLine's wasNl for next caller */
       ReadPOPLine(stream, NULL, 0, NULL);
@@ -1990,7 +1986,7 @@ BoundaryType ReadPlainBody(TransStream stream, short refN, char *buf, long bSize
    * record skipped message
    */
   if (!Prr && lineType == plEndOfMessage && estSize < 0) {
-    unsigned char msg[256];
+    char msg[256];
     long count;
     if (Headering || PrefIsSet(PREF_NO_BIGGIES))
       ComposeRString(msg, BIG_MESSAGE_MSG2, -estSize);
@@ -2030,11 +2026,11 @@ BoundaryType ReadPlainBody(TransStream stream, short refN, char *buf, long bSize
  * PutOutFromLine - write an envelope
  ************************************************************************/
 int PutOutFromLine(short refN, long *fromLen) {
-  unsigned char fromLine[256];
+  char fromLine[256];
   long len;
 
   *fromLen = len = SumToFrom(NULL, fromLine);
-  if (Prr = file_write(refN, &len, fromLine))
+  if ((Prr = file_write(refN, &len, fromLine)))
     return (FileSystemError(WRITE_MBOX, "", Prr));
   return (0);
 }
@@ -2042,24 +2038,24 @@ int PutOutFromLine(short refN, long *fromLen) {
 /************************************************************************
  * DupHeader - copy the header of a split message
  ************************************************************************/
-int DupHeader(short refN, unsigned char *buff, long bSize, long offset,
+int DupHeader(short refN, char *buff, long bSize, long offset,
               long headerSize) {
   long currentOffset;
   long readBytes, writeBytes;
   long copied;
 
-  if (Prr = file_tell(refN, &currentOffset))
+  if ((Prr = file_tell(refN, &currentOffset)))
     return (FileSystemError(READ_MBOX, "", Prr));
   for (copied = 0; copied < headerSize; copied += readBytes) {
-    if (Prr = (lseek(refN, offset + copied, SEEK_SET) < 0 ? EIO : 0))
+    if ((Prr = (lseek(refN, offset + copied, SEEK_SET) < 0 ? EIO : 0)))
       return (FileSystemError(READ_MBOX, "", Prr));
     readBytes = bSize < headerSize - copied ? bSize : headerSize - copied;
-    if (Prr = file_read(refN, &readBytes, buff))
+    if ((Prr = file_read(refN, &readBytes, buff)))
       return (FileSystemError(READ_MBOX, "", Prr));
-    if (Prr = (lseek(refN, currentOffset, SEEK_SET) < 0 ? EIO : 0))
+    if ((Prr = (lseek(refN, currentOffset, SEEK_SET) < 0 ? EIO : 0)))
       return (FileSystemError(WRITE_MBOX, "", Prr));
     writeBytes = readBytes;
-    if (Prr = FSZWrite(refN, &writeBytes, buff))
+    if ((Prr = FSZWrite(refN, &writeBytes, buff)))
       return (FileSystemError(WRITE_MBOX, "", Prr));
     currentOffset += writeBytes;
   }
@@ -2179,11 +2175,11 @@ int FirstUnread(TransStream stream, int count) {
  * has been read
  ************************************************************************/
 bool HasBeenRead(TransStream stream, short msgNum, short count) {
-  unsigned char scratch[128];
+  char scratch[128];
   bool unread = false, statFound = false;
-  unsigned char terminate[32];
-  unsigned char status[32];
-  unsigned char *cp;
+  char terminate[32];
+  char status[32];
+  char *cp;
   long size;
 
   if (msgNum > count)
@@ -2244,7 +2240,7 @@ void StampPartNumber(MSumPtr sum, short part, short count) {
  * RecordAttachment - note that we've attached a file
  ************************************************************************/
 int RecordAttachment(const char *path, HeaderDHandle hdh) {
-  unsigned char theMessage[256];
+  char theMessage[256];
   int err;
   bool deleted = false;
 
@@ -2305,14 +2301,19 @@ int RecordAttachment(const char *path, HeaderDHandle hdh) {
     uint32_t mod;
     long zone;
 
-    if (mod = BeautifyDate(theMessage, &zone))
+    if ((mod = BeautifyDate(theMessage, &zone)))
       if (mod > (long)GetRLong(TOO_EARLY_FILE)) {
-        /* Set file modification time using POSIX utimes */
-        struct timeval times[2];
-        times[0].tv_sec = mod + ZoneSecs();
-        times[0].tv_usec = 0;
-        times[1] = times[0];
-        utimes(path, times);
+        /* Set file modification time portably via GFile */
+        {
+          GFile *gf = g_file_new_for_path(path);
+          guint64 ts = (guint64)(mod + ZoneSecs()) * G_USEC_PER_SEC;
+          GFileInfo *fi = g_file_info_new();
+          g_file_info_set_attribute_uint64(fi, G_FILE_ATTRIBUTE_TIME_MODIFIED, mod + ZoneSecs());
+          g_file_set_attributes_from_info(gf, fi, G_FILE_QUERY_INFO_NONE, NULL, NULL);
+          g_object_unref(fi);
+          g_object_unref(gf);
+          (void)ts;
+        }
       }
   }
 
@@ -2329,10 +2330,10 @@ int RecordAttachment(const char *path, HeaderDHandle hdh) {
  * extract the intended name from MIME headers and rename.
  ************************************************************************/
 int FixLongFilename(HeaderDHandle hdh, const char *path) {
-  unsigned char longFilename[256];
-  unsigned char filenameAtt[32];
-  unsigned char part[256];
-  unsigned char charset[256];
+  char longFilename[256];
+  char filenameAtt[32];
+  char part[256];
+  char charset[256];
 
   longFilename[0] = charset[0] = '\0';
 
@@ -2389,12 +2390,12 @@ int FixLongFilename(HeaderDHandle hdh, const char *path) {
     /* Don't rename if it's already the right name */
     char pathCopy[1024];
     g_strlcpy(pathCopy, path, sizeof(pathCopy));
-    const char *currentName = basename(pathCopy);
+    const char *currentName = path_basename(pathCopy);
     if (strcmp(currentName, (const char *)longFilename) == 0)
       return 0;
 
     /* Make unique if target already exists */
-    if (access(newPath, F_OK) == 0) {
+    if (g_access(newPath, F_OK) == 0) {
       /* Target exists — append a number */
       char base[256], ext[64];
       const char *dot = strrchr((const char *)longFilename, '.');
@@ -2408,7 +2409,7 @@ int FixLongFilename(HeaderDHandle hdh, const char *path) {
       }
       for (int i = 1; i < 1000; i++) {
         snprintf(newPath, sizeof(newPath), "%s/%s-%d%s", dir, base, i, ext);
-        if (access(newPath, F_OK) != 0)
+        if (g_access(newPath, F_OK) != 0)
           break;
       }
     }
@@ -2422,12 +2423,12 @@ int FixLongFilename(HeaderDHandle hdh, const char *path) {
 /************************************************************************
  * Un2184Append - undo some 2184, and append to an existing string
  ************************************************************************/
-unsigned char *Un2184Append(unsigned char *dest, short sizeofDest,
-                            unsigned char *orig, unsigned char *charset,
+char *Un2184Append(char *dest, short sizeofDest,
+                            char *orig, char *charset,
                             bool isEncoded) {
-  unsigned char decoded[256];
+  char decoded[256];
   short leftAppend = GetRLong(MIN_LEFT_APPEND);
-  unsigned char elide[32];
+  char elide[32];
 
   if (isEncoded)
     Un2184(decoded, orig, charset);
@@ -2474,8 +2475,8 @@ unsigned char *Un2184Append(unsigned char *dest, short sizeofDest,
 /************************************************************************
  * Un2184 - undo 2184 encoding
  ************************************************************************/
-unsigned char *Un2184(unsigned char *dest, unsigned char *orig,
-                      unsigned char *charset) {
+char *Un2184(char *dest, char *orig,
+                      char *charset) {
   short tableID;
   bool found;
 
@@ -2485,7 +2486,7 @@ unsigned char *Un2184(unsigned char *dest, unsigned char *orig,
   /* do we have a charset? */
   if (!charset[0]) {
     if (PIndex(orig, '\'')) {
-      unsigned char *spot = orig;
+      char *spot = orig;
       PToken(orig, charset, &spot, (unsigned char *)"'"); /* grab charset */
       PToken(orig, dest, &spot, (unsigned char *)"'");    /* skip language */
       PToken(orig, dest, &spot, (unsigned char *)"'");    /* put the rest into dest */
@@ -2510,20 +2511,20 @@ unsigned char *Un2184(unsigned char *dest, unsigned char *orig,
  * AttachNoteLo - format the attachment note
  ************************************************************************/
 void AttachNoteLo(const char *path, const char *theMessage) {
-  unsigned char folderName[256];
-  unsigned char typeString[16], creatorString[16];
-  unsigned char fileName[256];
+  char folderName[256];
+  char typeString[16], creatorString[16];
+  char fileName[256];
   long fid;
-  unsigned char fidStr[32];
-  struct stat st;
+  char fidStr[32];
+  GStatBuf st;
   char pathCopy[1024];
 
   /* Get the filename from the path */
   g_strlcpy(pathCopy, path, sizeof(pathCopy));
-  g_strlcpy((char *)fileName, basename(pathCopy), sizeof(fileName));
+  g_strlcpy((char *)fileName, path_basename(pathCopy), sizeof(fileName));
 
   /* Get file info using POSIX stat */
-  if (stat(path, &st) == 0) {
+  if (g_stat(path, &st) == 0) {
     fid = (long)st.st_ino;
   } else {
     fid = 0;
@@ -2535,10 +2536,10 @@ void AttachNoteLo(const char *path, const char *theMessage) {
 
   /* Get parent directory name */
   g_strlcpy(pathCopy, path, sizeof(pathCopy));
-  g_strlcpy((char *)folderName, basename(dirname(pathCopy)), sizeof(folderName));
+  g_strlcpy((char *)folderName, path_basename(g_path_get_dirname(pathCopy)), sizeof(folderName));
 
   /* theMessage is output parameter */
-  ComposeRString((unsigned char *)theMessage, FILE_FOLDER_FMT, folderName,
+  ComposeRString(theMessage, FILE_FOLDER_FMT, folderName,
                  fileName, typeString, creatorString, Long2Hex(fidStr, fid));
 }
 
@@ -2546,25 +2547,25 @@ void AttachNoteLo(const char *path, const char *theMessage) {
  * RelatedNote - format the related note
  ************************************************************************/
 void RelatedNote(const char *path, HeaderDHandle hdh, const char *theMessage) {
-  unsigned char folderName[256];
+  char folderName[256];
   long fid;
-  unsigned char quoteName[256];
+  char quoteName[256];
   char pathCopy[1024];
-  struct stat st;
+  GStatBuf st;
 
   /* Get the filename */
   g_strlcpy(pathCopy, path, sizeof(pathCopy));
-  g_strlcpy((char *)quoteName, basename(pathCopy), sizeof(quoteName));
+  g_strlcpy((char *)quoteName, path_basename(pathCopy), sizeof(quoteName));
 
   /* Use inode as file ID */
-  fid = (stat(path, &st) == 0) ? (long)st.st_ino : 0;
+  fid = (g_stat(path, &st) == 0) ? (long)st.st_ino : 0;
 
   /* Get parent directory name */
   g_strlcpy(pathCopy, path, sizeof(pathCopy));
-  g_strlcpy((char *)folderName, basename(dirname(pathCopy)), sizeof(folderName));
+  g_strlcpy((char *)folderName, path_basename(g_path_get_dirname(pathCopy)), sizeof(folderName));
 
   /* theMessage is output parameter */
-  ComposeRString((unsigned char *)theMessage, RELATED_FMT, MIME_RELATED,
+  ComposeRString(theMessage, RELATED_FMT, MIME_RELATED,
                  folderName, URLEscape(quoteName), fid, hdh->cidHash,
                  hdh->relURLHash, hdh->absURLHash);
 }
@@ -2573,7 +2574,7 @@ void RelatedNote(const char *path, HeaderDHandle hdh, const char *theMessage) {
  * AddAttachInfo - attach a note about problems with the enclosure
  ************************************************************************/
 void AddAttachInfo(short theIndex, long result) {
-  unsigned char theMessage[256];
+  char theMessage[256];
 
   ComposeString(theMessage, "%r%d\015", theIndex, result);
   GrowBuf_Append(&AttachedFiles, theMessage, strlen((const char *)theMessage));
@@ -2599,18 +2600,18 @@ int WriteAttachNote(short refN) {
  * POPLast - give the LAST command to find the last unread message
  ************************************************************************/
 short POPLast(TransStream stream, short *lastRead) {
-  unsigned char buffer[128];
-  unsigned char *spot;
+  char buffer[128];
+  char *spot;
   long size = sizeof(buffer);
 
-  if (Prr = POPCmdGetReply(stream, kpcLast, NULL, buffer, &size))
+  if ((Prr = POPCmdGetReply(stream, kpcLast, NULL, buffer, &size)))
     return (Prr);
   ComposeLogS(LOG_LMOS, NULL, (unsigned char *)"Last: %s", buffer);
   if (*buffer != '+')
     Prr = *buffer;
   else {
     strtok(buffer, " "); /* skip ok */
-    if (spot = strtok(NULL, " \015"))
+    if ((spot = strtok(NULL, " \015")))
       *lastRead = Atoi(spot); /* read message size */
     else
       return (1);
@@ -2629,7 +2630,7 @@ short POPLast(TransStream stream, short *lastRead) {
  *  Also removes the "." that escapes lines beginning with ".",
  *   and adds a ">" to escape envelopes
  ************************************************************************/
-POPLineType ReadPOPLine(TransStream stream, unsigned char *buf, long bSize,
+POPLineType ReadPOPLine(TransStream stream, char *buf, long bSize,
                         long *len) {
   static int wasNl;
   POPLineType returnType;
@@ -2661,7 +2662,7 @@ POPLineType ReadPOPLine(TransStream stream, unsigned char *buf, long bSize,
    * grab the line
    */
   *len = bSize - 1; /* allow extra char for escaped envelopes */
-  if (Prr = RecvLine(stream, buf, len)) {
+  if ((Prr = RecvLine(stream, buf, len))) {
     fprintf(stderr, "ReadPOPLine: RecvLine error Prr=%d len=%ld bSize=%ld\n", Prr, *len, bSize);
     return (plError);
   }
@@ -2716,7 +2717,7 @@ short SplitMessage(short refN, long hStart, long hEnd, long msgEnd) {
 
   if (hEnd - hStart > splitSize) {
     /* uh-oh.  the header is waaaaaaay big */
-    if (err = HuntNewline(refN, hStart + 4096, &hEnd, &headerReal))
+    if ((err = HuntNewline(refN, hStart + 4096, &hEnd, &headerReal)))
       goto done;
     headerNl = headerReal ? 1 : 2;
   }
@@ -2741,7 +2742,7 @@ short SplitMessage(short refN, long hStart, long hEnd, long msgEnd) {
   }
 
   for (i = 1, *froms = hEnd; i < count; i++) {
-    if (err = HuntNewline(refN, hEnd + i * bodySplit, &froms[i], &reals[i]))
+    if ((err = HuntNewline(refN, hEnd + i * bodySplit, &froms[i], &reals[i])))
       goto done;
   }
 
@@ -2773,8 +2774,8 @@ short SplitMessage(short refN, long hStart, long hEnd, long msgEnd) {
       /*
        * copy body bytes
        */
-      if (err = CopyFBytes(refN, froms[i], froms[i + 1] - froms[i], refN,
-                           tos[i])) {
+      if ((err = CopyFBytes(refN, froms[i], froms[i + 1] - froms[i], refN,
+                           tos[i]))) {
         WarnUser(WRITE_MBOX, err);
         goto done;
       }
@@ -2783,8 +2784,8 @@ short SplitMessage(short refN, long hStart, long hEnd, long msgEnd) {
         /*
          * copy the header bytes
          */
-        if (err = CopyFBytes(refN, hStart, hEnd - hStart, refN,
-                             tos[i] - (hEnd - hStart + headerNl))) {
+        if ((err = CopyFBytes(refN, hStart, hEnd - hStart, refN,
+                             tos[i] - (hEnd - hStart + headerNl)))) {
           FileSystemError(WRITE_MBOX, "", err);
           goto done;
         }
@@ -2794,12 +2795,12 @@ short SplitMessage(short refN, long hStart, long hEnd, long msgEnd) {
        * do we need to add an ending newline to the header?
        */
       if (headerNl) {
-        if (err = (lseek(refN, tos[i] - headerNl, SEEK_SET) < 0 ? EIO : 0)) {
+        if ((err = (lseek(refN, tos[i] - headerNl, SEEK_SET) < 0 ? EIO : 0))) {
           FileSystemError(WRITE_MBOX, "", err);
           goto done;
         }
-        if (err = file_write_str(refN, headerReal ? (unsigned char *)"\r"
-                                            : (unsigned char *)"\015\015")) {
+        if ((err = file_write_str(refN, headerReal ? (unsigned char *)"\r"
+                                            : (unsigned char *)"\015\015"))) {
           FileSystemError(WRITE_MBOX, "", err);
           goto done;
         }
@@ -2810,11 +2811,11 @@ short SplitMessage(short refN, long hStart, long hEnd, long msgEnd) {
      * do we need to add an ending newline to the body?
      */
     if (!reals[i + 1]) {
-      if (err = (lseek(refN, tos[i] + froms[i + 1] - froms[i], SEEK_SET) < 0 ? EIO : 0)) {
+      if ((err = (lseek(refN, tos[i] + froms[i + 1] - froms[i], SEEK_SET) < 0 ? EIO : 0))) {
         FileSystemError(WRITE_MBOX, "", err);
         goto done;
       }
-      if (err = file_write_str(refN, (unsigned char *)"\r")) {
+      if ((err = file_write_str(refN, (unsigned char *)"\r"))) {
         FileSystemError(WRITE_MBOX, "", err);
         goto done;
       }
@@ -2839,7 +2840,7 @@ done:
  * VetPOP - make sure the 's POP account is ok.
  ************************************************************************/
 short VetPOP(void) {
-  unsigned char host[256];
+  char host[256];
   long port;
   short err;
 
@@ -2865,10 +2866,10 @@ short VetPOP(void) {
 static char hex[] = "0123456789abcdef";
 #ifndef MD5_CTX
 typedef struct {
-  unsigned char digest[16];
+  char digest[16];
   unsigned long state[4];
   unsigned long count[2];
-  unsigned char buffer[64];
+  char buffer[64];
 } MD5_CTX;
 #endif
 
@@ -2881,9 +2882,9 @@ typedef struct {
 /************************************************************************
  * GenDigest - generate a digest for APOP
  ************************************************************************/
-bool GenDigest(unsigned char *banner, unsigned char *secret,
-               unsigned char *digest) {
-  unsigned char stamp[256];
+bool GenDigest(char *banner, char *secret,
+               char *digest) {
+  char stamp[256];
   MD5_CTX md5;
   short i;
 
@@ -2908,9 +2909,9 @@ bool GenDigest(unsigned char *banner, unsigned char *secret,
 /************************************************************************
  * GenKeyedDigest - generate a keyed digest for APOP
  ************************************************************************/
-bool GenKeyedDigest(unsigned char *banner, unsigned char *secret,
-                    unsigned char *digest) {
-  unsigned char stamp[256];
+bool GenKeyedDigest(char *banner, char *secret,
+                    char *digest) {
+  char stamp[256];
   MD5_CTX md5;
   short i;
 
@@ -2933,12 +2934,12 @@ bool GenKeyedDigest(unsigned char *banner, unsigned char *secret,
 /************************************************************************
  * ExtractStamp - grab the timestamp out of a POP banner
  ************************************************************************/
-unsigned char *ExtractStamp(unsigned char *stamp, unsigned char *banner) {
-  unsigned char *cp1, *cp2;
+char *ExtractStamp(char *stamp, char *banner) {
+  char *cp1, *cp2;
 
   *stamp = 0;
-  if (cp1 = strchr(banner, '<'))
-    if (cp2 = strchr(cp1 + 1, '>')) {
+  if ((cp1 = strchr(banner, '<')))
+    if ((cp2 = strchr(cp1 + 1, '>'))) {
       int len = cp2 - cp1 + 1;
       strncpy(stamp, cp1, len);
       stamp[len] = '\0';
@@ -2954,7 +2955,7 @@ unsigned char *ExtractStamp(unsigned char *stamp, unsigned char *banner) {
  * FillPOPD - fill the pop descriptor with important info from a header
  ************************************************************************/
 void FillPOPD(POPDPtr pdp, HeaderDHandle hdh) {
-  unsigned char msgId[256];
+  char msgId[256];
   uint32_t hash;
 
   if (pdp->uidHash == 0) {
@@ -3007,7 +3008,7 @@ int BuildPOPD(TransStream stream, POPDHandle *popDH, short count,
   if (!(*popDH = POPDNew(count)))
     return (WarnUser(MEM_ERR, Prr = 0));
 
-  if (Prr = FillSizesWithList(stream, *popDH))
+  if ((Prr = FillSizesWithList(stream, *popDH)))
     return (Prr);
 
   if (popMode != popRUIDL)
@@ -3346,7 +3347,7 @@ int FillWithTop(TransStream stream, POPDHandle new, POPDHandle old) {
  ************************************************************************/
 int FillPOPDFromServer(TransStream stream, POPDHandle popDH, short spot) {
   long msgSize;
-  unsigned char scratch[256];
+  char scratch[256];
   HeaderDHandle hdh = NULL;
   short refN = 0;
   Token822Enum tokenType;
@@ -3370,7 +3371,7 @@ int FillPOPDFromServer(TransStream stream, POPDHandle popDH, short spot) {
   sprintf(scratch, "%ld", (long)(spot + 1));
   PLCat(scratch, 1);
   size = sizeof(scratch);
-  if (Prr = POPCmdGetReply(stream, kpcTop, scratch, scratch, &size))
+  if ((Prr = POPCmdGetReply(stream, kpcTop, scratch, scratch, &size)))
     goto done;
 
   /*
@@ -3461,7 +3462,7 @@ void FixMessServerAreas(void) {
 
   for (winWP = FrontWindow_(); winWP; winWP = GetNextWindow(winWP))
     if (IsWindowVisible(winWP))
-      if (win = GetWindowMyWindowPtr(winWP))
+      if ((win = GetWindowMyWindowPtr(winWP)))
         Fix1MessServerArea(win);
 }
 
@@ -3469,7 +3470,7 @@ void FixMessServerAreas(void) {
  * HeaderMsgId - nab the message-id
  ************************************************************************/
 char * HeaderMsgId(HeaderDHandle hdh, char * msgId) {
-  unsigned char scratch[256];
+  char scratch[256];
 
   if (!AAFetchResData(hdh->funFields, InterestHeadStrn + hMessageId,
                       scratch))
@@ -3483,7 +3484,7 @@ char * HeaderMsgId(HeaderDHandle hdh, char * msgId) {
  * FakeMIDHash - fake a message-id for something that doesn't have one
  ************************************************************************/
 uint32_t FakeMIDHash(HeaderDHandle hdh) {
-  unsigned char scratch[256];
+  char scratch[256];
 
   /*
    * no message-id in this message.  Look for other headers of interest,
@@ -3628,9 +3629,9 @@ bool IdIsOnPOPD(uint32_t listType, short listId, uint32_t uidHash) {
  * FillWithUidl - fill the descriptor using the uidl command
  ************************************************************************/
 int FillWithUidl(TransStream stream, POPDHandle popDH) {
-  unsigned char buffer[256];
+  char buffer[256];
   long size = sizeof(buffer);
-  unsigned char *spot, *end;
+  char *spot, *end;
   short msgNum;
   short n = popDH->count;
   uint32_t uidHash;
@@ -3643,7 +3644,7 @@ int FillWithUidl(TransStream stream, POPDHandle popDH) {
 
   g_print("FillWithUidl: sending UIDL command, noUIDL=%d\n", CurPers->noUIDL);
   fflush(stdout);
-  if (Prr = POPCmdGetReply(stream, kpcUidl, NULL, buffer, &size)) {
+  if ((Prr = POPCmdGetReply(stream, kpcUidl, NULL, buffer, &size))) {
     g_print("FillWithUidl: POPCmdGetReply failed Prr=%d\n", Prr);
     fflush(stdout);
     return (Prr);
@@ -3665,7 +3666,7 @@ int FillWithUidl(TransStream stream, POPDHandle popDH) {
   for (size = sizeof(buffer);
        !(Prr = RecvLine(stream, buffer, &size)) && !POP_TERM(buffer, size);
        size = sizeof(buffer)) {
-    MiniEvents();
+    { GMainContext *ctx = g_main_context_default(); while (g_main_context_pending(ctx)) g_main_context_iteration(ctx, FALSE); }
     if (CommandPeriod)
       break;
     CycleBalls();
@@ -3691,8 +3692,8 @@ int FillWithUidl(TransStream stream, POPDHandle popDH) {
       while (spot < end && *spot == ' ')
         spot++;
       if (spot < end) {
-        spot[-1] = end - spot;
-        uidHash = Hash(spot - 1);
+        *end = '\0'; /* null-terminate the UIDL string */
+        uidHash = Hash(spot);
         popDH->data[msgNum - 1].uidHash = uidHash;
         popDH->data[msgNum - 1].receivedGMT = GMTDateTime();
         g_print("FillWithUidl: msg %d uidl='%.*s' hash=%lu\n", msgNum, (int)(end-spot), spot, (unsigned long)uidHash);
@@ -3776,7 +3777,7 @@ int KerbDestroyUser(void) {
  **********************************************************************/
 int KerbUsername(char * name) {
   int err;
-  unsigned char *atSign;
+  char *atSign;
 
   *name = 0;
   err = KClientGetUserNameDeprecated(name);
@@ -3786,11 +3787,11 @@ int KerbUsername(char * name) {
      * log kerberos in
      */
 
-    if (err = KClientNewSessionCompat(
+    if ((err = KClientNewSessionCompat(
             &gSession, 1 /*nLocalAddress*/, GetRLong(POP_PORT) /*inLocalPort*/,
-            2 /*inRemoteAddress*/, GetRLong(POP_PORT) /*inRemotePort*/))
+            2 /*inRemoteAddress*/, GetRLong(POP_PORT) /*inRemotePort*/)))
       return (err);
-    if (err = KClientLoginCompat(&gSession, &gPrivateKey))
+    if ((err = KClientLoginCompat(&gSession, &gPrivateKey)))
       return (err);
 
     /*
@@ -3804,7 +3805,7 @@ int KerbUsername(char * name) {
    * trim realm (everything from '@' onward)
    */
   if (!err) {
-    char *atSign = strchr((char *)name, '@');
+    char *atSign = strchr(name, '@');
     if (atSign)
       *atSign = '\0';
   }
@@ -3817,13 +3818,13 @@ int KerbUsername(char * name) {
  **********************************************************************/
 int KerbGetTicket(char * serviceName, char * inHost, char * realm, char * version,
                     unsigned char **ticket) {
-  unsigned char fmt[64];
-  unsigned char fullName[256];
-  unsigned char scratch[256];
-  unsigned char host[256];
-  unsigned char shortHost[256];
+  char fmt[64];
+  char fullName[256];
+  char scratch[256];
+  char host[256];
+  char shortHost[256];
   int err;
-  unsigned char *spot;
+  char *spot;
   struct hostInfo *hip, hi;
   unsigned long bufLen;
 
@@ -3840,9 +3841,9 @@ int KerbGetTicket(char * serviceName, char * inHost, char * realm, char * versio
   /*
    * the best thing in the world is four million DNS calls
    */
-  if (err = GetHostByName(inHost, &hip))
+  if ((err = GetHostByName(inHost, &hip)))
     return (err);
-  if (err = GetHostByAddr(&hi, hip->addr[0]))
+  if ((err = GetHostByAddr(&hi, hip->addr[0])))
     return (err);
   CtoPCpy(host, hi.cname);
 
@@ -3861,7 +3862,7 @@ int KerbGetTicket(char * serviceName, char * inHost, char * realm, char * versio
   // Already null-terminated C strings, no conversion needed
 
   bufLen = GetRLong(KERBEROS_BSIZE);
-  *ticket = (unsigned char *)malloc(bufLen);
+  *ticket = malloc(bufLen);
   if (!*ticket)
     return (0);
 
@@ -3879,7 +3880,7 @@ int KerbGetTicket(char * serviceName, char * inHost, char * realm, char * versio
     free(*ticket);
     *ticket = NULL;
   } else {
-    unsigned char *newTicket = (unsigned char *)realloc(*ticket, bufLen);
+    char *newTicket = realloc(*ticket, bufLen);
     if (newTicket) *ticket = newTicket;
   }
 
@@ -3920,8 +3921,8 @@ int InitKerberos() {
  * SendPOPTicket - send a ticket to the Pop server
  **********************************************************************/
 int SendPOPTicket(TransStream stream) {
-  unsigned char popName[64], host[64], realm[64], version[64];
-  unsigned char *ticket = NULL;
+  char popName[64], host[64], realm[64], version[64];
+  char *ticket = NULL;
   unsigned long ticketLen = 0;
   int err;
 
@@ -3934,7 +3935,7 @@ int SendPOPTicket(TransStream stream) {
   if ((err = KerbGetTicket(popName, host, realm, version, &ticket)))
     return (WarnUser(NO_KERBEROS, err));
 
-  ticketLen = ticket ? malloc_size(ticket) : 0;
+  ticketLen = ticket ? strlen((char *)ticket) : 0;
   err = SendTrans(stream, ticket, ticketLen, NULL);
   free(ticket);
   return (err);

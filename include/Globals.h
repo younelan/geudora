@@ -89,8 +89,8 @@ extern MessHandle MessList;
 extern void *HandyMyWindow;        /* MyWindow * — spare window record */
 extern void *MousePen;             /* void * — pen for mouse */
 extern bool TBTurnedOnBalloons;
-extern unsigned char NewLine[4];
-extern unsigned char CheckOnIdle;
+extern char NewLine[4];
+extern char CheckOnIdle;
 extern char Type2SelString[16];
 extern uLong Type2SelTicks;
 extern short DragSumNum;
@@ -112,13 +112,13 @@ extern TOCType *TOCList;
 
 extern struct AliasDStruct **Aliases;
 
-extern unsigned char * eSignature;
-extern unsigned char * RichSignature;
-extern unsigned char * HTMLSignature;
+extern char *eSignature;
+extern char *RichSignature;
+extern char *HTMLSignature;
 extern bool SigStyled;
-extern unsigned char * TransIn;
-extern unsigned char * TransOut;
-extern unsigned char * Flatten;
+extern char *TransIn;
+extern char *TransOut;
+extern char *Flatten;
 extern int CTBTimeout;
 extern void *HIQ;                   /* HostInfoQHandle */
 extern bool NoPreflight;
@@ -205,7 +205,7 @@ extern bool OpenedMacSLIP;
 extern char Re[16];
 extern char Fwd[16];
 extern char OFwd[16];
-extern unsigned char TOCInversionMatrix[2][16]; /* BoxLinesLimit */
+extern char TOCInversionMatrix[2][16]; /* BoxLinesLimit */
 extern bool DragFxxkOff;
 extern bool Sensitive;
 extern bool WholeWord;
@@ -215,12 +215,12 @@ extern void *DragTOCSource;        /* MyWindowPtr */
 extern short DragSourceKind;
 extern bool EmoTurdCache;
 extern bool AttentionNeeded;
-extern unsigned char YesStr[2];
-extern unsigned char NoStr[2];
-extern unsigned char Slash[3];
-extern unsigned char Cr_bytes[2];  /* renamed to avoid Cr macro conflict */
-extern unsigned char Lf[2];
-extern unsigned char CrLf[3];
+extern char YesStr[2];
+extern char NoStr[2];
+extern char Slash[3];
+extern char Cr_bytes[2];  /* renamed to avoid Cr macro conflict */
+extern char Lf[2];
+extern char CrLf[3];
 extern bool OTIs;
 extern bool OptiMEMIs;
 extern bool CheckNow;
