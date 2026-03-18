@@ -2783,14 +2783,14 @@ TOCType * LocateIMAPJunkToc(TOCType * tocH, bool createIfNeeded, bool silent) {
  *	IsIMAPSpecialMailbox - return 1 if this is a special IMAP mailbox
  ************************************************************************/
 bool IsIMAPSpecialMailbox(MailboxNodeHandle node, long att) {
-  return ((node != NULL) & ((node->attributes & att) != 0));
+  return (node != NULL) && ((node->attributes & att) != 0);
 }
 
 /************************************************************************
  *	CanHaveChildren - return 1 if this node can have children
  ************************************************************************/
 bool CanHaveChildren(MailboxNodeHandle node) {
-  return ((node->attributes & LATT_NOINFERIORS) == 0);
+  return node && ((node->attributes & LATT_NOINFERIORS) == 0);
 }
 
 /************************************************************************

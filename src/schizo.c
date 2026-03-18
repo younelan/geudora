@@ -70,23 +70,31 @@ int PersFillPw(PersHandle pers,uint32_t whichOnes)
 
 	pw[0] = '\0';
 
+	g_print("PersFillPw: pers=%p password[0]=%d\n", (void*)pers, (int)pers->password[0]);
+
 	if (!pers->password[0])
 	{
 		/* Try loading saved password from keychain first */
-		if (prefs_get_bool(PREFS_GROUP_CHECKING_MAIL, "save_password", FALSE)) {
+		gboolean save_pref = prefs_get_bool(PREFS_GROUP_CHECKING_MAIL, "save_password", FALSE);
+		g_print("PersFillPw: save_password pref=%d\n", save_pref);
+		if (save_pref) {
 			char acct[256];
 			GetPassStuff((unsigned char *)persName, (unsigned char *)uName, (unsigned char *)hName);
 			snprintf(acct, sizeof(acct), "%s@%s", uName, hName);
+			g_print("PersFillPw: keychain lookup for acct='%s'\n", acct);
 			char saved[256] = {0};
-			if (keychain_find("gEudora", acct, saved, sizeof(saved)) == KEYCHAIN_OK
-			    && saved[0]) {
+			int kc_result = keychain_find("gEudora", acct, saved, sizeof(saved));
+			g_print("PersFillPw: keychain_find returned %d saved[0]=%d\n", kc_result, (int)saved[0]);
+			if (kc_result == KEYCHAIN_OK && saved[0]) {
 				strncpy((char *)pers->password, saved, sizeof(pers->password) - 1);
 				pers->password[sizeof(pers->password) - 1] = '\0';
+				g_print("PersFillPw: loaded password from keychain\n");
 			}
 		}
 
 		/* If still no password, prompt the user */
 		if (!pers->password[0]) {
+			g_print("PersFillPw: prompting user for password\n");
 			if (!uName[0]) GetPassStuff((unsigned char *)persName, (unsigned char *)uName, (unsigned char *)hName);
 			GetPassword((unsigned char *)persName, (unsigned char *)uName, (unsigned char *)hName,
 			            (unsigned char *)pw, sizeof(pw), ENTER);
@@ -96,6 +104,8 @@ int PersFillPw(PersHandle pers,uint32_t whichOnes)
 				pers->password[sizeof(pers->password) - 1] = '\0';
 			}
 		}
+	} else {
+		g_print("PersFillPw: password already set, skipping\n");
 	}
 
 	return(pers->password[0] ? 0 : ECANCELED);

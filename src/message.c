@@ -975,10 +975,14 @@ int ReadMessage(TOCType * tocH, int sumN, unsigned char * buffer) {
   GetMailboxName(tocH, sumNum, name);
   count = tocH->sums[sumNum].length;
 
-  if (!(MessErr = BoxFOpenLo(tocH, sumNum)))
-    if ((MessErr = lseek(tocH->refN, tocH->sums[sumNum].offset, SEEK_SET)) ||
-        (MessErr = file_read(tocH->refN, &count, buffer)))
+  if (!(MessErr = BoxFOpenLo(tocH, sumNum))) {
+    if (lseek(tocH->refN, tocH->sums[sumNum].offset, SEEK_SET) < 0) {
+      MessErr = EIO;
       FileSystemError(READ_MBOX, name, MessErr);
+    } else if ((MessErr = file_read(tocH->refN, &count, buffer))) {
+      FileSystemError(READ_MBOX, name, MessErr);
+    }
+  }
 
   return (MessErr);
 }
@@ -1206,7 +1210,7 @@ int AppendMessage(TOCType * fromTocH, int fromN, TOCType ** toTocHP, bool copy,
   } else {
     if (fromTocH->sums[fromN].cache) {
       count = fromTocH->sums[fromN].length;
-      MessErr = lseek(toTocH->refN, eof, SEEK_SET);
+      MessErr = lseek(toTocH->refN, eof, SEEK_SET) < 0 ? EIO : 0;
       if (!MessErr)
         MessErr = file_write(toTocH->refN, &count,
              (unsigned char *)fromTocH->sums[fromN].cache);
@@ -2156,9 +2160,10 @@ static bool CleanSpoolCallback(DirIterateInfo *info) {
   MiniEvents();
 
   if (info->isDir &&
-      AllDigits(spec_name(info->spec), strlen(spec_name(info->spec)))) {
+      AllDigits(strrchr(info->path, '/') ? strrchr(info->path, '/') + 1 : info->path,
+                strlen(strrchr(info->path, '/') ? strrchr(info->path, '/') + 1 : info->path))) {
     if (info->modifyDate < spoolAge) {
-      RemoveDir(&info->spec);
+      RemoveDir(info->path);
     }
   }
   return true; /* Continue iteration */
@@ -2561,7 +2566,7 @@ int SavePtrAsMessage(unsigned char * preText, long preSize, unsigned char * text
    */
   if (!(err = BoxFOpen(tocH))) {
     eof = FindTOCSpot(tocH, size);
-    err = lseek(tocH->refN, eof, SEEK_SET);
+    err = lseek(tocH->refN, eof, SEEK_SET) < 0 ? EIO : 0;
     if (!err)
       err = PutOutFromLine(tocH->refN, fromLen);
     if (!err && preText)

@@ -386,9 +386,7 @@ int KillTOC(short refN, char * spec) {
  * Ported from Mac: PCat(name, GetRString(suffix, TOC_SUFFIX)) → snprintf
  ************************************************************************/
 char * Box2TOCSpec(char * boxSpec, char * tocSpec) {
-  *tocSpec = *boxSpec;
-  snprintf(tocSpec, sizeof(tocSpec), "%s.toc", boxSpec);
-  snprintf(spec_name(tocSpec), sizeof(spec_name(tocSpec)), "%s.toc", spec_name(boxSpec));
+  snprintf(tocSpec, PATH_MAX, "%s.toc", boxSpec);
   return tocSpec;
 }
 
@@ -421,7 +419,7 @@ TOCType * CheckTOC(char * spec) {
     g_debug("CheckTOC: no .toc for %s, building", path_basename(spec));
     TOCType *built = BuildTOC_Path(spec);
     if (built) {
-      strncpy(built, spec, sizeof(built) - 1);
+      g_strlcpy(built->path, spec, sizeof(built->path));
       g_strlcpy(built->mailbox.spec, spec, sizeof(built->mailbox.spec));
       WriteTOC(built);
     }
@@ -435,7 +433,7 @@ TOCType * CheckTOC(char * spec) {
     g_debug("CheckTOC: .toc for %s is corrupt, rebuilding", path_basename(spec));
     toc = BuildTOC_Path(spec);
     if (toc) {
-      strncpy(toc, spec, sizeof(toc) - 1);
+      g_strlcpy(toc->path, spec, sizeof(toc->path));
       g_strlcpy(toc->mailbox.spec, spec, sizeof(toc->mailbox.spec));
       WriteTOC(toc);
     }
@@ -456,8 +454,7 @@ TOCType * ReadTOC(char * spec) {
   if (tocH) {
     /* Don't take these for granted */
     tocH->durty = tocH->reallyDirty = false;
-    strncpy(tocH, spec, sizeof(tocH) - 1);
-    tocH->path[sizeof(tocH->path) - 1] = '\0';
+    g_strlcpy(tocH->path, spec, sizeof(tocH->path));
     g_strlcpy(tocH->mailbox.spec, spec, sizeof(tocH->mailbox.spec));
     tocH->refN = 0;
     tocH->win = NULL;
@@ -655,7 +652,7 @@ int WriteTOC(TOCType * tocH) {
   /* Get mailbox file size */
   struct stat st;
   long size = 0;
-  if (stat(tocH, &st) == 0)
+  if (stat(tocH->path, &st) == 0)
     size = (long)st.st_size;
 
   tocH->boxSize = size + 1; /* +1 signals we know it's ok */
@@ -663,11 +660,11 @@ int WriteTOC(TOCType * tocH) {
   tocH->unreadBase = tocH->count;
 
   char tocPath[PATH_MAX];
-  toc_file_path(tocH, tocPath, sizeof(tocPath));
+  toc_file_path(tocH->path, tocPath, sizeof(tocPath));
 
   FILE *fp = fopen(tocPath, "wb");
   if (!fp) {
-    g_warning("WriteTOC(%s): %s", path_basename(tocH), strerror(errno));
+    g_warning("WriteTOC(%s): %s", path_basename(tocH->path), strerror(errno));
     tocH->beingWritten--;
     return -1;
   }
@@ -694,7 +691,7 @@ int WriteTOC(TOCType * tocH) {
 
   size_t written = fwrite(&hdr, 1, sizeof(hdr), fp);
   if (written != sizeof(hdr)) {
-    g_warning("WriteTOC(%s): header write failed", path_basename(tocH));
+    g_warning("WriteTOC(%s): header write failed", path_basename(tocH->path));
     fclose(fp);
     unlink(tocPath);
     tocH->beingWritten--;
@@ -708,7 +705,7 @@ int WriteTOC(TOCType * tocH) {
       sum_to_disk(&tocH->sums[i], &diskSum);
       written = fwrite(&diskSum, 1, sizeof(diskSum), fp);
       if (written != sizeof(diskSum)) {
-        g_warning("WriteTOC(%s): sum[%d] write failed", path_basename(tocH), i);
+        g_warning("WriteTOC(%s): sum[%d] write failed", path_basename(tocH->path), i);
         fclose(fp);
         unlink(tocPath);
         tocH->beingWritten--;
@@ -720,7 +717,7 @@ int WriteTOC(TOCType * tocH) {
   fclose(fp);
 
   tocH->durty = tocH->reallyDirty = false;
-  g_debug("WriteTOC(%s): %d messages, %ld bytes", path_basename(tocH),
+  g_debug("WriteTOC(%s): %d messages, %ld bytes", path_basename(tocH->path),
           tocH->count, (long)TOCDiskSize(tocH->count));
 
   /* Fix up menu items */
@@ -753,9 +750,8 @@ static void FixBoxUnread(TOCType * tocH) {
   myItem = 0;
   /* Build a minimal spec from tocH for legacy Spec2Menu API */
   memset(&spec, 0, sizeof(spec));
-  strncpy(spec, tocH, sizeof(spec) - 1);
-  strncpy(spec_name(spec), path_basename(tocH), sizeof(spec_name(spec)) - 1);
-  Spec2Menu(&spec, false, &myMenu, &myItem);
+  g_strlcpy(spec, tocH->path, sizeof(spec));
+  Spec2Menu(spec, false, &myMenu, &myItem);
 
   if (myItem > 0) {
     FixSpecUnread(spec, unread);
@@ -846,10 +842,10 @@ TOCType * FindTOC(const char *path) {
 
   /* Fallback to SameSpec for legacy callers: construct a temporary spec */
   FSSpec tmpSpec;
-  spec_make(NULL, path, &tmpSpec);
+  spec_make(NULL, path, tmpSpec);
   for (TOCType *tocH = TOCList; tocH; tocH = tocH->next) {
     FSSpec boxSpec; GetMailboxSpec(tocH, -1, boxSpec);
-    if (SameSpec(&boxSpec, &tmpSpec))
+    if (SameSpec(boxSpec, tmpSpec))
       return tocH;
   }
   return NULL;
@@ -952,9 +948,8 @@ TOCType * GetSpecialTOC(short nameId) {
   /* Fall back to FSSpec-based lookup (loads/builds the TOC) */
   FSSpec spec;
   memset(&spec, 0, sizeof(spec));
-  strncpy(spec, path, sizeof(spec) - 1);
-  strncpy(spec_name(spec), name, sizeof(spec_name(spec)) - 1);
-  return TOCBySpec(&spec);
+  g_strlcpy(spec, path, sizeof(spec));
+  return TOCBySpec(spec);
 }
 
 /************************************************************************
@@ -1022,17 +1017,17 @@ static int InsaneTOC(TOCType * tocH) {
   /* Figure out how big the mailbox is */
   struct stat st;
   long boxSize = 0;
-  if (stat(tocH, &st) == 0)
+  if (stat(tocH->path, &st) == 0)
     boxSize = (long)st.st_size;
   else
     g_warning("InsaneTOC(%s): stat failed for '%s': %s",
-              path_basename(tocH), tocH, strerror(errno));
+              path_basename(tocH->path), tocH->path, strerror(errno));
 
   /* Right size? Allow off-by-one (Mac line ending differences) */
   if (tocH->boxSize && boxSize > 0 &&
       labs(tocH->boxSize - boxSize) > 1) {
     g_warning("InsaneTOC(%s): file size mismatch (toc=%ld, file=%ld)",
-              path_basename(tocH), tocH->boxSize, boxSize);
+              path_basename(tocH->path), tocH->boxSize, boxSize);
     return euMismatchTOC;
   }
   /* If stat failed (boxSize==0), update boxSize from actual file */
@@ -1046,7 +1041,7 @@ static int InsaneTOC(TOCType * tocH) {
         sum->bodyOffset < 0 || sum->bodyOffset > sum->length ||
         ((sum->offset + sum->length > boxSize) && !tocH->imapTOC)) {
       g_warning("InsaneTOC(%s): bad sum #%d (o=%ld b=%ld l=%ld s=%ld)",
-                path_basename(tocH), i, sum->offset, sum->bodyOffset, sum->length,
+                path_basename(tocH->path), i, sum->offset, sum->bodyOffset, sum->length,
                 boxSize);
       return euCorruptTOC;
     }
@@ -1054,7 +1049,7 @@ static int InsaneTOC(TOCType * tocH) {
 
   /* Wrong version number? */
   if (tocH->majorVersion > CURRENT_TOC_VERS) {
-    g_warning("InsaneTOC(%s): version mismatch (%ld != %d)", path_basename(tocH),
+    g_warning("InsaneTOC(%s): version mismatch (%ld != %d)", path_basename(tocH->path),
               tocH->majorVersion, CURRENT_TOC_VERS);
     return euBadVersion;
   }
@@ -1172,7 +1167,7 @@ static short GetTOCK(TOCType * tocH, unsigned long *usedK, unsigned long *totalK
   *usedK = (unsigned long)(used / 1024);
 
   struct stat st;
-  if (stat(tocH, &st) == 0)
+  if (stat(tocH->path, &st) == 0)
     *totalK = (unsigned long)(st.st_size / 1024);
   else
     *totalK = 0;
@@ -1362,9 +1357,8 @@ TOCType *toc_load(const char *path) {
   /* Fall back to CheckTOC which loads/builds the TOC */
   FSSpec spec;
   memset(&spec, 0, sizeof(spec));
-  strncpy(spec, path, sizeof(spec) - 1);
-  strncpy(spec_name(spec), path_basename(path), sizeof(spec_name(spec)) - 1);
-  return CheckTOC(&spec);
+  g_strlcpy(spec, path, sizeof(spec));
+  return CheckTOC(spec);
 }
 
 /************************************************************************

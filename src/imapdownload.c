@@ -1551,6 +1551,8 @@ bool UIDFetchMessages(IMAPStreamPtr imapStream, MailboxNodeHandle mailboxInfo,
         uidList) {
       imapStream->mailStream->refN =
           OpenMessDestFile(mailboxInfo, uidList->uid, &spoolSpec);
+      g_strlcpy(imapStream->mailStream->refPath, spoolSpec,
+                sizeof(imapStream->mailStream->refPath));
       if (imapStream->mailStream->refN == -1)
         result = false;
     }
@@ -2716,6 +2718,8 @@ bool DoDownloadMessages(TOCType * tocH, GArray *uids, bool attachmentsToo) {
               // it.
               imapStream->mailStream->refN = OpenMessDestFile(
                   mailboxNode, ((unsigned long *)(uids->data))[numUids], &spoolSpec);
+              g_strlcpy(imapStream->mailStream->refPath, spoolSpec,
+                        sizeof(imapStream->mailStream->refPath));
 
               // get the message
               if (imapStream->mailStream->refN > 0) {
@@ -2822,7 +2826,7 @@ short OpenMessDestFile(MailboxNodeHandle mailboxInfo, unsigned long uid,
         // Start writing at the beginning of
         // the file
         if ((err = ftruncate(ref, 0)) == 0)
-          err = lseek(ref, 0, SEEK_SET);
+          err = (lseek(ref, 0, SEEK_SET) < 0 ? EIO : 0);
       }
     }
   }
@@ -2878,8 +2882,8 @@ int UpdateIMAPTempFileIndex(IMAPStreamPtr imapStream, unsigned long uid,
   int err;
 
   /* Get path of the temp IMAP file */
-  if ((err = GetFileByRef(imapStream->mailStream->refN, &tempSpec)) != 0)
-    return err;
+  g_strlcpy(tempSpec, imapStream->mailStream->refPath, sizeof(tempSpec));
+  if (!tempSpec[0]) return EIO;
 
   /* Sidecar index file: same path with ".iind" appended */
   snprintf(idxPath, sizeof(idxPath), "%s.iind", tempSpec);
@@ -5937,7 +5941,7 @@ static char FileAppendDriverNext(STRING *s) {
     err = EIO;
   }
   if (err == 0) {
-    if (!(err = lseek(refN, msDataPtr->bytesRead, SEEK_SET))) {
+    if (!(err = (lseek(refN, msDataPtr->bytesRead, SEEK_SET) < 0 ? EIO : 0))) {
       err = file_read(refN, (long *)&nBytes, msDataPtr->buffer);
     }
 
@@ -7127,7 +7131,7 @@ unsigned long DoDownloadIMAPAttachments(FSSpecHandle attachments,
 
                 // truncate and seek to start
                 if ((err = ftruncate(ref, 0)) == 0)
-                  err = lseek(ref, 0, SEEK_SET);
+                  err = (lseek(ref, 0, SEEK_SET) < 0 ? EIO : 0);
 
                 // tell the imap stream where
                 // to put it

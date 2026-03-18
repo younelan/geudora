@@ -1499,7 +1499,7 @@ int FetchMessageTextLo(TransStream stream, long estSize, POPDPtr pdp,
 
   eof = FindTOCSpot(tocH, estSize);
 
-  Prr = lseek(tocH->refN, eof, SEEK_SET);
+  Prr = (lseek(tocH->refN, eof, SEEK_SET) < 0 ? EIO : 0);
   if (Prr) {
     FileSystemError(WRITE_MBOX, name, Prr);
     goto done;
@@ -2051,12 +2051,12 @@ int DupHeader(short refN, unsigned char *buff, long bSize, long offset,
   if (Prr = file_tell(refN, &currentOffset))
     return (FileSystemError(READ_MBOX, "", Prr));
   for (copied = 0; copied < headerSize; copied += readBytes) {
-    if (Prr = lseek(refN, offset + copied, SEEK_SET))
+    if (Prr = (lseek(refN, offset + copied, SEEK_SET) < 0 ? EIO : 0))
       return (FileSystemError(READ_MBOX, "", Prr));
     readBytes = bSize < headerSize - copied ? bSize : headerSize - copied;
     if (Prr = file_read(refN, &readBytes, buff))
       return (FileSystemError(READ_MBOX, "", Prr));
-    if (Prr = lseek(refN, currentOffset, SEEK_SET))
+    if (Prr = (lseek(refN, currentOffset, SEEK_SET) < 0 ? EIO : 0))
       return (FileSystemError(WRITE_MBOX, "", Prr));
     writeBytes = readBytes;
     if (Prr = FSZWrite(refN, &writeBytes, buff))
@@ -2794,7 +2794,7 @@ short SplitMessage(short refN, long hStart, long hEnd, long msgEnd) {
        * do we need to add an ending newline to the header?
        */
       if (headerNl) {
-        if (err = lseek(refN, tos[i] - headerNl, SEEK_SET)) {
+        if (err = (lseek(refN, tos[i] - headerNl, SEEK_SET) < 0 ? EIO : 0)) {
           FileSystemError(WRITE_MBOX, "", err);
           goto done;
         }
@@ -2810,7 +2810,7 @@ short SplitMessage(short refN, long hStart, long hEnd, long msgEnd) {
      * do we need to add an ending newline to the body?
      */
     if (!reals[i + 1]) {
-      if (err = lseek(refN, tos[i] + froms[i + 1] - froms[i], SEEK_SET)) {
+      if (err = (lseek(refN, tos[i] + froms[i + 1] - froms[i], SEEK_SET) < 0 ? EIO : 0)) {
         FileSystemError(WRITE_MBOX, "", err);
         goto done;
       }

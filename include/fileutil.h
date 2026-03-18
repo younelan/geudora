@@ -55,7 +55,7 @@ int MakeResFile(const char *name, const char *dir, long creator,
 // void free(void *h);
 int ExchangeAndDel(char *tmpSpec, char *spec);
 typedef struct {
-  FSSpec spec;
+  char path[PATH_MAX];
   bool isDir;
   bool isSymLink;
   long size;

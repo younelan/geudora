@@ -3063,7 +3063,7 @@ bool SaveFileFast(short which, bool saveChangeBits) {
     if (cleanStartOffset <= 0)
       cleanStartOffset = 1;
 
-    if (err = lseek(nickRefN, cleanStartOffset - 1, SEEK_SET))
+    if (err = (lseek(nickRefN, cleanStartOffset - 1, SEEK_SET) < 0 ? EIO : 0))
       goto done;
     file_tell(tempRefN, &bytes);
     bytesToShift = cleanStartOffset - bytes - 1;
@@ -3202,7 +3202,7 @@ bool SaveFileFast(short which, bool saveChangeBits) {
     }
 
     if (cleanStartOffset > 0) {
-      if (err = lseek(nickRefN, cleanStartOffset - 1, SEEK_SET))
+      if (err = (lseek(nickRefN, cleanStartOffset - 1, SEEK_SET) < 0 ? EIO : 0))
         goto done;
       file_tell(tempRefN, &bytes);
       bytesToShift = cleanStartOffset - bytes - 1;

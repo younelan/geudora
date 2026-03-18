@@ -592,7 +592,7 @@ int FetchAttribute(HeaderDHandle hdh, short attribute, char * value);
 void ExtractFetchFilename(MIMESHandle mimeSList,HeaderDHandle hdh, char * filename);
 void ExtractHDHFilename(MIMESHandle msh,HeaderDHandle hdh,char * suffix,char * fName);
 bool SetupDigest(MIMESHandle msh,HeaderDHandle hdh,short *refPtr);
-bool FinishDigest(short refN,short origRefN);
+bool FinishDigest(short refN, short origRefN, const char *path);
 int CanonNLWrite(short refN,long *size,char * buf);
 BoundaryType ReadTL(TransStream stream,short refN,MIMESHandle mimeSList,char *buf,long bSize,LineReader *lr,char * spec,uint32_t creator,uint32_t type);
 void NukeEnvelopes(char * buf,long *size);
@@ -1605,7 +1605,7 @@ BoundaryType ReadMulti(TransStream stream,short refN,MIMESHandle mimeSList,char 
 	}
 
 done:
-	if (isDigest) FinishDigest(refN,origRefN);
+	if (isDigest) FinishDigest(refN, origRefN, spec);
 	if (innerHDH) ZapHeaderDesc(innerHDH);
 	if (innerMSH) ZapMIMES(innerMSH);
 	if (AttFolderStack) StackPop(&CurrentAttFolderSpec,AttFolderStack);
@@ -1710,12 +1710,12 @@ bool SetupDigest(MIMESHandle msh,HeaderDHandle hdh,short *refPtr)
 /**********************************************************************
  * FinishDigest - clean up after writing a digest
  **********************************************************************/
-bool FinishDigest(short refN,short origRefN)
+bool FinishDigest(short refN, short origRefN, const char *path)
 {
-	FSSpec spec;
+	char spec[PATH_MAX];
 	int err;
-	
-	GetFileByRef(refN,&spec);
+
+	g_strlcpy(spec, path, sizeof(spec));
 	close(refN);
 	err = RecordAttachment(spec,NULL);
 	WriteAttachNote(origRefN);

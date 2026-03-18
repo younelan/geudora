@@ -394,16 +394,18 @@ typedef struct FSRef {
 #define WriteZero(ptr, len) memset(ptr, 0, len)
 #define Zero(v) memset(&(v), 0, sizeof(v))
 
-/* FS Structures */
+/* Portable file info structures.
+ * Field names kept compatible with legacy callers but backed by struct stat.
+ * fdType/fdCreator are vestigial (always 0 on POSIX).
+ * fdFlags bit 0xe = label color bits, used to mark unread mailboxes. */
+
 typedef struct {
-  char name[64];
-  uint32_t fdType;
-  uint32_t fdCreator;
-  uint16_t fdFlags;
-  struct {
-    short v, h;
-  } fdLocation;
-  short fdFldr;
+  char name[64];        /* basename for display */
+  uint32_t fdType;      /* Mac file type (vestigial, always 0) */
+  uint32_t fdCreator;   /* Mac creator code (vestigial, always 0) */
+  uint16_t fdFlags;     /* label bits: 0xe = color label */
+  struct { short v, h; } fdLocation; /* unused */
+  short fdFldr;         /* unused */
 } FInfo;
 
 typedef struct {
@@ -413,164 +415,44 @@ typedef struct {
   long fdPutAway;
 } FXInfo;
 
+#define ioDirMask 0x10  /* ioFlAttrib flag: entry is a directory */
+
 typedef struct {
-  void *ioCompletion;
-  unsigned char *ioNamePtr;
-  short ioVRefNum;
-  long ioDirID;
-  short ioFDirIndex;
-  int8_t ioFlAttrib;
-  short ioFlStBlk;
-  FInfo ioFlFndrInfo;
-  long ioFlCrDat;
-  long ioFlMdDat;
-  long ioFlBkDat;
-  long ioFlLgLen;
-  long ioFlPyLen;
-  long ioFlRLgLen;
-  long ioFlRPyLen;
-  int8_t ioACUser;
-  FXInfo ioFlXFndrInfo;
+  unsigned char *ioNamePtr;  /* pointer to filename (C string) */
+  long ioDirID;              /* parent dir (unused on POSIX, set to 0) */
+  short ioFDirIndex;         /* iteration index for catalog enumeration */
+  int8_t ioFlAttrib;         /* bit 4 (ioDirMask) = is directory */
+  FInfo ioFlFndrInfo;        /* type/creator/flags */
+  long ioFlCrDat;            /* creation time (st_ctime) */
+  long ioFlMdDat;            /* modification time (st_mtime) */
+  long ioFlLgLen;            /* data fork size (st_size) */
+  long ioFlRLgLen;           /* resource fork size (always 0) */
+  int8_t ioACUser;           /* unused */
+  FXInfo ioFlXFndrInfo;      /* extended finder info (unused) */
 } HFileInfo;
 
-typedef struct {
-  void *ioCompletion;
-  unsigned char *ioNamePtr;
-  short ioVRefNum;
-  long ioDirID;
-  unsigned char *ioNewName;
-  long ioNewDirID;
-  long ioCopyName;
-  short ioSourceVRefNum;
-  long ioSourceDirID;
-} HFileParam;
-
-typedef struct {
-  HFileInfo hFileInfo;
-} CopyParam;
-
-typedef struct {
-  void *ioCompletion;
-  unsigned char *ioNamePtr;
-  short ioVRefNum;
-  short ioRefNum;
-  short ioFCBIndx;
-  long ioFCBFlNm;
-  uint8_t ioFCBFlags;
-  long ioFCBStBlk;
-  long ioFCBEOF;
-  long ioFCBPLen;
-  long ioFCBRLen;
-  long ioFCBParID;
-#define ioFCBVRefNum ioVRefNum
-} FCBPBRec, *FCBPBPtr;
-
+/* Stack — used by Eudora's accumulator/stack data structure */
 typedef struct {
   long elSize;
   short elCount;
   short capacity;  /* max elements before realloc needed */
 } Stack, *StackPtr, *StackHandle;
 
+/* CInfoPBRec — portable file catalog info.
+ * On Mac this was a union of HFileInfo and DirInfo.
+ * On POSIX it just wraps HFileInfo (filled from struct stat). */
 typedef struct {
-  void *ioCompletion;
-  unsigned char *ioNamePtr;
-  short ioVRefNum;
-  short ioFCBRefNum; // Alias for ioRefNum if needed
-  short ioFCBIndx;
-} FCBInfoPBRec, *FCBInfoPBPtr;
-
-typedef struct {
-  void *ioCompletion;
-  unsigned char *ioNamePtr;
-  short ioVRefNum;
-  long ioDirID;
-  unsigned char *ioNewName;
-  long ioNewDirID;
-} CMovePBRec, *CMovePBPtr;
-
-typedef struct {
-  void *ioCompletion;
-  unsigned char *ioNamePtr;
-  short ioVRefNum;
-  long ioDestDirID;
-  unsigned char *ioDestNamePtr;
-  long ioSrcDirID;
-  unsigned char *ioSrcNamePtr;
-  long ioFileID;
-} FIDParam;
-
-typedef struct {
-  void *ioCompletion;
-  unsigned char *ioNamePtr;
-  short ioVRefNum;
-  long ioDrDirID;
-  short ioFDirIndex;
-  long ioDrParID;
-  long ioDrNmFls;
-} DirInfo;
-
-typedef struct {
-  short ioDTRefNum;
-  short ioIndex;
-  uint32_t ioFileCreator;
-  unsigned char *ioNamePtr;
-  int ioResult;
-  void *ioCompletion;
-  short ioVRefNum;
-  char *ioDTBuffer;
-  long ioDTReqCount;
-  long ioDirID;
-  long ioAPPLParID;
-} DTPBRec;
-
-#ifndef NAVIGATION_H
-/* CInfoPBRec: only define if Navigation.h hasn't provided it */
-typedef union {
   HFileInfo hFileInfo;
-  DirInfo dirInfo;
 } CInfoPBRec, *CInfoPBPtr;
-#endif
 
-typedef struct VolumeParam {
-  void *ioCompletion;
-  unsigned char *ioNamePtr;
-  short ioVRefNum;
-  short ioVolIndex;
-  long ioVFrBlk;
-  long ioVAlBlkSiz;
-} VolumeParam;
-
-typedef struct IOParam {
-  void *ioCompletion;
-  unsigned char *ioNamePtr;
-  short ioVRefNum;
-  short ioPermssn;
-  short ioRefNum;
-  void *ioMisc;
-  long ioReqCount;
-  long ioActCount;
-  short ioPosMode;
-  long ioPosOffset;
-  short ioVersNum;
-  void *ioBuffer;
-  int ioResult;
-} IOParam;
-
-typedef struct FileParam {
-  void *ioCompletion;
-  unsigned char *ioNamePtr;
-  short ioVRefNum;
-  long ioDirID;
-} FileParam;
-
-typedef union ParamBlockRec {
-  VolumeParam volumeParam;
-  IOParam ioParam;
-  FileParam fileParam;
-  HFileInfo hFileInfo;
-  FIDParam fidParam;
-  CopyParam copyParam;
-} ParamBlockRec, *ParmBlkPtr, HParamBlockRec, *HParmBlkPtr;
+/* Minimal stubs for Mac PB-style APIs still referenced by fileutil.c stubs.
+ * These are opaque — the stub functions ignore their contents. */
+typedef void *HParmBlkPtr;
+typedef void *CMovePBPtr;
+typedef void *FCBInfoPBPtr;
+typedef void *DTPBRec;
+typedef void *IOParam;
+typedef void *FileParam;
 
 /* Function Declarations (Implemented in fileutil.c or elsewhere) */
 
@@ -595,12 +477,12 @@ typedef struct GetVolParmsInfoBuffer {
 /* Mac FS API */
 short PBHGetVInfoSync(HParmBlkPtr pb);
 short PBGetCatInfoSync(void *pb);
-short PBHOpenSync(HParmBlkPtr pb);
-short PBHOpenRFSync(HParmBlkPtr pb);
-short PBAllocateSync(IOParam *pb);
-short PBFlushFileSync(ParamBlockRec *pb);
+short PBHOpenSync(void *pb);
+short PBHOpenRFSync(void *pb);
+short PBAllocateSync(void *pb);
+short PBFlushFileSync(void *pb);
 short PBGetCatInfo(CInfoPBPtr pb, bool async);
-short PBHGetVInfo(HParmBlkPtr pb, bool async);
+short PBHGetVInfo(void *pb, bool async);
 short FindFolder(short vRef, uint32_t type, bool create, int *foundVRef,
                  long *foundDirID);
 /* Path-based spec construction (replaces FSMakeFSSpec/SimpleMakeFSSpec) */

@@ -2087,16 +2087,7 @@ void MyUseResFile(short refN) {
   FSSpec oldSpec, newSpec;
   short oldRefN;
 
-  if (BUG8) {
-    oldRefN = 0;
-    if (oldRefN != refN) {
-      Zero(oldSpec);
-      Zero(newSpec);
-      GetFileByRef(refN, &newSpec);
-      GetFileByRef(oldRefN, &oldSpec);
-      Dprintf("UseResFile �%p� -> �%p�;g", spec_name(oldSpec), spec_name(newSpec));
-    }
-  }
+  /* Debug BUG8 resource file tracing removed — not portable */
   /* UseResFile removed */
 }
 
