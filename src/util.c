@@ -83,7 +83,7 @@ void *TempNewHandleGlue(long size, int *err);
 void QueueSound(char *name);
 void PlaySystemSound(char *name);
 void AddSoundsToMenuFrom(MenuHandle mh, short vRef, long dirID);
-int FindSystemSound(OSType disk, OSType folder, char *name, void *spec);
+int FindSystemSound(uint32_t disk, uint32_t folder, char *name, void *spec);
 
 //	Globals
 
@@ -174,7 +174,7 @@ void AddPResource(char * theData, int theLength, long theType, int theID,
 /************************************************************************
  * ZapResourceLo - get rid of a resource.
  ************************************************************************/
-int ZapResourceLo(OSType type, short id, bool one) { return resNotFound; }
+int ZapResourceLo(uint32_t type, short id, bool one) { return ENOENT; }
 
 /**********************************************************************
  * Atoi - replacement for standard C routine
@@ -199,9 +199,9 @@ long Atoi(char * s) {
 }
 
 /**********************************************************************
- * AToOSType - ASCII to OSType
+ * AToOSType - ASCII to uint32_t
  **********************************************************************/
-OSType AToOSType(char * s) {
+uint32_t AToOSType(char * s) {
   long n = 0;
   short i;
 
@@ -215,7 +215,7 @@ OSType AToOSType(char * s) {
 /**********************************************************************
  * ResourceCpy - copy a resource from one resource file to the other
  **********************************************************************/
-int ResourceCpy(short toRef, short fromRef, long type, int id) { return noErr; }
+int ResourceCpy(short toRef, short fromRef, long type, int id) { return 0; }
 
 /**********************************************************************
  * DrawTruncString - truncate and draw a string; restores string when done
@@ -452,7 +452,7 @@ char * MyGetItem(MenuHandle menu, short item, char * name) {
  ************************************************************************/
 int CopyMenuItem(MenuHandle fromMenu, short fromItem, MenuHandle toMenu,
                    short toItem) {
-  return noErr;
+  return 0;
 }
 
 /**********************************************************************
@@ -473,7 +473,7 @@ extern short FindItemByName(MenuHandle menu, char * name);
  ************************************************************************/
 short FindMenuByName(char * name) { return 0; }
 
-short MyUniqueID(ResType type) { return 0; }
+short MyUniqueID(uint32_t type) { return 0; }
 
 /**********************************************************************
  * OnBatteries - are we running on batteries?
@@ -562,17 +562,17 @@ bool HasDragManager(void) {
 
 bool MyWaitMouseMoved(Point pt, bool honorControl) { return false; }
 
-bool MyDragHas(void *drag, short item, OSType type) { return false; }
+bool MyDragHas(void *drag, short item, uint32_t type) { return false; }
 
-int MyGetDragItemData(void *drag, short item, OSType type, void **data) {
+int MyGetDragItemData(void *drag, short item, uint32_t type, void **data) {
   if (data)
     *data = NULL;
-  return noErr;
+  return 0;
 }
 
-int MySetDragItemFlavorData(void *drag, short item, OSType type, void *data,
+int MySetDragItemFlavorData(void *drag, short item, uint32_t type, void *data,
                               long len) {
-  return noErr;
+  return 0;
 }
 
 short DragOrMods(void *drag) { return 0; }
@@ -581,7 +581,7 @@ short MyCountDragItems(void *drag) { return 0; }
 
 short MyCountDragItemFlavors(void *drag, short item) { return 0; }
 
-OSType MyGetDragItemFlavorType(void *drag, short item, short flavor) {
+uint32_t MyGetDragItemFlavorType(void *drag, short item, short flavor) {
   return 0;
 }
 
@@ -608,8 +608,8 @@ void PlaySystemSound(char *name) {}
 /************************************************************************
  * FindSystemSound - look in a particular location for a sound
  ************************************************************************/
-int FindSystemSound(OSType disk, OSType folder, char *name, void *spec) {
-  return fnfErr;
+int FindSystemSound(uint32_t disk, uint32_t folder, char *name, void *spec) {
+  return ENOENT;
 }
 
 void PlaySoundIdle(void) {}
@@ -648,7 +648,7 @@ long AFPopUpMenuSelect(MenuHandle mh, short top, short left, short item) {
  * RecountStrn - make sure an STR# resource really has the right number
  * of strings
  *
- * returns True if the resource had to be changed
+ * returns true if the resource had to be changed
  ************************************************************************/
 bool RecountStrn(short resId) {
   /* GTK port: STR# resources not used; strings come from string_table_lookup */
@@ -707,7 +707,7 @@ long ZoneSecs(void) {
 /**********************************************************************
  * AddMyResource - add resource, but set Eudora Settings, too
  **********************************************************************/
-void AddMyResource(void *h, OSType type, short id, ConstStr255Param name) {
+void AddMyResource(void *h, uint32_t type, short id, ConstStr255Param name) {
   /* UseResFile/AddResource removed — resource fork not used */
 }
 
@@ -781,7 +781,7 @@ bool IsEnabled(short menu, short item) {
   MenuHandle mh = GetMHandle(menu);
 
   if (!mh)
-    return (False);
+    return (false);
   if (!IsMenuItemEnabled(mh, 0))
     return false;
   return IsMenuItemEnabled(mh, item);
@@ -1020,18 +1020,18 @@ long GetRLong(int index) {
 }
 
 /**********************************************************************
- * Get an OSType out of a resource file
+ * Get an uint32_t out of a resource file
  **********************************************************************/
-OSType GetROSType(int index) {
+uint32_t GetROSType(int index) {
   unsigned char scratch[256];
   long len;
-  OSType theType;
+  uint32_t theType;
   char *src;
   char *dst;
   long i;
 
   if (GetRString(scratch, index) == NULL)
-    return ((OSType)0);
+    return ((uint32_t)0);
   len = strlen((const char *)scratch);
   if (len > 4)
     len = 4;
@@ -1095,7 +1095,7 @@ int AddLf(void *text) {
       *--end = *spot;
     }
   }
-  return (noErr);
+  return (0);
 }
 
 /************************************************************************
@@ -1145,7 +1145,7 @@ int HandleLinebreaks(void *text, long ***breaks, short inWidth) {
   if ((*breaks = (long **)malloc(0)) == NULL)
     return (0);
   if (!text || !(len = strlen((char *)text)))
-    return (noErr);
+    return (0);
 
   ptr = text;
   while (len) {
@@ -1162,7 +1162,7 @@ int HandleLinebreaks(void *text, long ***breaks, short inWidth) {
       return (err);
   }
 
-  return (noErr);
+  return (0);
 }
 
 /************************************************************************
@@ -1211,11 +1211,11 @@ int StackInit(long size, StackHandle *stack) {
   short initCap = 20;
   *stack = (StackHandle)calloc(1, sizeof(StackType_Util) + initCap * size);
   if (!*stack)
-    return memFullErr;
+    return ENOMEM;
   (*stack)->elSize = size;
   (*stack)->elCount = 0;
   (*stack)->capacity = initCap;
-  return (noErr);
+  return (0);
 }
 
 /**********************************************************************
@@ -1223,21 +1223,21 @@ int StackInit(long size, StackHandle *stack) {
  **********************************************************************/
 int StackPush(void *what, StackHandle *pStack) {
   if (!pStack || !*pStack)
-    return fnfErr;
+    return ENOENT;
   StackHandle stack = *pStack;
   if (stack->elCount >= stack->capacity) {
     short newCap = stack->capacity + 20;
     size_t newSize = sizeof(StackType_Util) + newCap * stack->elSize;
     StackHandle grown = (StackHandle)realloc(stack, newSize);
     if (!grown)
-      return memFullErr;
+      return ENOMEM;
     grown->capacity = newCap;
     *pStack = grown;
     stack = grown;
   }
   memmove(StackSpot(stack, stack->elCount), what, stack->elSize);
   stack->elCount++;
-  return (noErr);
+  return (0);
 }
 
 /**********************************************************************
@@ -1245,14 +1245,14 @@ int StackPush(void *what, StackHandle *pStack) {
  **********************************************************************/
 int StackQueue(void *what, StackHandle *pStack) {
   if (!pStack || !*pStack)
-    return fnfErr;
+    return ENOENT;
   StackHandle stack = *pStack;
   if (stack->elCount >= stack->capacity) {
     short newCap = stack->capacity + 20;
     size_t newSize = sizeof(StackType_Util) + newCap * stack->elSize;
     StackHandle grown = (StackHandle)realloc(stack, newSize);
     if (!grown)
-      return memFullErr;
+      return ENOMEM;
     grown->capacity = newCap;
     *pStack = grown;
     stack = grown;
@@ -1261,7 +1261,7 @@ int StackQueue(void *what, StackHandle *pStack) {
       stack->elCount * stack->elSize);
   memmove(StackSpot(stack, 0), what, stack->elSize);
   stack->elCount++;
-  return (noErr);
+  return (0);
 }
 
 /**********************************************************************
@@ -1269,11 +1269,11 @@ int StackQueue(void *what, StackHandle *pStack) {
  **********************************************************************/
 int StackPop(void *into, StackHandle stack) {
   if (!stack || !stack->elCount)
-    return (fnfErr);
+    return (ENOENT);
   stack->elCount--;
   if (into)
     memmove(into, StackSpot(stack, stack->elCount), stack->elSize);
-  return (noErr);
+  return (0);
 }
 
 /**********************************************************************
@@ -1281,10 +1281,10 @@ int StackPop(void *into, StackHandle stack) {
  **********************************************************************/
 int StackTop(void *into, StackHandle stack) {
   if (!stack || !stack->elCount)
-    return (fnfErr);
+    return (ENOENT);
   if (into)
     memmove(into, StackSpot(stack, stack->elCount - 1), stack->elSize);
-  return (noErr);
+  return (0);
 }
 
 /**********************************************************************
@@ -1292,10 +1292,10 @@ int StackTop(void *into, StackHandle stack) {
  **********************************************************************/
 int StackItem(void *into, short item, StackHandle stack) {
   if (!stack || !stack->elCount || item >= stack->elCount)
-    return (fnfErr);
+    return (ENOENT);
   if (into)
     memmove(into, StackSpot(stack, item), stack->elSize);
-  return (noErr);
+  return (0);
 }
 
 /**********************************************************************
@@ -1373,7 +1373,7 @@ int AAAddItem(AAHandle aa, bool replace, char *key, char * data) {
   g_strlcpy((char *)(lwrKey), (char *)(key), sizeof(lwrKey));
   MyLowerStr(lwrKey);
   memmove(AAKeySpot(aa, spot), lwrKey, aa->keySize);
-  return (noErr);
+  return (0);
 }
 
 /************************************************************************
@@ -1398,7 +1398,7 @@ int AADeleteKey(AAHandle aa, char *key) {
       memmove(AAKeySpot(aa, spot), AAKeySpot(aa, spot + 1),
           AAElemSize(aa) * (count - spot));
     SetHandleBig_(aa, malloc_size(aa) - AAElemSize(aa));
-    return (noErr);
+    return (0);
   } else
     return (1); /* not found */
 }
@@ -1410,7 +1410,7 @@ int AAFetchData(AAHandle aa, char *key, char * data) {
   short spot = AAFindKey(aa, key);
   if (spot > 0) {
     memmove(data, AADataSpot(aa, spot), aa->dataSize);
-    return (noErr);
+    return (0);
   }
   return (1); /* not found */
 }
@@ -1429,7 +1429,7 @@ int AAFetchResData(AAHandle aa, short keyId, char * data) {
  ************************************************************************/
 int AAFetchIndData(AAHandle aa, short index, char * data) {
   memmove(data, AADataSpot(aa, index), aa->dataSize);
-  return (noErr);
+  return (0);
 }
 
 /************************************************************************
@@ -1437,7 +1437,7 @@ int AAFetchIndData(AAHandle aa, short index, char * data) {
  ************************************************************************/
 int AAFetchIndKey(AAHandle aa, short index, char *key) {
   memmove(key, AAKeySpot(aa, index), aa->keySize);
-  return (noErr);
+  return (0);
 }
 
 /************************************************************************
@@ -1492,7 +1492,7 @@ int AccuInit(AccuPtr a) {
   a->offset = 0;
   a->size = 1 K;
   a->data = malloc(a->size);
-  return (a->err = a->data ? noErr : memFullErr);
+  return (a->err = a->data ? 0 : ENOMEM);
 }
 
 /**********************************************************************
@@ -1511,8 +1511,8 @@ int AccuWrite(AccuPtr a, short refN) {
   int err;
 
   if (!count)
-    return (noErr);
-  err = AWrite(refN, &count, a->data);
+    return (0);
+  err = file_write(refN, &count, a->data);
   return (err);
 }
 
@@ -1523,7 +1523,7 @@ int AccuWrite(AccuPtr a, short refN) {
 long AccuFTell(AccuPtr a, short refN) {
   long spot;
 
-  GetFPos(refN, &spot);
+  file_tell(refN, &spot);
   return (spot + a->offset);
 }
 
@@ -1576,7 +1576,7 @@ int AccuAddPtrB64(AccuPtr a, void *bytes, long len) {
   int err;
 
   if (!encoded)
-    return memFullErr;
+    return ENOMEM;
 
   Encode64DataPtr(encoded, &newLen, bytes, len);
   ASSERT(newLen <= len * 4 / 3 + 4);
@@ -1620,12 +1620,12 @@ int AccuAddPtr(AccuPtr a, void *bytes, long len) {
     a->size += len + 4 K;
     _tmp = realloc(a->data, a->size);
     if (!_tmp)
-      return (a->err = memFullErr);
+      return (a->err = ENOMEM);
     a->data = _tmp;
   }
   memmove(a->data + a->offset, bytes, len);
   a->offset += len;
-  return (noErr);
+  return (0);
 }
 
 /**********************************************************************
@@ -1650,7 +1650,7 @@ int AccuAddSortedLong(AccuPtr a, long addVal) {
       // if (newSpot>=start & *newSpot==addVal)
       // {
       // 	 a->offset -= sizeof(addVal);
-      //	 return noErr;
+      //	 return 0;
       // }
 
       // newSpot now points one BEFORE the proper spot; increment
@@ -1689,7 +1689,7 @@ int AccuAddHandleToPtr(AccuPtr a, char *data, long size) {
     err = AccuAddPtr(a, (void *)&buf, sizeof(buf));
     free(buf);
   } else
-    err = memFullErr;
+    err = ENOMEM;
   return (err);
 }
 
@@ -1717,7 +1717,7 @@ int AccuAddHandle(AccuPtr a, void *data) {
 
   ASSERT(data);
   if (!data)
-    return noErr;
+    return 0;
 
   len = malloc_size(data);
 
@@ -1726,12 +1726,12 @@ int AccuAddHandle(AccuPtr a, void *data) {
     a->size += len + 4 K;
     _tmp = realloc(a->data, a->size);
     if (!_tmp)
-      return (a->err = memFullErr);
+      return (a->err = ENOMEM);
     a->data = _tmp;
   }
   memmove(a->data + a->offset, data, len);
   a->offset += len;
-  return (noErr);
+  return (0);
 }
 
 /**********************************************************************
@@ -1754,12 +1754,12 @@ int AccuAddFromHandle(AccuPtr a, void *data, long offset, long len) {
     a->size += len + 4 K;
     _tmp = realloc(a->data, a->size);
     if (!_tmp)
-      return (a->err = memFullErr);
+      return (a->err = ENOMEM);
     a->data = _tmp;
   }
   memmove(a->data + a->offset, (char *)data + offset, len);
   a->offset += len;
-  return (noErr);
+  return (0);
 }
 
 /************************************************************************
@@ -1812,10 +1812,10 @@ short DecodeB64Accu(AccuPtr a, bool isText) {
   long result;
 
   if (!data)
-    return memFullErr;
+    return ENOMEM;
   if (!a->offset) {
     free(data);
-    return noErr;
+    return 0;
   }
 
   Zero(d64);
@@ -1854,13 +1854,13 @@ int AccuInsertPtr(AccuPtr a, char *bytes, long len, long offset) {
     a->size += len + 4 K;
     _tmp = realloc(a->data, a->size);
     if (!_tmp)
-      return (a->err = memFullErr);
+      return (a->err = ENOMEM);
     a->data = _tmp;
   }
   memmove(a->data + offset + len, a->data + offset, a->offset - offset);
   memmove(a->data + offset, bytes, len);
   a->offset += len;
-  return (noErr);
+  return (0);
 }
 
 /**********************************************************************
@@ -1875,7 +1875,7 @@ int AccuStrip(AccuPtr a, long num)
     return (theError);
 
   a->offset = a->offset > num ? a->offset - num : 0;
-  return (noErr);
+  return (0);
 }
 
 /************************************************************************
@@ -1929,7 +1929,7 @@ int Hex2Bytes(char * hex, long size, char * bytes) {
     *bytes++ = (hi << 4) | lo;
     size -= 2;
   }
-  return (noErr);
+  return (0);
 }
 
 /************************************************************************
@@ -1957,12 +1957,12 @@ bool SafeToAllocate(long size) {
   }
   allocated += size;
   if (LastContigSpace & size + 1 K K > LastContigSpace)
-    return (False);
+    return (false);
   if (!MemLastFailed)
-    return (True);
+    return (true);
   if (size > MemLastFailed)
-    return (False);
-  return (True);
+    return (false);
+  return (true);
 }
 
 /************************************************************************
@@ -2078,7 +2078,7 @@ bool EventPending(void) {
   static gint64 ticks;
 
   if (g_get_monotonic_time() - ticks <= 133333)
-    return (False);
+    return (false);
   else {
     ticks = g_get_monotonic_time();
     return (OSEventAvail(mUpMask | mDownMask | keyDownMask | updateMask |
@@ -2108,8 +2108,8 @@ void MyUseResFile(short refN) {
 /************************************************************************
  * RESCHK - verify that a resource is a resource
  ************************************************************************/
-void RESCHK(OSType type, short resId);
-void RESCHK(OSType type, short resId) {
+void RESCHK(uint32_t type, short resId);
+void RESCHK(uint32_t type, short resId) {
   void *resH = GetResource_(type, resId);
   short flags;
 
@@ -2127,7 +2127,7 @@ void RESCHK(OSType type, short resId) {
 bool IsVICOM(void) {
   long interfaceVICOM = 0;
 
-  if (0 == noErr)
+  if (0 == 0)
     return (interfaceVICOM != 0);
   else
     return (false);
@@ -2140,7 +2140,7 @@ bool IsVICOM(void) {
 #undef RemoveResource
 int MyRemoveResource(void *h) {
   short useFile, saveFile = 0;
-  int err = noErr;
+  int err = 0;
 
   if (h) {
     useFile = 0;
@@ -2208,7 +2208,7 @@ short TimeCompare(DateTimeRec *date1, DateTimeRec *date2) {
 //	(ThereIsColor & \
 //	 (((GrafPtr)(win))->portBits.rowBytes & 0xC000) & \
 //   ((**((CGrafPtr)(win))->portPixMap).pixelSize > 1))
-Boolean IsColorWin(WindowPtr winWP)
+bool IsColorWin(WindowPtr winWP)
 
 {
   return gdk_display_get_default() != NULL;

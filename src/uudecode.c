@@ -157,7 +157,7 @@ bool ConvertUUSingle(short refN,char * buf,long *size,POPLineType lineType,long 
 	if (!UUG)
 	{
 		BeginAbomination("",hdh);
-		if (!UUG) return(False);
+		if (!UUG) return(false);
 	}
 	
 	switch(State)
@@ -166,7 +166,7 @@ bool ConvertUUSingle(short refN,char * buf,long *size,POPLineType lineType,long 
 			if (lineType==plComplete && IsAbLine(buf,*size,hdh))
 			{
 				State = NotAb;
-				GetFPos(refN,&offset);  /* save start */
+				file_tell(refN,&offset);  /* save start */
 				MailboxRefN = refN;
 				OrigOffset = offset;
 			}
@@ -227,8 +227,8 @@ bool ConvertSingle(short refN,char * buf,long size)
 {
 	char *spot, *end;
 	
-	if (!UUG) return(False);
-	if (!size) return(False);
+	if (!UUG) return(false);
+	if (!size) return(false);
 	
 	switch(State)
 	{
@@ -265,15 +265,15 @@ bool IsAbLine(char * text, long size, HeaderDHandle hdh)
 	char * permSpot;
 	
 	namePtr = name;
-	if (size<11) return(False);
-	if (strncmp(text,"begin ",6)) return(False);
+	if (size<11) return(false);
+	if (strncmp(text,"begin ",6)) return(false);
 	permSpot = text + 6;
 	while (*permSpot==' ') permSpot++;
 	spot = permSpot;
 	while (*spot>='0' && *spot<='7') spot++;
-	if (*spot!=' ' || spot-permSpot > 5 || spot-permSpot<3) return(False);
-	if (spot[1]=='\015') return(False);
-	if( !BeginAbomination("",hdh) ) return(False);
+	if (*spot!=' ' || spot-permSpot > 5 || spot-permSpot<3) return(false);
+	if (spot[1]=='\015') return(false);
+	if( !BeginAbomination("",hdh) ) return(false);
 	spot++; /* skip the space */
 	while( (*spot != '\015') && (i < 63) ){
 				*namePtr++ = *spot++;
@@ -282,7 +282,7 @@ bool IsAbLine(char * text, long size, HeaderDHandle hdh)
 	if( i>27 ) i = 27;
 	name[i] = '\0';
 	g_strlcpy((char *)(Name), (char *)(name), sizeof(Name));
-	return(True);
+	return(true);
 }
 
 bool BeginAbomination( char *name, HeaderDHandle hdh)
@@ -308,20 +308,20 @@ short SaveAbomination(char * text, long size)
 	{
 		if (UUG)
 		{
-			if (State==AbJustData) BadBinHex = True;
+			if (State==AbJustData) BadBinHex = true;
 			else if (State!=AbDone)
 			{
 				if (State > AbHeader) AbNextState();
-				if (State!=AbDone && State!=AbExcess) BadBinHex = True;
+				if (State!=AbDone && State!=AbExcess) BadBinHex = true;
 			}
-			if (AbClose()) BadBinHex = True;
+			if (AbClose()) BadBinHex = true;
 			if (Spec[0] && CommandPeriod)
 				{unlink(UUG->spec);ASSERT(0);}
 			else if (Spec[0] && HasDates)
 				AbSetDates();
 			if (Buffer) free(Buffer);
 			free(UUG);
-			PopProgress(False);
+			PopProgress(false);
 		}
 		return(AbDone);
 	}
@@ -353,7 +353,7 @@ short ClearAbomination(void)
 short UULine(char * text, long size)
 {
 	short length;
-	bool result=True;
+	bool result=true;
 	
 	/*
 	 * check for end line
@@ -367,7 +367,7 @@ short UULine(char * text, long size)
 			{
 				WarnUser(BINHEX_SHORT,0);
 				ClearAbomination();
-				BadBinHex = True;
+				BadBinHex = true;
 				return(AbDone);
 			}
 		}
@@ -381,7 +381,7 @@ short UULine(char * text, long size)
 	{
 		WarnUser(BINHEX_BADCHAR,*text);
 		ClearAbomination();
-		BadBinHex = True;
+		BadBinHex = true;
 		return(AbDone);
 	}
 	
@@ -394,7 +394,7 @@ short UULine(char * text, long size)
 	{
 		WarnUser(UU_BAD_LENGTH,(length+2)/3-((size*3)/4)/3);
 		ClearAbomination();
-		BadBinHex = True;
+		BadBinHex = true;
 		return(AbDone);
 	}
 	
@@ -420,7 +420,7 @@ short UULine(char * text, long size)
 		{
 			WarnUser(BINHEX_BADCHAR,0);
 			ClearAbomination();
-			BadBinHex = True;
+			BadBinHex = true;
 			return(AbDone);
 		}
 		if (!(result=UUData(0xff & (UU(text[0])<<2 | UU(text[1])>>4)))) break;
@@ -441,9 +441,9 @@ bool IsAppleSomething(char * text,long size)
 	long magic;
 	long mSize = sizeof(long);
 	
-	if (UUDecodeLine(text,size,(void*)&magic,&mSize)) return(True);	/* let applesingle report errors */
-	if (magic==SINGLE_MAGIC  || magic==DOUBLE_MAGIC) return(True);
-	return(False);
+	if (UUDecodeLine(text,size,(void*)&magic,&mSize)) return(true);	/* let applesingle report errors */
+	if (magic==SINGLE_MAGIC  || magic==DOUBLE_MAGIC) return(true);
+	return(false);
 }
 
 /************************************************************************
@@ -461,10 +461,10 @@ bool JustDataWanna(MIMEMapPtr hintMM)
 	if (!hintMM) FindMIMEMapPtr((unsigned char *)"?",(unsigned char *)"?",spec_name(spec),&mm);
 	else mm = *hintMM;
 	
-	if (AutoWantTheFile(&spec,False,Hdh ? Hdh->relatedPart:false)/*|| WantTheFile(&spec)*/)
+	if (AutoWantTheFile(&spec,false,Hdh ? Hdh->relatedPart:false)/*|| WantTheFile(&spec)*/)
 	{
-		{ int _fd = open(spec, O_CREAT|O_EXCL|O_WRONLY, 0666); if (_fd >= 0) close(_fd); err = (_fd < 0 && errno != EEXIST) ? ioErr : 0; }
-		if (err==dupFNErr || err==0)
+		{ int _fd = open(spec, O_CREAT|O_EXCL|O_WRONLY, 0666); if (_fd >= 0) close(_fd); err = (_fd < 0 && errno != EEXIST) ? EIO : 0; }
+		if (err==EEXIST || err==0)
 		{
 			MyFSpGetFInfo(&spec, NULL, &info);
 			info.fdType = mm.type;
@@ -474,16 +474,16 @@ bool JustDataWanna(MIMEMapPtr hintMM)
 			err = 0;
 		}
 		g_strlcpy(Spec, spec, sizeof(Spec));
-		if (err) {PopProgress(False); FileSystemError(BINHEX_CREATE,spec_name(spec),err); return(False);}
-		if (err = AbOpen()) return(False);
+		if (err) {PopProgress(false); FileSystemError(BINHEX_CREATE,spec_name(spec),err); return(false);}
+		if (err = AbOpen()) return(false);
 		State = AbJustData;
 		IsText = (mm.flags & mmIsText)!=0;
 		err = RecordAttachment(spec,Hdh);
 		g_strlcpy(Spec, spec, sizeof(Spec));	// RecordAttachment may have changed the name....
 		if (err) ClearAbomination();
-		return(True);
+		return(true);
 	}
-	return(False);
+	return(false);
 }
 
 /************************************************************************
@@ -536,14 +536,14 @@ int UUDecodeLine(char * encoded,long size,char * decoded,long *binSize)
 	if ((len=UURightLength(encoded,size))<0)
 	{
 		WarnUser(UU_BAD_LENGTH,(len+2)/3-((size*3)/4)/3);
-		BadBinHex = True;
+		BadBinHex = true;
 		return(1);
 	}
 	
 	/*
 	 * empty lines mean nothing
 	 */
-	if (len==0) return(noErr);
+	if (len==0) return(0);
 	
 	if (!IsText)
 	{
@@ -565,7 +565,7 @@ int UUDecodeLine(char * encoded,long size,char * decoded,long *binSize)
 			{																																				\
 				if (WasCR) spot--;		/* turn CRLF into just CR */										\
 				else spot[-1] = '\015';	/* turn bare LF (like from UNIX) into CR */			\
-				WasCR = False;																												\
+				WasCR = false;																												\
 			}																																				\
 			else																																		\
 				WasCR = spot[-1]=='\015';																								\
@@ -582,7 +582,7 @@ int UUDecodeLine(char * encoded,long size,char * decoded,long *binSize)
 		}
 	}
 	*binSize = spot-decoded;
-	return(noErr);
+	return(0);
 }
 
 /************************************************************************
@@ -604,7 +604,7 @@ long UURightLength(char * text,long size)
  ************************************************************************/
 bool UUData(uShort byte)
 {
-	bool result=True;
+	bool result=true;
 	
 	Offset++;
 	switch (State)
@@ -618,19 +618,19 @@ bool UUData(uShort byte)
 														Header.magic != DOUBLE_MAGIC ) {
 																WarnUser(UU_BAD_VERSION,Header.magic);
 																ClearAbomination();
-																BadBinHex = True;
+																BadBinHex = true;
 																return(false);
 												}
 												if( (Header.version != OLD_VERSION) && (Header.version != NEW_VERSION) ) {
 																WarnUser(UU_BAD_VERSION,Header.version);
 																ClearAbomination();
-																BadBinHex = True;
+																BadBinHex = true;
 																return(false);
 												}
 												if( (Header.mapCount<1) || (Header.mapCount>9) ) {
 																WarnUser(UU_INVALID_MAP,Header.mapCount);
 																ClearAbomination();
-																BadBinHex = True;
+																BadBinHex = true;
 																return(false);
 												}
 								}
@@ -668,10 +668,10 @@ bool UUData(uShort byte)
 										if (result) {result=UUData(byte);}
 						}
 						else if (!RefN && AbOpen())
-										result = False;
+										result = false;
 						else {
 										Buffer[BSpot++] = byte;
-										if (BSpot>=BSize && AbWriteBuffer()) result=False;
+										if (BSpot>=BSize && AbWriteBuffer()) result=false;
 						}
 						break;
 						
@@ -686,7 +686,7 @@ bool UUData(uShort byte)
 						break;
 						
 		default:
-			result = True;	/* sorry, invalid state is not meaningful -- AppleSingle files can be padded to any length */
+			result = true;	/* sorry, invalid state is not meaningful -- AppleSingle files can be padded to any length */
 			break;
 	}
 	return(result); 		
@@ -721,27 +721,27 @@ bool AbTempName( void )
 	g_strlcpy(spec, Spec, sizeof(spec));
 	
 	if (!*((char*)spec_name(spec))) GetRString(spec_name(spec),SINGLE_TEMP);
-	if (AutoWantTheFile(&spec,False,Hdh->relatedPart)/*|| WantTheFile(&spec)*/)
+	if (AutoWantTheFile(&spec,false,Hdh->relatedPart)/*|| WantTheFile(&spec)*/)
 	{
 		g_strlcpy(Spec, spec, sizeof(Spec));
 		g_strlcpy((char *)(TmpName), (char *)(spec_name(Spec)), sizeof(TmpName));
-		{ int _fd = open(spec, O_CREAT|O_EXCL|O_WRONLY, 0666); if (_fd >= 0) close(_fd); err = (_fd < 0 && errno != EEXIST) ? ioErr : 0; }
-		if (err && err != dupFNErr)
+		{ int _fd = open(spec, O_CREAT|O_EXCL|O_WRONLY, 0666); if (_fd >= 0) close(_fd); err = (_fd < 0 && errno != EEXIST) ? EIO : 0; }
+		if (err && err != EEXIST)
 		{
 			FileSystemError(BINHEX_CREATE,spec_name(spec),err);
 			(void) ClearAbomination();
-			return(False);
-		} else err = noErr;
+			return(false);
+		} else err = 0;
 				AbNextState();
 		BSpot = 0;
 	}
 	else
 	{
 		State = AbDone;
-		return(False);
+		return(false);
 	}
 	
-	return(True);
+	return(true);
 }
 
 
@@ -754,7 +754,7 @@ bool AbNameStuff(uShort byte)
 	// be careful about long filenames here
 	if (BSpot<255) Name[++BSpot] = byte;
 	
-	if (BSpot<CurrMap.length) return(True);
+	if (BSpot<CurrMap.length) return(true);
 				if (CurrMap.length > 255){ /* Trim name so number fits! */
 								*Name = 255;
 				} else {
@@ -773,8 +773,8 @@ bool AbNameStuff(uShort byte)
 					// the proper folder to put the file in.
 					g_strlcpy((char*)(spec_name(spec)), (char *)(Name), PATH_MAX);
 					*((char*)spec_name(spec)) = MIN(*((char*)spec_name(spec)),27);
-					AutoWantTheFile(&spec,False,Hdh->relatedPart);
-					{ int _fd = open(spec, O_CREAT|O_EXCL|O_WRONLY, 0666); if (_fd >= 0) { close(_fd); err = noErr; } else { err = (errno != EEXIST) ? ioErr : noErr; } }
+					AutoWantTheFile(&spec,false,Hdh->relatedPart);
+					{ int _fd = open(spec, O_CREAT|O_EXCL|O_WRONLY, 0666); if (_fd >= 0) { close(_fd); err = 0; } else { err = (errno != EEXIST) ? EIO : 0; } }
 										
 					// If the name was very long, rename it to the proper name here
 					if (!err && *Name>27)
@@ -790,7 +790,7 @@ bool AbNameStuff(uShort byte)
 					{
 						FileSystemError(BINHEX_CREATE,spec_name(spec),err);
 						(void) ClearAbomination();
-						return(False);
+						return(false);
 					}
 					
 					// Now, copy the stuff we used back into the globals
@@ -840,7 +840,7 @@ bool AbNameStuff(uShort byte)
 						NoteAttached = true;
 		}
 	}
-	return(True);
+	return(true);
 }
 
 bool AbSetFinfo(uShort byte)
@@ -856,19 +856,19 @@ bool AbSetFinfo(uShort byte)
 								} else if (BSpot<sizeof(FInfo)+sizeof(FXInfo)) {
 												XInfoData[BSpot++ - sizeof(FInfo)] = byte;
 								}
-								if (BSpot<CurrMap.length) return(True);
+								if (BSpot<CurrMap.length) return(true);
 								SeenFinfo = true;
 				}
 				info = Info;
 				fxInfo = XInfo;
 				SafeInfo(&info,&fxInfo);
 				// FSpSetFInfo and FSpSetFXInfo are no-op
-				err = noErr;
+				err = 0;
 				if (err)
 				{
 					FileSystemError(BINHEX_OPEN,spec_name(spec),err);
 					(void) ClearAbomination();
-					return(False);
+					return(false);
 				}
 				// FSpSetFXInfo(&spec,&fxInfo); // No-op
 				if( SeenName && SeenFinfo && !NoteAttached){
@@ -879,7 +879,7 @@ bool AbSetFinfo(uShort byte)
 				}
 				BSpot = 0;
 				AbNextState();
-				return(True);
+				return(true);
 }
 
 #define SLOPPY_MILLENIUM 3029529600
@@ -896,21 +896,21 @@ bool AbSaveFDates(uShort byte)
 	{
 		BSpot++;
 	}
-	if (BSpot<CurrMap.length) return(True);
+	if (BSpot<CurrMap.length) return(true);
 	
-	HasDates = True;
+	HasDates = true;
 	for (i=0;i<sizeof(Dates)/sizeof(long);i++)
 		Dates[i] += SLOPPY_MILLENIUM;
 	BSpot = 0;
 	AbNextState();
-	return(True);
+	return(true);
 }
 
 int AbSetDates(void)
 {
 	FSSpec spec; g_strlcpy(spec, Spec, sizeof(spec));
 	struct stat st;
-	int err = noErr;
+	int err = 0;
 	unsigned long tooEarly = (unsigned long)GetRLong(TOO_EARLY_FILE);
 	const char *filePath = spec[0] ? spec : spec_name(spec);
 
@@ -923,10 +923,10 @@ int AbSetDates(void)
 		times[1].tv_sec = modDate;       /* set modification time */
 		times[1].tv_usec = 0;
 		if (utimes(filePath, times) != 0)
-			err = ioErr;
+			err = EIO;
 	}
 	else
-		err = fnfErr;
+		err = ENOENT;
 	return err;
 }
 
@@ -949,10 +949,10 @@ short AbOpen(void)
 	BSize = malloc_size(Buffer);
 	if (State == AbResFork) {
 		refN = -1; // No resource fork
-		err = noErr;
+		err = 0;
 	} else {
 		refN = open(spec, O_RDWR);
-		err = (refN >= 0) ? noErr : ioErr;
+		err = (refN >= 0) ? 0 : EIO;
 	}
 	if (err)
 		FileSystemError(BINHEX_OPEN,spec_name(spec),err);
@@ -970,7 +970,7 @@ short AbClose(void)
 	short wrErr=0;
 	short err;
 	
-	if (!RefN) return(noErr);
+	if (!RefN) return(0);
 	if (BSpot) wrErr = AbWriteBuffer();
 	err = close(RefN);
 	if (!wrErr && err) {UUG;FileSystemError(BINHEX_WRITE,Name,err);;}
@@ -987,7 +987,7 @@ short AbWriteBuffer(void)
 	long writeBytes = BSpot;
 	int err;
 	
-	if (err=NCWrite(RefN,&writeBytes,Buffer))
+	if (err=file_write_nc(RefN,&writeBytes,Buffer))
 		FileSystemError(BINHEX_WRITE,Name,err);
 	BSpot = 0;
 	return(err);
@@ -1079,8 +1079,8 @@ UUHeader header;
 	if (bname) strncpy(spec_name(localSpec), bname+1, PATH_MAX-1);
 	else if (specPath) strncpy(spec_name(localSpec), specPath, PATH_MAX-1);
 
-	if (stat(spec, &st_1065) == 0) err = noErr;
-	else err = ioErr;
+	if (stat(spec, &st_1065) == 0) err = 0;
+	else err = EIO;
 	if (err)
 		return(FileSystemError(BINHEX_OPEN,spec_name(spec),err));
 	
@@ -1134,7 +1134,7 @@ UUHeader header;
 	if (hfi.hFileInfo.ioFlRLgLen)
 	{
 		refN = open(spec, O_RDONLY);
-		err = (refN >= 0) ? noErr : ioErr;
+		err = (refN >= 0) ? 0 : EIO;
 		if (err)
 		{
 			FileSystemError(BINHEX_OPEN,spec_name(spec),err);
@@ -1146,7 +1146,7 @@ UUHeader header;
 	
 	if (dataToo && hfi.hFileInfo.ioFlLgLen)
 	{
-		if (err=MyFSpOpenDF(spec,fsRdPerm,&refN))
+		if (err=MyFSpOpenDF(spec,O_RDONLY,&refN))
 		{
 			FileSystemError(BINHEX_OPEN,spec_name(spec),err);
 			goto done;
@@ -1158,10 +1158,10 @@ UUHeader header;
 	/*
 	 * WOW!  All done!
 	 */
-	err = BufferSend(stream,B64Encoder,NULL,0,False);
+	err = BufferSend(stream,B64Encoder,NULL,0,false);
 
 done:
-	DontTranslate = False;
+	DontTranslate = false;
 	BufferSendRelease(stream);
 	if (refN) close(refN);
 	return(err);
@@ -1177,9 +1177,9 @@ int SendDouble(TransStream stream,const char *specPath,long flags,short tableID,
 	CInfoPBRec hfi;
 	
 	struct stat st_1213;
-	if (stat(specPath, &st_1213)) return(FileSystemError(BINHEX_OPEN, specPath, ioErr));
-	err = noErr;
-	if (!hfi.hFileInfo.ioFlLgLen) return(SendSingle(stream,specPath,True,amp));
+	if (stat(specPath, &st_1213)) return(FileSystemError(BINHEX_OPEN, specPath, EIO));
+	err = 0;
+	if (!hfi.hFileInfo.ioFlLgLen) return(SendSingle(stream,specPath,true,amp));
 	
 	/*
 	 * build the internal boundary
@@ -1207,7 +1207,7 @@ int SendDouble(TransStream stream,const char *specPath,long flags,short tableID,
 	/*
 	 * send the resource part
 	 */
-	if (err=SendSingle(stream,specPath,False,amp)) return(err);
+	if (err=SendSingle(stream,specPath,false,amp)) return(err);
 	
 	/*
 	 * and a boundary
@@ -1234,7 +1234,7 @@ int SendDouble(TransStream stream,const char *specPath,long flags,short tableID,
 int SendDataFork(TransStream stream,const char *specPath,long flags,short tableID,AttMapPtr amp)
 {
 short refN=0;
-short err=noErr;
+short err=0;
 	long fileSize;
 	FInfo info;
 	char hexCreator[16], hexType[16];
@@ -1280,22 +1280,22 @@ short err=noErr;
 	 * separate the head from the bod
 	 */
 	if (err=SendPString(stream,NewLine)) goto done;
-	DontTranslate = True;
+	DontTranslate = true;
 	
 	/*
 	 * open it
 	 */
-	if (err = MyFSpOpenDF(spec,fsRdPerm,&refN))
+	if (err = MyFSpOpenDF(spec,O_RDONLY,&refN))
 		{FileSystemError(BINHEX_OPEN,spec_name(spec),err); goto done;}
-	if (err = GetEOF(refN,&fileSize))
+	if (err = file_size(refN,&fileSize))
 		{FileSystemError(BINHEX_OPEN,spec_name(spec),err); goto done;}
 	
 	err = SendFromOpenFile(stream,amp->isText&!amp->isPostScript ? QPEncoder : B64Encoder,refN,fileSize);
-	if (!err) BufferSend(stream,amp->isText&!amp->isPostScript ? QPEncoder : B64Encoder,NULL,0,False);
+	if (!err) BufferSend(stream,amp->isText&!amp->isPostScript ? QPEncoder : B64Encoder,NULL,0,false);
 
 done:
 	BufferSendRelease(stream);
-	DontTranslate = False;
+	DontTranslate = false;
 	if (refN) close(refN);
 	return(err);
 }
@@ -1308,7 +1308,7 @@ int SendFromOpenFile(TransStream stream,DecoderFunc *encoder,short refN,long siz
 	char * buffer = NULL;
 	long bSize;
 	long count;
-	short err=noErr;
+	short err=0;
 
 	/*
 	 * allocate buffer
@@ -1322,12 +1322,12 @@ int SendFromOpenFile(TransStream stream,DecoderFunc *encoder,short refN,long siz
 	while(size)
 	{
 		count = MIN(bSize,size);
-		if (err=ARead(refN,&count,buffer))
+		if (err=file_read(refN,&count,buffer))
 		{
 			FileSystemError(BINHEX_READ,"",err);
 			break;
 		}
-		if (err=BufferSend(stream,encoder,buffer,count,False)) break;
+		if (err=BufferSend(stream,encoder,buffer,count,false)) break;
 		size -= count;
 	}
 	
@@ -1376,7 +1376,7 @@ int FindAttMap(char * spec,AttMapPtr amp)
 			GetRString(amp->mm.mimetype,MIME_TEXT);
 			GetRString(amp->mm.subtype,MIME_PLAIN);
 		}
-		amp->isBasic = True;
+		amp->isBasic = true;
 	}
 	amp->isPostScript = EqualStrRes(amp->mm.subtype, POSTSCRIPT);
 
@@ -1388,7 +1388,7 @@ int FindAttMap(char * spec,AttMapPtr amp)
 		g_strlcat((char *)(amp->shortName), (char *)(amp->mm.suffix), sizeof(amp->shortName));
 	UUFileName(amp->uuName, amp->shortName);
 	
-	return(noErr);
+	return(0);
 }
 
 /************************************************************************
@@ -1457,14 +1457,14 @@ int SendUU(TransStream stream, const char *specPath, AttMapPtr amp)
 	 * separate the head from the bod
 	 */
 	if (!err) err = ComposeRTrans(stream,UUDECODE_FMT,NewLine,amp->uuName,NewLine);
-	DontTranslate = True;
+	DontTranslate = true;
 	
 	/*
 	 * open it
 	 */
-	if (err = MyFSpOpenDF(spec,fsRdPerm,&refN))
+	if (err = MyFSpOpenDF(spec,O_RDONLY,&refN))
 		{FileSystemError(BINHEX_OPEN,spec_name(spec),err); goto done;}
-	if (err = GetEOF(refN,&fileSize))
+	if (err = file_size(refN,&fileSize))
 		{FileSystemError(BINHEX_OPEN,spec_name(spec),err); goto done;}
 		
   /*
@@ -1476,12 +1476,12 @@ int SendUU(TransStream stream, const char *specPath, AttMapPtr amp)
 	 * send file
 	 */
 	err = SendFromOpenFile(stream,UUEncoder,refN,fileSize);
-	if (!err) err = BufferSend(stream,UUEncoder,NULL,0,False);
+	if (!err) err = BufferSend(stream,UUEncoder,NULL,0,false);
 	if (!err) err = SendPString(stream,NewLine);
 
 done:
 	BufferSendRelease(stream);
-	DontTranslate = False;
+	DontTranslate = false;
 	if (refN) close(refN);
 	return(err);
 }

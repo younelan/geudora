@@ -170,7 +170,7 @@ int MoveToJunk(TOCType * source, short spamThresh, FilterPB *fpb) {
   int i;
 
   if (junk == NULL)
-    return paramErr;
+    return EINVAL;
 
   //	select all messages above the junk mailbox threshhold
   for (i = 0; i < source->count; i++) {
@@ -229,7 +229,7 @@ int MoveToIMAPJunk(TOCType * source, short sumNum, short spamThresh,
 
   // Sanity check
   if ((source->imapTOC == 0) || (junkTocH == NULL))
-    return (paramErr);
+    return (EINVAL);
 
   // count the messages to be moved
   if (sumNum == -1) {
@@ -474,7 +474,7 @@ int JunkIMAP(TOCType * tocH, short sumNum, bool isJunk, bool dontMove) {
 
   // sanity check
   if (!tocH || !imapPers)
-    return (paramErr);
+    return (EINVAL);
 
   // build list of translators ...
   (void)ETLListAllTranslators(&tList, EMSF_JUNK_MAIL);
@@ -523,7 +523,7 @@ int JunkIMAP(TOCType * tocH, short sumNum, bool isJunk, bool dontMove) {
           // Clean up and return error
           if (tList)
             free((void **)tList);
-          return memFullErr;
+          return ENOMEM;
         }
 
         // Fill the uids array
@@ -627,7 +627,7 @@ int ArchiveJunk(TOCType * tocH) {
   FSSpec spec;
 
   if (!tocH)
-    return fnfErr;
+    return ENOENT;
 
   SetPrefLong(PREF_LAST_JUNK_TRIM, GMTDateTime() / 3600);
 
@@ -667,7 +667,7 @@ int ArchiveJunk(TOCType * tocH) {
         SetPref(JUNK_MAILBOX_EMPTY_DEST, "");
         GetRString((char *)dest, TRASH);
       } else
-        return dupFNErr;
+        return EEXIST;
     }
 
     trash = EqualStrRes((char *)dest, TRASH) ||
@@ -989,7 +989,7 @@ int JunkRescanJunkMailbox() {
 
   //	Bail if there isn't a junk mailbox
   if (tocH == NULL)
-    return paramErr;
+    return EINVAL;
 
   UseFeature(featureJunk);
   (void)ETLListAllTranslators(&tList, EMSF_JUNK_MAIL);
@@ -1056,7 +1056,7 @@ int JunkSetScoreLo(TOCType * tocH, short sumNum, short because, short score) {
 
   ASSERT(sumNum >= 0 & sumNum < tocH->count);
   if (sumNum < 0 || sumNum >= tocH->count)
-    return fnfErr;
+    return ENOENT;
 
   tocH->sums[sumNum].spamScore = score;
   tocH->sums[sumNum].spamBecause = because;
@@ -1626,7 +1626,7 @@ void JunkMoveIMAPMessages(TOCType * tocH, bool isJunk) {
       if (destTocH) {
         AccuTrim(&a);
         GArray *uidsH = NULL;
-        if (PtrToHand(a.data, &uidsH, a.offset) == noErr) {
+        if (PtrToHand(a.data, &uidsH, a.offset) == 0) {
           IMAPTransferMessages(realToc, destTocH, uidsH, false, false);
           free(uidsH);
         }

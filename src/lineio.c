@@ -49,7 +49,7 @@
  * OpenLine - open a file for line-oriented reading
  *
  * path: full filesystem path to the file
- * perm: fsRdPerm (0x01), fsWrPerm (0x02), or fsRdWrPerm (0x03)
+ * perm: O_RDONLY (0x01), O_WRONLY (0x02), or O_RDWR (0x03)
  * lip:  pointer to caller-allocated LineIOD struct
  ************************************************************************/
 short OpenLine(const char *path, short perm, LineIOP lip) {
@@ -63,9 +63,9 @@ short OpenLine(const char *path, short perm, LineIOP lip) {
   memset(lip, 0, sizeof(*lip));
 
   int flags = O_RDONLY;
-  if (perm == fsWrPerm)
+  if (perm == O_WRONLY)
     flags = O_WRONLY;
-  else if (perm == fsRdWrPerm)
+  else if (perm == O_RDWR)
     flags = O_RDWR;
 
   if ((localFd = open(path, flags)) < 0) {

@@ -99,10 +99,10 @@ typedef struct MIMEMapStruct {
   char mimetype[32];
   char subtype[32];
   char suffix[32];
-  OSType creator;
-  OSType type;
+  uint32_t creator;
+  uint32_t type;
   unsigned long flags;
-  OSType specialId;
+  uint32_t specialId;
 } MIMEMap, *MIMEMapPtr, *MIMEMapHandle;
 
 typedef struct AttMapStruct {
@@ -189,10 +189,10 @@ void DisposeMIMES(MIMESHandle msh);
   } while (0);
 short FindMIMECharsetLo(char *charSet, bool *found);
 #define FindMIMECharset(cset) FindMIMECharsetLo(cset, nil)
-void FigureMIMEFromApple(OSType creator, OSType type, char *name,
+void FigureMIMEFromApple(uint32_t creator, uint32_t type, char *name,
                          char *mimeType, char *mimeSub,
                          char *mimeSuffix, long *flags,
-                         OSType *specialId);
+                         uint32_t *specialId);
 bool FindMIMEMapPtr(char *type, char *subType,
                     char *name, MIMEMapPtr mmp);
 char *Encode64Data(char *encoded, char *data,

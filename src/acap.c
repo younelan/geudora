@@ -37,7 +37,7 @@ DAMAGE. */
 int ACAPLoad(bool giveQuit) {
     // TODO: Implement ACAP settings loading
     // For now, just return success and use local settings
-    return noErr;
+    return 0;
 }
 
 /************************************************************************

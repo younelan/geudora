@@ -38,6 +38,7 @@ ADVISED OF THE POSSIBILITY OF SUCH DAMAGE. */
 #include "mailbox.h"
 #include "mime.h"
 #include "portable-compat.h"
+#include "schizo.h"
 #include "util.h"
 #include <stdbool.h>
 
@@ -72,7 +73,7 @@ struct decoderGlobals_ {
   PGPRecvContextPtr PGPRContext;  /* PGP globals */
   UUGlobalsHandle UUG;            /* uudecoder globals */
   HBGHandle HBG;                  /* hexbin globals */
-  StringHandle parseHeaderHandle; /* used in HeaderRecvLine */
+  char * parseHeaderHandle; /* used in HeaderRecvLine */
   long parseHeaderOffset;         /* used in HeaderRecvLine */
   long parseHeaderSize;           /* used in HeaderRecvLine */
   StackHandle tAttFolderStack;    // stack of attachment folders
@@ -237,7 +238,7 @@ typedef struct IMAPTransferRec_ IMAPTransferRec, *IMAPTransferPtr;
 /* data structures */
 struct threadData_ {
   TaskKindEnum currentTask;
-  ThreadID threadID;
+  pthread_t threadID;
   threadContextDataRec threadContext;
   xferMailParamsRec xferMailParams;
 #ifdef TASK_PROGRESS_ON
@@ -267,7 +268,7 @@ int GetNumBackgroundThreads(void);
 
 TaskKindEnum GetCurrentTaskKind(void);
 void GetCurrentThreadData(threadDataHandle *threadData);
-void GetThreadData(ThreadID threadID, threadDataHandle *threadData);
+void GetThreadData(pthread_t threadID, threadDataHandle *threadData);
 #ifdef TASK_PROGRESS_ON
 #include "progress.h"
 ProgressBlock **GetCurrentThreadPrbl(void);
@@ -282,7 +283,7 @@ void MyYieldToAnyThread(void);
 
 int PushThreadPrefChange(short pref);
 void SetCurrentTaskKind(TaskKindEnum taskKind);
-void SetThreadGlobalCommandPeriod(ThreadID threadID, bool value);
+void SetThreadGlobalCommandPeriod(pthread_t threadID, bool value);
 int SetupXferMailThread(bool check, bool send, bool manual, bool scripted,
                           XferFlags flags, IMAPTransferPtr imapInfo);
 bool ThreadsAvailable(void);
@@ -290,17 +291,17 @@ void RemoveTaskErrors(TaskKindEnum taskKind, long persId);
 int SetThreadStackSize(long newSize);
 long GetThreadStackSize(void);
 
-void *GetResourceMainThread(ResType theType, short theID);
-int ZapSettingsResourceMainThread(OSType type, short id);
-int AddMyResourceMainThread(void *h, OSType type, short id,
+void *GetResourceMainThread(uint32_t theType, short theID);
+int ZapSettingsResourceMainThread(uint32_t type, short id);
+int AddMyResourceMainThread(void *h, uint32_t type, short id,
                               ConstStr255Param name);
 
 #define GetResourceMainThread_(t, i)                                           \
-  (void *)GetResourceMainThread((ResType)t, i)
+  (void *)GetResourceMainThread((uint32_t)t, i)
 #define ZapSettingsResourceMainThread_(t, i)                                   \
-  (void *)ZapSettingsResourceMainThread((ResType)t, i)
+  (void *)ZapSettingsResourceMainThread((uint32_t)t, i)
 #define AddMyResourceMainThread_(h, t, i, n)                                   \
-  AddMyResourceMainThread((void *)(h), (ResType)(t), i, (ConstStr255Param)(n))
+  AddMyResourceMainThread((void *)(h), (uint32_t)(t), i, (ConstStr255Param)(n))
 
 
 #endif // THREADING_H

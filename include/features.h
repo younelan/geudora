@@ -48,7 +48,7 @@ typedef int16_t FeatureID;
 #define featSimultaneousDirService 1008
 
 //
-//	Indexes into the FeatureRecHandle of all features known
+//	Indexes into the void * of all features known
 //	to this version of Eudora
 //
 //			Do not change the order of these!!

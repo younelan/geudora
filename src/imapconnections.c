@@ -69,7 +69,7 @@ bool AnyThreadsRunning(void);
  *	EnsureConnectionPool - build the connection pool for a given pers
  ************************************************************************/
 int EnsureConnectionPool(PersHandle pers) {
-  int err = noErr;
+  int err = 0;
   PersHandle oldPers = CurPers;
   long numConnections;
   IMAPConnectionHandle node;
@@ -81,7 +81,7 @@ int EnsureConnectionPool(PersHandle pers) {
   GetPOPInfo(user, host);
 
   // create as many connections as we need for this personality
-  while (numConnections > 0 && (err == noErr)) {
+  while (numConnections > 0 && (err == 0)) {
     node = g_malloc0(sizeof(IMAPConnectionStruct));
     if (node) {
       // create the imapstream when we first use this node ...
@@ -198,7 +198,7 @@ IMAPStreamPtr GetIMAPConnectionLo(TaskKindEnum forWhat, bool progress,
   IMAPConnectionHandle node = nil;
   long numConnections = GetRLong(IMAP_MAX_CONNECTIONS);
   char user[256], host[256];
-  int err = noErr;
+  int err = 0;
   long ticks = TickCount();
   bool progressed = false;
   bool connectionBusy =
@@ -303,7 +303,7 @@ IMAPStreamPtr GetIMAPConnectionLo(TaskKindEnum forWhat, bool progress,
               // create a new conneciton if we need one.
               if (node->imapStream == nil) {
                 if ((err = NewImapStream(&node->imapStream, host, port)) !=
-                    noErr) {
+                    0) {
                   // unlock this node.
                   node->inUse = false;
 

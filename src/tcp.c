@@ -616,7 +616,7 @@ int OTMyHostid(uint32_t *myAddr, uint32_t *myMask) {
   *myAddr = 0;
   *myMask = 0;
   if (getifaddrs(&ifap) != 0)
-    return memFullErr;
+    return ENOMEM;
   for (ifa = ifap; ifa; ifa = ifa->ifa_next) {
     struct sockaddr_in *sa, *nm;
     if (!ifa->ifa_addr || ifa->ifa_addr->sa_family != AF_INET)
@@ -1066,7 +1066,7 @@ int NetRecvLine(TransStream stream, char *line, long *size) {
   char c;
 
   if (!stream->RcvBuffer)
-    return (CommandPeriod ? userCancelled : memFullErr);
+    return (CommandPeriod ? userCancelled : ENOMEM);
 
   *size = 0;
   anchor = line;

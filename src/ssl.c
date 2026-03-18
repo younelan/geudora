@@ -513,16 +513,16 @@ static int CleanupSSLConnection(TransStream stream) {
  ************************************************************************/
 static OSStatus ESSLStartSSLLo(TransStream stream) {
     if (stream->ESSLSetting & esslSSLInUse)
-        return noErr; /* already done */
+        return 0; /* already done */
 
     /* If SSL objects not set up yet (STARTTLS case), set them up now */
     if (!stream->ssl) {
         int err = SetupSSLConnection(stream);
-        if (err) return paramErr;
+        if (err) return EINVAL;
 
         /* Re-attach BIO since socket is already connected */
         BIO *bio = BIO_new_socket(stream->sockfd, BIO_NOCLOSE);
-        if (!bio) return paramErr;
+        if (!bio) return EINVAL;
         SSL_set_bio((SSL *)stream->ssl, bio, bio);
 
         if (stream->serverName[0])
@@ -535,7 +535,7 @@ static OSStatus ESSLStartSSLLo(TransStream stream) {
         stream->ESSLSetting |= esslSSLInUse;
         g_print("SSL: handshake succeeded (%s)\n",
                 SSL_get_version((SSL *)stream->ssl));
-        return noErr;
+        return 0;
     }
 
     int sslErr = SSL_get_error((SSL *)stream->ssl, hsErr);
@@ -558,7 +558,7 @@ static OSStatus ESSLStartSSLLo(TransStream stream) {
         stream->ESSLSetting |= esslSSLInUse;
         g_print("SSL: handshake succeeded (%s)\n",
                 SSL_get_version((SSL *)stream->ssl));
-        return noErr;
+        return 0;
     }
 
 handshake_failed:
@@ -566,9 +566,9 @@ handshake_failed:
     ERR_print_errors_fp(stderr);
 
     if (stream->ESSLSetting & esslOptional)
-        return noErr; /* optional SSL — continue unencrypted */
+        return 0; /* optional SSL — continue unencrypted */
 
-    return paramErr;
+    return EINVAL;
 }
 
 /************************************************************************
@@ -618,11 +618,11 @@ static int ESSLConnectTrans(TransStream stream, const char *serverName, long por
  * ESSLSendTrans — send data, using SSL if active
  ************************************************************************/
 static int ESSLSendTrans(TransStream stream, const char *text, long size, ...) {
-    int err = noErr;
+    int err = 0;
     va_list ap;
 
     if (size == 0)
-        return noErr;
+        return 0;
 
     va_start(ap, size);
 
@@ -664,7 +664,7 @@ static int ESSLReceiveTrans(TransStream stream, char * line, long *size) {
     int bytesRead = SSL_read((SSL *)stream->ssl, line, (int)*size);
     if (bytesRead > 0) {
         *size = bytesRead;
-        return noErr;
+        return 0;
     }
 
     *size = 0;
@@ -672,7 +672,7 @@ static int ESSLReceiveTrans(TransStream stream, char * line, long *size) {
     if (bytesRead == 0)
         return stream->streamErr ? stream->streamErr : -1;
     if (sslErr == SSL_ERROR_WANT_READ)
-        return noErr;
+        return 0;
     return stream->streamErr ? stream->streamErr : -1;
 }
 

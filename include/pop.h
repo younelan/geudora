@@ -101,9 +101,9 @@ TOCType * RenameInTemp(TOCType * tocH);
 /*
  * POPD manipulation stuff
  */
-int AddIdToPOPD(OSType listType, short listId, uint32_t uidHash, bool dupOK);
+int AddIdToPOPD(uint32_t listType, short listId, uint32_t uidHash, bool dupOK);
 void RemIdFromPOPD(uint32_t popdType, short deleteId, uint32_t uidHash);
-bool IdIsOnPOPD(OSType listType, short listId, uint32_t uidHash);
+bool IdIsOnPOPD(uint32_t listType, short listId, uint32_t uidHash);
 
 // Convenience macros - undefine any conflicting definitions from schizo.h
 #ifdef PERS_FORCE

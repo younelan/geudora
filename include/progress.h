@@ -30,7 +30,7 @@
 
 #ifndef MyWindowPtr
 struct MyWindow;
-typedef struct MyWindow *MyWindowPtr;
+/* MyWindowPtr defined in mailbox.h */
 #endif
 
 #include "mailbox.h"

@@ -82,14 +82,14 @@ short SpinOnLo(volatile int *rtnCodeAddr, long maxTicks, bool allowCancel,
                bool forever, bool remainCalm, bool allowMouseDown);
 #define SpinOn(r, mt, ac, f) SpinOnLo(r, mt, ac, f, false, false)
 #define FSZWrite(refN, count, buf)                                             \
-  (((*count) > 0) ? AWrite(refN, count, buf) : 0)
+  (((*count) > 0) ? file_write(refN, count, buf) : 0)
 bool IsItAFolder(short vRef, long inDirId, const char *name);
 bool HFIIsFolder(CInfoPBRec *hfi);
 bool HFIIsFolderOrAlias(CInfoPBRec *hfi);
 void FolderSizeHi(const char *dir, uint32_t *cumSize);
 void FolderSize(const char *dir, CInfoPBRec *hfi, uint32_t *cumSize);
 int FSpDirCreate(char *spec, ScriptCode script, long *dirID);
-bool AliasFolderType(OSType type);
+bool AliasFolderType(uint32_t type);
 #define FSpIsItAFolder(spec)                                                   \
   IsItAFolder(0, 0, spec_name(spec))
 bool AFSpIsItAFolder(char *spec);
@@ -141,8 +141,8 @@ int UniqueSpec(char *spec, short max);
 int SplitPerfectlyGoodFilenameIntoNameAndQuoteExtensionUnquote(
     const char *full, char *name, char *ext, short max);
 short NCWriteP(short refN, const char *pString);
-short AWriteP(short refN, const char *pString);
-int TweakFileType(char *spec, OSType type, OSType creator);
+short file_write_str(short refN, const char *pString);
+int TweakFileType(char *spec, uint32_t type, uint32_t creator);
 int HuntNewline(short refN, long aroundSpot, long *newline, bool *realNl);
 int Snarf(char *spec, void ***hp, long limit);
 int SnarfRoman(char *spec, void ***hp, long limit);
@@ -153,7 +153,7 @@ void PromptGetFile(FileFilterProcPtr filter, DlgHookYDProcPtr hook,
                    long hookData, short numTypes, SFTypeList tl,
                    StandardFileReply *reply, char *prompt);
 /* Use portable unsigned-byte pointer for write-params */
-short FSWriteP(short refN, unsigned char *pString);
+/* file_write_str: see fileutil.h */
 short GetFileByRef(short refN, char *specPtr);
 int AFSpSetMod(char *spec, uint32_t mod);
 uint32_t AFSpGetMod(char *spec);
@@ -161,11 +161,12 @@ int ChainDelete(char *spec);
 long VolumeFree(short vRef);
 bool SpecInSubfolderOf(char *att, char *folder);
 short FSTabWrite(short refN, long *count, unsigned char *buf);
-short ARead(short refN, long *count, unsigned char *buf);
-short AWrite(short refN, long *count, unsigned char *buf);
-short GetEOF(short refNum, long *logEOF);
+short file_read(short refN, long *count, unsigned char *buf);
+short file_write(short refN, long *count, unsigned char *buf);
+short file_write_nc(short refN, long *count, unsigned char *buf);
+short file_size(short refNum, long *logEOF);
 short SetEOF(short refNum, long logEOF);
-short GetFPos(short refNum, long *filePos);
+short file_tell(short refNum, long *filePos);
 short SetFPos(short refNum, short posMode, long posOff);
 short NCWrite(short refN, long *count, unsigned char *buf);
 /* SimpleMakeFSSpec removed — use spec_make(dir, name, spec) instead */
@@ -176,8 +177,8 @@ int FSpKillRFork(char *spec);
 int FSpRFSane(char *spec, bool *sane);
 int TruncOpenFile(short refN, long spot);
 int EnsureNewline(short refN);
-OSType FileTypeOf(char *spec);
-OSType FileCreatorOf(char *spec);
+uint32_t FileTypeOf(char *spec);
+uint32_t FileCreatorOf(char *spec);
 int FSpTrash(char *spec);
 char *Mac2OtherName(const char *mac, char *other);
 #define Other2MacName(x, y)                                                    \
@@ -203,8 +204,8 @@ uint32_t MyFSpGetMod(char *spec);
 short MyFSpGetCatInfo(char *spec, char *newSpec, CInfoPBRec *hfi);
 short MyFSpGetHFileInfo(char *spec, CInfoPBRec *hfi);
 short MyFSpSetHFileInfo(char *spec, CInfoPBRec *hfi);
-void *MyGet1IndResource(OSType type, short index);
-void *MyGetIndResource(OSType type, short index);
+void *MyGet1IndResource(uint32_t type, short index);
+void *MyGetIndResource(uint32_t type, short index);
 void MyCloseResFile(short refN);
 bool MyFSpIsItAFolder(char *spec);
 int FSpSetFXInfo(char *spec, FXInfo *fxInfo);
@@ -213,8 +214,8 @@ int ResolveAliasOrElse(char *spec, char *newSpec, bool *wasIt);
 int FSMakeFID(char *spec, long *fid);
 int FSResolveFID(short vRef, long fid, char *spec);
 int DTRef(short vRef, short *dtRef);
-int DTGetAppl(short vRef, short dtRef, OSType creator, char *appSpec);
-short DTFindAppl(OSType creator);
+int DTGetAppl(short vRef, short dtRef, uint32_t creator, char *appSpec);
+short DTFindAppl(uint32_t creator);
 int DTSetComment(char *spec, char *comment);
 int MorphDesktop(short vRef, char *where);
 int Blat(char *spec, void *text, bool append);
@@ -233,8 +234,8 @@ int WipeDiskArea(short refN, long offset, long len);
 int NewTempExtSpec(short vRef, char *name, short extId, char *spec);
 int ExchangeFiles(char *tmpSpec, char *spec);
 int FSpTouch(char *spec);
-int ExtractCreatorFromBndl(char *spec, OSType *creator);
-int CreatorToName(OSType creator, char *appName);
+int ExtractCreatorFromBndl(char *spec, uint32_t *creator);
+int CreatorToName(uint32_t creator, char *appName);
 int NewTempSpec(short vRef, long dirId, char *name, char *spec);
 int FSpExists(char *spec);
 int AddUniqueExt(char *spec, short extId);
@@ -243,7 +244,7 @@ bool DiskSpunUp(void);
 short SFPutNew(char *spec);
 int FindTemporaryFolder(short vRef, long dirId, long *tempDirId,
                           short *tempVRef);
-bool IsPDFFile(char *spec, OSType fileType);
+bool IsPDFFile(char *spec, uint32_t fileType);
 #define kStuffFolderBit 0x1
 int FindMyFile(char *spec, long whereToLook, short fileName);
 

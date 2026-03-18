@@ -93,8 +93,8 @@ ADVISED OF THE POSSIBILITY OF SUCH DAMAGE. */
 #define COMP_WIN 5
 #endif
 
-#ifndef userCanceledErr
-#define userCanceledErr (-128)
+#ifndef ECANCELED
+#define ECANCELED (-128)
 #endif
 
 /************************************************************************
@@ -484,7 +484,7 @@ static void draw_page(GtkPrintOperation *op, GtkPrintContext *context,
  * print_done — GtkPrintOperation "done" signal handler
  *
  * This replaces PrintCleanup.
- * Original: PMEndDocument, PMSetError(noErr), PMEnd,
+ * Original: PMEndDocument, PMSetError(0), PMEnd,
  *   PMDisposePageFormat, PMDisposePrintSettings, FigureOutFont,
  *   UseResFile, FloatingWinIdle.
  *
@@ -596,7 +596,7 @@ static int RunPrintOperation(const char *text, const char *title,
         }
         err = -1;
     } else if (result == GTK_PRINT_OPERATION_RESULT_CANCEL) {
-        err = userCanceledErr;
+        err = ECANCELED;
     }
 
     g_object_unref(printOp);
@@ -722,7 +722,7 @@ int PrintSelectedMessages(TOCType *tocH, bool select, bool now,
         if (tocH->imapTOC)
             EnsureMsgDownloaded(tocH, sumNum, false);
 
-        /* Original: win = GetAMessage(tocH, sumNum, nil, nil, False);
+        /* Original: win = GetAMessage(tocH, sumNum, nil, nil, false);
            Opens the message window (or returns existing one). */
         win = GetAMessage(tocH, sumNum, NULL, NULL, false);
         if (!win) {
@@ -767,7 +767,7 @@ int PrintSelectedMessages(TOCType *tocH, bool select, bool now,
         if (win->window && !IsWindowVisible(win->window))
             CloseMyWindow(win->window);
 
-        if (err && err != userCanceledErr)
+        if (err && err != ECANCELED)
             cumErr = err;
 
         /* Original: if (printMe) break;
@@ -776,11 +776,11 @@ int PrintSelectedMessages(TOCType *tocH, bool select, bool now,
             break;
 
         /* Check for user cancel (CommandPeriod equivalent) */
-        if (err == userCanceledErr)
+        if (err == ECANCELED)
             break;
     }
 
-    if (cumErr && cumErr != userCanceledErr)
+    if (cumErr && cumErr != ECANCELED)
         g_printerr("Eudora: Some messages failed to print (error %d)\n", cumErr);
 
     return err ? err : cumErr;
@@ -811,7 +811,7 @@ int PrintClosedMessage(TOCType *tocH, short sumNum, bool now)
        messH is non-NULL if the message is already open in a window. */
     opened = (tocH->sums[sumNum].messH == NULL);
 
-    /* Original: win = GetAMessage(tocH, sumNum, nil, nil, False); */
+    /* Original: win = GetAMessage(tocH, sumNum, nil, nil, false); */
     win = GetAMessage(tocH, sumNum, NULL, NULL, false);
     if (!win)
         return -1;

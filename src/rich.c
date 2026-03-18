@@ -18,7 +18,8 @@ DAMAGE. */
 
 //depot/projects/eudora/mac/Current/rich.c#24 - edit change 4405 (text)
 #include "rich.h"
-#include "util.h"         /* StackInit, StackPush, StackPop, AccuAddStr, AccuAddChar, AccuAddPtr, ScriptVar */
+#include "util.h"
+#include "gtk_dialogs.h"         /* StackInit, StackPush, StackPop, AccuAddStr, AccuAddChar, AccuAddPtr, ScriptVar */
 #include "StringUtil.h"   /* ComposeRString */
 #include "StringDefs.h"   /* MIME_RICH_ON */
 #include "StrnDefs.h"     /* EnrichedStrn, EnrichedEnum */
@@ -192,8 +193,8 @@ int BuildEnriched(AccuPtr enriched,PETEHandle pte,unsigned char * text,long len,
 	long eSize = 0;
 	long eOffset = 0;
 	unsigned char c;
-	int err = noErr;
-	bool cr = False;
+	int err = 0;
+	bool cr = false;
 	PETEStyleEntry oldStyle, newStyle;
 	PETEParaInfo oldInfo, newInfo;
 	long oldPara = -1;
@@ -256,10 +257,10 @@ int BuildEnriched(AccuPtr enriched,PETEHandle pte,unsigned char * text,long len,
 				/*
 				 * check for lily-white style run
 				 */
-				kkk = True;
+				kkk = true;
 				for (spot=text+offset;spot<text+offset+runLen;spot++)
 				{
-					if (!IsSpace(*spot)) {kkk=False;break;}
+					if (!IsSpace(*spot)) {kkk=false;break;}
 				}
 
 				/*
@@ -298,7 +299,7 @@ int BuildEnriched(AccuPtr enriched,PETEHandle pte,unsigned char * text,long len,
 						enriched)) goto done;
 					oldStyle = newStyle;
 					oldInfo = newInfo;
-					cr = False;
+					cr = false;
 #ifdef NEVER
 					if (RunType==Debugging)
 					{
@@ -332,14 +333,14 @@ int BuildEnriched(AccuPtr enriched,PETEHandle pte,unsigned char * text,long len,
 				{
 					if (!cr)
 					{
-						cr = True;
+						cr = true;
 						if (err=AccuAddChar(enriched,c)) goto done;
 					}
 					if (err=AccuAddChar(enriched,c)) goto done;
 				}
 				else
 				{
-					cr = False;
+					cr = false;
 					if (c=='<') if (err=AccuAddChar(enriched,c)) goto done;
 					if (err=AccuAddChar(enriched,c)) goto done;
 				}
@@ -356,7 +357,7 @@ done:
 			enriched->offset--;
 		// finish up the directives
 		err = UnwindRich(nil,openStack,nil,enriched);
-		if (err==fnfErr) err = 0;
+		if (err==ENOENT) err = 0;
 		// make sure we end with hard linebreak
 		while (enriched->offset<2) AccuAddChar(enriched,'\015');
 		if (enriched->data[enriched->offset-1] != '\015')  AccuAddChar(enriched,'\015');
@@ -380,7 +381,7 @@ int BuildEnrichedDirectives(PETETextStylePtr oldStyle,PETETextStylePtr newStyle,
 	short paraDiff = oldInfo ? PeteParaInfoDiff(oldInfo,newInfo) : 0;
 	short counters[enPLeft];
 	short i;
-	int err = noErr;
+	int err = 0;
 	char directive[256];
 	DirectiveType pushMe;
 	short oldInc, newInc, normInc;
@@ -632,7 +633,7 @@ char * BuildRichColorParam(char * directive,RGBColor *color)
  **********************************************************************/
 int UnwindRich(short *counters,StackHandle openStack,StackHandle redoStack,AccuPtr enriched)
 {
-	int err = fnfErr;
+	int err = ENOENT;
 	DirectiveType top;
 	char cmd[32];
 	long counterCount=0;
@@ -642,7 +643,7 @@ int UnwindRich(short *counters,StackHandle openStack,StackHandle redoStack,AccuP
 	{
 		counterCount = 0;
 		for (i=0;i<enPLeft;i++) counterCount += counters[i];
-		if (!counterCount) return(noErr);
+		if (!counterCount) return(0);
 	}
 	
 	while(!StackPop(&top,openStack))
@@ -658,7 +659,7 @@ int UnwindRich(short *counters,StackHandle openStack,StackHandle redoStack,AccuP
 		else if (redoStack) err = StackPush(&top, &redoStack);
 	}
 done:
-	return(err ? err : (counterCount?fnfErr:noErr));
+	return(err ? err : (counterCount?ENOENT:0));
 }
 
 /**********************************************************************
@@ -666,7 +667,7 @@ done:
  **********************************************************************/
 int RewindRich(StackHandle openStack,StackHandle redoStack,AccuPtr enriched)
 {
-	int err = noErr;
+	int err = 0;
 	DirectiveType top;
 	char cmd[256];
 	
@@ -711,7 +712,7 @@ int PeteRich(PETEHandle pte,long start,long stop,bool unwrap)
 	unsigned char * text=nil;
 	unsigned char * enriched=nil;
 	long len;
-	int err = noErr;
+	int err = 0;
 	
 	/*
 	 * grab the text/enriched
@@ -754,15 +755,15 @@ int InsertRichLo(unsigned char * text,long textOffset,long textLen,long offset,b
 	short cmdId;
 	bool neg;
 	long tStart,tStop, tempiOffset, tempoOffset, tempStart;
-	int err = noErr;
+	int err = 0;
 	char scratch[256];
 	PartDesc pd;
-	bool wasRel = False;
+	bool wasRel = false;
 	bool paraMe = false;
 	long realOffset;
 	StackHandle partRefStack;
 	
-	if (!text) return(noErr);
+	if (!text) return(0);
 	
 	if (textLen==-1) textLen = strlen((char *)text);
 	
@@ -827,7 +828,7 @@ int InsertRichLo(unsigned char * text,long textOffset,long textLen,long offset,b
 					if (err) break;
 					paraMe = false;
 				}
-				wasRel = True;
+				wasRel = true;
 			}
 			else if (!wasRel)
 			{
@@ -840,7 +841,7 @@ int InsertRichLo(unsigned char * text,long textOffset,long textLen,long offset,b
 				if(headers)
 				{
 					err = PeteInsertHeader(pte,&offset,text,tStop-tStart,tStart);
-					if(EncodingError(err)) err = noErr;
+					if(EncodingError(err)) err = 0;
 					else if(err) break;
 					if((tStop-tStart == 2) && (text[tStart] == 13) && (text[tStart+1] == 13))
 						headers = false;
@@ -868,7 +869,7 @@ int InsertRichLo(unsigned char * text,long textOffset,long textLen,long offset,b
 	}
 	
 	free(partRefStack);
-	return(err==eofErr ? noErr : err);
+	return(err==eofErr ? 0 : err);
 }
 
 /************************************************************************
@@ -909,7 +910,7 @@ int FakeAttachment(PETEHandle pte,uLong *offset,char * spec)
 	if (err) return err;
 	if (*offset!=-1) *offset += strlen((const char*)scratch);
 	
-	return noErr;
+	return 0;
 }
 			
 /************************************************************************
@@ -930,7 +931,7 @@ int InsertFlowedLo(unsigned char * text, long *textOffset, long textLen, long *i
 	bool flowNext = false;
 	short size;
 	long offset = *inOffset;
-	int err = noErr;
+	int err = 0;
 	bool interpret = UseFlowIn;
 	bool excerpt = UseFlowInExcerpt;
 	long quoteLevel, oldQuoteLevel=0;
@@ -1087,7 +1088,7 @@ int InsertFixed(unsigned char * text, long *textOffset, long textLen, long *inOf
 	long tStart, tStop, cStart, textStart;
 	char notCharset[32], testMe[32];
 	long offset = *inOffset;
-	int err = noErr;
+	int err = 0;
 	IntlConverter converter;
 	
 	err = CreateIntlConverter(&converter, encoding);
@@ -1173,7 +1174,7 @@ int InsertEnrichedLo(unsigned char * text, long *textOffset, long textLen, long 
 	uLong validMask = ~GetPrefLong(PREF_INTERPRET_ENRICHED);
 	uLong validParaMask = ~GetPrefLong(PREF_INTERPRET_PARA);
 	//scratch variables
-	int err = noErr;
+	int err = 0;
 	PETETextStyle style;
 	char scratch[256];
 	PETEParaInfo pinfo;
@@ -1257,7 +1258,7 @@ int InsertEnrichedLo(unsigned char * text, long *textOffset, long textLen, long 
 						{
 //							PeteInsertChar(pte,-1L,' ',nil);
 							needSpace = true;
-							cr = False;
+							cr = false;
 						}
 						else
 						{
@@ -1268,22 +1269,22 @@ int InsertEnrichedLo(unsigned char * text, long *textOffset, long textLen, long 
 								PeteInsertChar(pte,-1,'\015',nil);
 								PeteGetTextAndSelection(pte,nil,&start,nil);
 								PETEInsertParaBreak(PETE,pte,start);
-								cr = True;
+								cr = true;
 							}
 						}
 						break;
 					}
-					cr = True;		// Set cr to true when inserting a nofill cr - pr 9/24/96
+					cr = true;		// Set cr to true when inserting a nofill cr - pr 9/24/96
 					// fall through to enText if noFill
 DoText :
 				case enText:
 					err = PeteInsertIntlText(pte, nil, text, tStart, tStop, &converter, kTextEncodingUnknown, needSpace, false);
 					needSpace = false;
-					if(cmdId == enText) cr = False;	// Reset cr to false after inserted text - pr 9/24/96
+					if(cmdId == enText) cr = false;	// Reset cr to false after inserted text - pr 9/24/96
 					break;
 				case enDoubleLess:
 //					err = PeteInsertChar(pte,-1L,'<',nil);
-					cr = False;	// Reset cr to false after inserted text - pr 9/24/96
+					cr = false;	// Reset cr to false after inserted text - pr 9/24/96
 					++tStart;
 					goto DoText;
 //					break;
@@ -1353,7 +1354,7 @@ DoText :
 						PeteInsertChar(pte,-1L,'\015',nil);
 						PeteGetTextAndSelection(pte,nil,&start,nil);
 						PETEInsertParaBreak(PETE,pte,start);
-						cr = True;
+						cr = true;
 					}
 					/* End added section */
 					if (neg) noFill = MAX(noFill-1,0);
@@ -1370,7 +1371,7 @@ DoText :
 						PeteInsertChar(pte,-1L,'\015',nil);
 						PeteGetTextAndSelection(pte,nil,&start,nil);
 						PETEInsertParaBreak(PETE,pte,start);
-						cr = True;
+						cr = true;
 					}
 					Zero(pinfo);
 					if (neg)
@@ -1401,7 +1402,7 @@ DoText :
 						PeteInsertChar(pte,-1L,'\015',nil);
 						PeteGetTextAndSelection(pte,nil,&start,nil);
 						PETEInsertParaBreak(PETE,pte,start);
-						cr = True;
+						cr = true;
 					}
 					Zero(pinfo);
 					if (neg)
@@ -1422,7 +1423,7 @@ DoText :
 						PeteInsertChar(pte,-1L,'\015',nil);
 						PeteGetTextAndSelection(pte,nil,&start,nil);
 						PETEInsertParaBreak(PETE,pte,start);
-						cr = True;
+						cr = true;
 					}
 					Zero(pinfo);
 					if (neg) StackPop(nil,margStack);	// drop top one
@@ -1510,7 +1511,7 @@ end:
 	free(justStack);
 	free(colorStack);
 	DisposeIntlConverter(converter);
-	return err==eofErr ? noErr : err;
+	return err==eofErr ? 0 : err;
 }
 
 /**********************************************************************
@@ -1520,22 +1521,22 @@ int ParaIndent2Margin(PSMPtr marg,char * string)
 {
 	char token[256];
 	unsigned char * spot;
-	int err = fnfErr;
+	int err = ENOENT;
 	
 	Zero(*marg);
 	for (spot=string;PToken(string,token,&spot,",");)
 	{
-		err = noErr;
+		err = 0;
 		switch(FindSTRNIndex(EnrichedStrn,token))
 		{
 			case enPLeft: marg->second++; marg->first++; break;
 			case enPRight: marg->right++; break;
 			case enPIn: marg->first++; break;
 			case enPOut: marg->second++; break;
-			default: return(fnfErr);
+			default: return(ENOENT);
 		}
 	}
-	return(noErr);
+	return(0);
 }
 
 /**********************************************************************
@@ -1593,7 +1594,7 @@ int EnrichedToken(unsigned char * enriched,long maxLen,bool headers,short *cmdId
 			*cmdId = enText;
 	}
 	*tStop = stop-enriched;
-	return(noErr);
+	return(0);
 }
 
 /**********************************************************************

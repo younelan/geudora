@@ -23,7 +23,7 @@ DAMAGE. */
 #include <stdbool.h>
 #include "pgpout.h"
 
-int StartPGP(ProcessSerialNumber *psn)       { (void)psn; return -1; }
+int StartPGP(void *psn)       { (void)psn; return -1; }
 bool HaveKeyFor(char *address, bool fromPrivate) { (void)address; (void)fromPrivate; return false; }
 bool HaveAllKeys(MessHandle messH)           { (void)messH; return false; }
 bool HaveKeysFrom(void *text, char *missing, bool fromPrivate) {

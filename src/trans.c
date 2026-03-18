@@ -102,7 +102,7 @@ int AddTLMIME(emsMIMEHandle tlMIME, short what, char * name, char * value)
 {
 	unsigned char * h2=nil;
 	emsMIMEParamHandle h3=nil;
-	int err = noErr;
+	int err = 0;
 
 	switch(what)
 	{
@@ -131,7 +131,7 @@ int AddTLMIME(emsMIMEHandle tlMIME, short what, char * name, char * value)
 						buf_append((void *)scan->value, &_vsz, value, (long)valueLen);
 						/* MemError removed */
 					}
-					return(noErr);
+					return(0);
 				}
 			}
 
@@ -192,7 +192,7 @@ int FlattenTLMIME(emsMIMEHandle tlMIME, FlatTLMIMEHandle *flat)
 	emsMIMEparam localParam;
 	short len;
 
-	if (!tlMIME || !tlMIME->mimeType[0] || !tlMIME->subType[0]) return(fnfErr);
+	if (!tlMIME || !tlMIME->mimeType[0] || !tlMIME->subType[0]) return(ENOENT);
 
 	localType = *tlMIME;
 
@@ -237,7 +237,7 @@ int FlattenTLMIME(emsMIMEHandle tlMIME, FlatTLMIMEHandle *flat)
  **********************************************************************/
 int UnflattenTLMIME(FlatTLMIMEHandle flat, emsMIMEHandle *tlMIME)
 {
-	int err = noErr;
+	int err = 0;
 	unsigned char name[64];
 	unsigned char value[256];
 	long offset=0;
@@ -259,7 +259,7 @@ int UnflattenTLMIME(FlatTLMIMEHandle flat, emsMIMEHandle *tlMIME)
 		offset += slen;
 		err = AddTLMIME(*tlMIME, TLMIME_TYPE, name, nil);
 	}
-	else err = fnfErr;
+	else err = ENOENT;
 
 	/* subtype */
 	if (!err && offset<len)
@@ -272,7 +272,7 @@ int UnflattenTLMIME(FlatTLMIMEHandle flat, emsMIMEHandle *tlMIME)
 		offset += slen;
 		err = AddTLMIME(*tlMIME, TLMIME_SUBTYPE, name, nil);
 	}
-	else err = fnfErr;
+	else err = ENOENT;
 
 	/* params */
 	while (!err && offset<len)
@@ -292,7 +292,7 @@ int UnflattenTLMIME(FlatTLMIMEHandle flat, emsMIMEHandle *tlMIME)
 			offset += paramLen+2;
 			err = AddTLMIME(*tlMIME, TLMIME_PARAM, name, value);
 		}
-		else err = fnfErr;
+		else err = ENOENT;
 	}
 
 	if (err) ZapTLMIME(*tlMIME);
@@ -314,7 +314,7 @@ int ETLBuildAddrList(void **textIn, void **moreHeaders, HeaderDHandle hdh,
 {
 	memset(addrList, 0, sizeof(emsHeaderData));
 	addrList->size = sizeof(emsHeaderData);
-	return(noErr);
+	return(0);
 }
 
 /**********************************************************************
@@ -363,7 +363,7 @@ void ETLDisposeAddrList(emsHeaderDataP addrList)
 int ETLInit(void)
 {
 	/* No plugins loaded yet */
-	return fnfErr;
+	return ENOENT;
 }
 
 /**********************************************************************
@@ -381,7 +381,7 @@ int ETLListAllTranslatorsLo(TLMHandle *translators, short context,
                             ModeTypeEnum forMode)
 {
 	if (translators) *translators = nil;
-	return fnfErr; /* no translators */
+	return ENOENT; /* no translators */
 }
 
 /**********************************************************************
@@ -420,7 +420,7 @@ int ETLInterpretFile(short context, char * source, short resultRefN,
                      AccuPtr resultAcc, emsHeaderDataP addrList,
                      bool *dontSave)
 {
-	return fnfErr; /* no translators — use built-in handling */
+	return ENOENT; /* no translators — use built-in handling */
 }
 
 /**********************************************************************
@@ -435,7 +435,7 @@ void ETLDoAbout(void)
  **********************************************************************/
 int RecordTLID(char * spec, uLong id)
 {
-	return noErr; /* nothing to record without resource forks */
+	return 0; /* nothing to record without resource forks */
 }
 
 /**********************************************************************
@@ -451,7 +451,7 @@ int TransRecvLine(TransStream stream, unsigned char * line, long *size)
  **********************************************************************/
 int ETLDisplayFile(char * spec, PETEHandle pte)
 {
-	return fnfErr;
+	return ENOENT;
 }
 
 /**********************************************************************
@@ -478,7 +478,7 @@ int ETLIconToDescriptions(short which, unsigned char *module,
 {
 	if (module) module[0] = '\0';
 	if (translator) translator[0] = '\0';
-	return fnfErr;
+	return ENOENT;
 }
 
 /**********************************************************************
@@ -503,7 +503,7 @@ long ETLID(TLMHandle tl, short index)
 int ETLIDToFileIcon(long id, void ***suite)
 {
 	if (suite) *suite = nil;
-	return fnfErr;
+	return ENOENT;
 }
 
 /**********************************************************************
@@ -512,7 +512,7 @@ int ETLIDToFileIcon(long id, void ***suite)
 int ETLReadTL(char * spec, long *id)
 {
 	if (id) *id = 0;
-	return fnfErr;
+	return ENOENT;
 }
 
 /**********************************************************************
@@ -530,7 +530,7 @@ bool ETLExists(void)
  **********************************************************************/
 int ETLCanTransOut(MessHandle messH)
 {
-	return fnfErr;
+	return ENOENT;
 }
 
 /**********************************************************************
@@ -539,7 +539,7 @@ int ETLCanTransOut(MessHandle messH)
 int ETLTransOut(MessHandle messH, emsMIMEHandle emsMIME, char * from,
                 char * to)
 {
-	return fnfErr;
+	return ENOENT;
 }
 
 /**********************************************************************
@@ -547,7 +547,7 @@ int ETLTransOut(MessHandle messH, emsMIMEHandle emsMIME, char * from,
  **********************************************************************/
 int ETLTransSelection(PETEHandle pte, HSPtr hs, short item)
 {
-	return fnfErr;
+	return ENOENT;
 }
 
 /**********************************************************************
@@ -555,7 +555,7 @@ int ETLTransSelection(PETEHandle pte, HSPtr hs, short item)
  **********************************************************************/
 int ETLSpecial(short item)
 {
-	return fnfErr;
+	return ENOENT;
 }
 
 /**********************************************************************
@@ -570,7 +570,7 @@ void ETLEnableSpecialItems(void)
  **********************************************************************/
 int ETLAttach(short item, MyWindowPtr win)
 {
-	return fnfErr;
+	return ENOENT;
 }
 
 /**********************************************************************
@@ -578,7 +578,7 @@ int ETLAttach(short item, MyWindowPtr win)
  **********************************************************************/
 int ETLDoSettings(short item)
 {
-	return fnfErr;
+	return ENOENT;
 }
 
 /**********************************************************************
@@ -595,7 +595,7 @@ void ETLNameAndIcon(short i, unsigned char *name, void ***suite)
  **********************************************************************/
 int ETLSelect(short which, bool selecting, MessHandle messH)
 {
-	return fnfErr;
+	return ENOENT;
 }
 
 /**********************************************************************
@@ -667,7 +667,7 @@ bool ETLHasMBoxContextFolder(MyWindowPtr win)
  **********************************************************************/
 short ETLMBoxContextFolder(MyWindowPtr win, short *vRefNum, long *dirID)
 {
-	return fnfErr;
+	return ENOENT;
 }
 
 /**********************************************************************
@@ -677,7 +677,7 @@ short ETLMBoxContextFolder(MyWindowPtr win, short *vRefNum, long *dirID)
  **********************************************************************/
 int ETLGetPluginFolderSpec(char *spec, short nameId)
 {
-	return fnfErr;
+	return ENOENT;
 }
 
 /**********************************************************************
@@ -708,7 +708,7 @@ short ETLBoxTagWidth(MyWindowPtr win)
  **********************************************************************/
 short ETLQueueMessage(MessHandle messH)
 {
-	return fnfErr;
+	return ENOENT;
 }
 
 /**********************************************************************
@@ -783,13 +783,13 @@ void PlugwindowUpdate(GtkWindow *theWindow)
 
 int ETLImport(long id, ImportOperationEnum what, void *params, void *results)
 {
-	return fnfErr;
+	return ENOENT;
 }
 
 int ETLQueryImporters(ImportAccountInfoH *results, long id, bool search)
 {
 	if (results) *results = nil;
-	return fnfErr;
+	return ENOENT;
 }
 
 void **GetImporterAppIcon(long id)
@@ -804,23 +804,23 @@ void GetImporterName(long id, char name[256])
 
 int ETLImportSignatures(ImportAccountInfoP account)
 {
-	return fnfErr;
+	return ENOENT;
 }
 
 int ETLImportAddresses(ImportAccountInfoP account)
 {
-	return fnfErr;
+	return ENOENT;
 }
 
 int ETLImportMail(ImportAccountInfoP account)
 {
-	return fnfErr;
+	return ENOENT;
 }
 
 int ETLImportSettings(ImportAccountInfoP account, ImportPersDataH *persData)
 {
 	if (persData) *persData = nil;
-	return fnfErr;
+	return ENOENT;
 }
 
 /*======================================================================
@@ -831,14 +831,14 @@ int ETLScoreJunk(TLMPtr thePlugin, emsTranslatorP transInfo,
                  emsJunkInfoP junkInfo, emsMessageInfoP message,
                  emsJunkScoreP junkScore, emsResultStatusP status)
 {
-	return fnfErr; /* no junk scoring plugins */
+	return ENOENT; /* no junk scoring plugins */
 }
 
 int ETLMarkJunk(TLMPtr thePlugin, emsTranslatorP transInfo,
                 emsJunkInfoP junkInfo, emsMessageInfoP message,
                 emsJunkScoreP junkScore, emsResultStatusP status)
 {
-	return fnfErr; /* no junk marking plugins */
+	return ENOENT; /* no junk marking plugins */
 }
 
 /*======================================================================

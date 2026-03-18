@@ -24,7 +24,7 @@ DAMAGE. */
 // Forward declarations for Mac-specific types that need portable equivalents
 typedef struct AppleEvent AppleEvent;
 typedef struct AEDescList AEDescList;
-typedef struct ProcessSerialNumber ProcessSerialNumber;
+typedef struct void void;
 
 /**********************************************************************
  * MacPGP/ViaCrypt constants
@@ -89,11 +89,11 @@ short PGPSendMessage(TransStream stream,MessHandle messH,bool chatter);
 int BuildAddressList(void *addresses,AEDescList *list);
 int PGPFetchResult(AppleEvent *reply, char * spec);
 
-int StartPGP(ProcessSerialNumber *psn);
+int StartPGP(void *psn);
 
-#define kNoAsciiArmor	False
-#define kAsciiArmor	True
+#define kNoAsciiArmor	false
+#define kAsciiArmor	true
 
-#define kPublicRing False
-#define kPrivateRing True
+#define kPublicRing false
+#define kPrivateRing true
 #endif

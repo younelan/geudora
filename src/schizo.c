@@ -54,8 +54,8 @@ bool PersAnyPasswords(void)
 	PersHandle pers;
 	
 	for (pers=PersList;pers;pers=pers->next)
-		if (*pers->password || *pers->secondPass) return(True);
-	return(False);
+		if (*pers->password || *pers->secondPass) return(true);
+	return(false);
 }
 #pragma segment Schizo
 
@@ -65,7 +65,7 @@ bool PersAnyPasswords(void)
 int PersFillPw(PersHandle pers,uint32_t whichOnes)
 {
 	char pw[256];
-	int err = noErr;
+	int err = 0;
 	char uName[128], hName[128], persName[64];
 
 	pw[0] = '\0';
@@ -98,7 +98,7 @@ int PersFillPw(PersHandle pers,uint32_t whichOnes)
 		}
 	}
 
-	return(pers->password[0] ? noErr : userCanceledErr);
+	return(pers->password[0] ? 0 : ECANCELED);
 }
 
 /**********************************************************************
@@ -106,7 +106,7 @@ int PersFillPw(PersHandle pers,uint32_t whichOnes)
  **********************************************************************/
 int PersSavePw(PersHandle pers)
 {
-	int err = noErr;
+	int err = 0;
 
 	/* Password is stored in the system keychain by GetPassword() when the
 	 * user checks "Save password". PersSavePw only needs to clear it when
@@ -128,7 +128,7 @@ int PersSavePw(PersHandle pers)
  **********************************************************************/
 int PersSaveAll(void)
 {
-	int err=noErr;
+	int err=0;
 	PersHandle pers;
 	bool multiplePersonalities = false;
 	
@@ -143,13 +143,13 @@ int PersSaveAll(void)
  **********************************************************************/
 int PersSave(PersHandle pers)
 {
-	int err = noErr;
+	int err = 0;
 
 	if (pers->dirty)
 	{
 		/* Save password if user wants it saved */
 		PersSavePw(pers);
-		pers->dirty = False;
+		pers->dirty = false;
 	}
 	return(err);
 }
@@ -234,14 +234,14 @@ int PersDelete(PersHandle pers)
 		UpdatePersList();
 		AuditPersDelete(pers->persId);
 	}
-	return(noErr);
+	return(0);
 }
 
 
 /**********************************************************************
  * PersZapResources - zap resources for a personality
  **********************************************************************/
-void PersZapResources(OSType type,short resEnd)
+void PersZapResources(uint32_t type,short resEnd)
 {
 	/* GTK port: no Mac resource fork; personalities stored in prefs */
 	(void)type; (void)resEnd;
@@ -250,7 +250,7 @@ void PersZapResources(OSType type,short resEnd)
 /**********************************************************************
  * PersType - find an alternate type for a resource based on the personality
  **********************************************************************/
-OSType PersType(OSType theType,PersHandle pers)
+uint32_t PersType(uint32_t theType,PersHandle pers)
 {
 	if (pers && pers->persId)
 		theType = (theType&0xffff0000) | pers->resEnd;
@@ -317,7 +317,7 @@ void InitPersonalities(void)
 			if (!pers) break;
 			spec_set_name(pers, accounts[ai].name);
 			pers->persId = Hash(pers->name);
-			pers->dirty = False;
+			pers->dirty = false;
 			pers->checkTicks = 0;
 			pers->proxy = nil;
 			pers->mailboxTree = 0;
@@ -363,8 +363,8 @@ int PersSetName(PersHandle pers,char * name)
 	
 	if (oldPers=FindPersByName(name))
 	{
-		if (pers==oldPers) return(noErr);
-		else return(WarnUser(USED_PERSONALITY,dupFNErr));
+		if (pers==oldPers) return(0);
+		else return(WarnUser(USED_PERSONALITY,EEXIST));
 	}
 	g_strlcpy((char *)(pers->name), (char *)(name), sizeof(pers->name));
 	if (pers->persId)
@@ -372,7 +372,7 @@ int PersSetName(PersHandle pers,char * name)
 	else
 		AuditPersCreate(hash);
 	pers->persId = hash;
-	pers->dirty = True;
+	pers->dirty = true;
 	if (HasFeature (featureMultiplePersonalities)) {
 		if (pers != PersList)
 			UseFeature (featureMultiplePersonalities);
@@ -383,7 +383,7 @@ int PersSetName(PersHandle pers,char * name)
 	if (IsIMAPPers(pers))
 		IMAPPersIDChanged(pers, pers->mailboxTree);	
 	
-	return(noErr);
+	return(0);
 }
 
 /* Apple Events personality functions (SetPersProperty, GetPersProperty,
@@ -433,12 +433,12 @@ int SetPers(TOCType * tocH,short sumNum,PersHandle pers,bool stationery)
 	MessHandle messH = tocH->sums[sumNum].messH;
 	bool opened = messH==nil;
 	char addr[256];
-	int err = noErr;
+	int err = 0;
 	uint32_t sigId;
 	ControlHandle cntl;
 	bool redirected = (tocH->sums[sumNum].opts & OPT_REDIRECTED)!=0;
 	
-	if (tocH->sums[sumNum].persId==pers->persId) return(noErr);	// nothing to do
+	if (tocH->sums[sumNum].persId==pers->persId) return(0);	// nothing to do
 
 	if (pers!=PersList)
 		UseFeature (featureMultiplePersonalities);
@@ -460,25 +460,25 @@ int SetPers(TOCType * tocH,short sumNum,PersHandle pers,bool stationery)
 		
 		if (opened)
 		{
-			(void) OpenComp(tocH,sumNum,nil,nil,False,False);
+			(void) OpenComp(tocH,sumNum,nil,nil,false,false);
 			messH = tocH->sums[sumNum].messH;
 		}
 		if (!messH) return(errAENoSuchObject);
 		messWinWP = GetMyWindowWindowPtr(messH->win);
 		PushPers(pers);
-		GetReturnAddr(addr,True);
+		GetReturnAddr(addr,true);
 		PeteCalcOff(TheBody);
 		if (redirected)
 			err = RedirectAnnotation(messH);
 		else
 			err = SetMessText(messH,FROM_HEAD,addr+1,*addr);
 
-		if (stationery) ApplyDefaultStationery(messH->win,False,False);
+		if (stationery) ApplyDefaultStationery(messH->win,false,false);
 		PeteKillUndo(TheBody);
 		PopPers();
 		if (opened)
 		{
-			err = !SaveComp(messH->win) ? err : True;
+			err = !SaveComp(messH->win) ? err : true;
 			CloseMyWindow(messWinWP);
 		}
 		else
@@ -586,12 +586,12 @@ void PersSetAutoCheck(void)
 	{
 		if (PrefIsSet(PREF_AUTO_CHECK) && (ival=GetPrefLong(PREF_INTERVAL)) && *GetPOPPref(s))
 		{
-			CurPers->autoCheck = True;
+			CurPers->autoCheck = true;
 			CurPers->ivalTicks = TICKS2MINS * ival;
 		}
 		else
 		{
-			CurPers->autoCheck = False;
+			CurPers->autoCheck = false;
 			CurPers->ivalTicks = 0;
 		}
 		is = *GetPOPPref(s) && s[1]=='!';
@@ -648,7 +648,7 @@ void CheckPers(MyWindowPtr win,bool all)
 	mh = GetMHandle(PERS_HIER_MENU);
 	messH = win?(MessHandle) GetMyWindowPrivateData(win):nil;
 	tocH = win?(TOCType *) GetMyWindowPrivateData(win):nil;
-	out=False;
+	out=false;
 	kind = winWP ? GetWindowKind(winWP) : 0;
 	
 	/*

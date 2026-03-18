@@ -243,7 +243,7 @@ int SASLCramMD5(short rounds,AccuPtr chalAcc,AccuPtr respAcc)
 	if (rounds==0)
 	{
 		AccuAddRes(respAcc,SASLStrn+saslCramMD5);
-		return noErr;
+		return 0;
 	}
 	
 	// respond to the challenge
@@ -259,7 +259,7 @@ int SASLCramMD5(short rounds,AccuPtr chalAcc,AccuPtr respAcc)
 			PCatC(challenge,' ');
 			PCat(challenge,GlobalTemp);
 			AccuAddStrB64(respAcc,challenge);
-			return noErr;
+			return 0;
 		}
 		else
 		{
@@ -269,7 +269,7 @@ int SASLCramMD5(short rounds,AccuPtr chalAcc,AccuPtr respAcc)
 		}
 	}
 	
-	return fnfErr;
+	return ENOENT;
 }
 
 /************************************************************************
@@ -337,7 +337,7 @@ int SASLLogin(short rounds, AccuPtr chalAcc,AccuPtr respAcc)
 	if (rounds==0)
 	{
 		AccuAddRes(respAcc,SASLStrn+saslLogin);
-		return noErr;
+		return 0;
 	}
 
 #ifdef DEBUG
@@ -387,7 +387,7 @@ int SASLGSSAPIBuildServiceName(char * fullService,char * service);
  ************************************************************************/
 int SASLGSSAPI(char * service,short rounds,long *state,AccuPtr chalAcc,AccuPtr respAcc)
 {
-	int err = noErr;
+	int err = 0;
 	OM_uint32	min, maj;
 	gss_buffer_desc buf, chal, resp;
 	SASLGSSAPIContextHandle contextH = (SASLGSSAPIContextHandle) *state;
@@ -415,7 +415,7 @@ int SASLGSSAPI(char * service,short rounds,long *state,AccuPtr chalAcc,AccuPtr r
 		// not be doing gssapi, so this may be safe
 		AccuAddRes(respAcc,SASLStrn+saslGSSAPI);
 		
-		return noErr;
+		return 0;
 	}
 	
 	if (rounds==1)
@@ -474,7 +474,7 @@ int SASLGSSAPI(char * service,short rounds,long *state,AccuPtr chalAcc,AccuPtr r
 		err = AccuAddPtrB64(respAcc,resp.value,resp.length);
 		gss_release_buffer(&min,&resp);
 		
-		return err ? 501 : noErr;
+		return err ? 501 : 0;
 	}
 	
 	if (rounds>1 && contextH->internalState==0)
@@ -523,7 +523,7 @@ int SASLGSSAPI(char * service,short rounds,long *state,AccuPtr chalAcc,AccuPtr r
 			if (resp.length) AccuAddPtrB64(respAcc,resp.value,resp.length);
 			gss_release_buffer(&min,&resp);
 			if (maj==GSS_S_COMPLETE) contextH->internalState++;
-			return noErr;
+			return 0;
 		}
 		
 		goto fail;
@@ -582,14 +582,14 @@ int SASLGSSAPI(char * service,short rounds,long *state,AccuPtr chalAcc,AccuPtr r
 				AccuAddPtrB64(respAcc,resp.value,resp.length);
 				gss_release_buffer(&min,&resp);
 				contextH->internalState++;
-				return noErr;
+				return 0;
 			}
 		}
 		else if (maj==GSS_S_COMPLETE && resp.length<4)
 		{
 			// for Kerberos, this is normal.  Return "no data" to server
 			// which will happen sneakily if we return a 501 here
-			return noErr;
+			return 0;
 		}
 		
 		goto fail;
@@ -691,5 +691,5 @@ int SASLGSSAPIBuildServiceName(char * fullService,char * service)
 	spot = host; PToken(host,shortHost,&spot,".");
 	GetRString(fmt,K5_SERVICE_FMT);
 	utl_PlugParams(fmt,fullService,service,host,realm,shortHost);
-	return noErr;
+	return 0;
 }

@@ -55,7 +55,7 @@ int AddListItemEntry(short where, drawCellType draw, void *data,
   else
     gtk_list_box_insert(GTK_LIST_BOX(lHandle), row, where);
 
-  return 0; // noErr
+  return 0; // 0
 }
 
 /* Remove an entry matching data pointer */

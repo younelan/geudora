@@ -105,9 +105,9 @@ int SendBinHex(TransStream stream, char * spec, AttMapPtr amp)
 		struct stat st;
 		if (stat(spec, &st) == 0) {
 			dataForkLen = st.st_size;
-			err = noErr;
+			err = 0;
 		} else {
-			err = ioErr;
+			err = EIO;
 		}
 	}
 	if (err) { FileSystemError(BINHEX_OPEN, spec_name(spec), err); goto done; }
@@ -140,7 +140,7 @@ int SendBinHex(TransStream stream, char * spec, AttMapPtr amp)
 	/*
 	 * send the file information
 	 */
-	DontTranslate = True;
+	DontTranslate = true;
 	LineLength = 1;
 	State86 = CalcCrc = codedSpot = 0;
 	nameLen = strlen(spec_name(spec)) + 1;
@@ -167,7 +167,7 @@ int SendBinHex(TransStream stream, char * spec, AttMapPtr amp)
 	 * data fork
 	 */
 	refN = open(spec, O_RDONLY);
-	if (refN < 0) { FileSystemError(BINHEX_OPEN, spec_name(spec), ioErr); goto done; }
+	if (refN < 0) { FileSystemError(BINHEX_OPEN, spec_name(spec), EIO); goto done; }
 	err = BinHexFork(stream, refN, dataBuffer, dataSize, codedBuffer, spec_name(spec));
 	if (err) goto done;
 
@@ -191,7 +191,7 @@ done:
 	if (refN >= 0) close(refN);
 	free(dataBuffer);
 	free(codedBuffer);
-	DontTranslate = False;
+	DontTranslate = false;
 	return err;
 }
 
@@ -222,7 +222,7 @@ int MIMEFileHeader(TransStream stream, AttMapPtr amp, short convertID, long modD
 	    (err = ComposeRTrans(stream, MIME_CT_ANNOTATE,
 	                         AttributeStrn+aModDate, date, NewLine)))
 		return err;
-	return noErr;
+	return 0;
 }
 
 /************************************************************************
@@ -233,7 +233,7 @@ int BinHexFork(TransStream stream, int refN, char *dataBuffer, short dataSize,
                char *codedBuffer, const char *name)
 {
 	short codedSpot = 0;
-	int err = noErr;
+	int err = 0;
 	char *spot;
 	ssize_t got;
 
@@ -245,7 +245,7 @@ int BinHexFork(TransStream stream, int refN, char *dataBuffer, short dataSize,
 	do {
 		got = read(refN, dataBuffer, dataSize);
 		if (got < 0) {
-			err = ioErr;
+			err = EIO;
 			FileSystemError(BINHEX_READ, name, err);
 			break;
 		}

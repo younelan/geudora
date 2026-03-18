@@ -270,10 +270,10 @@ static void build_stats(GtkWidget *c) {
   gtk_box_append(GTK_BOX(jc), s_bar("Scored Junk", jt, jmx, "s-bar-red"));
   gtk_box_append(GTK_BOX(jc), s_bar("Scored OK", njt, jmx, "s-bar-green"));
   gtk_box_append(GTK_BOX(jc), s_bar("Whitelist", wl, jmx, NULL));
-  gtk_box_append(GTK_BOX(jc), s_bar("False Pos", fp, jmx, "s-bar-amber"));
-  gtk_box_append(GTK_BOX(jc), s_bar("False Neg", fn, jmx, "s-bar-red"));
+  gtk_box_append(GTK_BOX(jc), s_bar("false Pos", fp, jmx, "s-bar-amber"));
+  gtk_box_append(GTK_BOX(jc), s_bar("false Neg", fn, jmx, "s-bar-red"));
   if (fwl > 0)
-    gtk_box_append(GTK_BOX(jc), s_bar("False WL", fwl, jmx, "s-bar-amber"));
+    gtk_box_append(GTK_BOX(jc), s_bar("false WL", fwl, jmx, "s-bar-amber"));
 
   /* Accuracy */
   if (jtotal > 0) {

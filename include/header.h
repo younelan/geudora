@@ -103,8 +103,8 @@ int ReadHeaderLo(TransStream stream,HeaderDHandle hdh, long estSize, short refN,
 HeaderDHandle NewHeaderDesc(HeaderDHandle parentHDH);
 void DisposeHeaderDesc(HeaderDHandle hdh);
 short ViewTable(HeaderDHandle hdh);
-int ParseAHeader(StringHandle h, HeaderDHandle *hdhp);
-int ParseAHeaderLo(StringHandle h, HeaderDHandle *hdhp, short funFieldsID, short funFieldsLimit);
+int ParseAHeader(char * h, HeaderDHandle *hdhp);
+int ParseAHeaderLo(char * h, HeaderDHandle *hdhp, short funFieldsID, short funFieldsLimit);
 #define ZapHeaderDesc(hdh) do{DisposeHeaderDesc(hdh);hdh=nil;}while(0)
 bool HeaderDescInAddrBook(HeaderDHandle hdh);
 

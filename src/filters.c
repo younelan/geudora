@@ -72,7 +72,7 @@ static long FilterNewId(void)
  *====================================================================*/
 int ScriptCountFilters(long *count)
 {
-	if (!count) return -50;  /* paramErr */
+	if (!count) return -50;  /* EINVAL */
 	if (RegenerateFilters()) return -1;
 	*count = gNFilters;
 	return 0;
@@ -109,7 +109,7 @@ int ScriptCreateFilter(int position, long *outId)
 	/* Grow the array */
 	FilterRecord *grown = (FilterRecord *)realloc(
 		gFilterArray, (gNFilters + 1) * sizeof(FilterRecord));
-	if (!grown) return -108;  /* memFullErr */
+	if (!grown) return -108;  /* ENOMEM */
 	gFilterArray = grown;
 
 	/* Shift filters after insertion point */

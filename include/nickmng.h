@@ -32,7 +32,7 @@ ADVISED OF THE POSSIBILITY OF SUCH DAMAGE. */
 #include "mydefs.h"
 #include "trans.h"
 
-/* StringHandle defined in portable-compat.h as char ** */
+/* char * defined in portable-compat.h as char ** */
 
 // Nickname TOC flags (new for 5.0)
 typedef enum {
@@ -220,7 +220,7 @@ long CountAliasExpansion(NickHandle aliases, long offset);
   ((addrs) && (addrs)[0] && (addrs)[1] ? true : false)
 
 bool SaveIndNickFile(short which, bool saveChangeBits);
-int URLStringToSpec(StringHandle urlString, char *spec);
+int URLStringToSpec(char * urlString, char *spec);
 short ReplaceNicknameAddresses(short which, char *oldName,
                                TextAddrHandle text);
 short ReplaceNicknameNotes(short which, char *oldName,

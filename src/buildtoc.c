@@ -50,7 +50,7 @@ ADVISED OF THE POSSIBILITY OF SUCH DAMAGE. */
 
 #define FILE_NUM 45
 
-/* fnfErr and noErr defined in mailbox.h */
+/* ENOENT and 0 defined in mailbox.h */
 
 #ifndef IsWhite
 #define IsWhite(c) ((c) == ' ' || (c) == '\t')
@@ -544,8 +544,8 @@ int SumToFrom(MSumPtr sum, unsigned char *fromLine) {
 long FindTOCSpot(TOCType * tocH, long length) {
   long eof = 0;
   if (tocH && tocH->refN > 0) {
-    if (GetEOF(tocH->refN, &eof) != 0) {
-      /* If GetEOF fails, fallback to 0 (corrupt but better than random) */
+    if (file_size(tocH->refN, &eof) != 0) {
+      /* If file_size fails, fallback to 0 (corrupt but better than random) */
       eof = 0;
     }
   }
@@ -627,7 +627,7 @@ static short MatchSenderHeader(const char *headerName) {
  * line I/O routines.  This is the state machine that parses mbox files.
  *
  * Pass sum=NULL to reset internal state.
- * Returns noErr on success, fnfErr at EOF, or an error code.
+ * Returns 0 on success, ENOENT at EOF, or an error code.
  ************************************************************************/
 int ReadSum(MSumPtr sum, bool isOut, LineIOP lip, bool lookEnvelope) {
   static int type;
@@ -651,7 +651,7 @@ int ReadSum(MSumPtr sum, bool isOut, LineIOP lip, bool lookEnvelope) {
       oldLineData = NULL;
       oldLineLen = 0;
     }
-    return noErr;
+    return 0;
   }
 
   state = BEGIN;
@@ -893,7 +893,7 @@ done:
   if (state != BEGIN) {
     sum->length = TellLine(lip) - sum->offset;
   }
-  return (state == BEGIN) ? fnfErr : noErr;
+  return (state == BEGIN) ? ENOENT : 0;
 }
 
 /************************************************************************
@@ -939,7 +939,7 @@ TOCType * BuildTOC(const char *path) {
     return NULL;
   }
 
-  if ((err = OpenLine(path, fsRdWrPerm, &lid))) {
+  if ((err = OpenLine(path, O_RDWR, &lid))) {
     g_warning("BuildTOC: cannot open mailbox %s: error %d", filename, err);
     return NULL;
   }
@@ -984,7 +984,7 @@ TOCType * BuildTOC(const char *path) {
     sum.serialNum = toc->nextSerialNum++;
     toc->sums[toc->count++] = sum;
   }
-  if (err != fnfErr)
+  if (err != ENOENT)
     goto failure;
 
   /* Clean up ReadSum state */

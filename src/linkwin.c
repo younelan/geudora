@@ -24,6 +24,7 @@ OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE OF THIS SOFTWARE, EVEN IF
 ADVISED OF THE POSSIBILITY OF SUCH DAMAGE. */
 
 #include "linkwin.h"
+#include "gtk_dialogs.h"
 #include "MyRes.h"
 #include "features.h"
 #include "threading.h"
@@ -228,7 +229,7 @@ typedef int DragTrackingMessage;
 #define kHtCtl 20
 #define kSponsorBorderMargin 4
 #endif
-/* MemError inline stub (noErr already in portable-compat) */
+/* MemError inline stub (0 already in portable-compat) */
 static inline int MemError(void) { return 0; }
 /* RectWi macro */
 #ifndef RectWi
@@ -312,7 +313,7 @@ typedef struct {
   ViewList list;
   MyWindowPtr win;
   ControlHandle ctlColumns[NUM_COLUMNS], ctlView, ctlRemove;
-  Boolean inited;
+  bool inited;
   bool needsSort;
   short columnLefts[NUM_COLUMNS];
   LinkSortTypeEnum sort;
@@ -437,7 +438,7 @@ void OpenLinkWin(void) {
     short err = 0;
     Rect r;
 
-    if (GenHistoriesList() != noErr)
+    if (GenHistoriesList() != 0)
       goto fail;
 
     // age the links if we haven't in a while ...
@@ -452,7 +453,7 @@ void OpenLinkWin(void) {
     SetWinMinSize(gWin.win, 320, 12 * FontLead);
     SetPort_(GetMyWindowCGrafPtr(gWin.win));
     ConfigFontSetup(gWin.win);
-    MySetThemeWindowBackground(gWin.win, kThemeListViewBackgroundBrush, False);
+    MySetThemeWindowBackground(gWin.win, kThemeListViewBackgroundBrush, false);
 
     /*
      * list
@@ -702,7 +703,7 @@ static bool DoClose(MyWindowPtr win) {
     // Take care of the icon cache as well
     ZapPVICache();
   }
-  return (True);
+  return (true);
 }
 
 /************************************************************************
@@ -886,7 +887,7 @@ static bool DoMenuSelect(MyWindowPtr win, int menu, int item, short modifiers) {
     switch (item) {
     case FILE_OPENSEL_ITEM: // this should open the selected link
                             //					MBListOpen();
-      return (True);
+      return (true);
       break;
     }
     break;
@@ -900,7 +901,7 @@ static bool DoMenuSelect(MyWindowPtr win, int menu, int item, short modifiers) {
     }
     break;
   }
-  return (False);
+  return (false);
 }
 
 /**********************************************************************
@@ -909,7 +910,7 @@ static bool DoMenuSelect(MyWindowPtr win, int menu, int item, short modifiers) {
 static int DoDragHandler(MyWindowPtr win, DragTrackingMessage which,
                            DragReference drag) {
 #pragma unused(win)
-  int err = noErr;
+  int err = 0;
 
   // #warning  don't forget to handle drags from link history window!
 
@@ -1141,7 +1142,7 @@ static void GetCellRectsForLHWin(ViewListPtr pView, CellRec *pCellData,
 static long ViewListCallBack(ViewListPtr pView, VLCallbackMessage message,
                              long data) {
   VLNodeInfo *pInfo;
-  int err = noErr;
+  int err = 0;
   void *hUrl;
   SendDragDataInfo *pSendData;
 
@@ -1354,9 +1355,9 @@ bool PingAdServer(void) {
   bool oldPref = PrefIsSet(PREF_IGNORE_PPP);
 
   // #warning Ping the Adserver, whatever we're supposed to
-  if (err == noErr) {
+  if (err == 0) {
     // extract the host from the playlist url
-    if ((err = ParseURL(PlayListURL, proto, host, query)) == noErr) {
+    if ((err = ParseURL(PlayListURL, proto, host, query)) == 0) {
       if (host[0]) {
         // figure out the server and port from the hostname ...
         p = PIndex(host, ':');
@@ -1376,7 +1377,7 @@ bool PingAdServer(void) {
         SetPref(PREF_IGNORE_PPP, oldPref ? YesStr : NoStr);
 
         // That's all we wanted.  Cleanup.
-        if (err == noErr) {
+        if (err == 0) {
           DestroyTrans(stream);
           result = true;
         }
@@ -1595,16 +1596,16 @@ bool RemindUserNow(void) {
 
   // if we're offline, forget about it
   if (Offline)
-    return (False);
+    return (false);
 
   // if we're on batteries, and we're not supposed to check while on batteries,
   // don't fire up the network for this either. go ahead and remind the user if
   // the network is up, even if the machine is on batteries. -jdboyd 01/22/01
-  //	if (PrefIsSet(PREF_NO_BATT_CHECK) && OnBatteries()) return(False);
+  //	if (PrefIsSet(PREF_NO_BATT_CHECK) && OnBatteries()) return(false);
 
   // if PPP is down, forget it.
   if (PPPDown())
-    return (False);
+    return (false);
 
   // are we outside the range of time we're allowed to check?  Don't remind the
   // user now, either
@@ -1615,9 +1616,9 @@ bool RemindUserNow(void) {
     if (dtr.dayOfWeek == 1 || dtr.dayOfWeek == 7) // weekends
     {
       if (hourBits & kHourAlwaysWeekendMask)
-        return (True);
+        return (true);
       if (hourBits & kHourNeverWeekendMask)
-        return (False);
+        return (false);
     }
     if (0 !=
         (hourBits & kHourUseMask)) // non-weekends, or weekend same as weekday
@@ -1625,7 +1626,7 @@ bool RemindUserNow(void) {
       return 0 != (hourBits & (1L << dtr.hour));
     }
   }
-  return (True);
+  return (true);
 }
 #endif
 

@@ -51,7 +51,7 @@ void Ungrok(HeaderDHandle hdh);
 void Ungrok(HeaderDHandle hdh)
 {
 	// we do not full understand this header block
-	hdh->grokked = False;
+	hdh->grokked = false;
 }
 
 #define OkStateAtWhichToEnd(s) ((s)==ExpectText || (s)==ExpectSem || (s)==ExpectVersion || (s)==ExpectStructuredValue)
@@ -93,7 +93,7 @@ int ReadHeaderLo(TransStream stream, HeaderDHandle hdh, long estSize, short refN
 #endif
 	
 	if(funFieldsLimit > InterestHeadLimit)
-		return paramErr;
+		return EINVAL;
 	
 	/*
 	 * grab the interesting header labels
@@ -128,7 +128,7 @@ int ReadHeaderLo(TransStream stream, HeaderDHandle hdh, long estSize, short refN
 	AAFetchResData(hdh->funFields,InterestHeadStrn+hContentBase,GlobalTemp);
 	free(hdh->funFields);
 	hdh->funFields = (void*)grumble;
-	if (*GlobalTemp) AAAddResItem(hdh->funFields,True,InterestHeadStrn+hContentBase,GlobalTemp);
+	if (*GlobalTemp) AAAddResItem(hdh->funFields,true,InterestHeadStrn+hContentBase,GlobalTemp);
 	
 	/*
 	 * make a copy of the full header accumulator
@@ -139,7 +139,7 @@ int ReadHeaderLo(TransStream stream, HeaderDHandle hdh, long estSize, short refN
 	/*
 	 * record where we started
 	 */
-	if (refN && (err=GetFPos(refN,&hdh->diskStart)))
+	if (refN && (err=file_tell(refN,&hdh->diskStart)))
   {
 		WarnUser(WRITE_MBOX,err);
 		return(ErrorToken);
@@ -163,11 +163,11 @@ int ReadHeaderLo(TransStream stream, HeaderDHandle hdh, long estSize, short refN
 		 */
 		if (isDigest && tokenType==EndOfHeader)
 		{
-			isDigest = False;
+			isDigest = false;
 			tokenType=Lex822(stream,&l822s,&fullHeaders);
 			if (tokenType==Special) continue;
 		}
-		isDigest = False;
+		isDigest = false;
 		
 		/*
 		 * write the token to disk
@@ -294,7 +294,7 @@ int ReadHeaderLo(TransStream stream, HeaderDHandle hdh, long estSize, short refN
 												if (hdh->foundRecvd)
 													hdh->hFound = 0;
 												else
-													hdh->foundRecvd = True;
+													hdh->foundRecvd = true;
 												Ungrok(hdh);
 												EXPECT_TEXT;
 												break;
@@ -303,7 +303,7 @@ int ReadHeaderLo(TransStream stream, HeaderDHandle hdh, long estSize, short refN
 												if (hdh->foundMID)
 													hdh->hFound = 0;
 												else
-													hdh->foundMID = True;
+													hdh->foundMID = true;
 												Ungrok(hdh);
 												EXPECT_TEXT;
 												break;
@@ -346,11 +346,11 @@ int ReadHeaderLo(TransStream stream, HeaderDHandle hdh, long estSize, short refN
 									break;
 								case hWho:
 									PCSTrim(hdh->who,l822s.token);
-									if (PrefIsSet(PREF_NO_SELF_RECEIPT) && IsMe(l822s.token)) hdh->hasMDN = False;
+									if (PrefIsSet(PREF_NO_SELF_RECEIPT) && IsMe(l822s.token)) hdh->hasMDN = false;
 									AddFunField(hdh,l822s.token,funFieldsID);
 									break;
 								case hMDN:
-									hdh->hasMDN = True;
+									hdh->hasMDN = true;
 									break;
 								case hMessageId:
 									hash = MIDHash(l822s.token,strlen((const char*)l822s.token));
@@ -407,7 +407,7 @@ int ReadHeaderLo(TransStream stream, HeaderDHandle hdh, long estSize, short refN
 								 * if we know the encoding, get rid of it
 								 * that is, if it's safe to do so.
 								 */
-								if (refN && !NoAttachments && FindMIMEDecoder(hdh->contentEnco,&junk,False))
+								if (refN && !NoAttachments && FindMIMEDecoder(hdh->contentEnco,&junk,false))
 								{
 									AccuFSeek(&a,refN,lastNewline);
 								}
@@ -427,7 +427,7 @@ int ReadHeaderLo(TransStream stream, HeaderDHandle hdh, long estSize, short refN
 								g_strlcpy((char*)hdh->mimeVersion,(const char*)l822s.token,sizeof(hdh->mimeVersion));
 								if (!StringSame((const char*)GetRString(scratch,MIME_VERSION),(const char*)hdh->mimeVersion))
 									Ungrok(hdh);
-								hdh->isMIME = True;
+								hdh->isMIME = true;
 								//	Add version to ems MIME info
 								if (AddTLMIME(hdh->tlMIME,TLMIME_VERSION,l822s.token,nil))
 								{
@@ -489,15 +489,15 @@ int ReadHeaderLo(TransStream stream, HeaderDHandle hdh, long estSize, short refN
 							if (hdh->depth > GetRLong(MAX_MULTI_DEPTH)) GetRString(l822s.token,MIME_PLAIN);
 							g_strlcpy((char*)hdh->contentSubType,(const char*)l822s.token,sizeof(hdh->contentSubType));
 							hdh->state = ExpectSem;
-							hdh->isMIME = True;
+							hdh->isMIME = true;
 							if (EqualStrRes(l822s.token,MIME_PARTIAL))
-								hdh->isPartial = True;
+								hdh->isPartial = true;
 							else
-								hdh->isPartial = False;
+								hdh->isPartial = false;
 							if (EqualStrRes(l822s.token,MIME_RICHTEXT))
-								hdh->hasRich = AnyRich = True;
+								hdh->hasRich = AnyRich = true;
 							if (EqualStrRes(l822s.token,HTMLTagsStrn+htmlTag))
-								hdh->hasHTML = AnyHTML = True;
+								hdh->hasHTML = AnyHTML = true;
 							if (refN) lastParam = AccuFTell(&a,refN);
 #ifdef ETL
 							if (AddTLMIME(hdh->tlMIME,TLMIME_SUBTYPE,l822s.token,nil))
@@ -520,7 +520,7 @@ int ReadHeaderLo(TransStream stream, HeaderDHandle hdh, long estSize, short refN
 						if (tokenType==Atom)
 						{
 							if (EqualStrRes(l822s.token,ATTACHMENT))
-								hdh->isAttach = True;
+								hdh->isAttach = true;
 							hdh->state = ExpectSem;
 							if (AddTLMIME(hdh->tlMIME,TLMIME_CONTENTDISP,l822s.token,nil))
 							{
@@ -654,7 +654,7 @@ out:
 	/*
 	 * where we ended up
 	 */
-	if (refN && (err=GetFPos(refN,&hdh->diskEnd)))
+	if (refN && (err=file_tell(refN,&hdh->diskEnd)))
 	{
 		WarnUser(WRITE_MBOX,err);
 		tokenType = ErrorToken;
@@ -691,7 +691,7 @@ HeaderDHandle NewHeaderDesc(HeaderDHandle parentHDH)
 	
 	if (hdh)
 	{
-		hdh->grokked = True;
+		hdh->grokked = true;
 		aah = AANew(GetRLong(MIME_ATTR_MAX),GetRLong(MIME_VAL_MAX));
 		hdh->contentAttributes = aah;
 		aah = AANew(GetRLong(MIME_ATTR_MAX),256);
@@ -796,7 +796,7 @@ int AddHeaderAttribute(HeaderDHandle hdh, char *value, bool etl)
 	short dataSize = hdh->contentAttributes->dataSize;
 
 	g_strlcpy(truncated,value,dataSize < (short)sizeof(truncated) ? dataSize : (short)sizeof(truncated));
-	err = AAAddItem(hdh->contentAttributes,True,(void*)hdh->attributeName,(void*)truncated);
+	err = AAAddItem(hdh->contentAttributes,true,(void*)hdh->attributeName,(void*)truncated);
 
 	if (err) {return(WarnUser(MEM_ERR,0));}
 
@@ -826,11 +826,11 @@ int AddFunField(HeaderDHandle hdh, char *value, short funFieldsID)
 	if (hdh->hFound)
 	{
 		GetRString(fName,funFieldsID+hdh->hFound);
-		err = AAAddItem(hdh->funFields,True,fName,value);
+		err = AAAddItem(hdh->funFields,true,fName,value);
 		if (err) return(WarnUser(MEM_ERR,0));
 	}
 		
-	return(noErr);
+	return(0);
 }
 
 /************************************************************************
@@ -855,7 +855,7 @@ int HeaderRecvLine(TransStream stream, char *buffer, long *size)
 	long endOffset = 0L;
 	long bufLen;
 	
-	if(!buffer) return paramErr;
+	if(!buffer) return EINVAL;
 	bufLen = *size;
 	if(parseHeaderSize)
 	{
@@ -879,15 +879,15 @@ int HeaderRecvLine(TransStream stream, char *buffer, long *size)
 		buffer[endOffset] = '\015';
 		*size += 2;
 	}
-	return noErr;
+	return 0;
 }
 
-int ParseAHeader(StringHandle h, HeaderDHandle *hdhp)
+int ParseAHeader(char * h, HeaderDHandle *hdhp)
 {
 	return ParseAHeaderLo(h,hdhp,InterestHeadStrn,InterestHeadLimit);
 }
 
-int ParseAHeaderLo(StringHandle h, HeaderDHandle *hdhp, short funFieldsID, short funFieldsLimit)
+int ParseAHeaderLo(char * h, HeaderDHandle *hdhp, short funFieldsID, short funFieldsLimit)
 {
 	Token822Enum tokenType;
 	TransVector HeaderTrans = {nil,nil,nil,nil,nil,nil,nil,nil,nil,HeaderRecvLine,nil};
@@ -911,13 +911,13 @@ int ParseAHeaderLo(StringHandle h, HeaderDHandle *hdhp, short funFieldsID, short
 	if(tokenType != ErrorToken)
 	{
 		*hdhp = hdh;
-		return noErr;
+		return 0;
 	}
 	else
 	{
 		int err = 0;
 		DisposeHeaderDesc(hdh);
-		return err ? err : paramErr;
+		return err ? err : EINVAL;
 	}
 }
 

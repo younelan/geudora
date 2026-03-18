@@ -24,7 +24,7 @@ DAMAGE. */
 
 /* Forward declarations */
 struct MyWindow;
-typedef struct MyWindow *MyWindowPtr;
+/* MyWindowPtr defined in mailbox.h */
 
 /*
  * EmoInit - initialize the emoticon system.

@@ -274,7 +274,7 @@ int AddURLToMainHistory(char * url, char * name, int urlOpenErr) {
  * AddURLToMainHistory - add a URL to the main history file
  ************************************************************************/
 int AddURLToHistory(short which, char * url, char * name, int urlOpenErr) {
-  int err = noErr;
+  int err = 0;
   ProtocolEnum protocol;
   char proto[256], host[256], query[256];
   long hashName;
@@ -294,7 +294,7 @@ int AddURLToHistory(short which, char * url, char * name, int urlOpenErr) {
     // see if this is one of the protocols we should be keeping history entries
     // for
     if (!InterestingProtocol(proto))
-      return (userCanceledErr);
+      return (ECANCELED);
 
     protocol = FindSTRNIndex(ProtocolStrn, proto);
     FixURLString(host);
@@ -327,7 +327,7 @@ int AddURLToHistory(short which, char * url, char * name, int urlOpenErr) {
     linkType = LinkType(protocol, proto);
 
     // Was this link successfully launched?
-    if (urlOpenErr != noErr) {
+    if (urlOpenErr != 0) {
       // is this a link type we should label?
       if (LabelableLink(linkType)) {
         // the link was attempted, but probably failed.
@@ -348,7 +348,7 @@ int AddURLToHistory(short which, char * url, char * name, int urlOpenErr) {
     // Make sure the history files are around somewhere
     err = GenHistoriesList();
 
-    if (err == noErr) {
+    if (err == 0) {
       // Is this entry already in the history file?
       if ((index = HistMatchFound(hashName, hUrl, which)) >= 0) {
         // adjust the label of the link ...
@@ -363,7 +363,7 @@ int AddURLToHistory(short which, char * url, char * name, int urlOpenErr) {
         junk.server = junk.ad = 0;
         err = AddHistoryToTOC(which, urlName, hashName, linkType, linkLabel,
                               false, hUrl, junk);
-        if (err == noErr) {
+        if (err == 0) {
           // save the history file
           err = SaveIndHistoryFile(which);
         }
@@ -430,7 +430,7 @@ bool InterestingProtocol(char proto[256]) {
  * UpdateLinkLabel - update the label of a link according to an error
  ************************************************************************/
 void UpdateLinkLabel(HistoryStructPtr entry, int err) {
-  if (LabelableLink(entry->type) && (err != noErr)) {
+  if (LabelableLink(entry->type) && (err != 0)) {
     // adjust the label unless the user cancelled ...
     if (err != oldaCancel)
       entry->label = OpenErrToLabel(err);
@@ -448,7 +448,7 @@ void UpdateLinkLabel(HistoryStructPtr entry, int err) {
 LinkLabelEnum OpenErrToLabel(int err) {
   LinkLabelEnum result = llNone;
 
-  if ((err != noErr)) {
+  if ((err != 0)) {
     if (err == oldaBookmark)
       result = llBookmarked;
     else if (err == oldaRemind)
@@ -480,10 +480,10 @@ int RegenerateLinkHistory(short which, bool rebuild) {
   } else // void *exists
   {
     if (!rebuild)
-      return (noErr);
+      return (0);
   }
 
-  if (err != noErr || rebuild) {
+  if (err != 0 || rebuild) {
     err = ReadHistTOC(which);
   }
 
@@ -541,7 +541,7 @@ void ZapHistoriesList(bool destroy) {
  * GenHistoriesList - generate the history file list
  ************************************************************************/
 int GenHistoriesList(void) {
-  int err = noErr;
+  int err = 0;
   char name[32];
   FSSpec folderSpec;
   HistoryDesc ad;
@@ -550,7 +550,7 @@ int GenHistoriesList(void) {
 
   // do nothing if the history files have already been loaded.
   if (gHistories)
-    return (noErr);
+    return (0);
 
   /*
    * allocate empty handle for new
@@ -595,7 +595,7 @@ void ReadHistFileList(char *pSpec, bool reread) {
   /*
    * create the folder if we need it ...
    */
-  if (SubFolderSpec(LINK_HISTORY_FOLDER, pSpec) != noErr) {
+  if (SubFolderSpec(LINK_HISTORY_FOLDER, pSpec) != 0) {
     mkdir(GetRString(name, LINK_HISTORY_FOLDER), 0755);
     /* GTK port: SimpleMakeFSSpec is Mac HFS API - just fill in name field */
     strncpy(spec_name(gLinkHistoryFolder), "LinkHistory",
@@ -693,7 +693,7 @@ int AddHistoryToTOC(short which, char * name, long hashName,
  * SaveAllHistoryFiles - save all history files that need it
  ************************************************************************/
 int SaveAllHistoryFiles(void) {
-  int err = noErr;
+  int err = 0;
   short hFiles;
 
   for (hFiles = 0; hFiles < NHistoryFiles; hFiles++) {
@@ -719,14 +719,14 @@ int SaveIndHistoryFile(short which) {
 
 #ifdef DEBUG
   if (InAThread())
-    return noErr;
+    return 0;
 #endif
 
   /*
    * do we need to save it?
    */
   if (!gHistories[which].dirty)
-    return (noErr);
+    return (0);
 
   /*
    * find the file
@@ -744,10 +744,10 @@ int SaveIndHistoryFile(short which) {
     goto done;
   int fd = open(tmpSpec, O_RDWR | O_CREAT | O_TRUNC, 0644);
   if (fd >= 0) {
-    err = noErr;
+    err = 0;
     close(fd);
   } else {
-    err = ioErr;
+    err = EIO;
   }
   if (err) {
     FileSystemError(SAVE_LINK_HISTORY, spec_name(tmpSpec), err);
@@ -755,9 +755,9 @@ int SaveIndHistoryFile(short which) {
   }
   refN = open(tmpSpec, O_RDWR);
   if (refN < 0) {
-    err = ioErr;
+    err = EIO;
   } else {
-    err = noErr;
+    err = 0;
   }
   if (err) {
     FileSystemError(OPEN_LINK_HISTORY, spec_name(tmpSpec), err);
@@ -785,7 +785,7 @@ int SaveIndHistoryFile(short which) {
     bytes = tempHandle ? strlen((char *)tempHandle) : 0;
 
     if (bytes > 0 && !gHistories[which].theData[i].deleted) {
-      GetFPos(refN, &offset);
+      file_tell(refN, &offset);
       gHistories[which].theData[i].urlOffset = offset;
     } else {
       // gHistories[which] entry is missing a URL.  If it's not an incomplete
@@ -796,16 +796,16 @@ int SaveIndHistoryFile(short which) {
     }
 
     if ((!gHistories[which].theData[i].deleted) && bytes > 0 &&
-        !(err = FSWriteP(refN, aliasCmd))) {
-      if (!(err = AWrite(refN, &bytes, (unsigned char *)tempHandle))) {
+        !(err = file_write_str(refN, aliasCmd))) {
+      if (!(err = file_write(refN, &bytes, (unsigned char *)tempHandle))) {
         bytes = 1;
-        err = AWrite(refN, &bytes, "\015");
+        err = file_write(refN, &bytes, "\015");
       }
     }
   }
 
 
-  GetFPos(refN, &bytes);
+  file_tell(refN, &bytes);
   ftruncate(refN, bytes);
   close(refN);
   refN = 0;
@@ -814,7 +814,7 @@ int SaveIndHistoryFile(short which) {
   if (!err)
     err = ExchangeAndDel(&tmpSpec, &spec);
   if (!err)
-    gHistories[which].dirty = False;
+    gHistories[which].dirty = false;
 
   WriteHistTOC(which);
 
@@ -833,7 +833,7 @@ done:
 int WriteHistTOC(short which) {
   uLong fileModDate;
   FSSpec spec; g_strlcpy(spec, gHistories[which].spec, sizeof(spec));
-  int err = noErr;
+  int err = 0;
   short refN;
   void **theData;
   void **newData;
@@ -841,7 +841,7 @@ int WriteHistTOC(short which) {
 
 #ifdef DEBUG
   if (InAThread())
-    return noErr;
+    return 0;
 #endif
 
   if (TimeToCompactTOC(which))
@@ -850,7 +850,7 @@ int WriteHistTOC(short which) {
   theData = (void **)gHistories[which].theData;
   newData = DupHandle(theData);
   if (newData != NULL)
-    err = noErr;
+    err = 0;
   else
     err = 0;
 
@@ -879,7 +879,7 @@ int WriteHistTOC(short which) {
       tv[0].tv_usec = 0;
       tv[1].tv_sec = fileModDate;
       tv[1].tv_usec = 0;
-      err = (utimes(spec, tv) == 0) ? noErr : ioErr;
+      err = (utimes(spec, tv) == 0) ? 0 : EIO;
     }
 
     free(newData); // Dispose of the duplicated handle
@@ -900,7 +900,7 @@ void *GetHistoryData(short which, short index, bool readFromDisk) {
   int err;
   char line[256];
   short type;
-  bool exLine = False;
+  bool exLine = false;
   long len;
   void *dataHandle;
   size_t dataHandle_sz = 0;
@@ -931,8 +931,8 @@ void *GetHistoryData(short which, short index, bool readFromDisk) {
   GetRString(theCmd, LINK_CMD);
 
   if (theOffset >= 0) {
-    if (err = FSpOpenLine(&spec, fsRdPerm, &lid)) {
-      if (err != fnfErr)
+    if (err = FSpOpenLine(&spec, O_RDONLY, &lid)) {
+      if (err != ENOENT)
         FileSystemError(OPEN_LINK_HISTORY, spec_name(spec), err);
       return (nil);
     }
@@ -994,7 +994,7 @@ void *GetHistoryData(short which, short index, bool readFromDisk) {
  * ReadHistTOC - read in the history list TOC
  ************************************************************************/
 int ReadHistTOC(short which) {
-  int err = noErr;
+  int err = 0;
   FSSpec lSpec; g_strlcpy(lSpec, gHistories[which].spec, sizeof(lSpec));
   bool sane;
   short refN = 0;
@@ -1018,7 +1018,7 @@ int ReadHistTOC(short which) {
     //
 
     theToc = Get1Resource(LINK_TOC_TYPE, LINK_RESID);
-    if (noErr == (err = 0)) {
+    if (0 == (err = 0)) {
       short i, count;
 
       if (theToc != nil) {
@@ -1043,12 +1043,12 @@ int ReadHistTOC(short which) {
       // create a new, empty handle.  No history entries are defined.
       hand = malloc(0L);
       err = 0;
-      if (hand && (err == noErr))
+      if (hand && (err == 0))
         gHistories[which].theData = (HistoryStructHandle)hand;
     }
 
     // was there an error?
-    if (err != noErr) {
+    if (err != 0) {
       WarnUser(LINK_HISTORY_NEW_HISTORY_ERR, err);
       free(gHistories[which].theData);
       gHistories[which].theData = nil;
@@ -1088,7 +1088,7 @@ long HistMatchFound(long hashName, void *theUrl, short which) {
   URLNameStr tempStr, tempName;
   HistoryStructHandle theHistories = gHistories[which].theData;
   long stop = (malloc_size(theHistories) / sizeof(HistoryStruct));
-  Boolean needStringMatch = false;
+  bool needStringMatch = false;
   long matched = -1;
   HistoryStruct *theStruct, *endStruct;
 
@@ -1098,7 +1098,7 @@ long HistMatchFound(long hashName, void *theUrl, short which) {
       if (matched == -1)
         matched = theStruct - theHistories;
       else {
-        needStringMatch = True;
+        needStringMatch = true;
         break;
       }
 
@@ -1160,13 +1160,13 @@ bool TimeToCompactTOC(short which) {
  * CompactHistTOC - remove deleted entries from the TOC.
  ************************************************************************/
 int CompactHistTOC(short which) {
-  int err = noErr;
+  int err = 0;
   Accumulator histAccu;
   short count = 0, historyCount = HistoryCount(which);
   HistoryStructHandle histories = gHistories[which].theData;
 
-  if ((err = AccuInit(&histAccu)) == noErr) {
-    while ((count != historyCount) && (err == noErr)) {
+  if ((err = AccuInit(&histAccu)) == 0) {
+    while ((count != historyCount) && (err == 0)) {
       if (histories[count].deleted)
         ; // skip this TOC entry.  It's deleted.
       else {
@@ -1177,7 +1177,7 @@ int CompactHistTOC(short which) {
       count++;
     }
 
-    if (err == noErr) {
+    if (err == 0) {
       AccuTrim(&histAccu);
       free(gHistories[which].theData);
       gHistories[which].theData = histAccu.data;
@@ -1206,7 +1206,7 @@ short HistoryCount(short which) {
  ************************************************************************/
 void AddAllHistoryItems(ViewListPtr pView, bool needsSort,
                         LinkSortTypeEnum sortType) {
-  int err = noErr;
+  int err = 0;
   short i, count, cur = 0;
   VLNodeInfo info;
   ShortHistoryStructHandle histories = NULL;
@@ -1214,7 +1214,7 @@ void AddAllHistoryItems(ViewListPtr pView, bool needsSort,
 
   // get a sorted list of all history entries to add
   err = BuildListOfHistoriesForWindow(&histories, needsSort, sortType);
-  if ((err == noErr) && histories) {
+  if ((err == 0) && histories) {
     count = malloc_size(histories) / sizeof(ShortHistoryStruct);
     for (i = 0; i < count; i++) {
       cur = reverseSort ? (count - 1 - i) : i;
@@ -1238,7 +1238,7 @@ void AddAllHistoryItems(ViewListPtr pView, bool needsSort,
  ************************************************************************/
 int BuildListOfHistoriesForWindow(ShortHistoryStructHandle *histories,
                                     bool needsSort, LinkSortTypeEnum sortType) {
-  int err = noErr;
+  int err = 0;
   short which, i;
   short numEntries, count;
   int (*compare)() = nil;
@@ -1253,7 +1253,7 @@ int BuildListOfHistoriesForWindow(ShortHistoryStructHandle *histories,
   // Make a new handle that's big enough for them all
   *histories = malloc(numEntries * sizeof(ShortHistoryStruct));
   err = 0;
-  if (*histories && (err == noErr)) {
+  if (*histories && (err == 0)) {
     // fill the new handle with all of the entries
     count = 0;
     for (which = 0; which < NHistoryFiles; which++) {
@@ -1444,7 +1444,7 @@ int OpenHistoryEntry(VLNodeInfo *info) {
   void *hUrl;
   char proto[256];
   short len;
-  int openErr = noErr;
+  int openErr = 0;
 
   // Figure out which file this entry is in ...
   NodeIdToEntry(info->nodeID, &which, &index);
@@ -1463,7 +1463,7 @@ int OpenHistoryEntry(VLNodeInfo *info) {
     // parse and open this URL
     /* GTK port: OpenLocalURLPtr is a Mac URL-open API - use GIO/GTK instead */
     g_app_info_launch_default_for_uri((char *)url, NULL, NULL);
-    if ((openErr = ParseProtocolFromURLPtr(url, len, proto)) == noErr)
+    if ((openErr = ParseProtocolFromURLPtr(url, len, proto)) == 0)
       openErr = OpenOtherURLPtr(proto, url, len);
 
     // update the link's label
@@ -1551,7 +1551,7 @@ void *GetLHPreviewIcon(VLNodeID id) {
   AdId adId;
   FSSpec adGraphicSpec;
   URLNameStr adGraphicName;
-  int err = noErr;
+  int err = 0;
   LHPIconCacheHandle iconCache;
 
   /* GTK port: LinkHasCustomIcons is Mac-specific; skip custom icon lookup */
@@ -1575,12 +1575,12 @@ void *GetLHPreviewIcon(VLNodeID id) {
 
       // Find the icon preview file
       AdIdToName(adId, adGraphicName);
-      if (noErr == spec_for(gLinkHistoryFolder, adGraphicName,
+      if (0 == spec_for(gLinkHistoryFolder, adGraphicName,
                                 &adGraphicSpec)) {
         short iconRes, oldResFile = 0;
 
         // open the file
-        iconRes = FSpOpenResFile(&adGraphicSpec, fsRdPerm);
+        iconRes = FSpOpenResFile(&adGraphicSpec, O_RDONLY);
         if (iconRes != -1) {
           /* GTK port: GetIconSuite/DupIconSuite are Mac icon APIs; entire block
            * disabled */
@@ -1601,7 +1601,7 @@ void *GetLHPreviewIcon(VLNodeID id) {
  ************************************************************************/
 void LinkUpdateCacheDate(short which, short index) {
   // make sure the link histories are around
-  if (gHistories || (GenHistoriesList() == noErr)) {
+  if (gHistories || (GenHistoriesList() == 0)) {
     // update the date for this TOC entry to today
     gHistories[which].theData[index].cacheSeconds = LocalDateTime();
 
@@ -1747,7 +1747,7 @@ bool LocateAdInHistories(AdId adId, short *which, short *index) {
     return (false);
 
   // Make sure the histories are around ...
-  if (gHistories || (GenHistoriesList() == noErr)) {
+  if (gHistories || (GenHistoriesList() == 0)) {
     // Iterate through all History files, looking for this Ad.
     for (w = 0; !foundIt && (w < NHistoryFiles); w++) {
       count = HistoryCount(w);
@@ -1774,7 +1774,7 @@ bool FindRemindLink(void) {
   short w, i;
 
   // Make sure the histories are around ...
-  if (gHistories || (GenHistoriesList() == noErr)) {
+  if (gHistories || (GenHistoriesList() == 0)) {
     // Iterate through all History files
     for (w = 0; !foundOne && (w < NHistoryFiles); w++) {
       count = HistoryCount(w);
@@ -1797,7 +1797,7 @@ void UnRemindLinks(bool labelToo) {
   bool foundOne;
 
   // Make sure the histories are around ...
-  if (gHistories || (GenHistoriesList() == noErr)) {
+  if (gHistories || (GenHistoriesList() == 0)) {
     // Iterate through all History files
     for (w = 0; (w < NHistoryFiles); w++) {
       count = HistoryCount(w);
@@ -1890,11 +1890,11 @@ int AddAdToLinkHistory(AdId adId, char *pUrl, char adTitle[256],
                   sizeof(gHistories[which].theData[index].name));
       } else {
         // add the ad as a new history entry
-        if (err == noErr) {
+        if (err == 0) {
           // Add the history to the history file
           err = AddHistoryToTOC(MAIN_HISTORY_FILE, urlName, hashName, ltAd,
                                 llNotDisplayed, false, hUrl, adId);
-          if (err == noErr)
+          if (err == 0)
             needSave = true;
         }
       }
@@ -1902,7 +1902,7 @@ int AddAdToLinkHistory(AdId adId, char *pUrl, char adTitle[256],
   }
 
   // Add the graphic to the Link History, if all has gone well
-  if ((err == noErr) && adGraphic && *adGraphic && LinkHasCustomIcons()) {
+  if ((err == 0) && adGraphic && *adGraphic && LinkHasCustomIcons()) {
     FSSpec adGraphicSpec;
     spec_make(NULL, adGraphic, &adGraphicSpec);
     // Is the ad graphic a valid graphic file?
@@ -1911,9 +1911,9 @@ int AddAdToLinkHistory(AdId adId, char *pUrl, char adTitle[256],
       // Make sure the history files are loaded ...
       err = GenHistoriesList();
 
-      if (err == noErr) {
+      if (err == 0) {
         // Create an icon out of the graphic, save it in the History folder.
-        if (CreateIconFromAdGraphic(adId, &adGraphicSpec) == noErr) {
+        if (CreateIconFromAdGraphic(adId, &adGraphicSpec) == 0) {
           // find the ad this graphic belongs to
           if (!LocateAdInHistories(adId, &which, &index)) {
             // it does not exist.  Add it now, using a bogus name and hashname
@@ -1923,7 +1923,7 @@ int AddAdToLinkHistory(AdId adId, char *pUrl, char adTitle[256],
             // gHistories[which] history entry now has a thumbnail ...
             gHistories[which].theData[index].thumb = true;
           }
-          if (err == noErr)
+          if (err == 0)
             needSave = true;
         }
       }
@@ -2054,7 +2054,7 @@ void PurgeLinkHistoryPreviewOrphans(void) {
  *	representing the ad.
  **********************************************************************/
 int CreateIconFromAdGraphic(AdId adId, char * adGraphic) {
-  int err = noErr;
+  int err = 0;
   URLNameStr graphicName;
   FSSpec adIconSpec;
 
@@ -2062,11 +2062,11 @@ int CreateIconFromAdGraphic(AdId adId, char * adGraphic) {
   AdIdToName(adId, graphicName);
 
   // See if the graphic exists already;
-  if (spec_for(gLinkHistoryFolder, graphicName, &adIconSpec) != noErr) {
+  if (spec_for(gLinkHistoryFolder, graphicName, &adIconSpec) != 0) {
     // the icon does not yet exist.  Create it from the adGraphic file.
     err = IconFromAd(&adIconSpec, adGraphic);
   } else
-    err = dupFNErr;
+    err = EEXIST;
 
   return (err);
 }
@@ -2111,16 +2111,16 @@ bool NameToAdId(URLNameStr name, AdId *ad) {
  * DeleteAdGraphic - given an AdId, delete its preview file
  **********************************************************************/
 int DeleteAdGraphic(AdId adId) {
-  int err = noErr;
+  int err = 0;
   FSSpec adGraphicSpec;
   URLNameStr adGraphicName;
 
   // locate the ad file in the Link History Folder
   AdIdToName(adId, adGraphicName);
   err = spec_for(gLinkHistoryFolder, adGraphicName, &adGraphicSpec);
-  if (err == noErr) {
+  if (err == 0) {
     // Delete the ad preview we've found.
-    err = (unlink(adGraphicSpec) == 0) ? noErr : ioErr;
+    err = (unlink(adGraphicSpec) == 0) ? 0 : EIO;
 
     // Remove the icon handle from the icon cache
     RemoveIconFromPVICache(adId);

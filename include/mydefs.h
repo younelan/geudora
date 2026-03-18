@@ -96,11 +96,11 @@ void GrowBuf_Free(GrowBuf *buf);
 #define MAX(a, b) ((a) > (b) ? (a) : (b))
 #endif
 
-#ifndef False
-#define False 0
+#ifndef false
+/* #define False 0 — removed, using C99 true/false */
 #endif
-#ifndef True
-#define True 1
+#ifndef true
+/* #define True 1 — removed, using C99 true/false */
 #endif
 #ifndef everyEvent
 #define everyEvent -1
@@ -131,13 +131,8 @@ void GrowBuf_Free(GrowBuf *buf);
    Provide minimal struct forward-declarations when the system headers
    don't expose them yet. Guards avoid redefinition when system types
    are present. */
-#ifndef EventRecord
-typedef struct EventRecord EventRecord;
-#endif
-#ifndef HAVE_EVENTPTR
-typedef EventRecord *EventPtr;
-#define HAVE_EVENTPTR 1
-#endif
+/* EventRecord defined in mailbox.h */
+/* EventPtr defined in mailbox.h */
 
 #ifndef AEDesc
 typedef struct AEDesc AEDesc;
@@ -220,9 +215,9 @@ typedef AppleEvent *AppleEventPtr;
 #endif // FLOAT_WIN
 #define HandToHand_(h) MyHandToHand((void **)(h))
 #define AddResource_(h, t, i, n)                                               \
-  AddResource((void *)(h), (ResType)(t), i, (ConstStr255Param)(n))
+  AddResource((void *)(h), (uint32_t)(t), i, (ConstStr255Param)(n))
 #define AddMyResource_(h, t, i, n)                                             \
-  AddMyResource((void *)(h), (ResType)(t), i, (ConstStr255Param)(n))
+  AddMyResource((void *)(h), (uint32_t)(t), i, (ConstStr255Param)(n))
 #define GetResource_(t, i) (void *)GetResource((ResType)t, i)
 #define GetIndResource_(t, i) (void *)GetIndResource((ResType)t, i)
 #define AEGetParamPtr_(e, k, dt, t, p, m, a)                                   \
@@ -552,11 +547,8 @@ typedef enum {
 /* avoid project-specific aliases in new code — use standard C types where
  * possible */
 /* Use standard C types - no Mac typedefs */
-typedef uint16_t uShort;
+/* uShort already defined above */
 typedef enum { Production, Debugging, Steve } RunTypeEnum;
-#ifndef HAVE_EVENTPTR
-typedef EventRecord *EventPtr;
-#define HAVE_EVENTPTR 1
 #endif
 #ifndef HAVE_AEDESCPTR
 typedef AEDesc *AEDescPtr;
@@ -571,7 +563,10 @@ typedef AppleEvent *AppleEventPtr;
 #define HAVE_APPLEEVENTPTR 1
 #endif
 typedef struct MIMEMapStruct *MIMEMapHandle;
+#ifndef POPLINETYPE_DEFINED
+#define POPLINETYPE_DEFINED
 typedef enum { plComplete, plPartial, plEndOfMessage, plError } POPLineType;
+#endif
 /* forward-declare TransStream so it can be used in typedefs before the full
         definition/header is included later. */
 #ifndef TRANSSTREAM_PTR_DEFINED
@@ -589,7 +584,6 @@ typedef void *NickHandle;
 typedef unsigned char *NickPtr;
 typedef void *TabFieldHandle;
 typedef unsigned char *TabFieldPtr;
-#endif
 
 #ifndef MYDEFS_C_2
 #define MYDEFS_C_2
@@ -889,7 +883,7 @@ typedef struct TransStreamStruct *TransStream;
 //	SSLCerts.h includes SSL.h, which requires a bunch of #defines
 //	before you include it.
 //	in SSLCerts.h
-/* Boolean	CanDoSSL ( void ); */
+/* bool	CanDoSSL ( void ); */
 
 #ifdef DEMO
 /* #include "timebomb.h" */

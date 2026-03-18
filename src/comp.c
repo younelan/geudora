@@ -23,6 +23,7 @@ LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT (INCLUDING NEGLIGENCE
 OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE OF THIS SOFTWARE, EVEN IF
 ADVISED OF THE POSSIBILITY OF SUCH DAMAGE. */
 
+#include "fileutil.h"
 #include "../gEditCtrl/geditctrl.h"
 #include "../gEditCtrl/gedit-state.h"
 #include "Globals.h"
@@ -58,7 +59,7 @@ int MessagePosition(MyWindowPtr win);
 int GetMessageLength(TOCType * tocH, int sumNum);
 int ReadMessage(TOCType * tocH, int sumNum, unsigned char *buffer);
 bool ShowMyWindow(void *winWP);
-extern short AWrite(short refNum, long *count, unsigned char *buffer);
+/* AWrite renamed to file_write — included via fileutil.h */
 
 #ifndef OPT_COMP_TOOLBAR_VISIBLE
 #define OPT_COMP_TOOLBAR_VISIBLE (1 << 7)
@@ -1714,7 +1715,7 @@ int WriteComp(MessHandle messH, short refN, long offset) {
     return -1;
   }
 
-  err = AWrite(refN, &count, (unsigned char *)msg);
+  err = file_write(refN, &count, (unsigned char *)msg);
 
   /* Update the summary with the actual message length */
   if (!err) {

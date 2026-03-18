@@ -176,7 +176,7 @@ static void MyDebuggerDisposeThread(pthread_t threadDeleted) {
 /************************************************************************
  * GetThreadData -
  ************************************************************************/
-void GetThreadData(ThreadID threadID, threadDataHandle *threadData) {
+void GetThreadData(pthread_t threadID, threadDataHandle *threadData) {
   threadDataHandle index;
 
   *threadData = nil;
@@ -218,7 +218,7 @@ static int InitThreadGlobals(threadGlobalsPtr *newThreadGlobals) {
      Struct copies through _Thread_local pointers miscompile on ARM64 macOS. */
   memcpy(&(*newThreadGlobals)->tCurTrans, &ThreadGlobals.tCurTrans,
          sizeof(TransVector));
-  return (noErr);
+  return (0);
 }
 
 /************************************************************************
@@ -229,7 +229,7 @@ static int CopyOutToTemp(void) {
   TOCType *tocH, *tempTocH;
   StateEnum state;
   MessHandle messH;
-  int err = noErr;
+  int err = 0;
   uLong gmtSecs = GMTDateTime();
   PersHandle pers;
 
@@ -294,8 +294,8 @@ static int NewXferMail(threadDataHandle *tData, bool check, bool send,
 {
   threadDataHandle threadData = nil;
   threadContextDataPtr threadContext = nil;
-  ThreadID threadID;
-  int theError = noErr;
+  pthread_t threadID;
+  int theError = 0;
   threadGlobalsPtr newThreadGlobals = nil;
 
   // pthreads don't need UPPs or A5 world setup
@@ -418,11 +418,11 @@ static int NewXferMail(threadDataHandle *tData, bool check, bool send,
       threadData = nil;
     }
     if (!manual)
-      ResetCheckTime(True);
+      ResetCheckTime(true);
     CheckOnIdle = false;
   }
   *tData = threadData;
-  return (CommandPeriod ? userCanceledErr : theError);
+  return (CommandPeriod ? ECANCELED : theError);
 }
 
 /************************************************************************
@@ -432,11 +432,11 @@ int SetupXferMailThread(bool check, bool send, bool manual, bool scripted,
                           XferFlags flags, IMAPTransferPtr imapInfo)
 {
   threadDataHandle sendData = nil, checkData = nil;
-  int err = noErr;
+  int err = 0;
 
   // we tried to send it
   if (send)
-    SendImmediately = False;
+    SendImmediately = false;
   if (PrefIsSet(PREF_THREADING_SEND_OFF) || PrefIsSet(PREF_POP_SEND) ||
       !(check && send)) {
     err = NewXferMail(&checkData, check, send, manual, scripted, flags, imapInfo);
@@ -459,7 +459,7 @@ int SetupXferMailThread(bool check, bool send, bool manual, bool scripted,
   }
 #ifdef TASK_PROGRESS_ON
 #endif
-  if (err != userCanceledErr) {
+  if (err != ECANCELED) {
     if (check && !checkData)
       WarnUser(THREAD_CANT_CHECK, err);
     else if (send && !sendData)
@@ -477,7 +477,7 @@ int SetupXferMailThread(bool check, bool send, bool manual, bool scripted,
  ************************************************************************/
 static int DisposeThreadGlobals(threadGlobalsPtr threadGlobals) {
   if (!threadGlobals)
-    return paramErr;
+    return EINVAL;
 
   CurThreadGlobals = threadGlobals;
   // kill string cache
@@ -513,7 +513,7 @@ static int DisposeThreadGlobals(threadGlobalsPtr threadGlobals) {
     free(threadGlobals);
   threadGlobals = nil;
   CurThreadGlobals = &ThreadGlobals;
-  return (noErr);
+  return (0);
 }
 
 /************************************************************************
@@ -608,7 +608,7 @@ void KillThreads(void) {
  ************************************************************************/
 void *XferMailThread(void *threadParameter) {
   threadDataHandle threadData = nil;
-  int theError = noErr;
+  int theError = 0;
   xferMailParamsRec xferMailParams;
   IMAPTransferRec imapInfo;
 
@@ -641,7 +641,7 @@ void *XferMailThread(void *threadParameter) {
   }
   if (xferMailParams.send) {
     if (CommandPeriod || theError)
-      SendImmediately = False;
+      SendImmediately = false;
     CleanRealOutTOC();
     CleanTempOutTOC();
     SetSendQueue();
@@ -713,7 +713,7 @@ void ThreadSwitchProcOut(pthread_t threadBeingSwitched, void *switchProcParam) {
  ************************************************************************/
 // popd resource is saved directly to the original settings file in DisposePOPD
 static int SaveSettingsToMainThread(threadDataHandle threadData) {
-  int theError = noErr;
+  int theError = 0;
   PersHandle pers, mainPers, oldCurPers;
   StackHandle prefStack;
   char string[256]; // prefs shouldn't exceed 255 chars!!!
@@ -813,7 +813,7 @@ static int SaveSettingsToMainThread(threadDataHandle threadData) {
 static int CopySettingsForThread(short sourceRefN, PersHandle sourcePerslist,
                                    short *destRefN, PersHandle *destPersList,
                                    PersHandle *destCurPers) {
-  int theError = noErr;
+  int theError = 0;
   PersHandle oldPers, clone, lastClone = nil;
 
   (void)sourceRefN; /* resource file ref not used on Linux */
@@ -826,7 +826,7 @@ static int CopySettingsForThread(short sourceRefN, PersHandle sourcePerslist,
     /* Allocate a Handle-style clone: pointer to pointer to Personality */
     clone = (PersHandle)calloc(1, sizeof(Personality));
     if (!clone) {
-      theError = -108; /* memFullErr */
+      theError = -108; /* ENOMEM */
       break;
     }
     /* Copy the personality data */
@@ -848,7 +848,7 @@ static int CopySettingsForThread(short sourceRefN, PersHandle sourcePerslist,
   if (theError) {
     DeleteSettingsForThread(destRefN);
   }
-  return (CommandPeriod ? userCanceledErr : theError);
+  return (CommandPeriod ? ECANCELED : theError);
 }
 
 /************************************************************************
@@ -859,10 +859,10 @@ static int CopySettingsForThread(short sourceRefN, PersHandle sourcePerslist,
  ************************************************************************/
 static int DeleteSettingsForThread(short *settingsRefN) {
   if (*settingsRefN == -1)
-    return noErr;
+    return 0;
 
   *settingsRefN = -1;
-  return noErr;
+  return 0;
 }
 
 /************************************************************************
@@ -883,11 +883,11 @@ int PushThreadPrefChange(short pref) {
     StackHandle prefStack = threadData->threadContext.prefStack;
 
     if (!prefStack)
-      return noErr;
+      return 0;
     prefChange.pref = pref;
 
     prefChange.persId = (CurThreadGlobals && CurPers) ? CurPers->persId : 0;
-    err = noErr;
+    err = 0;
     StackPush(&prefChange, &prefStack);
   }
   return err;
@@ -915,26 +915,26 @@ bool ThreadsAvailable(void) {
    Mac Eudora used these to access the main thread's settings resource fork
    from background threads. With GKeyFile-based prefs, not needed. */
 
-void *GetResourceMainThread(ResType theType, short theID) {
+void *GetResourceMainThread(uint32_t theType, short theID) {
   (void)theType; (void)theID;
   return nil;
 }
 
-int ZapSettingsResourceMainThread(OSType type, short id) {
+int ZapSettingsResourceMainThread(uint32_t type, short id) {
   (void)type; (void)id;
-  return noErr;
+  return 0;
 }
 
-int AddMyResourceMainThread(void *h, OSType type, short id,
+int AddMyResourceMainThread(void *h, uint32_t type, short id,
                               ConstStr255Param name) {
   (void)h; (void)type; (void)id; (void)name;
-  return noErr;
+  return 0;
 }
 
 /************************************************************************
  * SetThreadGlobalCommandPeriod -
  ************************************************************************/
-void SetThreadGlobalCommandPeriod(ThreadID threadID, bool value) {
+void SetThreadGlobalCommandPeriod(pthread_t threadID, bool value) {
   threadGlobalsPtr newGlobals = nil;
   threadDataHandle threadData = nil;
 
@@ -998,14 +998,14 @@ void YieldCPUNow(void) {
  ************************************************************************/
 int MyInitThreads(void) {
   gMainThreadID = pthread_self();
-  return noErr;
+  return 0;
 }
 
 /************************************************************************
  * inAThread - am I running from a thread?
  ************************************************************************/
 bool InAThread(void) {
-  ThreadID threadID;
+  pthread_t threadID;
 
   if (!ThreadsAvailable())
     return (false);

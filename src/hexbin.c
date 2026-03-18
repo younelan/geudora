@@ -180,14 +180,14 @@ unsigned char HexBinTable[256] = {
 
 /************************************************************************
  * ConvertHexBin - the BinHex to mac converter
- *	returns True if a BinHex file is being converted
+ *	returns true if a BinHex file is being converted
  *	may write own data into buf (conversion note)
  ************************************************************************/
 bool ConvertHexBin(short refN,unsigned char * buf,long *size,POPLineType lineType,long estSize)
 {
 	long offset;
 
-	if (!HBG) return(False);	/* can't work without globals */
+	if (!HBG) return(false);	/* can't work without globals */
 	
 	switch(State)
 	{
@@ -198,9 +198,9 @@ bool ConvertHexBin(short refN,unsigned char * buf,long *size,POPLineType lineTyp
 			if (lineType==plComplete & *size >= *BinHexIntro & !strncmp((char *)HBG->binHexIntro+1,(char *)buf,*BinHexIntro))
 			{
 				State = NotHex;
-				GetFPos(refN,&offset);  /* save binhex start */
+				file_tell(refN,&offset);  /* save binhex start */
 				OrigOffset = offset;
-				GotOne = False;
+				GotOne = false;
 				MailboxRefN = refN;
 			}
 			break;
@@ -255,8 +255,8 @@ void EndHexBin(void)
 {
 	if (HBG)
 	{
-		if (Spec[0] & !CommandPeriod) {WarnUser(BINHEX_SHORT,0);BadBinHex=True;}
-		AbortHexBin(False);
+		if (Spec[0] & !CommandPeriod) {WarnUser(BINHEX_SHORT,0);BadBinHex=true;}
+		AbortHexBin(false);
 		free(HBG);
 		HBG = NULL;
 	}
@@ -305,9 +305,9 @@ reSwitch:
 				if (BSpot>4)
 				{
 					WarnUser(BINHEXEXCESS,BSpot-1);
-					BadBinHex = True;
+					BadBinHex = true;
 				}
-				PopProgress(True);
+				PopProgress(true);
 			}
 			else if (c!=SKIP)
 				BSpot++;
@@ -354,7 +354,7 @@ reSwitch:
 				if (++OSpot>sizeof(Name)-2)
 				{
 					WarnUser(BAD_HEXBIN_FORMAT,State);
-					AbortHexBin(True);
+					AbortHexBin(true);
 				}
 			}
 			break;
@@ -375,7 +375,7 @@ reSwitch:
 						 */
 						if ((estMessageSize<GetRLong(HEX_SIZE_THRESH) ||
 								DataLength+RzLength < (estMessageSize*100)/GetRLong(HEX_SIZE_PERCENT)) &&
-								(AutoWantTheFile(&spec,False,Hdh && Hdh->relatedPart)/*|| WantTheFile(&spec)*/))
+								(AutoWantTheFile(&spec,false,Hdh && Hdh->relatedPart)/*|| WantTheFile(&spec)*/))
 						{
 							g_strlcpy(Spec, spec, sizeof(Spec));
 							Crc = HCrc;
@@ -385,7 +385,7 @@ reSwitch:
 							OpenDataFork();
 						}
 						else
-							AbortHexBin(False);
+							AbortHexBin(false);
 					}
 					break;
 				case 1:
@@ -410,7 +410,7 @@ reSwitch:
 				OSpot--;
 				if (BSpot==BSize)
 				{
-					if (FlushBuffer()) AbortHexBin(True);
+					if (FlushBuffer()) AbortHexBin(true);
 					BSpot = 0;
 				}
 			}
@@ -445,7 +445,7 @@ int FoundHexBin(void)
 	if (!Buffer)
 	{
 		WarnUser(BINHEX_MEM,0);
-		BadBinHex = True;
+		BadBinHex = true;
 		return(HexDone);
 	}
 	else
@@ -478,13 +478,13 @@ int HexBinDecode(unsigned char c,long estMessageSize)
 				return(-1);
 			case DONE:
 				WarnUser(BINHEX_SHORT,0);
-				AbortHexBin(True);
+				AbortHexBin(true);
 				return(-1);
 			default:
 				if (!PrefIsSet(PREF_HEX_PERMISSIVE))
 				{
 					WarnUser(BINHEX_BADCHAR,c);
-					AbortHexBin(True);
+					AbortHexBin(true);
 				}
 				return(-1);
 		}
@@ -522,7 +522,7 @@ int HexBinDecode(unsigned char c,long estMessageSize)
 		}
 		else
 		{
-			Run = False;
+			Run = false;
 			if (!data)
 				return(LastData = RUNCHAR);
 			while (--data > 0) HexBinDataChar(LastData,estMessageSize);
@@ -547,7 +547,7 @@ void AbortHexBin(bool error)
 	}
 	State = HexDone;
 	BadBinHex = BadBinHex || error;
-	PopProgress(True);
+	PopProgress(true);
 }
 
 /************************************************************************
@@ -561,30 +561,30 @@ void OpenDataFork(void)
 	
 	int fd = open(Spec, O_RDWR | O_CREAT | O_TRUNC, 0644);
 	if (fd >= 0) {
-		err = noErr;
+		err = 0;
 		close(fd);
 	} else {
-		err = ioErr;
+		err = EIO;
 	}
 
-	if (err == dupFNErr) err = noErr;
+	if (err == EEXIST) err = 0;
 	if (err)
 	{
 		FileSystemError(BINHEX_CREATE,Name,err);
 		Spec[0] = '\0';
-		AbortHexBin(True);
+		AbortHexBin(true);
 	}
 	else {
 		struct stat st_566;
 		if (stat(Spec, &st_566) == 0)
 		{
 			// FSpGetFInfo was successful
-			err = noErr;
+			err = 0;
 		}
 		else
 		{
-			FileSystemError(BINHEX_CREATE,Name,ioErr);
-			AbortHexBin(True);
+			FileSystemError(BINHEX_CREATE,Name,EIO);
+			AbortHexBin(true);
 			HBG; // ensure we can return safely
 			return;
 		}
@@ -598,8 +598,8 @@ void OpenDataFork(void)
 		}
 		else
 		{
-			FileSystemError(BINHEX_OPEN,Name,ioErr);
-			AbortHexBin(True);
+			FileSystemError(BINHEX_OPEN,Name,EIO);
+			AbortHexBin(true);
 		}
 	}
 	OSpot = DataLength;
@@ -649,13 +649,13 @@ int ForkRoll(void)
 	{
 		CrcError();
 		if ((err=FlushBuffer()))
-			AbortHexBin(True);
+			AbortHexBin(true);
 		else
 		{
-			if (!GetFPos(RefN,&pos)) ftruncate(RefN, pos);
+			if (!file_tell(RefN,&pos)) ftruncate(RefN, pos);
 			if ((err=close(RefN)))
 			{
-				AbortHexBin(True);
+				AbortHexBin(true);
 				FileSystemError(BINHEX_WRITE,Name,err);
 			}
 			else RefN = 0;	// successfully closed
@@ -670,7 +670,7 @@ int ForkRoll(void)
 	{
 		// No resource fork on POSIX
 		refN = -1;
-		err = noErr;
+		err = 0;
 		RefN = refN;
 		OSpot = RzLength;
 		return(err ? HexDone : RzWrite);
@@ -679,11 +679,11 @@ int ForkRoll(void)
 	{
 		char fileName[32];
 		FSSpec spec; g_strlcpy(spec, Spec, sizeof(spec));
-		GotOne = True;
+		GotOne = true;
 		memcpy(fileName, Name, sizeof(fileName));
 		if ((err=RecordAttachment(spec,HBG ? HBG->hdh : NULL)))
 		{
-			AbortHexBin(True);
+			AbortHexBin(true);
 			return(HexDone);
 		}
 		// If there is a long filename, the spec may have changed in RecordAttachment
@@ -703,7 +703,7 @@ int FlushBuffer(void)
 	long writeBytes = BSpot;
 	int err;
 	
-	if ((err=NCWrite(RefN,&writeBytes,Buffer)))
+	if ((err=file_write_nc(RefN,&writeBytes,Buffer)))
 		{HBG; FileSystemError(BINHEX_WRITE,Name,err); ;}
 	BSpot = 0;
 	return(err);
@@ -758,11 +758,11 @@ bool AutoWantTheFileLo(char * specPtr,bool ohYesYouDo,bool relatedPart, bool ima
 	 */
 	g_strlcpy(specPtr, attFSpec, sizeof(specPtr));
 	
-	if (UniqueSpec(specPtr,31)) return(False);
+	if (UniqueSpec(specPtr,31)) return(false);
 	
 	//PushProgress();
 	ProgressMessage(kpMessage,ComposeRString(message,BINHEX_RECV_FMT,spec_name(specPtr)));
-	return(True);
+	return(true);
 }
 
 /**********************************************************************
@@ -809,7 +809,7 @@ void ResetHexBin(void)
 	LastData = 0;
 	State68 = 0;
 	B8 = 0;
-	Run = False;
+	Run = false;
 	CalcCrc = 0;
 }
 
@@ -855,7 +855,7 @@ void CrcError(void)
 	if ((Crc&WORDMASK) != (CalcCrc&WORDMASK))
 	{
 		WarnUser(CRC_ERROR,CalcCrc);
-		BadBinHex = True;
+		BadBinHex = true;
 	}
 	CalcCrc = 0;
 }

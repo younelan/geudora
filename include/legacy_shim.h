@@ -21,13 +21,10 @@
    mailbox.h. legacy_shim.h should only contain minimal stubs for types not
    provided by the project's own compatibility headers. */
 
-#ifndef Boolean
-#define Boolean bool
+#ifndef bool
+#define bool bool
 #endif
 
-/* void *typedef — matches mailbox.h definition; guarded so no conflict */
-
-/* QuickTime placeholders */
 #ifndef GraphicsImportComponent
 typedef void *GraphicsImportComponent;
 #endif
@@ -40,12 +37,10 @@ typedef void *Movie;
 typedef void *MovieController;
 #endif
 
-/* Printing Manager placeholder */
 #ifndef PMPrintContext
 typedef void *PMPrintContext;
 #endif
 
-/* PenState placeholder used by old QuickDraw-based drawing utilities */
 #ifndef PenState
 typedef struct {
   int32_t dummy;
@@ -57,7 +52,6 @@ typedef struct {
 typedef void *ControlBackgroundPtr;
 #endif
 #ifndef ControlHandle
-typedef void *ControlHandle;
 #endif
 #ifndef ControlUserPaneBackgroundUPP
 typedef void *ControlUserPaneBackgroundUPP;
@@ -72,44 +66,28 @@ static inline void GetWTitle(void *win, char *title) {
   if (title)
     *title = 0;
 }
-/* SetWTitle - real impl in mywindow.c */
 void SetWTitle(void *winWP, const char *title);
 static inline void InsertMenu(void *mh, short item) {}
-static inline void SetDItemValue(void *dp, short item, short value) {}
-static inline short GetDItemValue(void *dp, short item) { return 0; }
-/* SetState implemented in mailbox.c */
+
 static inline void DeleteMenu(short id) {}
 static inline void DisposeMenu(void *mh) {}
-static inline short CurResFile(void) { return 0; }
-static inline void UseResFile(short refN) { (void)refN; }
-static inline void DetachResource(void *h) { (void)h; }
 /* Mac resource manager stubs — resources don't exist on GTK/Linux, all return
  * NULL */
 void *Get1Resource(uint32_t type, short id);
 void *Get1IndResource(uint32_t type, short index);
 void *GetNamedResource(uint32_t type, const unsigned char *name);
-/* SaveAbomination is defined in uudecode.h - do not stub here */
 static inline bool AnalDoIncoming(void) { return false; }
 static inline void AnalBox(void *toc, short start, short end) {}
-/* HasStubFileAttachment in imapdownload.h */
 #ifndef OPT_FETCH_ATTACHMENTS
 #define OPT_FETCH_ATTACHMENTS 0x1000
 #endif
 #ifndef MAX_BOX_NAME
 #define MAX_BOX_NAME 32
 #endif
-/* Legacy style macros moved to mailbox.h or replaced by GTK attributes */
 static inline void *NuPtrClear(size_t size) { return calloc(1, size); }
-/* SetSumColor provided by message.c or other modules */
-/* static inline void SetSumColor(void *tocH, int sumNum, int color) {} */
-/* BoxSelectAfter provided by message.c or other modules */
-/* static inline void BoxSelectAfter(void *tocH, int sumNum) {} */
-/* MBResort — real implementation in boxact.c */
 static inline void AddIMAPXfUndoUIDs(void *tocH, void *toTocH, void *h,
                                      bool flag) {}
 
-#define kStatReceivedMail_SHIM 0
-#define ksStatReceivedMail_SHIM 0
 #ifndef POINT_DEFINED
 #define POINT_DEFINED
 typedef struct Point {
@@ -138,11 +116,7 @@ static inline long PopUpMenuSelect(void *mh, short top, short left,
   return 0;
 }
 
-/* PtrAndHand: append ptr[0..size-1] to a Handle; Hand must be malloc'd */
-/* Declared here; implementation forward-declared so compilers find it */
 int PtrAndHand(const void *ptr, void **hand, long size);
-/* BoxSelectSame — real implementation in boxact.c */
-/* MBOpenFolder - real impl in mbwin.c */
 void MBOpenFolder(void *hStringList, bool isIMAP);
 
 #ifndef optionKey
@@ -158,18 +132,7 @@ void MBOpenFolder(void *hStringList, bool isIMAP);
 #define controlKey 0x1000
 #endif
 #ifndef alphaLock
-#define alphaLock 0x0400
 #endif
-
-struct EventRecord {
-  short what;
-  unsigned long message;
-  unsigned long when;
-  Point where;
-  short modifiers;
-};
-typedef struct EventRecord EventRecord;
-
 
 #ifndef LongDateRec
 typedef struct {
@@ -207,8 +170,6 @@ typedef struct {
 } LongDateRec;
 #endif
 
-/* GTK Port: DateTimeRec and SecondsToDate removed to avoid util.h override */
-
 #ifndef RGBCOLOR_DEFINED
 #define RGBCOLOR_DEFINED
 typedef struct RGBColor {
@@ -220,49 +181,22 @@ typedef struct RGBColor {
 typedef void *PicHandle;
 #endif
 
-#ifndef FMBHandle
+#ifndef void *
 typedef void *FMBHandle;
 #endif
 
-static inline void SetHandleSize(void **h, long size) {
-  if (h && *h) {
-    void *resized = realloc(*h, size);
-    if (resized)
-      *h = resized;
-  }
-}
-/* PtoCcpy: strings are now C strings, so this is just strcpy */
-static inline void PtoCcpy(char *cStr, const unsigned char *pStr) {
-  if (!pStr || !cStr)
-    return;
-  strcpy(cStr, (const char *)pStr);
 }
 
-/* PCopy: strings are now C strings, so this is just strcpy */
-static inline void PCopy_SHIM(unsigned char *dst, const unsigned char *src) {
-  if (dst && src) {
-    strcpy((char *)dst, (const char *)src);
-  }
 }
 
-/* PCopy provided by StringUtil.h */
-
-/* Stubs for missing legacy functions */
 void ComputeLocalDate(void *sum, unsigned char *dateStr);
 
-/* TimeString: real implementation in util.c, declared in util.h */
-
-/* ShortAddr: real implementation in address.c */
-
-/*
 static inline unsigned char *CompCurAddr(void *win, unsigned char *addr) {
   if (addr)
     addr[0] = 0;
   return addr;
 }
-*/
 
-/* peModLock — now in pete_portable.h */
 #define shortDate 1
 
 static inline void DateString(long secs, int fmt, unsigned char *str, void *p) {
@@ -271,14 +205,6 @@ static inline void DateString(long secs, int fmt, unsigned char *str, void *p) {
     memcpy(str + 1, "Date", 4);
   }
 }
-
-/* utl_PlugParams declared in utl.h — real implementation */
-#ifndef BMD
-#define BMD(s, d, l) memmove(d, s, l)
-#endif
-/* CycleBalls: real implementation in fileutil.c */
-static inline void HPurge(void *h) {}
-static inline void HNoPurge(void *h) {}
 
 /* Core memory/file APIs (MemError, GetHandleSize, etc.) are provided by
  * the project's authoritative headers (for example `include/fileutil.h`).
@@ -289,104 +215,54 @@ static inline void HNoPurge(void *h) {}
  *   #define Hash(s) HashWithSeed(s, 1)
  *   #define HashWithSeed(s, seed) HashWithSeedLo(s, strlen(s), seed)
  * Do NOT redefine it here — use the real C-string-compatible version.
- */
-
-/* GetMailboxName implemented in mailbox.c */
 
 /* File IO stubs removed: the project's `include/fileutil.h` is
- * authoritative for file I/O APIs such as SetFPos, SetEOF, ARead,
- * AWrite, CopyFBytes, etc. Do not provide conflicting stubs here. */
+ * authoritative for file I/O APIs such as SetFPos, SetEOF, file_read,
+ * file_write, CopyFBytes, etc. Do not provide conflicting stubs here. */
 
-/* ReallyDoAnAlert implemented in shame.c */
 int ReallyDoAnAlert(int templ, int which);
 /* #define Caution 1 */
 
-/* Logging: real implementations are in log.c/log.h — no stubs here */
 #ifndef LOG_PROG
 #define LOG_PROG 16
 #endif
-
-/* PETE Stubs */
-/* PETEHandle, kPETELastPara, peModLock etc. — all in pete_portable.h now */
 
 /* Pete functions now declared in pete_portable.h, implemented in peteglue.c.
  * Only functions NOT yet in pete_portable.h or peteglue.h stay as stubs here: */
 static inline void PeteKillUndo(void *pte) {}
 static inline void PetePlain(void *pte, long start, long end, long flags) {}
 static inline void PetePlainPara(void *pte, long para) {}
-static inline int PETEInsertPara(void *glob, void *pte, long para, void *style,
-                                 void *text, void *range) {
-  return 0;
-}
+
 static inline void PeteSmallParas(void *pte) {}
 static inline void PeteTrimTrailingReturns(void *pte, bool b) {}
 
-/* Color/Graphics Stubs */
-
-/* Color/Graphics Stubs */
 static inline bool Black(void *color) { return false; }
-// static inline void BeautifyFrom(void *s) {}
-
-/* String Stubs */
 static inline bool EqualString(void *s1, void *s2, bool caseSens, bool diac) {
   (void)diac;
   if (caseSens)
     return strcmp((const char *)s1, (const char *)s2) == 0;
   return strcasecmp((const char *)s1, (const char *)s2) == 0;
 }
-// static inline void *FindHeaderString(void *text, void *headerName, long
-// *size,
-//                                      bool bodyToo) {
-//   return NULL;
-// }
 
-/* Message/Window Stubs */
-
-/* Message/Window Stubs */
-/* ReZoomMyWindow: real implementation in mywindow.c, declared in mailbox.h */
-/* InvalContent - real impl in mywindow.c */
-// static inline void ShowMessageSeparator(void *pte, bool center) {}
-/* CloseMyWindow: real implementation in mywindow.c, declared in mailbox.h */
-
-/* UpdateMyWindow - real impl in mywindow.c */
-// static inline void EnsureMessNewline(void *messH) {}
 static inline void ApplyDefaultStationery(void *win, bool b1, bool b2) {}
 
 static inline void ApplyIndexStationery(void *win, int which, bool b1,
                                         bool b2) {}
 
-/* Util Stubs */
-/* AccuZap is provided by CrispinIMAP as IMAPAccuZap — do not stub */
-static inline void PushGWorld(void) {}
-static inline void PopGWorld(void) {}
-static inline void SetPort(void *p) {}
 static inline void *GetMyWindowCGrafPtr(void *win) { return NULL; }
-static inline void InvalWindowRect(void *win, void *r) {}
+
 static inline void SetControlValue(void *c, int v) {}
 static inline void SetControlVisibility(void *c, bool v1, bool v2) {}
-static inline void ShowControl(void *c) {}
+
 static inline void HiliteControl(void *c, int p) {}
 static inline bool PositionPrefsTitle(bool save, void *win) { return true; }
 #ifndef PROGRESS
 #endif
 
-/* UI Stubs */
-/* IsRoot provided by fileutil.h - do not stub here. */
-/* In the GTK port all managed windows are app windows */
-/* IsMyWindow - real impl in mywindow.c */
 static inline void CheckBox(void *win, bool checked) {}
 static inline void *MyFrontNonFloatingWindow(void) { return 0; }
 #define FrontWindow_ MyFrontNonFloatingWindow
-/* GetNextWindow: real implementation in mywindow.c, declared in mailbox.h */
-/* GetMHandle is provided by gtk_menus.h as MenuHandle GetMHandle(short) */
 
-/* File IO Stubs */
-
-/* VolumeMargin provided by fileutil.h */
-/* CountSelectedMessages is implemented in mailbox.c */
-// static inline int CountSelectedMessages(void *tocH) { return 0; }
-
-/* Types */
 typedef struct {
   unsigned char errorStr[256];
   uint32_t uidHash;
@@ -395,25 +271,14 @@ typedef struct {
 typedef MesgErrorType *mesgErrorPtr;
 typedef MesgErrorType *mesgErrorHandle;
 
-/* Missing Legacy Functions */
-/* FindTOCSpot is in buildtoc.h - don't stub it */
-
 /* static inline int CopyToOut(void *tocH, int n, void *toTocH) { return 0; }
- */
-/* AWrite, AlertStr, CopyFBytes provided by fileutil.h - no shim here. */
-
 #define MAX_MESSAGES_PER_MAILBOX 10000
-/* FLAG_SKIPWARN defined in mailbox.h */
 /* #define Stop 1 */
 
-/* Comp.c Stubs */
 /* static inline long GetMessageLength(void *tocH, int sumNum) { return 0; }
- */
-/*
 static inline int ReadMessage(void *tocH, int sumNum, unsigned char *buffer) {
   return 0;
 }
-*/
 static inline void DBNoteUIDHash(unsigned long hash, unsigned long uid) {}
 #define SEND_ITEM 100
 #define SAVE_ITEM 101
@@ -421,18 +286,15 @@ static inline void DBNoteUIDHash(unsigned long hash, unsigned long uid) {}
 #define PREF_188 188
 #endif
 static inline bool GoOnline(void) { return true; }
-/* buf_append: macro in mydefs.h routes to PtrAndHand() in fileutil.c */
 /* NoteFreeSpace is provided by the project's TOC implementation; do not
   define a stub that conflicts with its signature. If a stub is required
   for standalone builds, provide it under a unique name. */
 /* NoteFreeSpace is provided by the project's TOC implementation; do not
   provide a conflicting stub here. */
-/* UpdateIMAPMailbox is implemented in mailbox.c */
 /* AddMesgError is implemented in the real mailbox code; do not stub here
   to avoid conflicting declarations. If a shim is required later, provide
   it under a different name or behind a project-specific #ifdef. */
 
-/* ---- Mac Control Manager portability ---- */
 /* GetControlOwner: return the window owning a control handle.
  * In GTK controls are GtkWidget children; return NULL as void* (callers
  * pass result to GetWindowMyWindowPtr which accepts void*). */
@@ -444,11 +306,7 @@ static inline void GetControlBounds(void *cntl, Rect *r) {
   memset(r, 0, sizeof(Rect));
 }
 #endif
-#ifndef GetControlTitle
-static inline void GetControlTitle(void *cntl, unsigned char *title) {
-  title[0] = 0;
-}
-#endif
+
 #ifndef GetBestControlRect
 static inline void GetBestControlRect(void *cntl, Rect *r, short *base) {
   memset(r, 0, sizeof(Rect));
@@ -461,9 +319,7 @@ static inline void MoveMyCntl(void *cntl, short x, short y, short w, short h) {}
 #ifndef SizeControl
 static inline void SizeControl(void *cntl, short w, short h) {}
 #endif
-#ifndef ControlIsUgly
-static inline int ControlIsUgly(void *cntl) { return 0; }
-#endif
+
 #ifndef StringWidth
 static inline short StringWidth(const unsigned char *s) {
   return s ? s[0] * 7 : 0;
@@ -479,7 +335,6 @@ static inline int IsMenuItemEnabled(void *mh, short item) { return 1; }
 static inline void ChangedResource(void *h) {}
 #endif
 
-/* OffsetRect: shift a Rect by (dh, dv) */
 #ifndef OffsetRect
 static inline void OffsetRect(Rect *r, short dh, short dv) {
   r->left += dh;
@@ -505,15 +360,10 @@ static inline void RectRgn(RgnHandle rgn, Rect *r) {}
 static inline void ShowDragHilite(void *drag, RgnHandle rgn, int inside) {}
 #endif
 
-/* ---- Mac Resource Manager portability ---- */
-
 /* HomeResFile: returns the refnum of the file a resource lives in.
  * In the GTK port resources are in a GResource bundle or in-memory;
  * return a non-zero sentinel so callers that check "if (HomeResFile(s))"
  * proceed with the resource they already have. */
-#ifndef HomeResFile
-static inline short HomeResFile(void *h) { return 1; }
-#endif
 
 /* GetIndString: legacy no-op stub kept for any stray callers.
  * Real string lookup goes through string_table_lookup() in GetRStringLo. */
@@ -527,9 +377,6 @@ static inline void GetIndString(unsigned char *str, short strListID,
 
 /* GetString: get an 'STR ' resource by ID.
  * Wraps GetResource_ with the 'STR ' four-char code. */
-#ifndef GetString
-#define GetString(id) GetResource_('STR ', (id))
-#endif
 
 /* ProxifyStr: post-process a retrieved string (used for personality proxies).
  * Identity function — personalities are not proxied in the GTK port. */
@@ -539,21 +386,14 @@ static inline unsigned char *ProxifyStr(unsigned char *s, short idx) {
 }
 #endif
 
-/* Fixed: 16.16 fixed-point type used by QuickDraw / Mac typography. */
 #ifndef Fixed
 typedef long Fixed;
 #endif
-
-/* GetPrefLong declared as a function in gtk_dialogs.h */
 
 /* StyledLineBreak: Mac TextEdit line-break algorithm. GTK text uses Pango.
  * Return kTextUsedWholeString to indicate we consumed the whole buffer. */
 #ifndef StyledLineBreak
 #include <stdint.h>
-typedef long StyledLineBreakCode;
-#define kLineBreakInWord 0
-#define kLineBreakAtWord 1
-#define kLineBreakOverflow 2
 static inline StyledLineBreakCode StyledLineBreak(const char *text, long len,
                                                   long textStart, long textEnd,
                                                   long flags, long *textWidth,
@@ -564,22 +404,20 @@ static inline StyledLineBreakCode StyledLineBreak(const char *text, long len,
 }
 #endif
 
-/* GetScriptVariable: Mac Script Manager query. Return 0 for all queries. */
 #ifndef GetScriptVariable
 static inline long GetScriptVariable(short script, short selector) { return 0; }
 #endif
 
-/* Missing Mac UI and Date Translation Stubs */
 #ifndef NewFaceMeasure
-static inline FMBHandle NewFaceMeasure(void) { return NULL; }
-static inline void FaceMeasureBegin(FMBHandle fmb) {}
-static inline void DisposeFaceMeasure(FMBHandle fmb) {}
-static inline void FaceMeasureReport(FMBHandle fmb, long *timePos, void *unk2,
+static inline void * NewFaceMeasure(void) { return NULL; }
+static inline void FaceMeasureBegin(void * fmb) {}
+static inline void DisposeFaceMeasure(void * fmb) {}
+static inline void FaceMeasureReport(void * fmb, long *timePos, void *unk2,
                                      void *unk3, void *unk4) {
   if (timePos)
     *timePos = 0;
 }
-static inline void FaceMeasureReset(FMBHandle fmb) {}
+static inline void FaceMeasureReset(void * fmb) {}
 #endif
 
 #ifndef GetWindowPrivateData
@@ -593,7 +431,6 @@ static inline void LongSecondsToDate(long long *secs, LongDateRec *d) {
 }
 #endif
 
-/* NumToString is defined in stringutil.c */
 void NumToString(long n, char *s);
 
 /* GTK port: Accu string wrappers deleted because they conflict with the
@@ -603,16 +440,10 @@ void NumToString(long n, char *s);
 static inline bool CanScoreJunk(void) { return false; }
 #endif
 
-/* R822Date is implemented in sendmail.c */
-/* ZoneSecs is implemented in util.c */
-
-/* DiskSpunUp is implemented in fileutil.c */
-
 enum { longDate = 1 };
 enum { tokDecPoint = 1, tokThousands = 2 };
 
 extern short InBG;
-/* RedisplayStats is now a real function in statwin.c */
 static inline void GetDateTime(long *time) {
   if (time)
     *time = 0;
@@ -635,18 +466,9 @@ static inline void DateToSeconds(void *d, unsigned long *secs) {
 static inline void *GetStatWin(void) { return 0; }
 static inline void SetRect(Rect *r, short left, short top, short right,
                            short bottom) {}
-static inline PicHandle OpenCPicture(OpenCPicParams *p) { return 0; }
-static inline void ClipRect(Rect *r) {}
-
-static inline void ClosePicture(void) {}
 
 typedef struct {
 } Itl1ExtRec;
-/* AccuAddPtr removed to avoid IMAP conflicts */
-
-/* Dprintf: implemented in shame.c */
-
-/* ---- Mac Event / Memory Manager portability ---- */
 
 /* MightSwitch/AfterSwitch: cooperative threading hints. GTK uses GLib's
  * main loop; these are no-ops in the ported version. */
@@ -663,25 +485,11 @@ static inline int EventAvail(short mask, void *event) { return 0; }
 
 /* PurgeSpace: Mac Memory Manager — reports purge space.
  * In the GTK port memory is managed by glibc/GLib. Return plentiful space. */
-#ifndef PurgeSpace
-static inline void PurgeSpace(long *total, long *contig) {
-  if (total)
-    *total = 64 * 1024 * 1024;
-  if (contig)
-    *contig = 64 * 1024 * 1024;
-}
-#endif
 
 /* RANDOM_FAILURE: debug macro to test random allocation failures.
  * Disabled in production builds. */
 #ifndef RANDOM_FAILURE
 #define RANDOM_FAILURE /* no-op */
-#endif
-
-/* ---- Mac Memory Manager: zone/handle operations ---- */
-/* MoveHHi: move handle to top of heap zone. GTK/glibc handles its own heap. */
-#ifndef MoveHHi
-static inline void MoveHHi(void *h) {}
 #endif
 
 /* TempNewHandle: allocate from temp zone. Falls back to malloc.
@@ -697,14 +505,11 @@ static inline void *TempNewHandle(long size, int *err) {
     }
   }
   if (err)
-    *err = h ? 0 : -108; /* memFullErr */
+    *err = h ? 0 : -108; /* ENOMEM */
   return h;
 }
 #endif
 
-/* LastContigSpace / LastTotalSpace: declared in Globals.h. */
-
-/* Event filter masks used in MyOSEventAvail / MiniEventsLo */
 #ifndef mUpMask
 #define mUpMask 0x0010
 #endif
@@ -715,28 +520,14 @@ static inline void *TempNewHandle(long size, int *err) {
 #define keyDownMask 0x0004
 #endif
 #ifndef keyUpMask
-#define keyUpMask 0x0008
 #endif
 #ifndef autoKeyMask
-#define autoKeyMask 0x0040
 #endif
 
 #ifndef updateMask
 #define updateMask 0x0040
 #define activMask 0x0100
 #define osMask 0x0C00
-#endif
-#ifndef HGetState
-static inline signed char HGetState(void *h) { return 0; }
-#endif
-#ifndef HSetState
-static inline void HSetState(void *h, signed char s) {
-  (void)h;
-  (void)s;
-}
-#endif
-#ifndef RemoveResource
-static inline void RemoveResource(void *h) {}
 #endif
 
 #ifndef AddDragItemFlavor

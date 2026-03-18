@@ -143,18 +143,18 @@ int BufferSend(TransStream stream, DecoderFunc *encoder, char *data,
   do {                                                                         \
     lastLen = z;                                                               \
     lastC = (y)[z - 1];                                                        \
-    if (sErr = BufferSend(stream, x, y, z, True))                              \
+    if (sErr = BufferSend(stream, x, y, z, true))                              \
       goto done;                                                               \
   } while (0)
 #define BSCLOSE(stream, e)                                                     \
   do {                                                                         \
-    if (sErr = BufferSend(stream, e, nil, 0L, True))                           \
+    if (sErr = BufferSend(stream, e, nil, 0L, true))                           \
       goto done;                                                               \
   } while (0)
 #define SendBoundary(stream)                                                   \
   (SendTrans(stream, "--", 2, boundary, strlen((const char *)boundary),        \
              NewLine, strlen((const char *)NewLine), nil))
-#define BufferSendRelease(stream) (void)BufferSend(stream, nil, nil, -1, False)
+#define BufferSendRelease(stream) (void)BufferSend(stream, nil, nil, -1, false)
 int SendPString(TransStream stream, char *string);
 char * FormatZone(char * string, long delta);
 char *GetFlatten(void);

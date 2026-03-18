@@ -359,7 +359,7 @@ TOCType * TOCByPath(const char *path) {
  ************************************************************************/
 short GetTOCByFSS(char * specPtr, TOCType * *tocH) {
   *tocH = TOCBySpec(specPtr);
-  return (*tocH ? noErr : 1);
+  return (*tocH ? 0 : 1);
 }
 
 /************************************************************************
@@ -369,7 +369,7 @@ short GetTOCByFSS(char * specPtr, TOCType * *tocH) {
 int KillTOC(short refN, char * spec) {
   (void)refN;
   if (!spec)
-    return noErr;
+    return 0;
 
   char tocPath[PATH_MAX];
   toc_file_path(spec, tocPath, sizeof(tocPath));
@@ -378,7 +378,7 @@ int KillTOC(short refN, char * spec) {
     g_warning("KillTOC: failed to remove %s: %s", tocPath, strerror(errno));
     return -1;
   }
-  return noErr;
+  return 0;
 }
 
 /************************************************************************
@@ -413,7 +413,7 @@ TOCType * CheckTOC(char * spec) {
 
   unsigned long box, res, file;
   int err = TOCDates(spec, &box, &res, &file);
-  if (err && err != fnfErr)
+  if (err && err != ENOENT)
     return NULL;
 
   /* No .toc file → build from mailbox and write the .toc */
@@ -449,7 +449,7 @@ TOCType * CheckTOC(char * spec) {
  ************************************************************************/
 TOCType * ReadTOC(char * spec) {
   TOCType * tocH = NULL;
-  int insane = noErr;
+  int insane = 0;
 
   insane = ReadDForkTOC(spec, &tocH);
 
@@ -495,7 +495,7 @@ TOCType * ReadTOC(char * spec) {
     tocH->unread = TOCUnread(tocH);
 
     return tocH;
-  } else if (insane == memFullErr)
+  } else if (insane == ENOMEM)
     return NULL;
   else
     return FixErrantTOC(spec, NULL, euCorruptTOC);
@@ -527,14 +527,14 @@ int TOCDates(char * spec, unsigned long *box, unsigned long *res, unsigned long 
 
   if (!*box && !*file) {
     g_debug("TOCDates(%s): not found", path_basename(spec));
-    return fnfErr;
+    return ENOENT;
   }
-  return noErr;
+  return 0;
 }
 
 /************************************************************************
  * ReadDForkTOC - read a TOC from the data-fork .toc file
- * Ported from Mac: AFSpOpenDF/GetEOF/ARead → fopen/fread
+ * Ported from Mac: AFSpOpenDF/file_size/file_read → fopen/fread
  ************************************************************************/
 static int ReadDForkTOC(char * aSpec, TOCType * *inTOC) {
   *inTOC = NULL;
@@ -546,7 +546,7 @@ static int ReadDForkTOC(char * aSpec, TOCType * *inTOC) {
   FILE *fp = fopen(tocPath, "rb");
   if (!fp) {
     g_warning("ReadDForkTOC(%s): %s", baseName, strerror(errno));
-    return fnfErr;
+    return ENOENT;
   }
 
   /* Get file size */
@@ -593,7 +593,7 @@ static int ReadDForkTOC(char * aSpec, TOCType * *inTOC) {
   TOCType *toc = (TOCType *)g_malloc0(tocMemSize);
   if (!toc) {
     fclose(fp);
-    return memFullErr;
+    return ENOMEM;
   }
 
   /* Copy header fields into TOC struct */
@@ -633,12 +633,12 @@ static int ReadDForkTOC(char * aSpec, TOCType * *inTOC) {
   g_debug("ReadDForkTOC(%s): %d messages, %ld bytes", baseName, toc->count,
           fileSize);
   *inTOC = toc;
-  return noErr;
+  return 0;
 }
 
 /************************************************************************
  * WriteTOC - write a toc to the proper file
- * Ported from Mac: FSpCreate/AWrite → fopen/fwrite.
+ * Ported from Mac: FSpCreate/file_write → fopen/fwrite.
  * Resource fork path removed. Reentrant write protection preserved.
  ************************************************************************/
 int WriteTOC(TOCType * tocH) {
@@ -731,7 +731,7 @@ int WriteTOC(TOCType * tocH) {
     InvalBoxSizeBox(tocH->win);
 
   tocH->beingWritten--;
-  return noErr;
+  return 0;
 }
 
 /************************************************************************
@@ -867,11 +867,11 @@ int FlushTOCs(bool andClose, bool canSkip) {
   bool dontCloseIMAPToc;
 
   if (GetNumBackgroundThreads())
-    return noErr;
+    return 0;
 
   /* Skip if we recently failed and backoff hasn't expired */
   if (canSkip && lastTime && (long)(time(NULL) - lastTime) < delay)
-    return noErr;
+    return 0;
 
   for (tocH = TOCList; tocH; tocH = nextTocH) {
     nextTocH = tocH->next;
@@ -966,7 +966,7 @@ int PeekTOC(char * spec, TOCType *tocPart) {
   TOCType * tocH = FindTOC(spec);
   if (tocH) {
     *tocPart = *tocH;
-    return noErr;
+    return 0;
   }
 
   /* Check dates */
@@ -976,7 +976,7 @@ int PeekTOC(char * spec, TOCType *tocPart) {
     return err;
 
   if (!file)
-    return fnfErr;
+    return ENOENT;
 
   /* Read from .toc file (data fork) using disk header format */
   char tocPath[PATH_MAX];
@@ -984,14 +984,14 @@ int PeekTOC(char * spec, TOCType *tocPart) {
 
   FILE *fp = fopen(tocPath, "rb");
   if (!fp)
-    return fnfErr;
+    return ENOENT;
 
   TOCDiskHeader hdr;
   size_t nread = fread(&hdr, 1, sizeof(hdr), fp);
   fclose(fp);
 
   if (nread < sizeof(hdr))
-    return fnfErr;
+    return ENOENT;
 
   /* Fill in the relevant fields */
   memset(tocPart, 0, sizeof(TOCType));
@@ -1003,7 +1003,7 @@ int PeekTOC(char * spec, TOCType *tocPart) {
   tocPart->writeDate = hdr.writeDate;
   tocPart->unreadBase = hdr.unreadBase;
 
-  return noErr;
+  return 0;
 }
 
 /************************************************************************
@@ -1059,7 +1059,7 @@ static int InsaneTOC(TOCType * tocH) {
     return euBadVersion;
   }
 
-  return noErr;
+  return 0;
 }
 
 /************************************************************************
@@ -1177,7 +1177,7 @@ static short GetTOCK(TOCType * tocH, unsigned long *usedK, unsigned long *totalK
   else
     *totalK = 0;
 
-  return noErr;
+  return 0;
 }
 
 /************************************************************************

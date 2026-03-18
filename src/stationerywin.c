@@ -129,7 +129,7 @@ void OpenStationeryWin(void) {
 
     gWin.win = (MyWindowPtr)g_malloc0(sizeof(MyWindow));
     if (!gWin.win) {
-      err = memFullErr; /* or proper out of memory err */
+      err = ENOMEM; /* or proper out of memory err */
       goto fail;
     }
     gWin.win->window = gtk_window_new();
@@ -240,7 +240,7 @@ static bool DoClose(MyWindowPtr win) {
     // unref.
     gWin.inited = false;
   }
-  return (True);
+  return (true);
 }
 
 /************************************************************************
@@ -271,7 +271,7 @@ static bool DoKey(MyWindowPtr win, void *event) {
  ************************************************************************/
 void DoClick(MyWindowPtr win, void *event) {
   /* GTK port: clicks are handled by GTK button callbacks */
-  gWin.dontOpenAfterAll = False;
+  gWin.dontOpenAfterAll = false;
 }
 
 /**********************************************************************
@@ -307,7 +307,7 @@ static bool DoMenuSelect(MyWindowPtr win, int menu, int item, short modifiers) {
     switch (item) {
     case FILE_OPENSEL_ITEM:
       EditStationery(NULL, NULL);
-      return (True);
+      return (true);
       break;
     }
     break;
@@ -323,5 +323,5 @@ static bool DoMenuSelect(MyWindowPtr win, int menu, int item, short modifiers) {
     }
     break;
   }
-  return (False);
+  return (false);
 }

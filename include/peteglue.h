@@ -16,7 +16,7 @@ G_BEGIN_DECLS
 
 /* Forward declare MyWindow so we don't pull in message.h */
 struct MyWindow;
-typedef struct MyWindow *MyWindowPtr;
+/* MyWindowPtr defined in mailbox.h */
 
 /* --- Raw text / length --- */
 int PETEGetRawText(void *unused, GtkWidget *ctrl, void **out_text);

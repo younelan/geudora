@@ -39,10 +39,10 @@ DAMAGE. */
  *   MyWindowPtr  -> void *
  *   MenuHandle   -> void *
  *   RgnHandle    -> void *
- *   Boolean      -> bool
+ *   bool      -> bool
  *   unsigned char         -> unsigned char
  *   int        -> int
- *   ProcessSerialNumber -> void *
+ *   void -> void *
  *   EventRecord  -> void *  (unused in GTK)
  *   Style        -> unsigned char
  *   Rect         -> struct { short top, left, bottom, right; }
@@ -160,14 +160,14 @@ extern short LogRefN;
 extern long LogLevel;
 extern long LogTicks;
 extern Accumulator AuditAccu;
-extern void *FMBMain;              /* FMBHandle */
+extern void *FMBMain;              /* void * */
 #define AppResFile 0               /* also in mailbox.h */
 extern short HelpResFile;
 extern void *Filters;              /* Handle — filter rules */
 extern short FiltersRefCount;
 extern void *PreFilters;
 extern void *PostFilters;
-extern void *WordServices;         /* ProcessSerialNumber ** */
+extern void *WordServices;         /* void ** */
 extern short OriginalHelpCount;
 extern short EndHelpCount;
 extern char IsWordChar[256];
@@ -178,7 +178,7 @@ extern char MyHostname[128];
 extern TOCType *DamagedTOC;
 extern bool ThereIsColor;
 extern bool NoDominant;
-extern void *ICache;               /* ICacheHandle */
+extern void *ICache;               /* void * */
 extern bool VM;
 extern bool BreakMe;
 extern uLong Yesterday;
@@ -301,7 +301,7 @@ extern unsigned char FunctionKeys[];
 /************************************************************************
  * mimestore declarations
  ************************************************************************/
-extern void *MSSubs;               /* MStoreSubFile[] — simplified */
+extern void *MSSubs;               /* void[] — simplified */
 
 /**********************************************************************
  * temp vars for macros
@@ -345,15 +345,15 @@ extern long FgYieldInterval;
 extern long GroupSubjThreshTime;
 
 #ifdef NAG
-extern void *nagState;             /* NagStateHandle */
+extern void *nagState;             /* void * */
 extern long gHighestAppVersionAtLaunch;
 #endif
 
-extern FeatureRecHandle gFeatureList;
+extern void * gFeatureList;
 extern bool gNeedRemind;
 extern char *gRegFiles;           /* char ** simplified */
 
-extern void *normFonts;            /* ScriptFontInfo — unused in GTK */
+extern void *normFonts;            /* void — unused in GTK */
 extern void *monoFonts;
 extern void *printNormFonts;
 extern void *printMonoFonts;
@@ -361,7 +361,7 @@ extern void *printMonoFonts;
 extern bool gImportersAvailable;
 extern bool gScreenChange;
 extern bool gMenuBarIsSetup;
-extern void *Proxies;              /* ProxyHandle */
+extern void *Proxies;              /* void * */
 extern void *CompactStack;         /* StackHandle */
 extern FSSpec SettingsSpec;
 

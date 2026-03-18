@@ -87,7 +87,7 @@ static TOCType *GetNextDeliveryTOC(void) {
   spec_for(deliverFolder, bestName, &deliverSpec);
 
   /* Open the TOC for this mailbox */
-  if (GetTOCByFSS(&deliverSpec, &tocH) != noErr)
+  if (GetTOCByFSS(&deliverSpec, &tocH) != 0)
     return NULL;
 
   if (tocH)

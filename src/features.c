@@ -179,14 +179,14 @@ void SaveFeaturesWithExtemeProfanity (FeatureRec* featureSet)
 //		Test to see whether or not a particular feature is present and enabled
 //
 
-Boolean	HasFeature (FeatureID feature)
+bool	HasFeature (FeatureID feature)
 
 {
 #ifdef LIGHT
 	return (false);
 #else
 	FeatureRecPtr	featurePtr;
-	Boolean				hasFeature;
+	bool				hasFeature;
 
 	hasFeature = false;
 	// Simple right now since we don't downgrade on the fly...  Eventually we'll

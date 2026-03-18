@@ -1025,7 +1025,7 @@ void mm_lsub(MAILSTREAM *stream, int delimiter, char *name, long attributes);
 void mm_status(MAILSTREAM *stream, char *mailbox, MAILSTATUS *status);
 void mm_alert(MAILSTREAM *stream, char *string);
 void mm_log(char *string, long errflg);
-void pmm_log(Str255 pErrorString, long errflg);
+void pmm_log(char pErrorString[256], long errflg);
 void mm_dlog(char *string);
 void mm_login(NETMBX *mb, char *user, char *pwd, long trial);
 void mm_critical(MAILSTREAM *stream);

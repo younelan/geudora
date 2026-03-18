@@ -146,7 +146,7 @@ int DirIterate(const char *dir, void *data,
   int err = 0;
 
   if (!(dp = opendir(dir))) {
-    return ioErr; // Or a more specific error based on errno
+    return EIO; // Or a more specific error based on errno
   }
 
   while ((entry = readdir(dp)) != NULL) {
@@ -195,16 +195,16 @@ void FileIDHack(void); // JDB 980720 Hack to work around apple's fileID bug
  **********************************************************************/
 
 /* FS API Stubs - mostly removed or simplified */
-#ifndef fnfErr
+#ifndef ENOENT
 #define fnfErr (-43)
 #endif
-#ifndef ioErr
+#ifndef EIO
 #define ioErr (-36)
 #endif
-#ifndef paramErr
+#ifndef EINVAL
 #define paramErr (-50)
 #endif
-#ifndef dupFNErr
+#ifndef EEXIST
 #define dupFNErr (-48)
 #endif
 #ifndef SyncRW
@@ -219,10 +219,10 @@ void FileIDHack(void); // JDB 980720 Hack to work around apple's fileID bug
 #endif
 
 /* spec_for - build an FSSpec from a directory path and filename.
- * Returns 0 if the resulting path exists, fnfErr if not. */
+ * Returns 0 if the resulting path exists, ENOENT if not. */
 short spec_for(const char *dir, const char *name, char *spec) {
   if (!spec)
-    return paramErr;
+    return EINVAL;
   memset(spec, 0, sizeof(FSSpec));
   if (name && name[0])
     spec_set_name(spec, name);
@@ -234,7 +234,7 @@ short spec_for(const char *dir, const char *name, char *spec) {
   } else {
     snprintf(spec, sizeof(spec), "%s/%s", dir, name);
   }
-  return access(spec, F_OK) == 0 ? 0 : fnfErr;
+  return access(spec, F_OK) == 0 ? 0 : ENOENT;
 }
 
 /* spec_make - like spec_for but doesn't hit the filesystem */
@@ -277,12 +277,12 @@ short MyFSpCreateResFile(char *spec, uint32_t creator, uint32_t type,
 int MyFSpCreate(char *spec, uint32_t creator, uint32_t fileType,
               ScriptCode script) {
   if (!spec)
-    return paramErr;
+    return EINVAL;
   int fd = creat(spec, 0644);
   if (fd < 0) {
     if (errno == EEXIST)
-      return 0; // Or dupFNErr if we want to be strict
-    return ioErr;
+      return 0; // Or EEXIST if we want to be strict
+    return EIO;
   }
   close(fd);
   return 0;
@@ -291,7 +291,7 @@ int MyFSpCreate(char *spec, uint32_t creator, uint32_t fileType,
 
 /* ResError removed — always returned 0 */
 
-void AddResource(void *h, ResType type, short id, const char *name) {
+void AddResource(void *h, uint32_t type, short id, const char *name) {
   // Stub - resource forks don't exist on Unix
   // In a full implementation, this would store resources in a separate file
 }
@@ -299,31 +299,31 @@ void AddResource(void *h, ResType type, short id, const char *name) {
 int LowLevelFSpOpenDF(char *spec, short mode, short *refN) {
   const char *path = spec;
   int flags = O_RDONLY;
-  if (mode == fsWrPerm)
+  if (mode == O_WRONLY)
     flags = O_WRONLY;
-  else if (mode == fsRdWrPerm)
+  else if (mode == O_RDWR)
     flags = O_RDWR;
 
   int fd = open(path, flags);
   if (fd < 0)
-    return fnfErr;
+    return ENOENT;
   *refN = (short)fd;
   return 0;
 }
 
 int LowLevelFSpOpenRF(const char *path, short permission, short *refNum) {
   if (!path || !refNum)
-    return paramErr;
+    return EINVAL;
 
   int flags = O_RDONLY;
-  if (permission == fsWrPerm)
+  if (permission == O_WRONLY)
     flags = O_WRONLY;
-  else if (permission == fsRdWrPerm)
+  else if (permission == O_RDWR)
     flags = O_RDWR;
 
   int fd = open(path, flags);
   if (fd < 0)
-    return fnfErr;
+    return ENOENT;
   *refNum = (short)fd;
   return 0;
 }
@@ -332,12 +332,12 @@ int LowLevelFSpGetFInfo(char *spec, FInfo *fndrInfo) {
   struct stat st;
 
   if (!spec || !fndrInfo)
-    return paramErr;
+    return EINVAL;
 
   memset(fndrInfo, 0, sizeof(FInfo));
 
   if (lstat(spec, &st) < 0)
-    return fnfErr;
+    return ENOENT;
 
   /* Basic info */
   fndrInfo->fdType = 0;
@@ -361,32 +361,32 @@ int LowLevelFSpSetFInfo(char *spec, FInfo *fndrInfo) {
 int LowLevelFSpDelete(char *spec) {
   if (unlink(spec) == 0)
     return 0;
-  return ioErr;
+  return EIO;
 }
 
-short GetEOF(short refNum, long *logEOF) {
+short file_size(short refNum, long *logEOF) {
   struct stat st;
   if (fstat(refNum, &st) < 0)
-    return ioErr;
+    return EIO;
   *logEOF = (long)st.st_size;
   return 0;
 }
 /* SetEOF removed — callers use ftruncate() directly */
 short SetFPos(short refNum, short posMode, long posOffset) {
   int whence = SEEK_SET;
-  if (posMode == fsFromLEOF)
+  if (posMode == SEEK_END)
     whence = SEEK_END;
-  else if (posMode == fsFromMark)
+  else if (posMode == SEEK_CUR)
     whence = SEEK_CUR;
 
   if (lseek(refNum, (off_t)posOffset, whence) < 0)
-    return ioErr;
+    return EIO;
   return 0;
 }
-short GetFPos(short refNum, long *filePos) {
+short file_tell(short refNum, long *filePos) {
   off_t pos = lseek(refNum, 0, SEEK_CUR);
   if (pos < 0)
-    return ioErr;
+    return EIO;
   *filePos = (long)pos;
   return 0;
 }
@@ -397,16 +397,16 @@ void MyCloseResFile(short refN) {
 extern int GetNumBackgroundThreads(void);
 extern void MiniEventsLo(short mask, bool background);
 
-short ARead(short refNum, long *count, unsigned char *buffer) {
+short file_read(short refNum, long *count, unsigned char *buffer) {
   ssize_t bytes = read(refNum, buffer, *count);
   if (bytes < 0) {
     *count = 0;
-    return ioErr;
+    return EIO;
   }
   *count = (long)bytes;
   return 0;
 }
-short AWrite(short refNum, long *count, unsigned char *buffer) {
+short file_write(short refNum, long *count, unsigned char *buffer) {
   /* Normalize line endings when writing: convert lone CR (\r / 0x0D)
      to CRLF (\r\n) to produce canonical mailbox files. If the
      buffer already contains CRLF sequences, leave them intact. This
@@ -432,7 +432,7 @@ short AWrite(short refNum, long *count, unsigned char *buffer) {
     ssize_t bytes = write(refNum, buffer, inlen);
     if (bytes < 0) {
       *count = 0;
-      return ioErr;
+      return EIO;
     }
     *count = (long)bytes;
     return 0;
@@ -444,7 +444,7 @@ short AWrite(short refNum, long *count, unsigned char *buffer) {
   unsigned char *out = malloc((size_t)max_out);
   if (!out) {
     *count = 0;
-    return ioErr;
+    return EIO;
   }
 
   long oi = 0;
@@ -469,19 +469,19 @@ short AWrite(short refNum, long *count, unsigned char *buffer) {
   free(out);
   if (written < 0) {
     *count = 0;
-    return ioErr;
+    return EIO;
   }
   *count = (long)written;
   return 0;
 }
-short NCWrite(short refNum, long *count, unsigned char *buffer) {
+short file_write_nc(short refNum, long *count, unsigned char *buffer) {
   return 0;
 }
-/* Portable Pascal-string write: compute length and use AWrite. */
-short FSWriteP(short refN, unsigned char *pString) {
-  if (!pString) return 0;
-  long count = (long)strlen((const char *)pString);
-  return AWrite(refN, &count, pString);
+/* Write a C string to a file descriptor. */
+short file_write_str(short refN, const char *str) {
+  if (!str) return 0;
+  long count = (long)strlen(str);
+  return file_write(refN, &count, (unsigned char *)str);
 }
 
 /* No-op FlushVol for POSIX (flush volumes not applicable). */
@@ -525,17 +525,17 @@ int MyFSpRename(char *spec, const char *newName) {
   char newPath[1024];
 
   if (!spec || !newName || !newName[0])
-    return paramErr;
+    return EINVAL;
 
   /* determine parent directory */
   spec_parent(spec, parent, sizeof(parent));
   if (!parent[0])
-    return paramErr;
+    return EINVAL;
 
   snprintf(newPath, sizeof(newPath), "%s/%s", parent, newName);
 
   if (rename(spec, newPath) != 0) {
-    return ioErr;
+    return EIO;
   }
 
   /* update spec to reflect new name/path */
@@ -569,13 +569,13 @@ void ModernProgress(short id, short percent, void *p1, void *p2, void *p3) {}
 
 /* utl_RFSanity is implemented in utl.c */
 int PBSetCatInfoSync(CInfoPBPtr pb) { return 0; }
-void *MyGet1IndResource(OSType type, short index) { (void)type; (void)index; return NULL; }
-void *MyGetIndResource(OSType type, short index) { (void)type; (void)index; return NULL; }
+void *MyGet1IndResource(uint32_t type, short index) { (void)type; (void)index; return NULL; }
+void *MyGetIndResource(uint32_t type, short index) { (void)type; (void)index; return NULL; }
 int ResolveAliasFile(char *spec, bool resolveAliasChains,
                        bool *targetIsFolder, bool *wasAliased) {
   /* On POSIX there's no Finder alias; emulate by resolving symlinks */
   if (!spec)
-    return paramErr;
+    return EINVAL;
 
   if (targetIsFolder)
     *targetIsFolder = false;
@@ -584,12 +584,12 @@ int ResolveAliasFile(char *spec, bool resolveAliasChains,
 
   /* if path is empty, nothing to do */
   if (!spec[0])
-    return fnfErr;
+    return ENOENT;
 
   char resolved[PATH_MAX];
   if (realpath(spec, resolved) == NULL) {
     /* if realpath fails, leave spec alone but indicate file-not-found */
-    return fnfErr;
+    return ENOENT;
   }
 
   /* Update spec to resolved path */
@@ -624,15 +624,15 @@ int MyFSpExchangeFiles(char *source, char *dest) {
   char destParent[PATH_MAX];
   char destTemp[PATH_MAX];
 
-  if (!source || !dest) return paramErr;
+  if (!source || !dest) return EINVAL;
 
   /* dest parent */
   spec_parent(dest, destParent, sizeof(destParent));
-  if (!destParent[0]) return paramErr;
+  if (!destParent[0]) return EINVAL;
 
   snprintf(tempTpl, sizeof(tempTpl), "%s/.exchange-XXXXXX", destParent);
   int fd = mkstemp(tempTpl);
-  if (fd < 0) return ioErr;
+  if (fd < 0) return EIO;
   close(fd);
   /* tempTpl now contains a unique filename; use it as temporary holder */
   strncpy(destTemp, tempTpl, sizeof(destTemp));
@@ -640,7 +640,7 @@ int MyFSpExchangeFiles(char *source, char *dest) {
   /* move dest -> temp */
   if (rename(dest, destTemp) != 0) {
     unlink(destTemp);
-    return ioErr;
+    return EIO;
   }
 
   /* move source -> dest */
@@ -648,7 +648,7 @@ int MyFSpExchangeFiles(char *source, char *dest) {
     /* try to roll back */
     rename(destTemp, dest);
     unlink(destTemp);
-    return ioErr;
+    return EIO;
   }
 
   /* move temp -> source */
@@ -657,18 +657,18 @@ int MyFSpExchangeFiles(char *source, char *dest) {
     rename(dest, source);
     rename(destTemp, dest);
     unlink(destTemp);
-    return ioErr;
+    return EIO;
   }
 
   return 0;
 }
 int FSpDirCreate(char *spec, ScriptCode script, long *dirID) {
   if (!spec)
-    return paramErr;
+    return EINVAL;
   if (mkdir(spec, 0755) != 0) {
     if (errno == EEXIST)
       return 0;
-    return ioErr;
+    return EIO;
   }
   if (dirID)
     *dirID = 0;
@@ -689,17 +689,17 @@ int SFPutOpenNav(char *spec, uint32_t creator, uint32_t type, short *refN,
 }
 void WhackFinder(char *spec) {}
 int SniffAndConvertHandleToRoman(void ***h) { (void)h; return 0; }
-OSType DefaultCreator(void) { return 'EUDR'; }
+uint32_t DefaultCreator(void) { return 'EUDR'; }
 short GetResFileAttrs(short refNum) { return 0; }
 void UpdateResFile(short refNum) {}
 extern void TransLitRes(char *string, long len, short resId);
 short PBGetFCBInfo(FCBInfoPBPtr pb, bool async) { return 0; }
 short PBHRenameSync(HParmBlkPtr pb) { return 0; }
 short FSRead(short refNum, long *count, void *buffer) {
-  return ARead(refNum, count, (unsigned char *)buffer);
+  return file_read(refNum, count, (unsigned char *)buffer);
 }
 short FSWrite(short refNum, long *count, const void *buffer) {
-  return AWrite(refNum, count, (unsigned char *)buffer);
+  return file_write(refNum, count, (unsigned char *)buffer);
 }
 short PBWriteAsync(IOParam *pb) { return 0; }
 #define kTextEncodingUnicodeDefault 0
@@ -723,7 +723,7 @@ int MyInvalidateFolderDescriptorCache(short vRef, long dirID) {
   return 0;
 }
 
-int CreateTextToUnicodeInfoByEncoding(OSType encoding,
+int CreateTextToUnicodeInfoByEncoding(uint32_t encoding,
                                         TextToUnicodeInfo *info) {
   return 0;
 }
@@ -735,7 +735,7 @@ int ConvertFromPStringToUnicode(TextToUnicodeInfo info, const char *pStr,
 }
 int DisposeTextToUnicodeInfo(TextToUnicodeInfo *info) { return 0; }
 
-int CreateUnicodeToTextInfoByEncoding(OSType encoding,
+int CreateUnicodeToTextInfoByEncoding(uint32_t encoding,
                                         UnicodeToTextInfo *info) {
   return 0;
 }
@@ -756,8 +756,8 @@ int FSGetCatalogInfo(FSRef *ref, long bitmap, void *info,
 
 int PBMakeFSRefSync(FileParam *pb) { return 0; }
 
-OSType CreateTextEncoding(OSType encoding, OSType representation,
-                          OSType variant) {
+uint32_t CreateTextEncoding(uint32_t encoding, uint32_t representation,
+                          uint32_t variant) {
   return 0;
 }
 #undef HaveTheDiseaseCalledOSX
@@ -821,7 +821,7 @@ int ParentSpec(char *child, char *parent) {
     /* clear filename */ { char *_sn = strrchr(parent, '/'); if (_sn) _sn[1] = '\0'; else parent[0] = '\0'; }
     return 0;
   }
-  return ioErr;
+  return EIO;
 }
 
 /**********************************************************************
@@ -841,8 +841,8 @@ char *GetMyVolName(short refNum, char *name) { return 0; }
  ************************************************************************/
 int IndexVRef(short index, short *vRef) {
   // Volume enumeration is Mac-specific
-  // Return fnfErr to indicate no more volumes
-  return fnfErr;
+  // Return ENOENT to indicate no more volumes
+  return ENOENT;
 }
 
 /************************************************************************
@@ -874,13 +874,13 @@ int MakeResFile(const char *name, const char *dir, long creator,
   if (err == noMacDskErr) {
     int fd = creat(spec, 0644);
     if (fd < 0)
-      err = ioErr;
+      err = EIO;
     else {
       close(fd);
       err = 0;
     }
   }
-  return (err == dupFNErr ? 0 : err);
+  return (err == EEXIST ? 0 : err);
 }
 
 /**********************************************************************
@@ -910,7 +910,7 @@ int CopyFBytes(short fromRefN, long fromOffset, long length, short toRefN,
   long fromEnd = fromOffset + length;
   long toEnd;
 
-  if ((err = GetEOF(toRefN, &toEnd)))
+  if ((err = file_size(toRefN, &toEnd)))
     return (err);
 
   if (toEnd < toOffset + length - 1)
@@ -930,12 +930,12 @@ int CopyFBytes(short fromRefN, long fromOffset, long length, short toRefN,
 
     if ((err = lseek(fromRefN, fromEnd - count, SEEK_SET)))
       break;
-    if ((err = ARead(fromRefN, &count, buffer)))
+    if ((err = file_read(fromRefN, &count, buffer)))
       break;
 
     if ((err = lseek(toRefN, toEnd - count, SEEK_SET)))
       break;
-    if ((err = NCWrite(toRefN, &count, buffer)))
+    if ((err = file_write_nc(toRefN, &count, buffer)))
       break;
 
     length -= count;
@@ -969,7 +969,7 @@ int HuntNewline(short refN, long aroundSpot, long *newline, bool *realNl) {
     goto done;
   }
 
-  err = ARead(refN, &count, buffer);
+  err = file_read(refN, &count, buffer);
   if (err == eofErr & count > 0)
     err = 0; /* ignore running off the end of the file as long as we got some bytes */
   if (err) {
@@ -1023,7 +1023,7 @@ int TruncAtMark(short refN) {
   short err;
   long spot;
 
-  if ((err = GetFPos(refN, &spot)))
+  if ((err = file_tell(refN, &spot)))
     return (err);
   return (ftruncate(refN, spot));
 }
@@ -1065,19 +1065,19 @@ void StdFileSpot(Point *where, short id) {
 short AFSHOpen(const char *name, short vRefN, long dirId, short *refN,
                short perm) {
   if (!name)
-    return paramErr;
+    return EINVAL;
   char path[1024];
   snprintf(path, sizeof(path), "./%s", name);
 
   int flags = O_RDONLY;
-  if (perm == fsWrPerm)
+  if (perm == O_WRONLY)
     flags = O_WRONLY;
-  else if (perm == fsRdWrPerm)
+  else if (perm == O_RDWR)
     flags = O_RDWR;
 
   int fd = open(path, flags);
   if (fd < 0)
-    return fnfErr;
+    return ENOENT;
   *refN = (short)fd;
   return 0;
 }
@@ -1115,7 +1115,7 @@ int MyAllocate(short refN, long size) {
 #endif
   // Fallback: extend file size
   if (ftruncate(refN, size) < 0)
-    return ioErr;
+    return EIO;
   return 0;
 }
 
@@ -1155,8 +1155,8 @@ short SFPutOpen(char *spec, long creator, long type, short *refN,
    */
   int fd = creat(spec, 0644);
   if (fd < 0) {
-    theError = (errno == EEXIST) ? dupFNErr : ioErr;
-    if (theError == dupFNErr)
+    theError = (errno == EEXIST) ? EEXIST : EIO;
+    if (theError == EEXIST)
       theError = 0;
     else {
       FileSystemError(COULDNT_SAVEAS, (const char *)spec_name(spec), theError);
@@ -1167,7 +1167,7 @@ short SFPutOpen(char *spec, long creator, long type, short *refN,
     theError = 0;
   }
 
-  if ((theError = MyFSpOpenDF(spec, fsRdWrPerm, refN))) {
+  if ((theError = MyFSpOpenDF(spec, O_RDWR, refN))) {
     FileSystemError(COULDNT_SAVEAS, (const char *)spec_name(spec), theError);
     MyFSpDelete(spec);
     return (theError);
@@ -1208,14 +1208,14 @@ int Snarf(char *spec, void ***hp, long limit) {
   long bytes;
   short err;
 
-  if (!((err = MyFSpOpenDF(spec, fsRdPerm, &refN)))) {
-    if (!((err = GetEOF(refN, &bytes)))) {
+  if (!((err = MyFSpOpenDF(spec, O_RDONLY, &refN)))) {
+    if (!((err = file_size(refN, &bytes)))) {
       if (limit)
         bytes = MIN(bytes, limit);
       *hp = malloc(bytes);
       if (!*hp)
         err = 0;
-      else if ((err = ARead(refN, &bytes, (unsigned char *)(*hp)))) {
+      else if ((err = file_read(refN, &bytes, (unsigned char *)(*hp)))) {
         free(*hp);
         *hp = NULL;
       }
@@ -1266,12 +1266,12 @@ int BlatPtr(char *spec, char * text, long size, bool append) {
   if (fd >= 0)
     close(fd);
 
-  if ((err = MyFSpOpenDF(spec, fsRdWrPerm, &refN)))
+  if ((err = MyFSpOpenDF(spec, O_RDWR, &refN)))
     FileSystemError(TEXT_WRITE, (const char *)spec_name(spec), err);
   else {
     if (append & (err = lseek(refN, 0, SEEK_END)))
       FileSystemError(TEXT_WRITE, (const char *)spec_name(spec), err);
-    if ((err = AWrite(refN, &size, (unsigned char *)text)))
+    if ((err = file_write(refN, &size, (unsigned char *)text)))
       FileSystemError(TEXT_WRITE, (const char *)spec_name(spec), err);
     else if ((err = TruncAtMark(refN)))
       FileSystemError(TEXT_WRITE, (const char *)spec_name(spec), err);
@@ -1283,7 +1283,7 @@ int BlatPtr(char *spec, char * text, long size, bool append) {
 /**********************************************************************
  * FileTypeOf - get the type of a file
  **********************************************************************/
-OSType FileTypeOf(char *spec) {
+uint32_t FileTypeOf(char *spec) {
   FInfo info;
   if (!MyFSpGetFInfo(spec, NULL, &info))
     return (info.fdType);
@@ -1296,7 +1296,7 @@ OSType FileTypeOf(char *spec) {
  **********************************************************************/
 int FlushFile(short refN) {
   if (fsync(refN) < 0)
-    return ioErr;
+    return EIO;
   return 0;
 }
 
@@ -1330,7 +1330,7 @@ int MakeDarnSure(short refN) {
 /**********************************************************************
  * FileCreatorOf - get the creator of a file
  **********************************************************************/
-OSType FileCreatorOf(char *spec) {
+uint32_t FileCreatorOf(char *spec) {
   FInfo info;
   if (!MyFSpGetFInfo(spec, NULL, &info))
     return (info.fdCreator);
@@ -1379,7 +1379,7 @@ short SpinOnLo(volatile int *rtnCodeAddr, long maxTicks, bool allowCancel,
   long startTicks = ticks + 120;
   long now;
 #ifdef CTB
-  extern ConnHandle CnH;
+  extern void CnH;
 #endif
   bool oldCommandPeriod = CommandPeriod;
   bool slow = false;
@@ -1466,7 +1466,7 @@ int UniqueSpec(char *spec, short max) {
     if (stat(spec, &st) != 0)
       return 0; /* this one is unique */
   }
-  return (dupFNErr);
+  return (EEXIST);
 }
 
 /**********************************************************************
@@ -1502,7 +1502,7 @@ int SplitPerfectlyGoodFilenameIntoNameAndQuoteExtensionUnquote(
 /**********************************************************************
  * TweakFileType - set a file's type, and make sure the Finder catches on
  **********************************************************************/
-int TweakFileType(char *spec, OSType type, OSType creator) {
+int TweakFileType(char *spec, uint32_t type, uint32_t creator) {
   FInfo info;
   int err;
   FSSpec dirSpec;
@@ -1567,7 +1567,7 @@ int FSpKillRFork(char *spec) {
   int err;
   short refN;
 
-  if (!((err = MyFSpOpenRF(spec, fsRdWrPerm, &refN)))) {
+  if (!((err = MyFSpOpenRF(spec, O_RDWR, &refN)))) {
     err = ftruncate(refN, 0);
     close(refN);
   }
@@ -1577,12 +1577,12 @@ int FSpKillRFork(char *spec) {
 /************************************************************************
  * AliasFolderType - does alias'es filetype represent a folder?
  ************************************************************************/
-bool AliasFolderType(OSType type) {
-  OSType types[] = {kExportedFolderAliasType,    kContainerServerAliasType,
+bool AliasFolderType(uint32_t type) {
+  uint32_t types[] = {kExportedFolderAliasType,    kContainerServerAliasType,
                     kContainerFloppyAliasType,   kContainerFolderAliasType,
                     kContainerHardDiskAliasType, kMountedFolderAliasType,
                     kSharedFolderAliasType};
-  short i = sizeof(types) / sizeof(OSType);
+  short i = sizeof(types) / sizeof(uint32_t);
 
   while (i--)
     if (type == types[i])
@@ -1683,7 +1683,7 @@ short HGetCatInfo(short vRef, long inDirId, const char *name, CInfoPBRec *hfi) {
   }
 
   if (stat(fullPath, &st) != 0)
-    return fnfErr;
+    return ENOENT;
 
   hfi->hFileInfo.ioFlMdDat = (long)st.st_mtime;
   hfi->hFileInfo.ioFlLgLen = (long)st.st_size;
@@ -1707,7 +1707,7 @@ short HMove(short vRef, long dirId, const char *name, long destDirId,
   const char *destName = newName ? newName : name;
 
   if (!name)
-    return paramErr;
+    return EINVAL;
 
   /* Build simple relative paths; in this port the dirId/vRef are ignored */
   snprintf(fromPath, sizeof(fromPath), "./%s", name);
@@ -1716,7 +1716,7 @@ short HMove(short vRef, long dirId, const char *name, long destDirId,
   if (rename(fromPath, toPath) == 0)
     return 0;
 
-  return ioErr;
+  return EIO;
 }
 
 /**********************************************************************
@@ -1728,9 +1728,9 @@ short FSpOpenResFile(char *spec, int8_t permission) {
     return -1;
 
   int flags = O_RDONLY;
-  if (permission == fsWrPerm)
+  if (permission == O_WRONLY)
     flags = O_WRONLY;
-  else if (permission == fsRdWrPerm)
+  else if (permission == O_RDWR)
     flags = O_RDWR;
 
   int fd = open(spec, flags);
@@ -1742,18 +1742,18 @@ short FSpOpenResFile(char *spec, int8_t permission) {
 /**********************************************************************
  * ExtractCreatorFromBndl - figure out what an app's creator used to be
  **********************************************************************/
-int ExtractCreatorFromBndl(char *spec, OSType *creator) {
+int ExtractCreatorFromBndl(char *spec, uint32_t *creator) {
   int err;
   short refN;
   void *bndl;
   short oldResF = 0;
 
-  if (-1 != (refN = FSpOpenResFile(spec, fsRdPerm))) {
+  if (-1 != (refN = FSpOpenResFile(spec, O_RDONLY))) {
     if ((bndl = MyGetIndResource('BNDL', 1))) {
       *creator = *(long *)bndl;
       err = 0;
     } else
-      err = resNotFound;
+      err = ENOENT;
     MyCloseResFile(refN);
     /* UseResFile removed */
   } else
@@ -1803,7 +1803,7 @@ int RemoveDir(char *spec) {
   // Open the directory
   dir = opendir(folder);
   if (!dir) {
-    return errno ? errno : ioErr;
+    return errno ? errno : EIO;
   }
 
   // Delete all entries in the directory
@@ -1860,7 +1860,7 @@ int MyAHGetFileInfo(short vRef, long dirId, const char *name, CInfoPBRec *hfi) {
   memset(hfi, 0, sizeof(*hfi));
 
   if (stat(cname, &st) < 0)
-    return ioErr;
+    return EIO;
 
   hfi->hFileInfo.ioFlMdDat = st.st_mtime;
   hfi->hFileInfo.ioFlLgLen = st.st_size;
@@ -1878,7 +1878,7 @@ int FSpGetHFileInfo(char *spec, CInfoPBRec *hfi) {
 
   Zero(*hfi);
   if (stat(spec, &st) < 0)
-    return ioErr;
+    return EIO;
 
   // Fill in basic info
   hfi->hFileInfo.ioFlMdDat = st.st_mtime;
@@ -1904,7 +1904,7 @@ short MyAHSetFileInfo(short vRef, long dirId, const char *name, CInfoPBRec *hfi)
  ************************************************************************/
 static bool good, noSys, needWrite, allowFloppy, allowDesktop;
 
-pascal bool FolderFilter(FileParam *pb) {
+bool FolderFilter(FileParam *pb) {
 #pragma unused(pb)
   return true;
 }
@@ -1951,14 +1951,14 @@ short CopyFork(short vRef, long dirId, const char *name, short fromVRef,
   if ((fromRef = open(fromPath, O_RDONLY)) >= 0) {
     if ((toRef = open(toPath, O_RDWR)) >= 0) {
       err = 0;
-      GetEOF(fromRef, &eof);
+      file_size(fromRef, &eof);
       for (bSize = MIN(OPTIMAL_BUFFER, eof); !err & eof;
            bSize = MIN(OPTIMAL_BUFFER, eof)) {
-        if (!(err = ARead(fromRef, &bSize, buffer))) {
+        if (!(err = file_read(fromRef, &bSize, buffer))) {
           if (progress)
             ByteProgress(NULL, -1, bSize);
           eof -= bSize;
-          err = AWrite(toRef, &bSize, buffer);
+          err = file_write(toRef, &bSize, buffer);
           if (progress)
             ByteProgress(NULL, -1, bSize);
         }
@@ -1966,11 +1966,11 @@ short CopyFork(short vRef, long dirId, const char *name, short fromVRef,
       TruncAtMark(toRef);
       close(toRef);
     } else {
-      err = fnfErr;
+      err = ENOENT;
     }
     close(fromRef);
   } else {
-    err = fnfErr;
+    err = ENOENT;
   }
   free(buffer);
   return (err);
@@ -1993,14 +1993,14 @@ int FSpDupFile(char *to, char *from, bool replace, bool progress) {
     // Create file using path
     int fd = creat(to, 0644);
     if (fd < 0)
-      err = ioErr;
+      err = EIO;
     else {
       close(fd);
       err = 0;
     }
   }
 
-  if (err & err == dupFNErr & replace)
+  if (err & err == EEXIST & replace)
     err = 0;
 #ifdef DEBUG
   if (err) {
@@ -2062,7 +2062,7 @@ int FSpDupFolder(char *toSpec, char *fromSpec, bool replace,
   // TODO: Properly implement directory iteration with callback
   // For now, just return an error to indicate directory copying needs
   // implementation
-  return ioErr;
+  return EIO;
 
   /* Original code that needs proper callback implementation:
   hfi.hFileInfo.ioNamePtr = (unsigned char *)spec_name(from);
@@ -2172,10 +2172,10 @@ int FSpExchangeFilesCompat(const char *source, const char *dest) {
 
   // Verify both files exist
   if (stat(source, &st_source) != 0) {
-    return fnfErr;
+    return ENOENT;
   }
   if (stat(dest, &st_dest) != 0) {
-    return fnfErr;
+    return ENOENT;
   }
 
   // Create a temporary name in the same directory as source
@@ -2230,7 +2230,7 @@ static int GenerateUniqueName(short volume, long *startSeed, long dir1,
 
   // Generate unique names by incrementing seed
   // In POSIX we just generate a unique hex name, no volume references
-  while (error != fnfErr) {
+  while (error != ENOENT) {
     (*startSeed)++;
 
     // Create hex name from seed
@@ -2243,7 +2243,7 @@ static int GenerateUniqueName(short volume, long *startSeed, long dir1,
     // In POSIX world, we assume the name is unique based on seed
     // The original code checked if file exists in two directories,
     // but without volume references we can't do that properly
-    error = fnfErr; // Assume unique after incrementing
+    error = ENOENT; // Assume unique after incrementing
   }
   return (0);
 }
@@ -2346,25 +2346,19 @@ short FSTabWrite(short refN, long *count, unsigned char *buf) {
   return (err);
 }
 
-// Redundant ARead removed
+// Redundant file_read removed
 
 /************************************************************************
  * NCWriteP - write a Pascal string
  ************************************************************************/
 short NCWriteP(short refN, const char *pString) {
   long count = strlen(pString);
-  return (NCWrite(refN, &count, (unsigned char *)pString));
+  return (file_write_nc(refN, &count, (unsigned char *)pString));
 }
 
-/************************************************************************
- * AWriteP - write a Pascal string
- ************************************************************************/
-short AWriteP(short refN, const char *pString) {
-  long count = strlen(pString);
-  return (AWrite(refN, &count, (unsigned char *)pString));
-}
+/* file_write_str duplicate removed — defined above */
 
-// Redundant AWrite removed
+// Redundant file_write removed
 
 /**********************************************************************
  * WipeSpec - wipe a file
@@ -2374,12 +2368,12 @@ int WipeSpec(char *spec) {
   long eof;
   int err;
 
-  if (!(err = MyFSpOpenDF(spec, fsRdWrPerm, &refN))) {
-    if (!(err = GetEOF(refN, &eof)))
+  if (!(err = MyFSpOpenDF(spec, O_RDWR, &refN))) {
+    if (!(err = file_size(refN, &eof)))
       err = WipeDiskArea(refN, 0, eof);
     close(refN);
-    if (!(err = MyFSpOpenRF(spec, fsRdWrPerm, &refN))) {
-      if (!(err = GetEOF(refN, &eof)))
+    if (!(err = MyFSpOpenRF(spec, O_RDWR, &refN))) {
+      if (!(err = file_size(refN, &eof)))
         err = WipeDiskArea(refN, 0, eof);
       close(refN);
     }
@@ -2389,7 +2383,7 @@ int WipeSpec(char *spec) {
     err = MyFSpDelete(spec);
   }
 
-  if (err & err != fnfErr)
+  if (err & err != ENOENT)
     FileSystemError(WIPE_ERROR, (const char *)spec_name(spec), err);
 
   return (err);
@@ -2424,7 +2418,7 @@ int WipeDiskArea(short refN, long offset, long len) {
    */
   if (!(err = lseek(refN, offset, SEEK_SET)))
     for (size = bSize; len; size = MIN(bSize, len)) {
-      err = NCWrite(refN, &size, h);
+      err = file_write_nc(refN, &size, h);
       if (err)
         break;
       len -= size;
@@ -2446,7 +2440,7 @@ int EnsureNewline(short refN) {
   /*
    * where are we?
    */
-  if ((err = GetFPos(refN, &offset)))
+  if ((err = file_tell(refN, &offset)))
     return (err);
 
   /*
@@ -2465,7 +2459,7 @@ int EnsureNewline(short refN) {
    * read it
    */
   count = 1;
-  if ((err = ARead(refN, &count, (unsigned char *)chars)))
+  if ((err = file_read(refN, &count, (unsigned char *)chars)))
     return (err);
 
   /*
@@ -2726,7 +2720,7 @@ int SubFolderSpec(short nameId, char *spec) {
 
   // not in cache.  Go look for it
   err = spec_for(Root.path, (const char *)GetRString(string, nameId), spec);
-  if (err == fnfErr) {
+  if (err == ENOENT) {
     /* Directory doesn't exist — create it */
     g_mkdir_with_parents(spec, 0755);
     err = spec_for(Root.path, (const char *)GetRString(string, nameId), spec);
@@ -2785,7 +2779,7 @@ int SubFolderSpecOfStr(char *inSpec, const char *subfolderName,
   IsAlias(&localSpec, &localSpec);
 
   if (0 == 0)
-    return fnfErr;
+    return ENOENT;
   if (subSpec) {
     /* clear filename */ { char *_sn = strrchr(localSpec, '/'); if (_sn) _sn[1] = '\0'; else localSpec[0] = '\0'; }
     g_strlcpy(subSpec, localSpec, PATH_MAX);
@@ -2951,7 +2945,7 @@ int SpecMove(char *moveMe, char *moveTo) {
           /* remove source after successful copy */
           if (unlink(moveMe) == 0)
             return 0;
-          return ioErr;
+          return EIO;
         }
 
         g_object_unref(src);
@@ -2965,11 +2959,11 @@ int SpecMove(char *moveMe, char *moveTo) {
       {
         int in = open(moveMe, O_RDONLY);
         if (in < 0)
-          return ioErr;
+          return EIO;
         int out = creat(moveTo, 0644);
         if (out < 0) {
           close(in);
-          return ioErr;
+          return EIO;
         }
         char buf[8192];
         ssize_t r;
@@ -2978,19 +2972,19 @@ int SpecMove(char *moveMe, char *moveTo) {
           if (w != r) {
             close(in);
             close(out);
-            return ioErr;
+            return EIO;
           }
         }
         close(in);
         close(out);
         if (unlink(moveMe) == 0)
           return 0;
-        return ioErr;
+        return EIO;
       }
     }
 
     /* rename failed for other reasons */
-    return ioErr;
+    return EIO;
   }
 
   /* Fallback: use HMove behaviour for callers that supply names only */
@@ -3033,7 +3027,7 @@ int GetTrashSpec(short vRef, char *spec) {
     snprintf(spec, PATH_MAX, "%s/.local/share/Trash/files", home);
   else
     spec[0] = '\0';
-  return spec[0] ? 0 : fnfErr;
+  return spec[0] ? 0 : ENOENT;
 }
 
 /************************************************************************
@@ -3041,14 +3035,14 @@ int GetTrashSpec(short vRef, char *spec) {
  ************************************************************************/
 int DTRef(short vRef, short *dtRef) { return 0; }
 
-int DTGetAppl(short vRef, short dtRef, OSType creator, char *appSpec) {
-  return fnfErr;
+int DTGetAppl(short vRef, short dtRef, uint32_t creator, char *appSpec) {
+  return ENOENT;
 }
 
 /************************************************************************
  * DTFindAppl - find which dtRef an application lives in
  ************************************************************************/
-short DTFindAppl(OSType creator) {
+short DTFindAppl(uint32_t creator) {
   int err;
   short volIndex;
   short vRef;
@@ -3124,13 +3118,13 @@ int CanWrite(char *spec, bool *can) {
   if (!(err = ResolveAliasFile(&newSpec, true, &b, &b)) &&
       !(err = MyAHGetFileInfo(0, 0,
                             (const char *)spec_name(newSpec), &hfi)))
-    if (!(err = MyFSpOpenDF(&newSpec, fsRdWrPerm, &refN))) {
+    if (!(err = MyFSpOpenDF(&newSpec, O_RDWR, &refN))) {
       len = 1;
       if (!(err = lseek(refN, 0, SEEK_END))) {
         if (!FSWrite(refN, &len, &buff)) {
           *can = true;
           lseek(refN, -1, SEEK_END);
-          if (!GetFPos(refN, &len))
+          if (!file_tell(refN, &len))
             TruncOpenFile(refN, len);
         }
       }
@@ -3138,7 +3132,7 @@ int CanWrite(char *spec, bool *can) {
       MyFSpSetHFileInfo(&newSpec, &hfi); /* restore mod date */
     } else {
       if ((err == permErr || err == afpAccessDenied) &&
-          !(err = MyFSpOpenDF(&newSpec, fsRdPerm, &refN))) {
+          !(err = MyFSpOpenDF(&newSpec, O_RDONLY, &refN))) {
         close(refN);
         *can = false;
       }
@@ -3244,14 +3238,14 @@ int AddUniqueExt(char *spec, short extId) {
              spec_name(spec), n ? nStr : "", extStr);
     spec_set_name(newSpec, candidate);
     if (stat(newSpec, &st) != 0) {
-      err = fnfErr;
+      err = ENOENT;
       break;
     }
     n++;
     snprintf(nStr, sizeof(nStr), "%d", n);
   }
 
-  if (err == fnfErr) {
+  if (err == ENOENT) {
     err = MyFSpRename(spec, spec_name(newSpec));
     if (!err)
       spec_set_name(spec, spec_name(newSpec));
@@ -3288,7 +3282,7 @@ int NewTempExtSpec(short vRef, char *name, short extId, char *spec) {
     PCatR(fName, extId);
 
   } while (!spec_for(NULL, fName, spec));
-  if (err == fnfErr)
+  if (err == ENOENT)
     err = 0;
   return (err);
 }
@@ -3300,7 +3294,7 @@ int NewTempExtSpec(short vRef, char *name, short extId, char *spec) {
  ************************************************************************/
 int FindMyFile(char *spec, long whereToLook, short fileName) {
   FSSpec mySpec;
-  int err = fnfErr;
+  int err = ENOENT;
   char nameStr[256];
 
   if (whereToLook & kStuffFolderBit) {
@@ -3486,7 +3480,7 @@ int MakeUniqueLongFileName(short vRefNum, long dirID, char *name,
     }
 
     if (++nextFile > 1000)
-      return ioErr;
+      return EIO;
   }
 }
 
@@ -3519,7 +3513,7 @@ bool FSpIsLocked(char *spec) {
 /**********************************************************************
  * IsPDFFile - is a spec a pdf file?
  **********************************************************************/
-bool IsPDFFile(char *spec, OSType fileType) {
+bool IsPDFFile(char *spec, uint32_t fileType) {
   if (fileType == 0x50444620)
     return true;
   // Avi must die.
@@ -3557,7 +3551,7 @@ int GetAttFolderSpec(char *spec) {
     g_strlcpy(spec, AttFolderSpec, PATH_MAX);
     return 0;
   }
-  return paramErr;
+  return EINVAL;
 }
 
 /**********************************************************************
@@ -3585,10 +3579,10 @@ bool TypeIsOnListWhereAndIndex(long type, short list, void *ptr, short *index) {
  * PtrAndHand - append ptr[0..size-1] to a Handle (malloc-backed)
  **********************************************************************/
 int PtrAndHand(const void *ptr, void **hand, long size) {
-  if (!ptr || !hand || size <= 0) return -50; /* paramErr */
+  if (!ptr || !hand || size <= 0) return -50; /* EINVAL */
   size_t oldSize = *hand ? strlen((char *)hand) : 0;
   void *resized = realloc(*hand, oldSize + (size_t)size);
-  if (!resized) return -108; /* memFullErr */
+  if (!resized) return -108; /* ENOMEM */
   memmove((char *)resized + oldSize, ptr, (size_t)size);
   *hand = resized;
   return 0; /* 0 */

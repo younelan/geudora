@@ -156,7 +156,7 @@ bool JunkTrimOK(void);
 bool JunkItemsEnable(MyWindowPtr win, bool shouldEnable);
 void JunkReassignKeys(bool switchem);
 
-Boolean CanScoreJunk();
+bool CanScoreJunk();
 void JunkScoreBox(TOCType * tocH, short first, short last, bool rescore);
 void JunkScoreIMAPBox(TOCType * tocH, short first, short last, bool unfiltered);
 void JunkScoreSelected(TOCType * tocH);

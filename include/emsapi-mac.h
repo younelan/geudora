@@ -1583,7 +1583,7 @@ typedef struct ems_plugwindow_closeParams {
 #endif
 #endif // INTERNAL_FOR_EUDORA
 
-pascal void ems_plugwindow_reopen(
+void ems_plugwindow_reopen(
     void **globals, emsPlugwindowDataP data /* In: window to close */
 );
 
@@ -1621,7 +1621,7 @@ typedef struct ems_plugwindow_eventParams {
 #endif
 #endif // INTERNAL_FOR_EUDORA
 
-pascal void ems_plugwindow_menu_enable(void **globals, emsPlugwindowDataP data,
+void ems_plugwindow_menu_enable(void **globals, emsPlugwindowDataP data,
                                        emsPlugwindowMenuDataP menuData);
 
 #ifdef INTERNAL_FOR_EUDORA

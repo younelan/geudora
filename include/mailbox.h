@@ -5,6 +5,8 @@
 #include <gio/gio.h>
 #include <glib.h>
 #include <gtk/gtk.h>
+#include <errno.h>
+#include <fcntl.h>
 #include <stdbool.h>
 #include <stddef.h>
 #include <stdint.h>
@@ -17,6 +19,8 @@
 #include <unistd.h>
 
 typedef int OSStatus;
+typedef struct EventRecord EventRecord;
+typedef EventRecord *EventPtr;
 
 typedef struct mstruct *MessHandle; /* message.h */
 typedef enum {
@@ -253,20 +257,20 @@ typedef struct RGBColor {
 #endif
 
 /* Mac-style error codes */
-#define noErr 0
-#define fnfErr (-43)
+/* noErr removed — use POSIX equivalent */
+/* fnfErr removed — use POSIX equivalent */
 #define dskFulErr (-34)
-#define memFullErr (-108)
+/* memFullErr removed — use POSIX equivalent */
 #define nsvErr (-35)
-#define ioErr (-36)
+/* ioErr removed — use POSIX equivalent */
 #define bdNamErr (-37)
-#define resNotFound (-192)
+/* resNotFound removed — use POSIX equivalent */
 #define resFNotFound (-193)
 #define memReadOnlyErr (-113)
 #define memLockedErr (-117)
-#define dupFNErr (-48)
+/* dupFNErr removed — use POSIX equivalent */
 #define opWrErr (-49)
-#define paramErr (-50)
+/* paramErr removed — use POSIX equivalent */
 #define rfNumErr (-51)
 #define eofErr (-39)
 #define noMacDskErr (-57)
@@ -275,9 +279,9 @@ typedef struct RGBColor {
 #define errAENotModifiable                                                     \
   (-1704) /* can't modify (e.g. delete default personality) */
 #define errAENoSuchObject (-1728) /* object not found */
-#define fsRdPerm 0x01
-#define fsWrPerm 0x02
-#define fsRdWrPerm 0x03
+/* fsRdPerm removed — use POSIX equivalent */
+/* fsWrPerm removed — use POSIX equivalent */
+/* fsRdWrPerm removed — use POSIX equivalent */
 
 /* Finder-related constants */
 #define fInvisible 0x4000
@@ -296,9 +300,9 @@ typedef struct RGBColor {
 #define BlockMove(s, d, l) memmove(d, s, l)
 
 #define fsAtMark 0
-#define fsFromStart 1
-#define fsFromLEOF 2
-#define fsFromMark 3
+/* fsFromStart removed — use POSIX equivalent */
+/* fsFromLEOF removed — use POSIX equivalent */
+/* fsFromMark removed — use POSIX equivalent */
 
 #ifndef mDownMask
 #define mDownMask 0x0001
@@ -530,7 +534,7 @@ typedef union ParamBlockRec {
 /* Pascal string utilities - moved to StringUtil.h / fileutil.h / modernized */
 void PLCat(char *dst, long n);
 short FSpOpenResFile(char * spec, int8_t permission);
-void AddResource(void *h, ResType type, short id, ConstStr255Param name);
+void AddResource(void *h, uint32_t type, short id, ConstStr255Param name);
 short ResError(void);
 short FlushVol(unsigned char *name, short vRefNum);
 
@@ -626,7 +630,7 @@ void *NuHTempBetter(long size);
 short PBWriteAsync(IOParam *pb);
 int FSpSetFLock(char * spec);
 int FSpRstFLock(char * spec);
-short FSWriteP(short refN, unsigned char *pString);
+short file_write_str(short refN, const char *str);
 short PBCreateFileIDRefSync(HParmBlkPtr pb);
 short PBResolveFileIDRefSync(HParmBlkPtr pb);
 char *GetRString(char *name, short id);

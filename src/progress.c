@@ -248,7 +248,7 @@ bool ProgClose(MyWindowPtr win) {
   DisposProgress((ProgressBHandle)GetMyWindowPrivateData(win));
   SetMyWindowPrivateData(win, nil);
   ProgWindow = nil;
-  return (True);
+  return (true);
 }
 
 /************************************************************************

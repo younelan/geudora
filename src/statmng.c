@@ -159,7 +159,7 @@ typedef struct {
   char sProjected[33];
   StatTimePeriod period;
   short rPeriod;
-  Boolean showAverage;
+  bool showAverage;
 } ComposeStatsData;
 
 /************************************************************************
@@ -167,8 +167,8 @@ typedef struct {
  ************************************************************************/
 static StatDataHandle gStatData;
 static LongDateRec gCurrentTime;
-static Boolean gStatsDirty;
-static FMBHandle gFaceMeasure;
+static bool gStatsDirty;
+static void * gFaceMeasure;
 static short gFacetimeMode;
 static uLong gAutoUpdateTicks;
 static short dataCountTab[] = {kDayStatCount, kWeekStatCount, kMonthStatCount,
@@ -691,7 +691,7 @@ int LoadStats(void) {
   LongDateCvt theTime;
 
   if (gStatData)
-    return noErr; //	Already got it
+    return 0; //	Already got it
 
   gStatData = NewZH(StatData);
   if (!gStatData)
@@ -736,10 +736,10 @@ int SaveStats(bool force) {
   short i;
 
   if (!gStatData || !gStatsDirty)
-    return noErr;
+    return 0;
 
   if (!force && !DiskSpunUp())
-    return noErr; // if the disk isn't spun up, bail
+    return 0; // if the disk isn't spun up, bail
 
   CheckTimeChange();
   gStatData->currentTime = LocalDateTime();
@@ -1916,7 +1916,7 @@ static char *FinishGraphPict(GraphData *data) {
 static void *GetXLabels(StatTimePeriod period) {
   static void *labelList[4];
   char s[256];
-  int err = noErr;
+  int err = 0;
 
   if (!labelList[period]) {
     // need to generate stringlist
@@ -1972,7 +1972,7 @@ static int GetAbbrevNames(void **monthNames, void **dayNames) {
   *dayNames = malloc(2 + 7 * 4);
 
   if (!*monthNames || !*dayNames)
-    return memFullErr;
+    return ENOMEM;
 
   *(short *)*monthNames = 12;
   char *ptr = (char *)*monthNames + 2;
@@ -1992,7 +1992,7 @@ static int GetAbbrevNames(void **monthNames, void **dayNames) {
     ptr += l;
   }
 
-  return noErr;
+  return 0;
 }
 
 /************************************************************************

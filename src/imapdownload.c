@@ -236,7 +236,7 @@ bool gSpoolDataLocked = false;
 // filtered
 TOCType * gFilterTocH;
 short gNumUnfiltered;
-Boolean gFilteringCancelled;
+bool gFilteringCancelled;
 
 // global indicating incremental searches need
 // to be updated
@@ -388,7 +388,7 @@ void GetFilenameParameter(IMAPBODY *pBody, char fileName[256]);
 bool SaveAttachmentStub(IMAPStreamPtr stream, unsigned long uid, char *section,
                         IMAPBODY *body);
 char * BodyTypeCodeToPString(short type, char * string);
-void XMacHeaders(IMAPBODY *body, ResType *type, ResType *creator);
+void XMacHeaders(IMAPBODY *body, uint32_t *type, uint32_t *creator);
 int GetStubInfo(char * spec, struct AttachmentStubStruct *stub);
 
 //
@@ -476,10 +476,10 @@ short OpenFlagsFile(void);
  *the special mailboxes have been defined.
  **********************************************************************/
 int CheckIMAPSettingsForPers(void) {
-  int err = noErr;
+  int err = 0;
 
   if (!CurPers)
-    return fnfErr;
+    return ENOENT;
 
   // prompt for the user's password if we need
   // it
@@ -512,7 +512,7 @@ MailboxNodeHandle FetchNewMessages(TOCType * tocToSync, bool fetchFlags,
                                    bool sameThread, bool filter,
                                    bool isAutoCheck) {
   struct MailboxNode *mailboxNode = nil;
-  int err = noErr;
+  int err = 0;
   struct XferFlags flags;
   struct DeliveryNode *node;
   IMAPTransferRec imapInfo;
@@ -580,7 +580,7 @@ MailboxNodeHandle FetchNewMessages(TOCType * tocToSync, bool fetchFlags,
 
       // if we were given a password, set up
       // the thread
-      if (err == noErr) {
+      if (err == 0) {
         Zero(flags);
         Zero(imapInfo);
         spec_make(mailboxSpec, spec_name(mailboxSpec), &(imapInfo.targetSpec));
@@ -590,7 +590,7 @@ MailboxNodeHandle FetchNewMessages(TOCType * tocToSync, bool fetchFlags,
 
         // if there was an error, the delivery
         // node we created is now expendable.
-        if (err != noErr)
+        if (err != 0)
           AbortDeliveryNode(node);
 
         if (false & PrefIsSet(PREF_KEYCHAIN))
@@ -614,7 +614,7 @@ MailboxNodeHandle FetchNewMessages(TOCType * tocToSync, bool fetchFlags,
  *	Do this all over one single connection.
  **********************************************************************/
 int IMAPProcessMailboxes(FSSpecHandle mailboxes, TaskKindEnum task) {
-  int err = noErr;
+  int err = 0;
   IMAPTransferRec imapInfo;
   FSSpec spec;
   short i, numSpecs;
@@ -627,13 +627,13 @@ int IMAPProcessMailboxes(FSSpecHandle mailboxes, TaskKindEnum task) {
 
   // must be the right kind of command
   if ((task != IMAPResyncTask) & (task != IMAPExpungeTask))
-    return (paramErr);
+    return (EINVAL);
 
   // Network connectivity is handled by OS
 
   // must have some mailboxes to resync
   if (!mailboxes || !mailboxes)
-    return (paramErr);
+    return (EINVAL);
 
   // Get mailbox array from void *and count
   char (*mailboxArray)[PATH_MAX] = (char (*)[PATH_MAX])mailboxes;
@@ -710,7 +710,7 @@ int IMAPProcessMailboxes(FSSpecHandle mailboxes, TaskKindEnum task) {
       // if there are any mailboxes to
       // resynchronize, do it.
       if (PrefIsSet(PREF_THREADING_OFF) || !ThreadsAvailable())
-        err = DoIMAPProcessMailboxes(resync, task) ? noErr : 1;
+        err = DoIMAPProcessMailboxes(resync, task) ? 0 : 1;
       else {
         Zero(imapInfo);
         Zero(flags);
@@ -748,7 +748,7 @@ int IMAPProcessMailboxes(FSSpecHandle mailboxes, TaskKindEnum task) {
  *frontmost IMAP mailbox
  **********************************************************************/
 bool ResyncCurrentIMAPMailbox(void) {
-  int err = noErr;
+  int err = 0;
   IMAPTransferRec imapInfo;
   FSSpec spec;
   bool resyncMe = false;
@@ -815,7 +815,7 @@ bool ResyncCurrentIMAPMailbox(void) {
 
   if (resync && resyncMe) {
     if (PrefIsSet(PREF_THREADING_OFF) || !ThreadsAvailable())
-      err = DoIMAPProcessMailboxes(resync, IMAPResyncTask) ? noErr : 1;
+      err = DoIMAPProcessMailboxes(resync, IMAPResyncTask) ? 0 : 1;
     else {
       Zero(imapInfo);
       Zero(flags);
@@ -943,7 +943,7 @@ bool DoIMAPProcessMailboxes(FSSpecHandle mailboxes, TaskKindEnum task) {
  **********************************************************************/
 MailboxNodeHandle DoFetchNewMessages(char * mailboxSpec, bool fetchFlags,
                                      bool isAutoCheck) {
-  int err = noErr;
+  int err = 0;
   IMAPStreamPtr imapStream = nil;
   UIDNodeHandle localList = nil, remoteList = nil, updateList = nil;
   long noMessages = 0;
@@ -1010,7 +1010,7 @@ MailboxNodeHandle DoFetchNewMessages(char * mailboxSpec, bool fetchFlags,
         // build a list containing all the UIDs
         // of the cached messages
         err = SpecToUIDList(tocH, &localList, delivery);
-        if (err == noErr) {
+        if (err == 0) {
           // and remember the highest UID we
           // have locally.
           localUIDHighest = GetLocalHighestUid(localList);
@@ -1050,7 +1050,7 @@ MailboxNodeHandle DoFetchNewMessages(char * mailboxSpec, bool fetchFlags,
                 // everything from the local
                 // cahce
                 delivery->td = MSUM_DELETE_ALL;
-                err = noErr;
+                err = 0;
 
                 // Audit the fact that a
                 // mailcheck started and
@@ -1190,7 +1190,7 @@ MailboxNodeHandle DoFetchNewMessages(char * mailboxSpec, bool fetchFlags,
                 err = IMAPError(kIMAPResync, kIMAPSelectMailboxErr,
                                 errIMAPSelectMailbox);
               else
-                err = userCanceledErr; // we
+                err = ECANCELED; // we
                                        // aborted.
                                        // Don't
                                        // display
@@ -1216,7 +1216,7 @@ MailboxNodeHandle DoFetchNewMessages(char * mailboxSpec, bool fetchFlags,
           // an error occurred reading in the
           // local cache.
           AbortDeliveryNode(delivery);
-          if (err != userCanceledErr)
+          if (err != ECANCELED)
             IMAPError(kIMAPResync, kIMAPMemErr, errIMAPOutOfMemory);
         }
       }
@@ -1244,7 +1244,7 @@ MailboxNodeHandle DoFetchNewMessages(char * mailboxSpec, bool fetchFlags,
     }
   }
 
-  return (err == noErr ? mailboxInfo : nil);
+  return (err == 0 ? mailboxInfo : nil);
 }
 
 /**********************************************************************
@@ -1259,7 +1259,7 @@ MailboxNodeHandle DoFetchNewMessages(char * mailboxSpec, bool fetchFlags,
  **********************************************************************/
 int SpecToUIDList(TOCType * tocH, UIDNodeHandle *list,
                     DeliveryNodeHandle deliveryNode) {
-  int err = noErr;
+  int err = 0;
   UIDNodeHandle node = nil;
   MailboxNodeHandle mBox;
   bool bIsJunkMbox = false;
@@ -1269,7 +1269,7 @@ int SpecToUIDList(TOCType * tocH, UIDNodeHandle *list,
 
   // make sure we were passed a toc
   if (tocH == nil)
-    return (noErr); // Return int type, not
+    return (0); // Return int type, not
                     // pointer
 
   // find the mailbox associated with this TOC
@@ -1287,7 +1287,7 @@ int SpecToUIDList(TOCType * tocH, UIDNodeHandle *list,
   }
 
   // iterate through the toc
-  for (sumNum = 0; (sumNum < tocH->count) & (err == noErr); sumNum++) {
+  for (sumNum = 0; (sumNum < tocH->count) & (err == 0); sumNum++) {
     CycleBalls();
 
     // stop if the mailbox went away
@@ -1326,7 +1326,7 @@ int SpecToUIDList(TOCType * tocH, UIDNodeHandle *list,
     // then consider the messages in the hidden
     // cache as well.
     IMAPTocHBusy(hidTocH, true);
-    for (sumNum = 0; (sumNum < hidTocH->count) & (err == noErr); sumNum++) {
+    for (sumNum = 0; (sumNum < hidTocH->count) & (err == 0); sumNum++) {
       CycleBalls();
 
       node = g_malloc0(sizeof(UIDNode));
@@ -1778,7 +1778,7 @@ int SaveMinimalHeader(MAILSTREAM *stream) {
         offset = malloc_size(delivery->ta);
         void *newData = realloc(delivery->ta, offset + sizeof(MSumType));
         if (!newData) {
-          err = memFullErr;
+          err = ENOMEM;
           WarnUser(MEM_ERR, err);
           goto done;
         }
@@ -2463,7 +2463,7 @@ bool DoDownloadSingleMessage(IMAPStreamPtr imapStream, unsigned long uid,
     goto done;
 
   // figure out where our file is at
-  if (GetMessDestFilePos(imapStream, &fPos) != noErr)
+  if (GetMessDestFilePos(imapStream, &fPos) != 0)
     goto done;
 
   // get an idea of what this message looks
@@ -2517,10 +2517,10 @@ bool DoDownloadSingleMessage(IMAPStreamPtr imapStream, unsigned long uid,
   }
 
   // terminate the current message
-  FSWriteP(imapStream->mailStream->refN, (unsigned char *)"\r");
+  file_write_str(imapStream->mailStream->refN, (unsigned char *)"\r");
 
   // where's our file now?
-  if (GetMessDestFilePos(imapStream, &fPosNew) != noErr)
+  if (GetMessDestFilePos(imapStream, &fPosNew) != 0)
     result = false;
 
 done:
@@ -2544,7 +2544,7 @@ done:
 int UIDDownloadMessage(TOCType * inToc, unsigned long uid,
                          bool forceForeground, bool attachmentsToo) {
   void *uidH = nil;
-  int err = noErr;
+  int err = 0;
 
   // Allocate memory for single UID
   unsigned long *uidData = malloc(sizeof(unsigned long));
@@ -2567,7 +2567,7 @@ int UIDDownloadMessage(TOCType * inToc, unsigned long uid,
 int UIDDownloadMessages(TOCType * inToc, GArray *uids, bool forceForeground,
                           bool attachmentsToo) {
   IMAPTransferRec imapInfo;
-  int err = noErr;
+  int err = 0;
   MailboxNodeHandle mailboxNode;
   PersHandle oldPers = CurPers;
   XferFlags flags;
@@ -2586,14 +2586,14 @@ int UIDDownloadMessages(TOCType * inToc, GArray *uids, bool forceForeground,
     if (PrefIsSet(PREF_THREADING_OFF) || !ThreadsAvailable() ||
         forceForeground) {
       // download the attachment
-      err = DoDownloadMessages(inToc, uids, attachmentsToo) ? noErr : 1;
+      err = DoDownloadMessages(inToc, uids, attachmentsToo) ? 0 : 1;
     } else {
       // collect password now if we need it.
       err = CheckIMAPSettingsForPers();
 
       // if we were given a password, set up
       // the thread
-      if (err == noErr) {
+      if (err == 0) {
         Zero(flags);
         Zero(imapInfo);
         imapInfo.uids = uids;
@@ -2693,7 +2693,7 @@ bool DoDownloadMessages(TOCType * tocH, GArray *uids, bool attachmentsToo) {
             PROGRESS_BAR((100 * numUids) / totalUids, totalUids - numUids, nil,
                          nil, nil);
             if (TOCFindMessByMID(((unsigned long *)(uids->data))[numUids], tocH,
-                                 &sumNum) == noErr) {
+                                 &sumNum) == 0) {
               // indicate which message we're
               // downloading
               tstate = 0 /* HGetState removed */;
@@ -2785,7 +2785,7 @@ short OpenMessDestFile(MailboxNodeHandle mailboxInfo, unsigned long uid,
                        char * spoolSpec) {
   short ref = -1;
   char tempName[32];
-  int err = noErr;
+  int err = 0;
   FSSpec spool;
   char ctext[256];
   long creator;
@@ -2799,35 +2799,35 @@ short OpenMessDestFile(MailboxNodeHandle mailboxInfo, unsigned long uid,
 
   // create (or open) the spool file in the
   // spool folder.
-  if ((err = SubFolderSpec(SPOOL_FOLDER, &spool)) == noErr) {
+  if ((err = SubFolderSpec(SPOOL_FOLDER, &spool)) == 0) {
     // locate the spool file
     err = spec_for(spool, tempName, spoolSpec);
-    if (err == fnfErr) {
+    if (err == ENOENT) {
       // not found in spool folder.  Create the
       // file.
       GetRString(ctext, TEXT_CREATOR);
       memmove(&creator, ctext + 1, 4);
       /* File will be created by FSpCreate if
        * needed */
-      err = noErr;
+      err = 0;
     }
 
     // open the file
-    if (err == noErr) {
+    if (err == 0) {
       if ((err = AFSHOpen(spec_name(spoolSpec), 0, 0,
-                          &ref, fsRdWrPerm)) == noErr) {
+                          &ref, O_RDWR)) == 0) {
         // kill any existing resources
         FSpKillRFork(spoolSpec);
 
         // Start writing at the beginning of
         // the file
-        if ((err = ftruncate(ref, 0)) == noErr)
+        if ((err = ftruncate(ref, 0)) == 0)
           err = lseek(ref, 0, SEEK_SET);
       }
     }
   }
 
-  if ((err != noErr) || (ref == -1)) {
+  if ((err != 0) || (ref == -1)) {
     WarnUser(NO_TEMP_FILE, err);
     ref = -1;
   }
@@ -2840,7 +2840,7 @@ short OpenMessDestFile(MailboxNodeHandle mailboxInfo, unsigned long uid,
  *of destination file
  ************************************************************************/
 int GetMessDestFilePos(IMAPStreamPtr imapStream, long *pos) {
-  int err = GetFPos(imapStream->mailStream->refN, pos);
+  int err = file_tell(imapStream->mailStream->refN, pos);
 
   return (err);
 }
@@ -2878,7 +2878,7 @@ int UpdateIMAPTempFileIndex(IMAPStreamPtr imapStream, unsigned long uid,
   int err;
 
   /* Get path of the temp IMAP file */
-  if ((err = GetFileByRef(imapStream->mailStream->refN, &tempSpec)) != noErr)
+  if ((err = GetFileByRef(imapStream->mailStream->refN, &tempSpec)) != 0)
     return err;
 
   /* Sidecar index file: same path with ".iind" appended */
@@ -2893,7 +2893,7 @@ int UpdateIMAPTempFileIndex(IMAPStreamPtr imapStream, unsigned long uid,
   entry.length = newFilePosition - oldFilePosition;
   fwrite(&entry, sizeof(entry), 1, fp);
   fclose(fp);
-  return noErr;
+  return 0;
 }
 
 /************************************************************************
@@ -2904,7 +2904,7 @@ int UpdateIMAPTempFileIndex(IMAPStreamPtr imapStream, unsigned long uid,
  ************************************************************************/
 bool IMAPMessagesWaiting(TOCType * tocH, char * spoolSpec) {
   bool foundOne = false;
-  int err = noErr;
+  int err = 0;
   MailboxNodeHandle mailboxInfo = nil;
   CInfoPBRec hfi;
   FSSpec spoolFolder;
@@ -2927,7 +2927,7 @@ bool IMAPMessagesWaiting(TOCType * tocH, char * spoolSpec) {
     // will be the oldest file.
 
     // Find the Spool Folder
-    if ((err = SubFolderSpec(SPOOL_FOLDER, &spoolFolder)) == noErr) {
+    if ((err = SubFolderSpec(SPOOL_FOLDER, &spoolFolder)) == 0) {
       // iterate through it
       hfi.hFileInfo.ioNamePtr = name;
       hfi.hFileInfo.ioFDirIndex = 0;
@@ -2948,7 +2948,7 @@ bool IMAPMessagesWaiting(TOCType * tocH, char * spoolSpec) {
             // is the file open?  That is, is
             // it still being written?
             if ((err = AFSHOpen(spec_name(spoolSpec), 0,
-                                0, &ref, fsRdWrPerm)) == noErr) {
+                                0, &ref, O_RDWR)) == 0) {
               close(ref);
 
               // has this temp file already
@@ -3341,7 +3341,7 @@ bool IMAPDeleteMessages(TOCType * tocH, GArray *uids, bool nuke, bool expunge,
   IMAPTransferRec imapInfo;
   MailboxNodeHandle mailboxNode;
   short numUids, sumNum, count;
-  int err = noErr;
+  int err = 0;
   MailboxNodeHandle trash = NULL;
 
   // must have a tocH and some messages to
@@ -3420,7 +3420,7 @@ bool IMAPDeleteMessages(TOCType * tocH, GArray *uids, bool nuke, bool expunge,
 
     // if we were given a password, set up the
     // thread and hide the summaries
-    if (err == noErr) {
+    if (err == 0) {
       Zero(flags);
       Zero(imapInfo);
 
@@ -3431,7 +3431,7 @@ bool IMAPDeleteMessages(TOCType * tocH, GArray *uids, bool nuke, bool expunge,
       imapInfo.command = undelete ? IMAPUndeleteTask : IMAPDeleteTask;
 
       if (SetupXferMailThread(false, false, true, false, flags, &imapInfo) ==
-          noErr)
+          0)
         result = true;
 
       // and remove any old task errors
@@ -3502,7 +3502,7 @@ bool IMAPDeleteMessageDuringFiltering(TOCType * tocH, PersHandle pers,
       if (trashToc) {
         // copy the message from this mailbox
         // to the trash
-        if (IMAPTransferMessage(tocH, trashToc, uid, true, true) == noErr) {
+        if (IMAPTransferMessage(tocH, trashToc, uid, true, true) == 0) {
           // mark it as deleted.  We'll expunge
           // when filtering is complete
           result = IMAPMarkMessageAsDeleted(tocH, uid, false);
@@ -3541,19 +3541,19 @@ bool IMAPDeleteMessagesFromSearchWindow(TOCType * tocH) {
     return (false);
 
   // keep track of which mmessages we process
-  selectedSearchMessages = calloc(1,(tocH->count) * sizeof(Boolean));
+  selectedSearchMessages = calloc(1,(tocH->count) * sizeof(bool));
   if (selectedSearchMessages) {
     for (searchSumNum = 0; (searchSumNum < tocH->count); searchSumNum++)
       if (tocH->sums[searchSumNum].selected)
-        ((Boolean  *)selectedSearchMessages)[searchSumNum] = true;
+        ((bool  *)selectedSearchMessages)[searchSumNum] = true;
 
     // go through all messages in the search
     // toc
     for (searchSumNum = 0; (searchSumNum < tocH->count); searchSumNum++) {
       // if this message is selected ...
-      if (((Boolean  *)selectedSearchMessages)[searchSumNum]) {
+      if (((bool  *)selectedSearchMessages)[searchSumNum]) {
         if (!(realTocH = GetRealTOC(tocH, searchSumNum, &realSum))) {
-          ((Boolean  *)selectedSearchMessages)[searchSumNum] =
+          ((bool  *)selectedSearchMessages)[searchSumNum] =
               false; // let's not try to
                      // process this one
                      // again
@@ -3570,9 +3570,9 @@ bool IMAPDeleteMessagesFromSearchWindow(TOCType * tocH) {
           // search window to be deleted from
           // this mailbox
           for (sumNum = 0; (sumNum < tocH->count); sumNum++) {
-            if (((Boolean  *)selectedSearchMessages)[sumNum]) {
+            if (((bool  *)selectedSearchMessages)[sumNum]) {
               if (!(realTocH = GetRealTOC(tocH, sumNum, &realSum))) {
-                ((Boolean  *)selectedSearchMessages)[sumNum] =
+                ((bool  *)selectedSearchMessages)[sumNum] =
                     false; // let's not try
                            // to process
                            // this one
@@ -3588,9 +3588,9 @@ bool IMAPDeleteMessagesFromSearchWindow(TOCType * tocH) {
           uids = g_array_sized_new(FALSE, TRUE, sizeof(unsigned long), count);
           if (uids) {
             for (sumNum = 0; (sumNum < tocH->count); sumNum++) {
-              if (((Boolean  *)selectedSearchMessages)[sumNum]) {
+              if (((bool  *)selectedSearchMessages)[sumNum]) {
                 if (!(realTocH = GetRealTOC(tocH, sumNum, &realSum))) {
-                  ((Boolean  *)selectedSearchMessages)[sumNum] =
+                  ((bool  *)selectedSearchMessages)[sumNum] =
                       false; // let's not
                              // try to
                              // process
@@ -3600,7 +3600,7 @@ bool IMAPDeleteMessagesFromSearchWindow(TOCType * tocH) {
                 }
                 if (realTocH == curTocH) {
                   memmove(&((unsigned long *)(uids->data))[--count], &(curTocH->sums[realSum].uidHash), sizeof(unsigned long));
-                  ((Boolean  *)selectedSearchMessages)[sumNum] = false;
+                  ((bool  *)selectedSearchMessages)[sumNum] = false;
 
                   // no matter if the message
                   // moved or not, mark it as
@@ -3620,7 +3620,7 @@ bool IMAPDeleteMessagesFromSearchWindow(TOCType * tocH) {
                 IMAPDeleteMessages(curTocH, uids, false, false, false, false);
           }
         } else {
-          ((Boolean  *)selectedSearchMessages)[searchSumNum] = false;
+          ((bool  *)selectedSearchMessages)[searchSumNum] = false;
         }
       }
     }
@@ -3642,7 +3642,7 @@ bool IMAPDeleteMessagesFromSearchWindow(TOCType * tocH) {
  ************************************************************************/
 int IMAPTransferMessagesFromSearchWindow(TOCType * fromTocH, TOCType * toTocH,
                                            bool copy) {
-  int err = noErr;
+  int err = 0;
   short sumNum;
   TOCType * realTocH;
   short realSum;
@@ -3673,9 +3673,9 @@ int IMAPTransferMessagesFromSearchWindow(TOCType * fromTocH, TOCType * toTocH,
 
   numTransfers = 0;
   AccuInit(&transfers);
-  err = noErr;
+  err = 0;
 
-  for (sumNum = 0; (sumNum < fromTocH->count) & (err == noErr); sumNum++) {
+  for (sumNum = 0; (sumNum < fromTocH->count) & (err == 0); sumNum++) {
     if (fromTocH->sums[sumNum].selected) {
       if (!(realTocH = GetRealTOC(fromTocH, sumNum, &realSum)))
         continue;
@@ -3696,8 +3696,8 @@ int IMAPTransferMessagesFromSearchWindow(TOCType * fromTocH, TOCType * toTocH,
             Zero(transfer);
             transfer.fromTocH = realTocH;
             AccuInit(&transfer.ids);
-            err = noErr;
-            if (err == noErr) {
+            err = 0;
+            if (err == 0) {
               err =
                   AccuAddPtr(&transfers, &transfer, sizeof(TransferInfoStruct));
               curT = &((TransferInfoPtr)(*transfers.data))[numTransfers];
@@ -3707,7 +3707,7 @@ int IMAPTransferMessagesFromSearchWindow(TOCType * fromTocH, TOCType * toTocH,
 
           // add the appropriate ID to the
           // accumulator
-          if (curT && (err == noErr)) {
+          if (curT && (err == 0)) {
             if (realTocH->imapTOC) {
               // if we're transferring an IMAp
               // message, we'll do it by uid
@@ -3719,7 +3719,7 @@ int IMAPTransferMessagesFromSearchWindow(TOCType * fromTocH, TOCType * toTocH,
               err = AccuAddPtr(&curT->ids, &realSum, sizeof(short));
             }
 
-            if (!copy & (err == noErr)) {
+            if (!copy & (err == 0)) {
               /* TODO: Port virtual mailbox */
               /* fromTocH->sums[sumNum].u.virtualMess.virtualMBIdx
                * = -1; */
@@ -3747,7 +3747,7 @@ int IMAPTransferMessagesFromSearchWindow(TOCType * fromTocH, TOCType * toTocH,
   //
 
   // transfers.data is char* (Accumulator field), not a Handle — LDRef() removed
-  for (count = 0; (count < numTransfers) & (err == noErr); count++) {
+  for (count = 0; (count < numTransfers) & (err == 0); count++) {
     curT = &((TransferInfoPtr)(transfers.data))[count];
     realTocH = curT->fromTocH;
     ids = curT->ids.data;
@@ -3770,13 +3770,13 @@ int IMAPTransferMessagesFromSearchWindow(TOCType * fromTocH, TOCType * toTocH,
           err = TOCFindMessByMID(((unsigned long  *)ids)[i], realTocH,
                                  &tempSum);
           sum = tempSum;
-          if (err == noErr)
+          if (err == 0)
             if (!(IMAPMessageBeingDownloaded(realTocH, sum) ||
                   IMAPMessageDownloaded(realTocH, sum)))
               numToFetch++;
         }
 
-        if (err == noErr) {
+        if (err == 0) {
           if (numToFetch)
             idsToFetch = calloc(1,numToFetch * sizeof(unsigned long));
           if (idsToFetch || !numToFetch) {
@@ -3797,15 +3797,15 @@ int IMAPTransferMessagesFromSearchWindow(TOCType * fromTocH, TOCType * toTocH,
               err = UIDDownloadMessages(realTocH, idsToFetch, true, true);
             }
 
-            if (err == noErr) {
+            if (err == 0) {
               // now move the messages to the
               // POP mailbox
-              for (i = 0; (err == noErr) & (i < numIds); i++) {
+              for (i = 0; (err == 0) & (i < numIds); i++) {
                 long tempSum;
                 err = TOCFindMessByMID(((unsigned long  *)ids)[i], realTocH,
                                        &tempSum);
                 sum = tempSum;
-                if (err == noErr) {
+                if (err == 0) {
                   // wait for the downloaded
                   // message to show up
                   while (!IMAPMessageDownloaded(realTocH, sum) &&
@@ -3821,7 +3821,7 @@ int IMAPTransferMessagesFromSearchWindow(TOCType * fromTocH, TOCType * toTocH,
 
               // delete the messages if they
               // were successfully transferred
-              if (!copy & (err == noErr)) {
+              if (!copy & (err == 0)) {
                 IMAPDeleteMessages(realTocH, ids, false, false, false, false);
               } else
                 free(ids);
@@ -3860,7 +3860,7 @@ int IMAPTransferMessagesFromSearchWindow(TOCType * fromTocH, TOCType * toTocH,
  *around.  This spawns threads.
  ************************************************************************/
 int IMAPMoveIMAPMessages(TOCType * fromTocH, TOCType * toTocH, bool copy) {
-  int err = noErr;
+  int err = 0;
   GArray *uids = NULL;
   long c = CountSelectedMessages(fromTocH);
   short sumNum;
@@ -3870,7 +3870,7 @@ int IMAPMoveIMAPMessages(TOCType * fromTocH, TOCType * toTocH, bool copy) {
   // if we're moving messages from a virtual
   // mailbox, the work has already been done.
   if (fromTocH->virtualTOC)
-    return (noErr);
+    return (0);
 
   // build a list of uids to be transferred
   if (IMAPtoIMAP)
@@ -4173,7 +4173,7 @@ bool DoUIDMarkAsDeleted(IMAPStreamPtr stream, GArray *uids, bool undelete) {
  ************************************************************************/
 int IMAPTransferMessage(TOCType * fromTocH, TOCType * toTocH,
                           unsigned long uid, bool copy, bool forceForeground) {
-  int err = noErr;
+  int err = 0;
   void *uidH = nil;
 
   uidH = malloc(sizeof(unsigned long));
@@ -4197,7 +4197,7 @@ int IMAPTransferMessage(TOCType * fromTocH, TOCType * toTocH,
  ************************************************************************/
 int IMAPTransferMessages(TOCType * fromTocH, TOCType * toTocH, GArray *uids,
                            bool copy, bool forceForeground) {
-  int err = noErr;
+  int err = 0;
   XferFlags flags;
   IMAPTransferRec imapInfo;
   PersHandle oldPers = CurPers;
@@ -4239,7 +4239,7 @@ int IMAPTransferMessages(TOCType * fromTocH, TOCType * toTocH, GArray *uids,
 
   if (PrefIsSet(PREF_THREADING_OFF) || !ThreadsAvailable() || forceForeground) {
     err = DoTransferMessages(fromTocH, toTocH, uids, copy);
-    if (err == noErr)
+    if (err == 0)
       UpdateIMAPMailbox(fromTocH);
   } else {
     // figure out where the source mailbox is
@@ -4273,7 +4273,7 @@ int IMAPTransferMessages(TOCType * fromTocH, TOCType * toTocH, GArray *uids,
 
     // if the user didn't cancel, then set up
     // the thread
-    if (err == noErr) {
+    if (err == 0) {
       Zero(flags);
       Zero(imapInfo);
       imapInfo.destToc = toTocH;
@@ -4307,7 +4307,7 @@ int IMAPTransferMessages(TOCType * fromTocH, TOCType * toTocH, GArray *uids,
  ************************************************************************/
 int DoTransferMessages(TOCType * fromTocH, TOCType * toTocH, GArray *uids,
                          bool copy) {
-  int err = noErr;
+  int err = 0;
   PersHandle oldPers = CurPers;
   PersHandle fromPers = nil, toPers = nil;
   MailboxNodeHandle fromBox = nil, toBox = nil;
@@ -4340,7 +4340,7 @@ int DoTransferMessages(TOCType * fromTocH, TOCType * toTocH, GArray *uids,
   // if we allocated our streams and found that
   // at least one personality is an IMAP
   // personality ...
-  if ((err == noErr) & (fromIsIMAP || toIsIMAP)) {
+  if ((err == 0) & (fromIsIMAP || toIsIMAP)) {
     // be progressive
     PROGRESS_START;
     if (copy) {
@@ -4381,7 +4381,7 @@ int DoTransferMessages(TOCType * fromTocH, TOCType * toTocH, GArray *uids,
       }
 
       // update the mailboxes on screen
-      if (err == noErr) {
+      if (err == 0) {
         // add new summaries to destination
         // mailbox, and remove or mark the
         // originals
@@ -4441,7 +4441,7 @@ int TransferMessageBetweenServers(
     PersHandle fromPers, IMAPStreamPtr fromStream, MailboxNodeHandle fromBox,
     TOCType * fromTocH, PersHandle toPers, IMAPStreamPtr toStream,
     MailboxNodeHandle toBox, GArray *uids, bool copy) {
-  int err = noErr;
+  int err = 0;
   bool result;
   STRING ms;
   short numSums = uids->len;
@@ -4576,7 +4576,7 @@ int TransferMessageBetweenServers(
   UnlockMailboxNodeHandle(fromBox);
   CurPers = oldPers;
 
-  return (err == noErr ? (result ? noErr : 1) : err);
+  return (err == 0 ? (result ? 0 : 1) : err);
 }
 
 /************************************************************************
@@ -4627,7 +4627,7 @@ int TransferMessageOnServer(PersHandle fromPers, IMAPStreamPtr fromStream,
   // Cleanup
   CurPers = oldPers;
 
-  return (result ? noErr : 1);
+  return (result ? 0 : 1);
 }
 
 /************************************************************************
@@ -4638,7 +4638,7 @@ int IMAPTransferMessageToServer(TOCType * tocH, TOCType * toTocH,
                                   short sumNum, bool copy,
                                   bool forceForeground) {
   void *sumsH = nil;
-  int err = noErr;
+  int err = 0;
 
   sumsH = malloc(sizeof(short));
   if (sumsH) {
@@ -4659,7 +4659,7 @@ int IMAPTransferMessageToServer(TOCType * tocH, TOCType * toTocH,
 int IMAPTransferMessagesToServer(TOCType * fromTocH, TOCType * toTocH,
                                    void *sumNums, bool copy,
                                    bool forceForeground) {
-  int err = noErr;
+  int err = 0;
   // XferFlags flags;
   PersHandle toPers = nil;
   MailboxNodeHandle toBox = nil;
@@ -4705,7 +4705,7 @@ int IMAPTransferMessagesToServer(TOCType * fromTocH, TOCType * toTocH,
 
   spoolData =
       (IMAPAppendHandle)calloc(1,numSums * sizeof(IMAPAppendStruct));
-  if (((err = 0) != noErr) || !spoolData)
+  if (((err = 0) != 0) || !spoolData)
     return (err);
 
   // Keep the tocH around.  We'll let it go
@@ -4723,7 +4723,7 @@ int IMAPTransferMessagesToServer(TOCType * fromTocH, TOCType * toTocH,
   }
 
   // encode each message.
-  for (count = 0; (count < numSums) & (err == noErr); count++) {
+  for (count = 0; (count < numSums) & (err == 0); count++) {
     TOCType * realTocH;
     short realSumNum;
 
@@ -4755,7 +4755,7 @@ int IMAPTransferMessagesToServer(TOCType * fromTocH, TOCType * toTocH,
  ************************************************************************/
 int SpoolOnePopMessage(TOCType * fromTocH, short fromSumNum,
                          IMAPAppendPtr spoolData) {
-  int err = noErr;
+  int err = 0;
   MyWindowPtr messWin = nil;
   WindowPtr messWinWP;
   MessHandle messH = nil;
@@ -4785,7 +4785,7 @@ int SpoolOnePopMessage(TOCType * fromTocH, short fromSumNum,
   // transfer ...
   if (messWin) {
     // create a new spool file for this message
-    if ((err = SubFolderSpec(SPOOL_FOLDER, spoolSpec)) == noErr) {
+    if ((err = SubFolderSpec(SPOOL_FOLDER, spoolSpec)) == 0) {
 
       EnsureMID(fromTocH, fromSumNum);
       ComposeRString((char *)spec_name(spoolSpec), IMAP_SPOOL_FMT,
@@ -4805,9 +4805,9 @@ int SpoolOnePopMessage(TOCType * fromTocH, short fromSumNum,
       // from
       g_strlcpy(spoolData->mailbox, fromTocH->mailbox.spec, sizeof(spoolData->mailbox));
 
-      if (err == noErr)
+      if (err == 0)
         if (CommandPeriod)
-          err = userCanceledErr;
+          err = ECANCELED;
     }
 
     // close the window if we need to ...
@@ -4827,7 +4827,7 @@ int SpoolOnePopMessage(TOCType * fromTocH, short fromSumNum,
  ************************************************************************/
 int DoTransferMessagesToServer(TOCType * toTocH, IMAPAppendHandle spoolData,
                                  bool copy, bool forceForeground) {
-  int err = noErr;
+  int err = 0;
   PersHandle oldPers = CurPers;
   PersHandle toPers = nil;
   MailboxNodeHandle toBox = nil;
@@ -4877,7 +4877,7 @@ int DoTransferMessagesToServer(TOCType * toTocH, IMAPAppendHandle spoolData,
       // open the destination mailbox
       LockMailboxNodeHandle(toBox);
       if (IMAPOpenMailbox(imapStream, toBox->mailboxName, false)) {
-        for (count = 0; (count < numMessages) & (err == noErr); count++) {
+        for (count = 0; (count < numMessages) & (err == 0); count++) {
           // indicate which message we're
           // transferring
           ComposeRString((char *)progressMessage, POP_STATUS_FMT, count + 1,
@@ -4887,13 +4887,13 @@ int DoTransferMessagesToServer(TOCType * toTocH, IMAPAppendHandle spoolData,
           // Append the message to the
           // destination mailbox
           err = AppendSpoolFile(imapStream, &spoolData[count]);
-          if (err == noErr)
+          if (err == 0)
             if (CommandPeriod)
-              err = userCanceledErr;
+              err = ECANCELED;
 
           // rememeber that the message was
           // successfully transferred
-          if (err == noErr) {
+          if (err == 0) {
             spoolData[count].transferred = true;
             IMAPMailboxChanged(toBox);
           } else
@@ -4918,7 +4918,7 @@ int DoTransferMessagesToServer(TOCType * toTocH, IMAPAppendHandle spoolData,
       // remember the POP messages so we can
       // delete them from the main thread
       // ...
-      if ((err == noErr) & !copy) {
+      if ((err == 0) & !copy) {
         // wait for the handle listing POP
         // messages to be deleted is not in use
         while (gSpoolDataLocked) {
@@ -5040,7 +5040,7 @@ void UpdatePOPMailboxes(void) {
  *it to the currently selected mailbox.
  ************************************************************************/
 int AppendSpoolFile(IMAPStreamPtr imapStream, IMAPAppendPtr spoolData) {
-  int err = noErr;
+  int err = 0;
   bool result;
   STRING ms;
   long totalSize = 0;
@@ -5157,7 +5157,7 @@ bool CopyMessages(IMAPStreamPtr imapStream, MailboxNodeHandle mbox, GArray *uids
               SetHandleBig_(node->tc,
                             (numCopies + 1) * sizeof(UIDCopyStruct));
             }
-            if (0 != noErr)
+            if (0 != 0)
               free(node->tc);
 
             // Store the interesting bits about
@@ -5174,7 +5174,7 @@ bool CopyMessages(IMAPStreamPtr imapStream, MailboxNodeHandle mbox, GArray *uids
               // around to transferring the
               // local cache.
               ucptr->hOldSums = calloc(1,numMessages * sizeof(MSumType));
-              if (0 == noErr) {
+              if (0 == 0) {
                 for (i = 0; i < numMessages; i++) {
                   sumNum = UIDToSumNum(((unsigned long *)(uids->data))[i], fromTocH);
                   if (sumNum != -1)
@@ -5199,7 +5199,7 @@ bool CopyMessages(IMAPStreamPtr imapStream, MailboxNodeHandle mbox, GArray *uids
                 // new ones
                 ucptr->hNewUIDs =
                     calloc(1,numMessages * sizeof(unsigned long));
-                if (0 == noErr)
+                if (0 == 0)
                   setup = true;
               }
             }
@@ -5440,7 +5440,7 @@ void SortUIDListHandle(void *toSort) {
  ************************************************************************/
 int UpdateLocalSummaries(TOCType * fromTocH, GArray *uids, bool undelete,
                            bool expunge, bool cleanupAttachments) {
-  int err = noErr;
+  int err = 0;
   DeliveryNodeHandle node = nil;
   short numUids = uids->len;
   short sumNum, count;
@@ -5527,7 +5527,7 @@ int UpdateLocalSummaries(TOCType * fromTocH, GArray *uids, bool undelete,
 bool IMAPRemoveDeletedMessages(TOCType * tocH) {
   // MailboxNodeHandle mailboxNode = nil;
   bool result = false;
-  int err = noErr;
+  int err = 0;
   XferFlags flags;
   IMAPTransferRec imapInfo;
   short sum;
@@ -5563,13 +5563,13 @@ bool IMAPRemoveDeletedMessages(TOCType * tocH) {
 
     // if we were given a password, set up the
     // thread
-    if (err == noErr) {
+    if (err == 0) {
       Zero(flags);
       Zero(imapInfo);
       imapInfo.delToc = tocH;
       imapInfo.command = IMAPExpungeTask;
       err = SetupXferMailThread(false, false, true, false, flags, &imapInfo);
-      if (err == noErr)
+      if (err == 0)
         result = true;
 
       // and remove any old task errors
@@ -5867,12 +5867,12 @@ static void FileAppendDriverInit(STRING *s, void *data, unsigned long size) {
   // Read:
   refN = (short)open(msDataPtr->spoolSpec, O_RDONLY);
   if (refN >= 0) {
-    err = noErr;
+    err = 0;
   } else {
-    err = ioErr;
+    err = EIO;
   }
-  if (err == noErr) {
-    if ((err = ARead(refN, (long *)&nBytes, msDataPtr->buffer)) != noErr) {
+  if (err == 0) {
+    if ((err = file_read(refN, (long *)&nBytes, msDataPtr->buffer)) != 0) {
       // clear out the buffer if there was an
       // error
       memset(msDataPtr->buffer, 0, msDataPtr->bufferSize);
@@ -5902,7 +5902,7 @@ static void FileAppendDriverInit(STRING *s, void *data, unsigned long size) {
 static char FileAppendDriverNext(STRING *s) {
   unsigned long nBytes;
   STRINGFileStructPtr msDataPtr = (STRINGFileStructPtr)(s->data);
-  int err = noErr;
+  int err = 0;
 
   // Make sure we have a string
   if (!s || !msDataPtr)
@@ -5932,20 +5932,20 @@ static char FileAppendDriverNext(STRING *s) {
   // message.
   short refN = (short)open(msDataPtr->spoolSpec, O_RDONLY);
   if (refN >= 0) {
-    err = noErr;
+    err = 0;
   } else {
-    err = ioErr;
+    err = EIO;
   }
-  if (err == noErr) {
+  if (err == 0) {
     if (!(err = lseek(refN, msDataPtr->bytesRead, SEEK_SET))) {
-      err = ARead(refN, (long *)&nBytes, msDataPtr->buffer);
+      err = file_read(refN, (long *)&nBytes, msDataPtr->buffer);
     }
 
     close(refN);
   }
 
   // clear out the buffer if there was an error
-  if (err != noErr)
+  if (err != 0)
     memset(msDataPtr->buffer, 0, msDataPtr->bufferSize);
 
   s->cursize = s->chunksize = nBytes;
@@ -6042,8 +6042,7 @@ bool IMAPMessageBeingDownloaded(TOCType * tocH, short s) {
                  numUids < (malloc_size(index->imapInfo.uids) /
                             sizeof(unsigned long));
                  numUids++) {
-              if (((unsigned long *)(*(
-                      Handle)(index->imapInfo.uids)))[numUids] ==
+              if (((unsigned long *)(index->imapInfo.uids->data))[numUids] ==
                   tocH->sums[s].uidHash) {
                 onItsWay = true;
               }
@@ -6103,8 +6102,7 @@ void IMAPAbortMessageFetch(TOCType * tocH, short sumNum) {
           for (numUids = 0; numUids < (malloc_size(index->imapInfo.uids) /
                                        sizeof(unsigned long));
                numUids++) {
-            if (((unsigned long *)(*(
-                    Handle)(index->imapInfo.uids)))[numUids] ==
+            if (((unsigned long *)(index->imapInfo.uids->data))[numUids] ==
                 tocH->sums[sumNum].uidHash) {
               // cancel the thread
               SetThreadGlobalCommandPeriod(index->threadID, true);
@@ -6298,18 +6296,18 @@ void IMAPWriteBoundary(IMAPStreamPtr stream, IMAPBODY *body, unsigned long uid,
                                         (unsigned char *)"BOUNDARY")) {
         // Write the boundary
         // Write the body
-        FSWriteP(stream->mailStream->refN, (unsigned char *)CrLf);
+        file_write_str(stream->mailStream->refN, (unsigned char *)CrLf);
         len = strlen(param->value);
-        AWrite(stream->mailStream->refN, &len, (unsigned char *)param->value);
+        file_write(stream->mailStream->refN, &len, (unsigned char *)param->value);
         if (outerBoundary)
-          FSWriteP(stream->mailStream->refN, dashes);
-        FSWriteP(stream->mailStream->refN, (unsigned char *)CrLf);
+          file_write_str(stream->mailStream->refN, dashes);
+        file_write_str(stream->mailStream->refN, (unsigned char *)CrLf);
 
         // if we were passed a section number,
         // write the section's headers, too.
         if (section) {
           FetchMIMEHeader(stream, uid, section, 0L);
-          //					FSWriteP(stream->mailStream->refN,CrLf);
+          //					file_write_str(stream->mailStream->refN,CrLf);
         }
       }
 
@@ -6331,7 +6329,7 @@ void IMAPWriteBoundary(IMAPStreamPtr stream, IMAPBODY *body, unsigned long uid,
 bool SaveAttachmentStub(IMAPStreamPtr stream, unsigned long uid, char *section,
                         IMAPBODY *body) {
   char name[256], typeString[256], subTypeString[256];
-  ResType type, creator;
+  uint32_t type, creator;
   MIMEMap mm;
   short index = 0;
   char scratch[256], scratch2[256];
@@ -6385,52 +6383,52 @@ bool SaveAttachmentStub(IMAPStreamPtr stream, unsigned long uid, char *section,
         (char *)buffer, MIME_CT_PFMT, InterestHeadStrn + hContentType,
         GetRString(scratch, MIME_TEXT), GetRString(scratch2, MIME_PLAIN),
         AttributeStrn + aName, name, CrLf);
-    FSWriteP(stream->mailStream->refN, buffer);
+    file_write_str(stream->mailStream->refN, buffer);
 
     ComposeRString((char *)buffer, MIME_CT_ANNOTATE, AttributeStrn + aMacType,
                    Long2Hex(scratch, type), CrLf);
-    FSWriteP(stream->mailStream->refN, buffer);
+    file_write_str(stream->mailStream->refN, buffer);
 
     ComposeRString((char *)buffer, MIME_CT_ANNOTATE,
                    AttributeStrn + aMacCreator, Long2Hex(scratch, creator),
                    CrLf);
-    FSWriteP(stream->mailStream->refN, buffer);
+    file_write_str(stream->mailStream->refN, buffer);
 
     ComposeRString((char *)buffer, MIME_CD_FMT,
                    InterestHeadStrn + hContentDisposition, ATTACHMENT,
                    AttributeStrn + aFilename, name, CrLf);
-    FSWriteP(stream->mailStream->refN, buffer);
+    file_write_str(stream->mailStream->refN, buffer);
 
     ComposeRString((char *)buffer, MIME_V_FMT,
                    InterestHeadStrn + hContentEncoding, IMAP_STUB_ENCODING,
                    CrLf);
-    FSWriteP(stream->mailStream->refN, buffer);
+    file_write_str(stream->mailStream->refN, buffer);
 
-    FSWriteP(stream->mailStream->refN, (unsigned char *)CrLf);
+    file_write_str(stream->mailStream->refN, (unsigned char *)CrLf);
 
     // save the stub information to the message
     // spool file
     snprintf((char*)buffer, 256, "%ld", (long)(CurPersSafe->persId));
     PCat(buffer, (unsigned char *)"\x01,");
-    FSWriteP(stream->mailStream->refN, buffer);
+    file_write_str(stream->mailStream->refN, buffer);
 
     snprintf((char*)buffer, 256, "%ld", (long)(uid));
     PCat(buffer, (unsigned char *)"\x01,");
-    FSWriteP(stream->mailStream->refN, buffer);
+    file_write_str(stream->mailStream->refN, buffer);
 
     ComposeString(buffer, "\x03%s,", section);
-    FSWriteP(stream->mailStream->refN, buffer);
+    file_write_str(stream->mailStream->refN, buffer);
 
     snprintf((char*)buffer, 256, "%ld", (long)(body->size.bytes));
     PCat(buffer, (unsigned char *)"\x01,");
-    FSWriteP(stream->mailStream->refN, buffer);
+    file_write_str(stream->mailStream->refN, buffer);
 
     snprintf((char*)buffer, 256, "%ld", (long)(body->size.lines));
     PCat(buffer, (unsigned char *)"\x01,");
-    FSWriteP(stream->mailStream->refN, buffer);
+    file_write_str(stream->mailStream->refN, buffer);
     ;
 
-    FSWriteP(stream->mailStream->refN, (unsigned char *)CrLf);
+    file_write_str(stream->mailStream->refN, (unsigned char *)CrLf);
   }
 
   return (*name != 0);
@@ -6440,7 +6438,7 @@ bool SaveAttachmentStub(IMAPStreamPtr stream, unsigned long uid, char *section,
  *	XMacHeaders - search the body for
  *x-mac-type and x-mac-creator
  ************************************************************************/
-void XMacHeaders(IMAPBODY *body, ResType *type, ResType *creator) {
+void XMacHeaders(IMAPBODY *body, uint32_t *type, uint32_t *creator) {
   char macType[256], macCreator[256], scratch[256];
   PARAMETER *param = nil;
 
@@ -6462,16 +6460,16 @@ void XMacHeaders(IMAPBODY *body, ResType *type, ResType *creator) {
     char macTypeC[256];
     PtoCcpy(macTypeC, macType);
     if (!strcasecmp(param->attribute, macTypeC)) {
-      if (noErr == Hex2Bytes((unsigned char *)param->value, 8, scratch))
-        memmove(type, scratch, sizeof(ResType));
+      if (0 == Hex2Bytes((unsigned char *)param->value, 8, scratch))
+        memmove(type, scratch, sizeof(uint32_t));
     }
     // x-mac-creator?
     else {
       char macCreatorC[256];
       PtoCcpy(macCreatorC, macCreator);
       if (!strcasecmp(param->attribute, macCreatorC)) {
-        if (noErr == Hex2Bytes((unsigned char *)param->value, 8, scratch))
-          memmove(creator, scratch, sizeof(ResType));
+        if (0 == Hex2Bytes((unsigned char *)param->value, 8, scratch))
+          memmove(creator, scratch, sizeof(uint32_t));
       }
     }
 
@@ -6502,7 +6500,7 @@ int IE(IMAPStreamPtr imapStream, short operation, short explanation,
   // if the user cancelled, don't display an
   // error message
   if (CommandPeriod)
-    return (userCanceledErr);
+    return (ECANCELED);
 
   // if we've already displayed an error, just
   // return
@@ -6593,7 +6591,7 @@ int IE(IMAPStreamPtr imapStream, short operation, short explanation,
  *expunge
  ************************************************************************/
 int FTMExpunge(IMAPStreamPtr imapStream, TOCType * tocH) {
-  int err = noErr;
+  int err = 0;
   short sumNum;
   MailboxNodeHandle trash = GetIMAPTrashMailbox(CurPersSafe, false, false);
   GArray *uids = NULL;
@@ -6602,12 +6600,12 @@ int FTMExpunge(IMAPStreamPtr imapStream, TOCType * tocH) {
   unsigned long uid;
   char uidStr[64]; // Must have a toc to look at
   if (!tocH)
-    return (noErr);
+    return (0);
 
   // nothing to do if we're caching deleted
   // messages
   if (GetHiddenCacheMailbox(TOCToMbox(tocH), false, false))
-    return (noErr);
+    return (0);
 
   // only makes sense to do this when FTM is on
   if (FancyTrashForThisPers(tocH)) {
@@ -6938,13 +6936,13 @@ char * BodyTypeCodeToPString(short type, char * string) {
  ************************************************************************/
 bool IsIMAPAttachmentStub(char * spec) {
   bool isIMAPAttachment = false;
-  int err = noErr;
+  int err = 0;
   char scratch[256], parentName[256];
 
   // figure out the name of the parent folder
   // of this file
   if ((err = GetDirName(nil, 0, 0, parentName)) ==
-      noErr) {
+      0) {
     // is its parent's name "IMAP Attachments"?
     if (StringSame(parentName, GetRString(scratch, IMAP_ATTACH_FOLDER))) {
       // then this is an IMAP attachment.
@@ -6964,10 +6962,10 @@ unsigned long DownloadIMAPAttachment(char * attachSpec,
                                      bool forceForeground) {
   unsigned long result = 0;
   FSSpecHandle attach = nil;
-  int err = noErr;
+  int err = 0;
 
   attach = malloc(sizeof(FSSpec));
-  if (attach && (err = 0) == noErr) {
+  if (attach && (err = 0) == 0) {
     memmove(attach, attachSpec, sizeof(FSSpec));
     result = DownloadIMAPAttachments(attach, mailbox, forceForeground);
   } else {
@@ -6988,7 +6986,7 @@ unsigned long DownloadIMAPAttachments(FSSpecHandle attachments,
                                       bool forceForeground) {
   unsigned long uid = 0;
   IMAPTransferRec imapInfo;
-  int err = noErr;
+  int err = 0;
   PersHandle oldPers = CurPers;
   XferFlags flags;
 
@@ -7011,7 +7009,7 @@ unsigned long DownloadIMAPAttachments(FSSpecHandle attachments,
 
       // if we were given a password, set up
       // the thread
-      if (err == noErr) {
+      if (err == 0) {
         Zero(flags);
         Zero(imapInfo);
         imapInfo.attachments = attachments;
@@ -7040,7 +7038,7 @@ unsigned long DownloadIMAPAttachments(FSSpecHandle attachments,
  ************************************************************************/
 unsigned long DoDownloadIMAPAttachments(FSSpecHandle attachments,
                                         MailboxNodeHandle mailbox) {
-  int err = noErr;
+  int err = 0;
   AttachmentStubStruct stub;
   IMAPStreamPtr imapStream;
   PersHandle oldPers = CurPers;
@@ -7073,7 +7071,7 @@ unsigned long DoDownloadIMAPAttachments(FSSpecHandle attachments,
     // read the info from the stub file
     //
 
-    if ((err = GetStubInfo(&stubSpec, &stub)) == noErr)
+    if ((err = GetStubInfo(&stubSpec, &stub)) == 0)
 
       //
       //	Download the attachment into a
@@ -7119,16 +7117,16 @@ unsigned long DoDownloadIMAPAttachments(FSSpecHandle attachments,
               int _fd = open(attachSpool, O_CREAT | O_RDWR | O_TRUNC, 0644);
               if (_fd >= 0) {
                 ref = (short)_fd;
-                err = noErr;
+                err = 0;
               } else {
                 err = -1;
               }
             }
-            if (err == noErr) {
+            if (err == 0) {
                 // no resource fork on POSIX — skip FSpKillRFork
 
                 // truncate and seek to start
-                if ((err = ftruncate(ref, 0)) == noErr)
+                if ((err = ftruncate(ref, 0)) == 0)
                   err = lseek(ref, 0, SEEK_SET);
 
                 // tell the imap stream where
@@ -7197,7 +7195,7 @@ unsigned long DoDownloadIMAPAttachments(FSSpecHandle attachments,
       // reset the progress indicator ...
       BYTE_PROGRESS(0, 0, stub.sizeLines);
       PROGRESS_MESSAGER(kpSubTitle, IMAP_DECODING_ATTACHMENT);
-      if ((err == noErr) &&
+      if ((err == 0) &&
           SpoolFileToAttachment(mailbox, stub.uid, &attachSpool, &attachSpec)) {
         // final progress message ...
         BYTE_PROGRESS(0, stub.sizeLines, stub.sizeLines);
@@ -7226,7 +7224,7 @@ unsigned long DoDownloadIMAPAttachments(FSSpecHandle attachments,
 
           // move the attachment (now stubSpec)
           // into the attachments folder
-          if ((err = SpecMove(&stubSpec, &AttFolderSpec)) == dupFNErr) {
+          if ((err = SpecMove(&stubSpec, &AttFolderSpec)) == EEXIST) {
             // failed to move it.  Rename
             // conflicting file to the next
             // available name
@@ -7236,7 +7234,7 @@ unsigned long DoDownloadIMAPAttachments(FSSpecHandle attachments,
             }
           }
 
-          if (err == noErr) {
+          if (err == 0) {
             // stubSpec was moved to the
             // attachments folder ...
 
@@ -7286,7 +7284,7 @@ unsigned long DoDownloadIMAPAttachments(FSSpecHandle attachments,
 
           // we did it!  Tell the main thread
           // to update its windows
-          if (err == noErr) {
+          if (err == 0) {
             // IMAPAttachmentFetched(mailbox, stub.uid, &stubSpec); // TODO:
             // Function undefined in original/current codebase
           }
@@ -7301,7 +7299,7 @@ unsigned long DoDownloadIMAPAttachments(FSSpecHandle attachments,
           // who'se attachment we just fetched.
           tocH = TOCBySpec(&mailbox->mailboxSpec);
           if (tocH) {
-            if (noErr == (TOCFindMessByMID(stub.uid, tocH, &sumNum))) {
+            if (0 == (TOCFindMessByMID(stub.uid, tocH, &sumNum))) {
               if (sumNum < tocH->count) {
                 if (tocH->sums[sumNum].opts & OPT_EMSR_DELETE_REQUESTED) {
                   // a translator asked to delete
@@ -7350,7 +7348,7 @@ unsigned long DoDownloadIMAPAttachments(FSSpecHandle attachments,
  *inside a stub file
  ************************************************************************/
 int GetStubInfo(char * spec, AttachmentStubPtr stub) {
-  int err = noErr;
+  int err = 0;
   unsigned char * stubH = nil;
   unsigned long len = 0;
   char *begin, *scan, *end;
@@ -7361,7 +7359,7 @@ int GetStubInfo(char * spec, AttachmentStubPtr stub) {
   memset(stub, 0, sizeof(AttachmentStubStruct));
 
   // read the stub info from the stub file
-  if ((err = Snarf(spec, &stubH, 0)) == noErr) {
+  if ((err = Snarf(spec, &stubH, 0)) == 0) {
     // stubH contains a comma separated list.
     // Parse through it.
     len = strlen((char *)stubH);
@@ -7471,7 +7469,7 @@ MailboxNodeHandle PETEHandleToMailboxNode(PETEHandle pte) {
  ************************************************************************/
 int FetchIMAPAttachment(PETEHandle pte, char * spec,
                           bool forceForeground) {
-  int err = noErr;
+  int err = 0;
   AttachmentStubStruct stub;
   TOCType * mailboxTocH = nil;
   long sumNum;
@@ -7481,7 +7479,7 @@ int FetchIMAPAttachment(PETEHandle pte, char * spec,
 
   // must have a stub file spec ...
   if (!spec || !IsIMAPAttachmentStub(spec))
-    return (paramErr);
+    return (EINVAL);
 
   // must have a valid IMAP mailbox ...
   if (!mailbox)
@@ -7489,7 +7487,7 @@ int FetchIMAPAttachment(PETEHandle pte, char * spec,
 
   // read the attachment info from the stub
   // file
-  if ((err = GetStubInfo(spec, &stub)) == noErr) {
+  if ((err = GetStubInfo(spec, &stub)) == 0) {
     // which toc are we dealing with?
     LockMailboxNodeHandle(mailbox);
     mailboxTocH = FindTOC(mailbox->mailboxSpec);
@@ -7497,18 +7495,18 @@ int FetchIMAPAttachment(PETEHandle pte, char * spec,
 
     if (mailboxTocH) {
       // which message owns this attachment?
-      if ((err = TOCFindMessByMID(stub.uid, mailboxTocH, &sumNum)) == noErr) {
+      if ((err = TOCFindMessByMID(stub.uid, mailboxTocH, &sumNum)) == 0) {
         // remember where the stub file lives
         err = HGetCatInfo(0, 0, spec_name(spec), &hfi);
         fileId = hfi.hFileInfo.ioDirID;
 
         // download the stub
-        if ((err == noErr) & !DownloadIMAPAttachment(spec, mailbox, true))
+        if ((err == 0) & !DownloadIMAPAttachment(spec, mailbox, true))
           err = errIMAPCouldNotFetchPart;
 
         // Update the spec to point ot the
         // downloaded attachment
-        if (err == noErr) {
+        if (err == 0) {
           err = FSResolveFID(0, fileId, spec);
         }
       }
@@ -7739,7 +7737,7 @@ bool SpoolFileToAttachment(MailboxNodeHandle mailbox, unsigned long uid,
     (WarnUser(MEM_ERR, 0));
     goto msgDone;
   }
-  if (FSpOpenLine(spoolSpec, fsRdWrPerm, Lip))
+  if (FSpOpenLine(spoolSpec, O_RDWR, Lip))
     goto msgDone;
 
   // grab the message from the spool file
@@ -7832,7 +7830,7 @@ int IMAPRecvLine(TransStream stream, char *buffer, long *size) {
     buffer[*size] = 0;
   }
   wasNl = !lineType || buffer[*size - 1] == '\015';
-  return (noErr);
+  return (0);
 }
 
 /************************************************************************
@@ -7842,7 +7840,7 @@ short NewScratchFile(char * where, char * scratchFile) {
   short ref = -1;
 
   spec_make(where, spec_name(where), scratchFile);
-  if (UniqueSpec(scratchFile, 31) == noErr) {
+  if (UniqueSpec(scratchFile, 31) == 0) {
     {
       int _fd = open(scratchFile, O_CREAT | O_RDWR | O_TRUNC, 0644);
       if (_fd >= 0) {
@@ -7873,7 +7871,7 @@ void FindFirstAttachmentInSpec(char * inSpec, char * attachSpec) {
 
   Zero(*attachSpec);
 
-  if (Snarf(inSpec, &text, 0) == noErr) {
+  if (Snarf(inSpec, &text, 0) == 0) {
     if (text)
       FindAnAttachment(text, 0, attachSpec, true, nil, nil, nil);
 
@@ -7948,7 +7946,7 @@ void UpdateIMAPWindows(void) {
     if (tocH) // the toc is still open ...
     {
       // which message needs to be updated?
-      if (TOCFindMessByMID(node->uid, tocH, &sumNum) == noErr) {
+      if (TOCFindMessByMID(node->uid, tocH, &sumNum) == 0) {
         // update the message's summary.
         if (HasStubFileAttachment(tocH, sumNum))
           tocH->sums[sumNum].opts |= OPT_FETCH_ATTACHMENTS;
@@ -8091,7 +8089,7 @@ bool RedoIMAPAttachmentIcons(MyWindowPtr win, PETEHandle previewPte,
         g_strlcpy(curAtt, (char *)attachSpecs + i * sizeof(FSSpec), sizeof(curAtt));
 
         if (SameSpec(&curAtt, &spec)) {
-          if (FileGraphicChangeGraphic(pte, offset, &curAtt) == noErr)
+          if (FileGraphicChangeGraphic(pte, offset, &curAtt) == 0)
             found = true;
         }
       }
@@ -8153,7 +8151,7 @@ bool FetchAllIMAPAttachments(TOCType * tocH, short sumNum,
   PersHandle pers;
   FSSpecHandle attachments = nil;
   short numSpecs = 0;
-  int err = noErr;
+  int err = 0;
   MessHandle messH = nil;
   bool openedMessage = false;
 
@@ -8237,7 +8235,7 @@ bool FetchAllIMAPAttachments(TOCType * tocH, short sumNum,
 bool FetchAllIMAPAttachmentsBySpec(char * spec, MailboxNodeHandle mailbox,
                                    bool forceForeground) {
   bool result = false;
-  int err = noErr;
+  int err = 0;
   AttachmentStubStruct stub;
   TOCType * mailboxTocH = nil;
   long sumNum;
@@ -8252,7 +8250,7 @@ bool FetchAllIMAPAttachmentsBySpec(char * spec, MailboxNodeHandle mailbox,
 
   // read the attachment info from the stub
   // file
-  if ((err = GetStubInfo(spec, &stub)) == noErr) {
+  if ((err = GetStubInfo(spec, &stub)) == 0) {
     // which toc are we dealing with?
     LockMailboxNodeHandle(mailbox);
     mailboxTocH = FindTOC(mailbox->mailboxSpec);
@@ -8260,7 +8258,7 @@ bool FetchAllIMAPAttachmentsBySpec(char * spec, MailboxNodeHandle mailbox,
 
     if (mailboxTocH) {
       // which message owns this attachment?
-      if ((err = TOCFindMessByMID(stub.uid, mailboxTocH, &sumNum)) == noErr) {
+      if ((err = TOCFindMessByMID(stub.uid, mailboxTocH, &sumNum)) == 0) {
         result = FetchAllIMAPAttachments(mailboxTocH, sumNum, forceForeground);
       }
     }
@@ -8344,7 +8342,7 @@ bool HasStubFileAttachment(TOCType * tocH, short sumNum) {
  **********************************************************************/
 bool IMAPSearch(TOCType * searchWin, BoxCountHandle boxesToSearch,
                 IMAPSCHandle searchCriteria, bool matchAll) {
-  int err = noErr;
+  int err = 0;
   PersHandle pers, mboxPers;
   MailboxNodeHandle mailbox;
   short i, menuId,
@@ -8372,7 +8370,7 @@ bool IMAPSearch(TOCType * searchWin, BoxCountHandle boxesToSearch,
     return (false);
 
   // Search each personality as needed.
-  for (pers = PersList; pers && (err == noErr); pers = pers->next) {
+  for (pers = PersList; pers && (err == 0); pers = pers->next) {
     // create a handle to store the indices
     // into boxesToSearch
     if (!(toSearch = malloc(0)) || (err = 0)) {
@@ -8539,7 +8537,7 @@ bool IMAPSearchServer(TOCType * searchWin, PersHandle pers,
                       BoxCountHandle boxesToSearch, void *toSearch,
                       IMAPSCHandle searchCriteria, bool matchAll, long firstUID,
                       bool bAlreadyOnline) {
-  int err = noErr;
+  int err = 0;
   XferFlags flags;
   IMAPTransferRec imapInfo;
   bool result = false;
@@ -8574,7 +8572,7 @@ bool IMAPSearchServer(TOCType * searchWin, PersHandle pers,
 
       // if we were given a password, set up
       // the thread
-      if (err == noErr) {
+      if (err == 0) {
         Zero(flags);
         Zero(imapInfo);
         imapInfo.destToc = searchWin;
@@ -8585,7 +8583,7 @@ bool IMAPSearchServer(TOCType * searchWin, PersHandle pers,
         imapInfo.firstUID = firstUID;
         imapInfo.command = IMAPSearchTask;
         result = ((err = SetupXferMailThread(false, false, true, false, flags,
-                                             &imapInfo)) == noErr);
+                                             &imapInfo)) == 0);
 
         // and remove any old task errors
         RemoveTaskErrors(IMAPSearchTask, CurPers->persId);
@@ -8616,7 +8614,7 @@ bool DoIMAPServerSearch(TOCType * searchWin, BoxCountHandle allBoxes,
                         void *boxesToSearch, IMAPSCHandle searchCriteria,
                         bool matchAll, long firstUID) {
   bool result = false;
-  // int err = noErr; - UNUSED
+  // int err = 0; - UNUSED
   IMAPStreamPtr imapStream;
   PersHandle oldPers = CurPers, boxPers = nil;
   MailboxNodeHandle mboxToSearch = nil;
@@ -9081,9 +9079,9 @@ bool ReturnSearchHits(IMAPStreamPtr imapStream, DeliveryNodeHandle searchNode,
     next = node->next;
 
     // if the summary can't be found ...
-    if ((TOCFindMessByMID(node->uid, tocToSync, &sumNum) != noErr) &&
+    if ((TOCFindMessByMID(node->uid, tocToSync, &sumNum) != 0) &&
         ((hidTocH == nil) ||
-         (TOCFindMessByMID(node->uid, hidTocH, &sumNum) != noErr))) {
+         (TOCFindMessByMID(node->uid, hidTocH, &sumNum) != 0))) {
       // remove this node from the search
       // results ...
       LL_Remove(*uids, node, (UIDNodeHandle));
@@ -9159,7 +9157,7 @@ void BuildSearchResults(DeliveryNodeHandle delivery, UIDNodeHandle results) {
   long offset = 0;
   UIDNodeHandle resultScan;
   IMAPSResultStruct imapResult;
-  int err = noErr;
+  int err = 0;
   char state;
 
   // must have some results
@@ -9205,7 +9203,7 @@ void BuildSearchResults(DeliveryNodeHandle delivery, UIDNodeHandle results) {
  **********************************************************************/
 void IMAPAbortSearch(TOCType * searchWin) {
   DeliveryNodeHandle node = FindNodeByToc(searchWin);
-  /* int err = noErr; - UNUSED */
+  /* int err = 0; - UNUSED */
   threadDataHandle index;
   char state;
 
@@ -9642,7 +9640,7 @@ void IMAPTocHBusy(TOCType * tocH, bool busy) {
  *mailboxes
  **********************************************************************/
 void ResyncOpenMailboxes(PersHandle pers) {
-  int err = noErr;
+  int err = 0;
   struct Accumulator mailboxesAcc;
   MailboxNodeHandle b = nil;
   PersHandle p;
@@ -9653,7 +9651,7 @@ void ResyncOpenMailboxes(PersHandle pers) {
   // build the list of mailboxes to
   // resynchronize
   AccuInit(&mailboxesAcc);
-  for (tocH = TOCList; tocH && (err == noErr); tocH = tocH->nextTOC) {
+  for (tocH = TOCList; tocH && (err == 0); tocH = tocH->nextTOC) {
     GetMailboxSpec(tocH, -1, boxSpec);
     b = TOCToMbox(tocH);
     p = TOCToPers(tocH);
@@ -9664,7 +9662,7 @@ void ResyncOpenMailboxes(PersHandle pers) {
   if (mailboxesAcc.data)
     mailboxesAcc.data = realloc(mailboxesAcc.data, mailboxesAcc.offset);
 
-  if ((err == noErr) & (mailboxesAcc.size > 0)) {
+  if ((err == 0) & (mailboxesAcc.size > 0)) {
     // resynchronize the mailboxes
     err = IMAPProcessMailboxes((FSSpecHandle)mailboxesAcc.data,
                                IMAPResyncTask);
@@ -9780,8 +9778,7 @@ void *IMAPFetchMessageHeadersForFiltering(TOCType * tocH, short sumNum) {
     CurPers = pers;
 
     if (UIDFetchHeader(gFilterStream, uid, false)) {
-      if (gFilterStream->mailStream->fNetData &&
-          *(gFilterStream->mailStream->fNetData)) {
+      if (gFilterStream->mailStream->fNetData) {
         headers = gFilterStream->mailStream->fNetData;
         gFilterStream->mailStream->fNetData = nil;
       }
@@ -9884,7 +9881,7 @@ void GetNextWaitingIMAPToc(TOCType * *toc) {
  *in the TP window.
  ************************************************************************/
 int IMAPFilterProgress(TOCType * tocH) {
-  int err = noErr;
+  int err = 0;
   XferFlags flags;
   threadDataHandle index;
   IMAPTransferRec imapInfo;
@@ -9898,7 +9895,7 @@ int IMAPFilterProgress(TOCType * tocH) {
     // filter this toc?
     for (index = gThreadData; index; index = index->next) {
       if (index->currentTask == IMAPFilterTask)
-        return (noErr);
+        return (0);
     }
 
     // nope.  Set up the thread.
@@ -9952,7 +9949,7 @@ long IMAPCountUnfilteredMessages(MailboxNodeHandle mbox) {
  *messages for an IMAP personality.
  ************************************************************************/
 int DoIMAPFilterProgress(void) {
-  int err = noErr;
+  int err = 0;
   TOCType * tocH = 0;
   char progressMessage[256];
   /* MailboxNodeHandle mBox; - UNUSED */
@@ -9965,7 +9962,7 @@ int DoIMAPFilterProgress(void) {
 
   // display progress while this mailbox is
   // being filtered
-  while ((err == noErr) && gFilterTocH && !gFilteringCancelled) {
+  while ((err == 0) && gFilterTocH && !gFilteringCancelled) {
     // check for changes  ...
     if (tocH != gFilterTocH) {
       tocH = gFilterTocH;
@@ -10364,7 +10361,7 @@ void IMAPFetchSelectedMessages(TOCType * tocH, bool attach) {
  ************************************************************************/
 int QueueMessFlagChange(TOCType * tocH, short sumNum, StateEnum state,
                           bool bTrashed) {
-  int err = noErr;
+  int err = 0;
   PersHandle pers = nil;
   MailboxNodeHandle mb = nil;
   LocalFlagChangeStruct flags;
@@ -10375,11 +10372,11 @@ int QueueMessFlagChange(TOCType * tocH, short sumNum, StateEnum state,
 
   // must have been passed a TOC.
   if (!tocH)
-    return (paramErr);
+    return (EINVAL);
 
   // this must be an IMAP mailbox
   if (!tocH->imapTOC)
-    return (paramErr);
+    return (EINVAL);
 
   // Is this message labeled as flagged?
   if (color & (GetSumColor(tocH, sumNum) == color))
@@ -10465,7 +10462,7 @@ int QueueMessFlagChange(TOCType * tocH, short sumNum, StateEnum state,
         }
 
         // save the flag change
-        if ((mb->queuedFlags) && (err == noErr))
+        if ((mb->queuedFlags) && (err == 0))
           memmove(&(((LocalFlagChangePtr)(mb->queuedFlags))[(
                   oldFlagSize / sizeof(LocalFlagChangeStruct))]), &flags, sizeof(LocalFlagChangeStruct));
         else
@@ -10474,13 +10471,13 @@ int QueueMessFlagChange(TOCType * tocH, short sumNum, StateEnum state,
 
       UnlockMailboxNodeFlags(mb);
     } else {
-      err = userCanceledErr;
+      err = ECANCELED;
     }
     UnlockMailboxNodeHandle(mb);
 
     // mark this mailbox so we can recognize it
     // when we process these new commands
-    if (err == noErr) {
+    if (err == 0) {
       SetIMAPMailboxNeeds(mb, kNeedsExecCmd, true);
       SetIMAPMailboxNeeds(pers->mailboxTree, kNeedsExecCmd, true);
     }
@@ -10500,15 +10497,15 @@ int PerformQueuedCommands(PersHandle pers, IMAPStreamPtr imapStream,
   static bool bUnderway = false;
   long ticks = TickCount();
   bool progressed = false;
-  int err = noErr;
+  int err = 0;
 
   // sanity
   if (!imapStream || !pers || !IsIMAPPers(pers))
-    return noErr;
+    return 0;
 
   // no commands queued?
   if (!DoesIMAPMailboxNeed(pers->mailboxTree, kNeedsExecCmd))
-    return noErr;
+    return 0;
 
   // is some other thread already doing this?
   while (bUnderway & !CommandPeriod) {
@@ -10525,14 +10522,14 @@ int PerformQueuedCommands(PersHandle pers, IMAPStreamPtr imapStream,
 
   // do nothing if the user cancelled
   if (CommandPeriod)
-    return (userCanceledErr);
+    return (ECANCELED);
 
   // perform the queued commands
   err =
       PerformQueuedCommandsLo(pers, pers->mailboxTree, imapStream, progress);
 
   // success?
-  if (err == noErr)
+  if (err == 0)
     SetIMAPMailboxNeeds(pers->mailboxTree, kNeedsExecCmd, false);
 
   return err;
@@ -10544,7 +10541,7 @@ int PerformQueuedCommands(PersHandle pers, IMAPStreamPtr imapStream,
  ************************************************************************/
 int PerformQueuedCommandsLo(PersHandle pers, MailboxNodeHandle tree,
                               IMAPStreamPtr imapStream, bool progress) {
-  int err = noErr, retErr = noErr;
+  int err = 0, retErr = 0;
   char scratch[256];
 
   // check each mailbox belonging to this
@@ -10570,7 +10567,7 @@ int PerformQueuedCommandsLo(PersHandle pers, MailboxNodeHandle tree,
         // supported ...
 
         // success?  Then don't check again.
-        if (err == noErr)
+        if (err == 0)
           SetIMAPMailboxNeeds(tree, kNeedsExecCmd, false);
 
         // write mailbox info back out to the
@@ -10633,7 +10630,7 @@ void ExecuteAllPendingIMAPCommands(void) {
  ************************************************************************/
 int UpdateMessFlags(IMAPStreamPtr imapStream, MailboxNodeHandle mailbox,
                       bool progress) {
-  int err = noErr;
+  int err = 0;
   long queuedFlagsSize = 0;
   long numChanges = 0, totalFlags = 0, processedFlags = 0;
   struct Accumulator uidsToChange;
@@ -10649,12 +10646,12 @@ int UpdateMessFlags(IMAPStreamPtr imapStream, MailboxNodeHandle mailbox,
   // must be connected, authenticated, and
   // selected
   if (!imapStream || !IsSelected(imapStream->mailStream))
-    return (paramErr);
+    return (EINVAL);
 
   // must have been passed a personality, must
   // have some queued flags
   if (!mailbox || !(mailbox->queuedFlags))
-    return (noErr);
+    return (0);
 
   // lock the mailbox node.  Don't let it go
   // anywhere
@@ -10724,7 +10721,7 @@ int UpdateMessFlags(IMAPStreamPtr imapStream, MailboxNodeHandle mailbox,
             if (!ProcessSimilarFlagChanges(
                     imapStream, mailbox, (void *)uidsToChange.data, curFlags,
                     progress, totalFlags, &processedFlags))
-              err = paramErr;
+              err = EINVAL;
             if (uidsToChange.data)
               free(uidsToChange.data);
           }
@@ -11011,7 +11008,7 @@ bool FastIMAPMessageDelete(TOCType * tocH, GArray *uids, bool bFTM) {
       tocH->sums[sumNum].flags &= ~FLAG_UNFILTERED;
 
       // queue the flag change
-      result |= (noErr == QueueMessFlagChange(
+      result |= (0 == QueueMessFlagChange(
                               tocH, sumNum, tocH->sums[sumNum].state, bFTM));
 
       // move the message to the hidden toc
@@ -11112,14 +11109,14 @@ void IMAPAlert(IMAPStreamPtr stream, TaskKindEnum taskKind) {
  ************************************************************************/
 int IMAPTransferLocalCache(TOCType * fromTocH, MSumPtr pOrigSum,
                              TOCType * toTocH, long newUid, bool copy) {
-  int err = noErr;
+  int err = 0;
   long origSumNum, newSumNum;
   MSumType newSum, *pNewSum;
   bool bNoSaveCache = false;
 
   // sanity check
   if (!fromTocH || !toTocH || !pOrigSum)
-    return (paramErr);
+    return (EINVAL);
 
   // determine if we're transferring to a
   // mailbox that's not interested in retaining
@@ -11172,7 +11169,7 @@ int IMAPTransferLocalCache(TOCType * fromTocH, MSumPtr pOrigSum,
         // copy the cached message to the new
         // location
         err = AppendMessage(fromTocH, origSumNum, &toTocH, true, false, false);
-        if (err == noErr) {
+        if (err == 0) {
           pNewSum = &toTocH->sums[(toTocH->count) - 1];
 
           // set the UID to the new value
@@ -11239,7 +11236,7 @@ int IMAPTransferLocalCache(TOCType * fromTocH, MSumPtr pOrigSum,
 int IMAPMoveMessageDuringFiltering(TOCType * fromTocH, short sumNum,
                                      TOCType * toTocH, bool copy,
                                      FilterPBPtr fpb) {
-  int err = noErr;
+  int err = 0;
   bool filteringUnderway = IMAPFilteringUnderway();
   long uid;
 
@@ -11262,7 +11259,7 @@ int IMAPMoveMessageDuringFiltering(TOCType * fromTocH, short sumNum,
     // copy the message from this mailbox to
     // the destination
     err = IMAPTransferMessage(fromTocH, toTocH, uid, true, true);
-    if (err == noErr) {
+    if (err == 0) {
       // the destination mailbox has new mail
       // if the transferred message was unread
       if (fromTocH->sums[sumNum].state == UNREAD)
@@ -11292,7 +11289,7 @@ int IMAPMoveMessageDuringFiltering(TOCType * fromTocH, short sumNum,
 
     // then mark it as deleted.  We'll expunge
     // when filtering is complete
-    if ((err == noErr) & !copy) {
+    if ((err == 0) & !copy) {
       IMAPMarkMessageAsDeleted(fromTocH, uid, false);
       if (FancyTrashForThisPers(fromTocH))
         FlagForExpunge(fromTocH);
@@ -11332,7 +11329,7 @@ int CacheIMAPMessageForSpamWatch(TOCType * tocH, short sumNum) {
       || !tocH->imapTOC          // it must be an IMAP toc
       || (sumNum > tocH->count)) // and the sumnum
                                     // must be valid
-    return (paramErr);
+    return (EINVAL);
 
   // minimal header present
   if (tocH->sums[sumNum].offset == imapNeedToDownload) {
@@ -11354,7 +11351,7 @@ int CacheIMAPMessageForSpamWatch(TOCType * tocH, short sumNum) {
     CacheMessage(tocH, sumNum);
   }
 
-  return (noErr);
+  return (0);
 }
 
 /************************************************************************
@@ -11689,13 +11686,13 @@ void MarkAsProcessed(char *spec) {
  **********************************************************************/
 bool HasBeenProcessed(char *spec) {
   bool bHas = false;
-  int err = noErr;
+  int err = 0;
   CInfoPBRec mailboxFileInfo;
 
   //	Find the mailbox cache file on disk ...
   Zero(mailboxFileInfo);
   err = HGetCatInfo(0, 0, spec_name(spec), &mailboxFileInfo);
-  if (err == noErr)
+  if (err == 0)
     bHas = (mailboxFileInfo.hFileInfo.ioFlFndrInfo.fdFlags & 0xe) != 0;
 
   return (bHas);
@@ -11827,7 +11824,7 @@ void IMAPCollectFlagsFromTree(IMAPStreamPtr imapStream, MailboxNodeHandle tree,
  ************************************************************************/
 short OpenFlagsFile(void) {
   short ref = -1;
-  int err = noErr;
+  int err = 0;
   FSSpec flagsSpec;
   const unsigned char *flagFileName = (const unsigned char *)"IMAPFlagUsage";
   char ctext[256];
@@ -11836,25 +11833,25 @@ short OpenFlagsFile(void) {
   // create (or open) the spool file in the
   // Eudora folder.
   err = spec_for(Root.path, (const char *)flagFileName, &flagsSpec);
-  if (err == fnfErr) {
+  if (err == ENOENT) {
     // not found in root folder.  Create the
     // file.
     /* GTK4/POSIX: create the flags file */
     {
       int _fd = open(flagsSpec, O_CREAT | O_RDWR | O_TRUNC, 0644);
-      if (_fd >= 0) { err = noErr; close(_fd); }
+      if (_fd >= 0) { err = 0; close(_fd); }
       else { err = -1; }
     }
   }
 
   // open the file
-  if (err == noErr) {
+  if (err == 0) {
     int _fd = open(flagsSpec, O_RDWR, 0644);
-    if (_fd >= 0) { ref = (short)_fd; err = noErr; }
+    if (_fd >= 0) { ref = (short)_fd; err = 0; }
     else { err = -1; }
   }
 
-  if ((err != noErr) || (ref == -1)) {
+  if ((err != 0) || (ref == -1)) {
     WarnUser(NO_TEMP_FILE, err);
     ref = -1;
   } else

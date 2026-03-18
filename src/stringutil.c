@@ -144,8 +144,8 @@ void CaptureHexPtr(char * from, char * to, long *pLen) {
  * %i - internet address
  * %I - internet address, turned into hostname
  * %r - string from a resource
- * %O - OSType, including ''s
- * %o - OSType, no ''s
+ * %O - uint32_t, including ''s
+ * %o - uint32_t, no ''s
  * %#	- integer argument, prints "s" if not 1
  * %$ - integer argument, prints "es" if not 1
  * %& - integer argument, prints "'s" if not 1
@@ -361,17 +361,17 @@ char * EscapeChars(char * string, char * toEscape) {
   char * to = scratch;
   char * from = string;
   char * end = string + strlen((const char *)string);
-  bool escaped = False;
+  bool escaped = false;
 
   while (from < end) {
     if (escaped) {
       *to++ = *from;
-      escaped = False;
+      escaped = false;
     }
 
     if (*from == '\\') {
       *to++ = '\\';
-      escaped = True;
+      escaped = true;
     } else {
       if (strchr((const char *)toEscape, *from))
         *to++ = '\\';
@@ -514,7 +514,7 @@ char * FormatString(uintptr_t arg, char * string, short format, short digits) {
     }
     break;
   case 'q':
-    Quote822(string, (char *)(intptr_t)arg, True);
+    Quote822(string, (char *)(intptr_t)arg, true);
     break;
   case 'r':
     GetRString(string, arg);
@@ -753,7 +753,7 @@ bool Tr(void *text, char *fromS, char *toS) {
  ************************************************************************/
 bool TrLo(char *text, long len, char *fromS, char *toS) {
   char *end, *spot;
-  bool did = False;
+  bool did = false;
   short fromChar, toChar;
 
   end = text + len;
@@ -762,7 +762,7 @@ bool TrLo(char *text, long len, char *fromS, char *toS) {
     toChar = *toS;
     for (spot = text; spot < end; spot++)
       if (*spot == fromChar) {
-        did = True;
+        did = true;
         *spot = toChar;
       }
   }
@@ -936,7 +936,7 @@ bool PTokenPtr(char * string, long stringLen, char * token, char * *spotP,
                char * delims) {
   char * tokenPtr;
   long tokenLen;
-  Boolean result;
+  bool result;
 
   if ((result = TokenPtr(string, stringLen, (char * *)&tokenPtr, &tokenLen, spotP,
                          delims)) != 0) {
@@ -986,7 +986,7 @@ bool ReMatch(char * string, char * re) {
       }
     }
   }
-  return (False);
+  return (false);
 }
 
 /************************************************************************
@@ -1279,21 +1279,21 @@ bool TrimReLo(char * string, char * re) {
       colon++;
     size_t slen = strlen((const char *)string);
     memmove(string, colon + 1, slen - (colon - string) + 1);
-    return (True);
+    return (true);
   }
-  return (False);
+  return (false);
 }
 
 /************************************************************************
  * TrimRe - trim Re: and Fwd: from a string
  ************************************************************************/
 bool TrimRe(char * string, bool squares) {
-  bool did = False;
+  bool did = false;
 
   while (TrimReLo(string, (char *)Re) || TrimReLo(string, (char *)Fwd) ||
          TrimReLo(string, (char *)OFwd) ||
          (squares && TrimSquares(string, false, false)))
-    did = True;
+    did = true;
 
   return (did);
 }

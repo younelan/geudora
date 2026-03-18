@@ -52,6 +52,6 @@ void ExitToShell(void);
 
 /* Alert/dialog constants */
 #define Normal 0
-#define userCanceledErr -128
+#define ECANCELED -128
 
 #endif /* ACAP_H */

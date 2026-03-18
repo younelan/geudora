@@ -10,21 +10,15 @@ All rights reserved. */
 #if defined(__APPLE__) && !defined(BUILDING_MBX_LIB)
 #endif
 
-#ifndef Boolean
+#ifndef bool
 typedef bool Boolean;
 #endif
 
 
-#ifndef noErr
-#define noErr 0
-#define False 0
-#define True 1
+/* #define False 0 — removed, using C99 true/false */
+/* #define True 1 — removed, using C99 true/false */
 
-#endif
-
-#ifndef Str255
-typedef unsigned char Str255[256];
-#endif
+/* Str255 removed — use char[256] */
 
 
 struct MailboxNode;
@@ -36,7 +30,7 @@ typedef struct MailboxNode *MailboxNodeHandle;
 
 /* FSSpec is defined in mailbox.h as char[PATH_MAX] */
 typedef struct Personality *PersHandle;
-typedef struct MailboxNode *MailboxNodeHandle;
+/* MailboxNodeHandle already defined above */
 
 typedef struct UIDNode UIDNode, *UIDNodePtr;
 typedef UIDNode *UIDNodeHandle;
@@ -210,12 +204,12 @@ STRINGDRIVER {
 };
 
 typedef struct {
-  Boolean DELETED;
-  Boolean SEEN;
-  Boolean FLAGGED;
-  Boolean ANSWERED;
-  Boolean DRAFT;
-  Boolean RECENT;
+  bool DELETED;
+  bool SEEN;
+  bool FLAGGED;
+  bool ANSWERED;
+  bool DRAFT;
+  bool RECENT;
 } IMAPFLAGS;
 
 typedef struct {
@@ -304,8 +298,8 @@ bool Noop(IMAPStreamPtr imapStream);
 bool UIDDeleteMessages(IMAPStreamPtr imapStream, char *pList, bool Expunge);
 bool UIDUnDeleteMessages(IMAPStreamPtr imapStream, char *pList);
 int UIDExpunge(IMAPStreamPtr imapStream, const char *pUidList);
-Boolean Expunge(IMAPStreamPtr imapStream);
-Boolean Logout(IMAPStreamPtr imapStream);
+bool Expunge(IMAPStreamPtr imapStream);
+bool Logout(IMAPStreamPtr imapStream);
 bool IsSelected(MAILSTREAM *imapStream);
 bool IsConnected(MAILSTREAM *imapStream);
 bool IsAuthenticated(MAILSTREAM *imapStream);
@@ -331,10 +325,10 @@ bool UIDFetchMessageBody(IMAPStreamPtr imapStream, unsigned long uid,
 bool UIDFetchPartialMessage(IMAPStreamPtr imapStream, unsigned long uid,
                             unsigned long first, unsigned long nBytes,
                             bool Peek);
-Boolean UIDFetchPartialMessageBody(IMAPStreamPtr imapStream, unsigned long uid,
+bool UIDFetchPartialMessageBody(IMAPStreamPtr imapStream, unsigned long uid,
                                    unsigned long first, unsigned long nBytes,
                                    bool Peek);
-Boolean UIDFetchPartialBodyText(IMAPStreamPtr imapStream, unsigned long uid,
+bool UIDFetchPartialBodyText(IMAPStreamPtr imapStream, unsigned long uid,
                                 char *section, unsigned long first,
                                 unsigned long nBytes, bool Peek, bool file);
 unsigned long FetchUID(IMAPStreamPtr imapStream, unsigned long msgNum);
@@ -346,11 +340,11 @@ bool UIDFetchRFC822HeaderFields(IMAPStreamPtr imapStream, unsigned long uid,
                                 char *sequence, char *Fields);
 bool UIDFetchRFC822HeaderFieldsNot(IMAPStreamPtr imapStream, unsigned long uid,
                                    char *sequence, char *fields);
-Boolean UIDFetchMimeHeader(IMAPStreamPtr imapStream, unsigned long uid,
+bool UIDFetchMimeHeader(IMAPStreamPtr imapStream, unsigned long uid,
                            char *sequence);
-Boolean UIDFetchBodyText(IMAPStreamPtr imapStream, unsigned long uid,
+bool UIDFetchBodyText(IMAPStreamPtr imapStream, unsigned long uid,
                          char *sequence, bool PEEK);
-Boolean UIDFetchBodyTextInChunks(IMAPStreamPtr imapStream, unsigned long uid,
+bool UIDFetchBodyTextInChunks(IMAPStreamPtr imapStream, unsigned long uid,
                                  char *sequence, bool PEEK, long size);
 bool UIDFetchPreamble(IMAPStreamPtr imapStream, unsigned long uid,
                       char *sequence);
@@ -370,7 +364,7 @@ bool UIDFetchPartialContentsToBuffer(IMAPStreamPtr imapStream,
                                      int first, unsigned long nBytes,
                                      char *buffer, unsigned long bufferSize,
                                      unsigned long *len);
-Boolean UIDMessageIsMultipart(IMAPStreamPtr stream, unsigned long uid);
+bool UIDMessageIsMultipart(IMAPStreamPtr stream, unsigned long uid);
 long UIDGetTime(IMAPStreamPtr stream, IMAPUID uid);
 unsigned long GetRfc822Size(IMAPStreamPtr stream, IMAPUID uid);
 UIDVALIDITY UIDValidity(IMAPStreamPtr stream);
@@ -391,4 +385,4 @@ void imap_set_credentials(const char *user, const char *password);
 #ifdef DEBUG
 long LoMemCheck(void);
 #endif
-#endif // IMAPNETLIB_H
+#endif /* IMAPNETLIB_H */

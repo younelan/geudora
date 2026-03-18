@@ -50,7 +50,7 @@ typedef struct mstruct *MessHandle;
    code; on Apple rely on the system headers to supply these. */
 #if !defined(__APPLE__)
 /* FSSpec is defined in mailbox.h as char[PATH_MAX] */
-typedef char Str31[32];
+/* Str31 removed */
 #endif
 
 /* Minimal opaque PETE structures used by peteglue.h */

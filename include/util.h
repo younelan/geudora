@@ -277,8 +277,8 @@ short MyCountDragItemFlavors(DragReference drag, short item);
 uint32_t MyGetDragItemFlavorType(DragReference drag, short item, short flavor);
 FlavorFlags MyGetDragItemFlavorFlags(DragReference drag, short item,
                                      short flavor);
-bool MyDragHas(void *drag, short item, OSType type);
-int MyGetDragItemData(void *drag, short item, OSType type, void **data);
+bool MyDragHas(void *drag, short item, uint32_t type);
+int MyGetDragItemData(void *drag, short item, uint32_t type, void **data);
 void NOOP(void);
 bool WNE(short eventMask, void *event, long sleep);
 long RoundDiv(long quantity, long unit);
@@ -314,11 +314,11 @@ void ShowDragRectHilite(DragReference drag, Rect *r, bool inside);
 char *WeekDay(char *string, long secs);
 void TimeString(long secs, bool wantSeconds, char *str, void *intlHandle);
 int ZapResourceLo(uint32_t type, short id, bool one);
-#define ZapResource(x, y) ZapResourceLo(x, y, False)
-#define Zap1Resource(x, y) ZapResourceLo(x, y, True)
+#define ZapResource(x, y) ZapResourceLo(x, y, false)
+#define Zap1Resource(x, y) ZapResourceLo(x, y, true)
 /* ZapSettingsResource: same as ZapResource in GTK port (no separate settings
  * file) */
-#define ZapSettingsResource(x, y) ZapResourceLo(x, y, False)
+#define ZapSettingsResource(x, y) ZapResourceLo(x, y, false)
 
 /* Alert with printf-style string resource formatting */
 void Aprintf(short alertType, short noteType, short strn, ...);
@@ -336,7 +336,7 @@ void GetPrefNoDominant(char *buf, short prefId);
 void ReleaseResource(void **h);
 void SetHandleBig(void **h, long size);
 #define ControlIsGrey(cntl) (GetControlHilite(cntl) == 255)
-void AddMyResource(void *h, OSType type, short id, ConstStr255Param name);
+void AddMyResource(void *h, uint32_t type, short id, ConstStr255Param name);
 #define CurrentPSN(psn)                                                        \
   (((psn)->highLongOfPSN = 0), ((psn)->lowLongOfPSN = kCurrentProcess), (psn))
 long CountChars(void *text, unsigned char c);

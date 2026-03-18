@@ -691,12 +691,12 @@ int AttLine2Spec(unsigned char *line, char * spec, bool wantToOpen) {
     lineLen--;
   line[0] = lineLen;
 
-  if (lineLen < 10) return fnfErr;
-  if (!isalnum(line[1]) && line[1] != '/') return fnfErr;
+  if (lineLen < 10) return ENOENT;
+  if (!isalnum(line[1]) && line[1] != '/') return ENOENT;
 
   /* Pick out file ID from trailing [xxxxxxxx] or (xxxxxxxx) */
-  if (line[lineLen] != ']' && line[lineLen] != ')') return fnfErr;
-  if (line[lineLen - 9] != '[' && line[lineLen - 9] != '(') return fnfErr;
+  if (line[lineLen] != ']' && line[lineLen] != ')') return ENOENT;
+  if (line[lineLen - 9] != '[' && line[lineLen - 9] != '(') return ENOENT;
 
   unsigned char *spot = line + lineLen - 8;
   for (int dig = 8; dig > 0; dig--, spot++) {
@@ -706,7 +706,7 @@ int AttLine2Spec(unsigned char *line, char * spec, bool wantToOpen) {
       fid = (fid << 4) | (10 + *spot - 'a');
     else if (*spot >= 'A' && *spot <= 'F')
       fid = (fid << 4) | (10 + *spot - 'A');
-    else return fnfErr;
+    else return ENOENT;
   }
 
   /* Find path separators (: for Mac, / for Unix) */
@@ -717,14 +717,14 @@ int AttLine2Spec(unsigned char *line, char * spec, bool wantToOpen) {
       else if (!sep2) { sep2 = p; break; }
     }
   }
-  if (!sep1 || !sep2) return fnfErr;
+  if (!sep1 || !sep2) return ENOENT;
 
   if (spec) {
     long nameStart = (sep2 - line);
     long nameEnd = lineLen - 10;
-    if (nameEnd <= nameStart) return fnfErr;
+    if (nameEnd <= nameStart) return ENOENT;
     long nameLen = nameEnd - nameStart;
-    if (nameLen < 1 || nameLen > 255) return fnfErr;
+    if (nameLen < 1 || nameLen > 255) return ENOENT;
 
     memcpy((char*)spec_name(spec), (char *)line + nameStart + 1, nameLen);
     ((char*)spec_name(spec))[nameLen] = '\0';
@@ -740,18 +740,18 @@ int AttLine2Spec(unsigned char *line, char * spec, bool wantToOpen) {
         snprintf(spec, sizeof(spec), "%s/%s",
                  imapFolder, spec_name(spec));
         if (access(spec, F_OK) != 0) {
-          if (wantToOpen) WarnUser(ATTACH_GONE, fnfErr);
-          return fnfErr;
+          if (wantToOpen) WarnUser(ATTACH_GONE, ENOENT);
+          return ENOENT;
         }
       } else {
-        if (wantToOpen) WarnUser(ATTACH_GONE, fnfErr);
-        return fnfErr;
+        if (wantToOpen) WarnUser(ATTACH_GONE, ENOENT);
+        return ENOENT;
       }
     }
-    return noErr;
+    return 0;
   } else {
     long sepDist = sep2 - sep1;
-    return (sepDist > 1 & sepDist < 33) ? noErr : fnfErr;
+    return (sepDist > 1 & sepDist < 33) ? 0 : ENOENT;
   }
 }
 
@@ -766,27 +766,27 @@ int RelLine2Spec(unsigned char *line, char * spec, uLong *cid,
   memcpy(cLine, line + 1, len);
   cLine[len] = '\0';
 
-  if (strncasecmp(cLine, "related:", 8) != 0) return fnfErr;
+  if (strncasecmp(cLine, "related:", 8) != 0) return ENOENT;
 
   char *saveptr;
   char *token = strtok_r(cLine, ":", &saveptr);
-  if (!token) return fnfErr;
+  if (!token) return ENOENT;
   token = strtok_r(NULL, ":", &saveptr); /* space */
-  if (!token) return fnfErr;
+  if (!token) return ENOENT;
   token = strtok_r(NULL, ":", &saveptr); /* volume */
-  if (!token) return fnfErr;
+  if (!token) return ENOENT;
   char *filename = strtok_r(NULL, ":", &saveptr);
-  if (!filename) return fnfErr;
+  if (!filename) return ENOENT;
   char *fidStr = strtok_r(NULL, ":", &saveptr);
-  if (!fidStr || strlen(fidStr) != 8) return fnfErr;
+  if (!fidStr || strlen(fidStr) != 8) return ENOENT;
   char *cidStr = strtok_r(NULL, ":", &saveptr);
-  if (!cidStr || strlen(cidStr) != 8) return fnfErr;
+  if (!cidStr || strlen(cidStr) != 8) return ENOENT;
   if (cid) *cid = strtoul(cidStr, NULL, 16);
   char *relStr = strtok_r(NULL, ":", &saveptr);
-  if (!relStr || strlen(relStr) != 8) return fnfErr;
+  if (!relStr || strlen(relStr) != 8) return ENOENT;
   if (relURL) *relURL = strtoul(relStr, NULL, 16);
   char *absStr = strtok_r(NULL, ":", &saveptr);
-  if (!absStr || strlen(absStr) != 8) return fnfErr;
+  if (!absStr || strlen(absStr) != 8) return ENOENT;
   if (absURL) *absURL = strtoul(absStr, NULL, 16);
 
   if (spec) {
@@ -795,9 +795,9 @@ int RelLine2Spec(unsigned char *line, char * spec, uLong *cid,
     GetPartsFolder(partsFolder, sizeof(partsFolder));
     snprintf(spec, sizeof(spec), "%s/%s",
              partsFolder, spec_name(spec));
-    if (access(spec, F_OK) != 0) return fnfErr;
+    if (access(spec, F_OK) != 0) return ENOENT;
   }
-  return noErr;
+  return 0;
 }
 
 /* ============================================================
@@ -810,7 +810,7 @@ bool SaveMess(MyWindowPtr win) {
   void *text = MessText(messH);
   HeadSpec hSpec;
   Accumulator enriched;
-  int err = noErr;
+  int err = 0;
   bool richSave = false;
   unsigned char title[256];
   bool blahBlah = MessFlagIsSet(messH, FLAG_SHOW_ALL);
@@ -1562,8 +1562,8 @@ int MessMakeEditable(MyWindowPtr win, bool value) {
   if (!value) {
     if (PeteIsDirty(TheBody)) {
       if (!PrefIsSet(PREF_EZ_SAVE)) {
-        if (!SaveMessHi(win, false)) return userCanceledErr;
-      } else if (!SaveMess(win)) return userCanceledErr;
+        if (!SaveMessHi(win, false)) return ECANCELED;
+      } else if (!SaveMess(win)) return ECANCELED;
     }
     ClearMessOpt(messH, OPT_WRITE);
     win->ro = (win->pte == TheBody);
@@ -1577,7 +1577,7 @@ int MessMakeEditable(MyWindowPtr win, bool value) {
     if (PeteIsValid_(TheBody))
       gtk_text_view_set_editable(GTK_TEXT_VIEW(TheBody), TRUE);
   }
-  return noErr;
+  return 0;
 }
 
 /* ============================================================
@@ -1626,7 +1626,7 @@ int MessGonnaShow(MyWindowPtr win) {
   BeenThereDoneThat(messH->tocH, messH->sumNum);
   HiliteOddReply(messH);
 
-  return noErr;
+  return 0;
 }
 
 /* ============================================================ */
@@ -1857,7 +1857,7 @@ int MessSaveSub(MessHandle messH) {
     messH->win->isDirty = true;
   else
     messH->win->isDirty = false;
-  return noErr;
+  return 0;
 }
 
 /* ============================================================ */

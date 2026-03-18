@@ -22,7 +22,7 @@ DAMAGE. */
 #include "mydefs.h"
 #include "TransStream.h"
 
-typedef int32_t OSStatus;
+/* OSStatus defined in mailbox.h */
 
 enum {
 	esslOptional = 0x00000001,

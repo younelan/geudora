@@ -30,7 +30,7 @@ ADVISED OF THE POSSIBILITY OF SUCH DAMAGE. */
 
 /* Forward declarations */
 typedef struct mstruct *MessHandle;
-typedef struct MyWindow *MyWindowPtr;
+/* MyWindowPtr defined in mailbox.h */
 
 #define PERS_VERS 0
 

@@ -62,7 +62,7 @@ long LogLevel = 0;
 #define UL(h)
 #define ZapHandle(h)
 #define NuHandle(s) 0
-#define NCWrite(a,b,c)
+#define file_write_nc(a,b,c)
 uint32_t TickCount(void);
 void ByteProgress(const char *message, int onLine, int totLines);
 
@@ -105,15 +105,15 @@ static char *buffer_gets(readfn_t readfn, void *read_data, unsigned long size,
  **********************************************************************/
 int NewImapStream(IMAPStreamPtr *imapStream, unsigned char * ServerName,
                     unsigned long PortNum) {
-  int err = noErr;
+  int err = 0;
 
   *imapStream = (IMAPStreamStruct *)malloc(sizeof(IMAPStreamStruct));
   if (*imapStream)
     memset(*imapStream, 0, sizeof(IMAPStreamStruct));
   else
-    err = -108; // memFullErr
+    err = -108; // ENOMEM
 
-  if (err == noErr) {
+  if (err == 0) {
     (*imapStream)->MessageSizeLimit = 2000000; // Arbitrary
 
     // IMAP Server identification:
@@ -549,7 +549,7 @@ unsigned long GetSTATUSMessageCount(IMAPStreamPtr imapStream) {
  *		mm_list is called once for each mailbox returned.
  **********************************************************************/
 bool FetchMailboxAttributes(IMAPStreamPtr imapStream, const char *mailboxName) {
-  bool result = noErr;
+  bool result = 0;
   char pattern[MAILTMPLEN + 4];
 
   // allow NULL mailbox name
@@ -892,7 +892,7 @@ char *UIDFetchInternalDate(IMAPStreamPtr imapStream, unsigned long uid) {
  *	UIDFetchHeader - get the header of the message with UID uid.
  **********************************************************************/
 bool UIDFetchHeader(IMAPStreamPtr imapStream, unsigned long uid, bool file) {
-  Boolean result = true;
+  bool result = true;
   unsigned long flags;
   mailgets_t oldMailGets = NULL;
 
@@ -922,7 +922,7 @@ bool UIDFetchHeader(IMAPStreamPtr imapStream, unsigned long uid, bool file) {
  *	UIDFetchMessage - Fetches complete rfc822 message, including header
  **********************************************************************/
 bool UIDFetchMessage(IMAPStreamPtr imapStream, unsigned long uid, bool Peek) {
-  Boolean result = false;
+  bool result = false;
   unsigned long flags;
   mailgets_t oldMailGets = NULL;
 
@@ -1018,7 +1018,7 @@ bool UIDFetchPartialMessage(IMAPStreamPtr imapStream, unsigned long uid,
  *	UIDFetchPartialMessageBody - can't be right.  Does the same as
  *UIDFetchPartialMessage
  **********************************************************************/
-Boolean UIDFetchPartialMessageBody(IMAPStreamPtr imapStream, unsigned long uid,
+bool UIDFetchPartialMessageBody(IMAPStreamPtr imapStream, unsigned long uid,
                                    unsigned long first, unsigned long nBytes,
                                    bool Peek) {
   bool result = false;
@@ -1051,7 +1051,7 @@ Boolean UIDFetchPartialMessageBody(IMAPStreamPtr imapStream, unsigned long uid,
 /**********************************************************************
  *	UIDFetchPartialBodyText - fetch a section of the message
  **********************************************************************/
-Boolean UIDFetchPartialBodyText(IMAPStreamPtr imapStream, unsigned long uid,
+bool UIDFetchPartialBodyText(IMAPStreamPtr imapStream, unsigned long uid,
                                 char *section, unsigned long first,
                                 unsigned long nBytes, bool Peek, bool file) {
   bool result = false;
@@ -1168,7 +1168,7 @@ bool UIDFetchRFC822HeaderFieldsNot(IMAPStreamPtr imapStream, unsigned long uid,
 /**********************************************************************
  *	UIDFetchMimeHeader - not yet implemented
  **********************************************************************/
-Boolean UIDFetchMimeHeader(IMAPStreamPtr imapStream, unsigned long uid,
+bool UIDFetchMimeHeader(IMAPStreamPtr imapStream, unsigned long uid,
                            char *sequence) {
   return false;
 }
@@ -1176,7 +1176,7 @@ Boolean UIDFetchMimeHeader(IMAPStreamPtr imapStream, unsigned long uid,
 /**********************************************************************
  *	UIDFetchBodyText
  **********************************************************************/
-Boolean UIDFetchBodyText(IMAPStreamPtr imapStream, unsigned long uid,
+bool UIDFetchBodyText(IMAPStreamPtr imapStream, unsigned long uid,
                          char *sequence, bool Peek) {
   bool results = false;
   unsigned long flags;
@@ -1209,7 +1209,7 @@ Boolean UIDFetchBodyText(IMAPStreamPtr imapStream, unsigned long uid,
  * UIDFetchBodyTextInChunks - like UIDFetchBodyText, but nicer
  *	to cancel out of
  **********************************************************************/
-Boolean UIDFetchBodyTextInChunks(IMAPStreamPtr imapStream, unsigned long uid,
+bool UIDFetchBodyTextInChunks(IMAPStreamPtr imapStream, unsigned long uid,
                                  char *sequence, bool Peek, long size) {
   mailgets_t oldMailGets = NULL;
   long bufferSize = 2 * GetRLong(IMAP_TRANSFER_BUFFER_SIZE);
@@ -1421,7 +1421,7 @@ bool IMAPAppendMessage(IMAPStreamPtr imapStream, const char *Flags,
 /**********************************************************************
  *	UIDMessageIsMultipart -  Return true if the message is multipart
  **********************************************************************/
-Boolean UIDMessageIsMultipart(IMAPStreamPtr stream, unsigned long uid) {
+bool UIDMessageIsMultipart(IMAPStreamPtr stream, unsigned long uid) {
   IMAPBODY *body = NULL;
   bool result = false;
 
@@ -2043,7 +2043,7 @@ bool UIDFetchPartialContentsToBuffer(IMAPStreamPtr imapStream,
                                      int first, unsigned long nBytes,
                                      char *buffer, unsigned long bufferSize,
                                      unsigned long *len) {
-  Boolean result = false;
+  bool result = false;
   unsigned long length = 0;
   mailgets_t oldMailGets = NULL;
 
@@ -2068,10 +2068,10 @@ bool UIDFetchPartialContentsToBuffer(IMAPStreamPtr imapStream,
       CommandPeriod = true;
     } else {
       // figure out how much data we got
-      if ((length = strlen(*(imapStream->mailStream->fNetData))) == nBytes) {
+      if ((length = strlen((char *)(imapStream->mailStream->fNetData))) == nBytes) {
         // copy it to the buffer we were passed
         memset(buffer, 0, bufferSize);
-        strncpy(buffer, *(imapStream->mailStream->fNetData), length);
+        strncpy(buffer, (char *)(imapStream->mailStream->fNetData), length);
       } else
         // we didn't get the amount of data we asked for, most likely because
         // the server doesn't support partial fetches correctly.
@@ -2123,14 +2123,14 @@ static char *buffer_gets(readfn_t readfn, void *read_data, unsigned long size,
     mailStream->fNetData = malloc(size + 1);
 
   // Did we get a buffer??
-  if (!mailStream->fNetData || !*(mailStream->fNetData))
+  if (!mailStream->fNetData)
     return (nil);
 
   // Nothing in the buffer yet.
-  **((char **)mailStream->fNetData) = 0;
+  ((char *)mailStream->fNetData)[0] = 0;
 
   // read the data into the buffer
-  result = (*readfn)(read_data, size, *(mailStream->fNetData));
+  result = (*readfn)(read_data, size, (char *)mailStream->fNetData);
 
   // throw away what we got if there's a problem
   if (!result)
@@ -2149,7 +2149,7 @@ static char *file_gets(readfn_t readfn, void *read_data, unsigned long size,
   bool result;
   char buffer[256];
   long readSize, totalSize;
-  int err = noErr;
+  int err = 0;
 
   // must have been passed a function to read bytes
   if (!readfn || !read_data)
@@ -2187,7 +2187,7 @@ static char *file_gets(readfn_t readfn, void *read_data, unsigned long size,
 
     // write the line to the spool file
     if (result)
-      NCWrite(mailStream->refN, &readSize, buffer);
+      file_write_nc(mailStream->refN, &readSize, buffer);
 
     // and display some progress when downloading message bodies, once a second,
     // and when we're done
@@ -2202,7 +2202,7 @@ static char *file_gets(readfn_t readfn, void *read_data, unsigned long size,
         mailStream->lastProgress = ticks;
       }
     }
-  } while ((totalSize < size) && result && (err == noErr));
+  } while ((totalSize < size) && result && (err == 0));
 
   return (nil);
 }

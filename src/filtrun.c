@@ -409,7 +409,7 @@ int FilterSelectedMessages(FilterKeywordEnum fType, TOCType *tocH, FilterPBPtr f
 
 	if (fType==flkIncoming)
 	{
-		if (!(inTocH = GetRealInTOC())) return(userCanceledErr);
+		if (!(inTocH = GetRealInTOC())) return(ECANCELED);
 		GetMailboxSpec(inTocH, -1, inSpec);
 	}
 
@@ -1308,7 +1308,7 @@ static bool DoesIntersectNick(char **nickAddresses, void **nickExpanded, char *s
 	(void)nickExpanded;  /* ExpandAliases is a stub, nickExpanded always NULL */
 
 	int err = SuckPtrAddresses(&addresses, spot, len, false, false, false, NULL);
-	if (err > 0 || err == paramErr) return false;
+	if (err > 0 || err == EINVAL) return false;
 	if (!(FGlobalErr = err))
 	{
 		for (int i = 0; addresses[i]; i++)
@@ -1364,7 +1364,7 @@ static bool DoesIntersectNickFile(const char *file, char *spot, long len)
 		fileArg = file;
 
 	err = SuckPtrAddresses(&addresses, spot, len, false, false, false, NULL);
-	if (err > 0 || err == paramErr) return false;
+	if (err > 0 || err == EINVAL) return false;
 	if (!(FGlobalErr = err))
 	{
 		for (int i = 0; addresses[i]; i++)
@@ -1872,7 +1872,7 @@ int FilterNoteMatch(short filter, long secs)
 		{
 			free(records);
 			g_free(path);
-			return -108; /* memFullErr */
+			return -108; /* ENOMEM */
 		}
 		records = grown;
 		records[count].id = id;

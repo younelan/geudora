@@ -685,7 +685,7 @@ static short InitFind(void)
 /************************************************************************
  * FindClose - close the find window
  *
- * Original: set Win = nil, returned True to allow close.
+ * Original: set Win = nil, returned true to allow close.
  ************************************************************************/
 static bool FindClose(MyWindowPtr win)
 {
@@ -728,7 +728,7 @@ static void DoFindOK(void)
 
     FG->findDone = false;
 
-    /* Original: if (PrefIsSet(PREF_SENSITIVE)) Sensitive = True;
+    /* Original: if (PrefIsSet(PREF_SENSITIVE)) Sensitive = true;
        GTK4: Sensitive/WholeWord are already set by checkbox callbacks.
        But if the Find window isn't open, read from prefs. */
     if (!FG->win) {
@@ -756,7 +756,7 @@ static void DoFindOK(void)
  *   - If found:
  *     - ShowMyWindow / UserSelectWindow / UpdateMyWindow
  *     - If MESS_WIN: MessFocus(Win2MessH(win), bodyPTE) to focus body
- *     - Else PeteFocus(win, pte, True)
+ *     - Else PeteFocus(win, pte, true)
  *     - Check AttIsSelected for attachment name matches
  *     - PeteSelect to highlight the found text
  *     - PeteScroll to center selection

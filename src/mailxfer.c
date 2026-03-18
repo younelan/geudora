@@ -971,7 +971,7 @@ int POPHostLimit(void) {
       if (PFindSub(sub, host))
         return (0);
     WarnUser(OnlyHostsStrn + 1, 0);
-    return (fnfErr);
+    return (ENOENT);
   }
   return (0);
 }
@@ -1854,12 +1854,12 @@ void GrabSignature(uint32_t fid) {
 
   char *path = SigPath(fid);
   if (!path) {
-    FileSystemError(CANT_READ_SIG, "", fnfErr);
+    FileSystemError(CANT_READ_SIG, "", ENOENT);
     return;
   }
 
   if (!g_file_get_contents(path, &sigText, &sigLen, NULL)) {
-    FileSystemError(CANT_READ_SIG, path, ioErr);
+    FileSystemError(CANT_READ_SIG, path, EIO);
     g_free(path);
     return;
   }
@@ -2033,7 +2033,7 @@ int OutgoingMIDListSave(void) {
         fclose(f);
         OutgoingMIDListDirty = false;
       } else {
-        err = fnfErr;
+        err = ENOENT;
       }
     }
   }

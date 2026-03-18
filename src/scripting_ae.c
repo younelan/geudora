@@ -79,9 +79,9 @@ static int AECreateFilterHandler(const AppleEvent *event,
 
   /* Check for position parameter */
   AEDesc insertLoc;
-  if (AEGetParamDesc(event, keyAEInsertHere, typeWildCard, &insertLoc) == noErr) {
+  if (AEGetParamDesc(event, keyAEInsertHere, typeWildCard, &insertLoc) == 0) {
     if (AEGetKeyPtr(&insertLoc, keyAEPosition, typeEnumeration,
-                     &junk, &where, sizeof(where), &actualSize) == noErr) {
+                     &junk, &where, sizeof(where), &actualSize) == 0) {
       if (where == kAEBeginning) position = 0;
     }
     AEDisposeDesc(&insertLoc);
@@ -91,7 +91,7 @@ static int AECreateFilterHandler(const AppleEvent *event,
   if (!err && reply)
     AEPutParamPtr(reply, keyAEResult, typeSInt64, &newId, sizeof(newId));
 
-  return err ? errAEEventNotHandled : noErr;
+  return err ? errAEEventNotHandled : 0;
 }
 
 /*----------------------------------------------------------------------
@@ -106,11 +106,11 @@ static int AEDeleteFilterHandler(const AppleEvent *event,
   Size actualSize;
 
   if (AEGetParamPtr(event, keyDirectObject, typeSInt64, &junk,
-                     &filterId, sizeof(filterId), &actualSize) != noErr)
+                     &filterId, sizeof(filterId), &actualSize) != 0)
     return errAEParamMissed;
 
   int err = ScriptDeleteFilter((long)filterId, true);
-  return err ? errAEEventNotHandled : noErr;
+  return err ? errAEEventNotHandled : 0;
 }
 
 /*----------------------------------------------------------------------
@@ -126,11 +126,11 @@ static int AEGetFilterPropertyHandler(const AppleEvent *event,
   Size actualSize;
 
   if (AEGetParamPtr(event, keyDirectObject, typeSInt64, &junk,
-                     &filterId, sizeof(filterId), &actualSize) != noErr)
+                     &filterId, sizeof(filterId), &actualSize) != 0)
     return errAEParamMissed;
 
   if (AEGetParamPtr(event, 'prop', typeType, &junk,
-                     &aeProp, sizeof(aeProp), &actualSize) != noErr)
+                     &aeProp, sizeof(aeProp), &actualSize) != 0)
     return errAEParamMissed;
 
   ScriptPropertyID prop = ae_prop_to_script(aeProp);
@@ -154,7 +154,7 @@ static int AEGetFilterPropertyHandler(const AppleEvent *event,
       break;
     }
     case kScriptValBool: {
-      Boolean val = out.u.flag;
+      bool val = out.u.flag;
       AEPutParamPtr(reply, keyAEResult, typeBoolean, &val, sizeof(val));
       break;
     }
@@ -162,7 +162,7 @@ static int AEGetFilterPropertyHandler(const AppleEvent *event,
       break;
     }
   }
-  return noErr;
+  return 0;
 }
 
 /*----------------------------------------------------------------------
@@ -178,7 +178,7 @@ static int AECountFiltersHandler(const AppleEvent *event,
     SInt32 c = (SInt32)count;
     AEPutParamPtr(reply, keyAEResult, typeSInt32, &c, sizeof(c));
   }
-  return noErr;
+  return 0;
 }
 
 /*----------------------------------------------------------------------
@@ -196,7 +196,7 @@ static int AECountPersonalitiesHandler(const AppleEvent *event,
     SInt32 c = (SInt32)count;
     AEPutParamPtr(reply, keyAEResult, typeSInt32, &c, sizeof(c));
   }
-  return noErr;
+  return 0;
 }
 
 /*----------------------------------------------------------------------
@@ -212,7 +212,7 @@ static int AECreatePersonalityHandler(const AppleEvent *event,
     SInt32 idx = (SInt32)newIndex;
     AEPutParamPtr(reply, keyAEResult, typeSInt32, &idx, sizeof(idx));
   }
-  return err ? errAEEventNotHandled : noErr;
+  return err ? errAEEventNotHandled : 0;
 }
 
 /*----------------------------------------------------------------------
@@ -228,11 +228,11 @@ static int AEGetPersPropertyHandler(const AppleEvent *event,
   Size actualSize;
 
   if (AEGetParamPtr(event, keyDirectObject, typeSInt32, &junk,
-                     &index, sizeof(index), &actualSize) != noErr)
+                     &index, sizeof(index), &actualSize) != 0)
     return errAEParamMissed;
 
   if (AEGetParamPtr(event, 'prop', typeType, &junk,
-                     &aeProp, sizeof(aeProp), &actualSize) != noErr)
+                     &aeProp, sizeof(aeProp), &actualSize) != 0)
     return errAEParamMissed;
 
   /* Map AE property to ScriptPropertyID */
@@ -261,7 +261,7 @@ static int AEGetPersPropertyHandler(const AppleEvent *event,
       break;
     }
   }
-  return noErr;
+  return 0;
 }
 
 /*----------------------------------------------------------------------
@@ -277,11 +277,11 @@ static int AESetPersPropertyHandler(const AppleEvent *event,
   Size actualSize;
 
   if (AEGetParamPtr(event, keyDirectObject, typeSInt32, &junk,
-                     &index, sizeof(index), &actualSize) != noErr)
+                     &index, sizeof(index), &actualSize) != 0)
     return errAEParamMissed;
 
   if (AEGetParamPtr(event, 'prop', typeType, &junk,
-                     &aeProp, sizeof(aeProp), &actualSize) != noErr)
+                     &aeProp, sizeof(aeProp), &actualSize) != 0)
     return errAEParamMissed;
 
   /* Map AE property to ScriptPropertyID */
@@ -296,7 +296,7 @@ static int AESetPersPropertyHandler(const AppleEvent *event,
   if (prop == kScriptPropName) {
     char buf[256];
     if (AEGetParamPtr(event, 'data', typeUTF8Text, &junk,
-                       buf, sizeof(buf) - 1, &actualSize) != noErr)
+                       buf, sizeof(buf) - 1, &actualSize) != 0)
       return errAEParamMissed;
     buf[actualSize < 255 ? actualSize : 255] = '\0';
     val = ScriptString(buf);
@@ -304,10 +304,10 @@ static int AESetPersPropertyHandler(const AppleEvent *event,
 
   int err = ScriptSetPersonalityProperty((long)index, prop, &val);
   if (!err && reply) {
-    Boolean success = true;
+    bool success = true;
     AEPutParamPtr(reply, keyAEResult, typeBoolean, &success, sizeof(success));
   }
-  return err ? errAEEventNotHandled : noErr;
+  return err ? errAEEventNotHandled : 0;
 }
 
 /*----------------------------------------------------------------------
@@ -322,11 +322,11 @@ static int AEDeletePersonalityHandler(const AppleEvent *event,
   Size actualSize;
 
   if (AEGetParamPtr(event, keyDirectObject, typeSInt32, &junk,
-                     &index, sizeof(index), &actualSize) != noErr)
+                     &index, sizeof(index), &actualSize) != 0)
     return errAEParamMissed;
 
   int err = ScriptDeletePersonality((long)index);
-  return err ? errAEEventNotHandled : noErr;
+  return err ? errAEEventNotHandled : 0;
 }
 
 /*----------------------------------------------------------------------
@@ -338,7 +338,7 @@ static int AECheckMailHandler(const AppleEvent *event,
   (void)refcon;
   DescType junk;
   Size actualSize;
-  Boolean doCheck = true, doSend = false;
+  bool doCheck = true, doSend = false;
 
   /* Optional parameters for check/send flags */
   AEGetParamPtr(event, 'chck', typeBoolean, &junk,
@@ -348,10 +348,10 @@ static int AECheckMailHandler(const AppleEvent *event,
 
   int err = ScriptCheckMail(doCheck, doSend);
   if (reply) {
-    Boolean success = (err == 0);
+    bool success = (err == 0);
     AEPutParamPtr(reply, keyAEResult, typeBoolean, &success, sizeof(success));
   }
-  return err ? errAEEventNotHandled : noErr;
+  return err ? errAEEventNotHandled : 0;
 }
 
 /*----------------------------------------------------------------------
@@ -365,12 +365,12 @@ static int ae_get_mailbox_and_index(const AppleEvent *event,
   Size actualSize;
 
   if (AEGetParamPtr(event, 'mbox', typeUTF8Text, &junk,
-                     mailbox, mailboxSz - 1, &actualSize) != noErr)
+                     mailbox, mailboxSz - 1, &actualSize) != 0)
     return -1;
   mailbox[actualSize < (Size)(mailboxSz - 1) ? actualSize : mailboxSz - 1] = '\0';
 
   if (AEGetParamPtr(event, 'midx', typeSInt32, &junk,
-                     index, sizeof(*index), &actualSize) != noErr)
+                     index, sizeof(*index), &actualSize) != 0)
     return -1;
 
   return 0;
@@ -388,7 +388,7 @@ static int AECountMessagesHandler(const AppleEvent *event,
   char mailbox[1024];
 
   if (AEGetParamPtr(event, 'mbox', typeUTF8Text, &junk,
-                     mailbox, sizeof(mailbox) - 1, &actualSize) != noErr)
+                     mailbox, sizeof(mailbox) - 1, &actualSize) != 0)
     return errAEParamMissed;
   mailbox[actualSize < (Size)(sizeof(mailbox) - 1) ? actualSize : sizeof(mailbox) - 1] = '\0';
 
@@ -398,7 +398,7 @@ static int AECountMessagesHandler(const AppleEvent *event,
     SInt32 c = (SInt32)count;
     AEPutParamPtr(reply, keyAEResult, typeSInt32, &c, sizeof(c));
   }
-  return err ? errAEEventNotHandled : noErr;
+  return err ? errAEEventNotHandled : 0;
 }
 
 /*----------------------------------------------------------------------
@@ -417,7 +417,7 @@ static int AEGetMessagePropertyHandler(const AppleEvent *event,
     return errAEParamMissed;
 
   if (AEGetParamPtr(event, 'prop', typeType, &junk,
-                     &aeProp, sizeof(aeProp), &actualSize) != noErr)
+                     &aeProp, sizeof(aeProp), &actualSize) != 0)
     return errAEParamMissed;
 
   /* Map AE property to ScriptPropertyID */
@@ -454,7 +454,7 @@ static int AEGetMessagePropertyHandler(const AppleEvent *event,
       break;
     }
     case kScriptValBool: {
-      Boolean val = out.u.flag;
+      bool val = out.u.flag;
       AEPutParamPtr(reply, keyAEResult, typeBoolean, &val, sizeof(val));
       break;
     }
@@ -462,7 +462,7 @@ static int AEGetMessagePropertyHandler(const AppleEvent *event,
       break;
     }
   }
-  return noErr;
+  return 0;
 }
 
 /*----------------------------------------------------------------------
@@ -481,7 +481,7 @@ static int AESetMessagePropertyHandler(const AppleEvent *event,
     return errAEParamMissed;
 
   if (AEGetParamPtr(event, 'prop', typeType, &junk,
-                     &aeProp, sizeof(aeProp), &actualSize) != noErr)
+                     &aeProp, sizeof(aeProp), &actualSize) != 0)
     return errAEParamMissed;
 
   ScriptPropertyID prop;
@@ -502,16 +502,16 @@ static int AESetMessagePropertyHandler(const AppleEvent *event,
   /* Try string first, then integer, then boolean */
   char buf[256];
   SInt64 numVal;
-  Boolean boolVal;
+  bool boolVal;
   if (AEGetParamPtr(event, 'data', typeUTF8Text, &junk,
-                     buf, sizeof(buf) - 1, &actualSize) == noErr) {
+                     buf, sizeof(buf) - 1, &actualSize) == 0) {
     buf[actualSize < 255 ? actualSize : 255] = '\0';
     val = ScriptString(buf);
   } else if (AEGetParamPtr(event, 'data', typeSInt64, &junk,
-                            &numVal, sizeof(numVal), &actualSize) == noErr) {
+                            &numVal, sizeof(numVal), &actualSize) == 0) {
     val = ScriptLong((long)numVal);
   } else if (AEGetParamPtr(event, 'data', typeBoolean, &junk,
-                            &boolVal, sizeof(boolVal), &actualSize) == noErr) {
+                            &boolVal, sizeof(boolVal), &actualSize) == 0) {
     val = ScriptBool(boolVal);
   } else {
     return errAEParamMissed;
@@ -519,10 +519,10 @@ static int AESetMessagePropertyHandler(const AppleEvent *event,
 
   int err = ScriptSetMessageProperty(mailbox, (long)index, prop, &val);
   if (!err && reply) {
-    Boolean success = true;
+    bool success = true;
     AEPutParamPtr(reply, keyAEResult, typeBoolean, &success, sizeof(success));
   }
-  return err ? errAEEventNotHandled : noErr;
+  return err ? errAEEventNotHandled : 0;
 }
 
 /*----------------------------------------------------------------------
@@ -538,7 +538,7 @@ static int AECreateMessageHandler(const AppleEvent *event,
     SInt32 idx = (SInt32)newIndex;
     AEPutParamPtr(reply, keyAEResult, typeSInt32, &idx, sizeof(idx));
   }
-  return err ? errAEEventNotHandled : noErr;
+  return err ? errAEEventNotHandled : 0;
 }
 
 /*----------------------------------------------------------------------
@@ -552,7 +552,7 @@ static int AEReplyMessageHandler(const AppleEvent *event,
   SInt32 index;
   DescType junk;
   Size actualSize;
-  Boolean replyAll = false, includeSelf = false, quoteText = true;
+  bool replyAll = false, includeSelf = false, quoteText = true;
 
   if (ae_get_mailbox_and_index(event, mailbox, sizeof(mailbox), &index))
     return errAEParamMissed;
@@ -571,7 +571,7 @@ static int AEReplyMessageHandler(const AppleEvent *event,
     SInt32 idx = (SInt32)newIndex;
     AEPutParamPtr(reply, keyAEResult, typeSInt32, &idx, sizeof(idx));
   }
-  return err ? errAEEventNotHandled : noErr;
+  return err ? errAEEventNotHandled : 0;
 }
 
 /*----------------------------------------------------------------------
@@ -593,7 +593,7 @@ static int AEForwardMessageHandler(const AppleEvent *event,
     SInt32 idx = (SInt32)newIndex;
     AEPutParamPtr(reply, keyAEResult, typeSInt32, &idx, sizeof(idx));
   }
-  return err ? errAEEventNotHandled : noErr;
+  return err ? errAEEventNotHandled : 0;
 }
 
 /*----------------------------------------------------------------------
@@ -615,7 +615,7 @@ static int AERedirectMessageHandler(const AppleEvent *event,
     SInt32 idx = (SInt32)newIndex;
     AEPutParamPtr(reply, keyAEResult, typeSInt32, &idx, sizeof(idx));
   }
-  return err ? errAEEventNotHandled : noErr;
+  return err ? errAEEventNotHandled : 0;
 }
 
 /*----------------------------------------------------------------------
@@ -630,11 +630,11 @@ static int AEQueueMessageHandler(const AppleEvent *event,
   SInt32 index;
 
   if (AEGetParamPtr(event, 'midx', typeSInt32, &junk,
-                     &index, sizeof(index), &actualSize) != noErr)
+                     &index, sizeof(index), &actualSize) != 0)
     return errAEParamMissed;
 
   int err = ScriptQueueMessage((long)index);
-  return err ? errAEEventNotHandled : noErr;
+  return err ? errAEEventNotHandled : 0;
 }
 
 /*----------------------------------------------------------------------
@@ -648,19 +648,19 @@ static int AEMoveMessageHandler(const AppleEvent *event,
   Size actualSize;
   char fromBox[1024], toBox[1024];
   SInt32 index;
-  Boolean copy = false;
+  bool copy = false;
 
   if (AEGetParamPtr(event, 'frmb', typeUTF8Text, &junk,
-                     fromBox, sizeof(fromBox) - 1, &actualSize) != noErr)
+                     fromBox, sizeof(fromBox) - 1, &actualSize) != 0)
     return errAEParamMissed;
   fromBox[actualSize < (Size)(sizeof(fromBox) - 1) ? actualSize : sizeof(fromBox) - 1] = '\0';
 
   if (AEGetParamPtr(event, 'midx', typeSInt32, &junk,
-                     &index, sizeof(index), &actualSize) != noErr)
+                     &index, sizeof(index), &actualSize) != 0)
     return errAEParamMissed;
 
   if (AEGetParamPtr(event, 'tomb', typeUTF8Text, &junk,
-                     toBox, sizeof(toBox) - 1, &actualSize) != noErr)
+                     toBox, sizeof(toBox) - 1, &actualSize) != 0)
     return errAEParamMissed;
   toBox[actualSize < (Size)(sizeof(toBox) - 1) ? actualSize : sizeof(toBox) - 1] = '\0';
 
@@ -668,7 +668,7 @@ static int AEMoveMessageHandler(const AppleEvent *event,
                  &copy, sizeof(copy), &actualSize);
 
   int err = ScriptMoveMessage(fromBox, (long)index, toBox, copy);
-  return err ? errAEEventNotHandled : noErr;
+  return err ? errAEEventNotHandled : 0;
 }
 
 /*======================================================================

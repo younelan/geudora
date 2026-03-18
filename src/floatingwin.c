@@ -28,15 +28,15 @@ DAMAGE. */
 
 #pragma segment MyWindow
 
-void DockedDragProc(EUDORA_Point *pt, EUDORA_RgnHandle winRgn, long refCon);
-void GetScreenRect(EUDORA_WindowPtr theWindow, EUDORA_Rect *rWin, EUDORA_Rect *rScreen);
+void DockedDragProc(GdkPoint *pt, EUDORA_RgnHandle winRgn, long refCon);
+void GetScreenRect(GtkWindow * theWindow, EUDORA_Rect *rWin, EUDORA_Rect *rScreen);
 MyWindowPtr FindLastFloaterLo(short *count,bool *layerProblem);
 
 /**********************************************************************
  * MySelectWindow - patch for SelectWindow that makes sure floaters
  * remain on top, and non floaters remain underneath them.
  **********************************************************************/
-void MySelectWindow(EUDORA_WindowPtr winWP)
+void MySelectWindow(GtkWindow * winWP)
 {
 	SelectWindow(winWP);
 }
@@ -47,7 +47,7 @@ void MySelectWindow(EUDORA_WindowPtr winWP)
 MyWindowPtr FindLastFloater(void)
 {
 	short	count;
-	Boolean	layerProblem;
+	bool	layerProblem;
 	
 	return FindLastFloaterLo(&count,&layerProblem);
 }
@@ -58,9 +58,9 @@ MyWindowPtr FindLastFloater(void)
  **********************************************************************/
 MyWindowPtr FindLastFloaterLo(short *count,bool *layerProblem)
 {
-	EUDORA_WindowPtr	wp,
+	GtkWindow *	wp,
 						lastFloater = NULL;
-	Boolean	nonFloaterFound = false;
+	bool	nonFloaterFound = false;
 	
 	*count = 0;
 	*layerProblem = false;
@@ -80,7 +80,7 @@ MyWindowPtr FindLastFloaterLo(short *count,bool *layerProblem)
 /**********************************************************************
  * MyDragWindow - patch for DragWindow to properly draw drag outlines.
  **********************************************************************/
-void MyDragWindow (EUDORA_WindowPtr winWP, EUDORA_Point start, EUDORA_Rect *boundsRect)
+void MyDragWindow (GtkWindow * winWP, GdkPoint start, EUDORA_Rect *boundsRect)
 {
 	DragWindow(winWP, start, boundsRect);
 	PositionDockedWindow(winWP);
@@ -89,11 +89,11 @@ void MyDragWindow (EUDORA_WindowPtr winWP, EUDORA_Point start, EUDORA_Rect *boun
 /**********************************************************************
  * DockedDragProc - callback for dragging docked window around edge of screen
  **********************************************************************/
-void DockedDragProc(EUDORA_Point *pt, EUDORA_RgnHandle winRgn, long refCon)
+void DockedDragProc(GdkPoint *pt, EUDORA_RgnHandle winRgn, long refCon)
 {
 	short	dx,dy,dx1,dy1,dx2,dy2;
 	EUDORA_Rect	rWin,rScreen;
-	EUDORA_WindowPtr	theWindow = (EUDORA_WindowPtr) refCon;
+	GtkWindow *	theWindow = (GtkWindow *) refCon;
 	
 	//	Get bounds of window at new location
 	GetRegionBounds(winRgn,&rWin);
@@ -140,7 +140,7 @@ void DockedDragProc(EUDORA_Point *pt, EUDORA_RgnHandle winRgn, long refCon)
 	//	Stay away from any other docked windows
 	if (theWindow)
 	{
-		EUDORA_WindowPtr	winWP;
+		GtkWindow *	winWP;
 		MyWindowPtr	win;
 		OffsetRect(&rWin,dx,dy);
 		
@@ -155,9 +155,9 @@ void DockedDragProc(EUDORA_Point *pt, EUDORA_RgnHandle winRgn, long refCon)
 				if (SectRect(&rWin,&rDocked,&rSect))
 				{
 					//	Overlap with this docked window
-					Boolean	roomAbove = rDocked.top-rScreen.top >= RectHi(rWin);
-					Boolean	roomBelow = rScreen.bottom-rDocked.bottom > RectHi(rWin);
-					Boolean	roomLeft = rDocked.left-rScreen.left > RectWi(rWin);
+					bool	roomAbove = rDocked.top-rScreen.top >= RectHi(rWin);
+					bool	roomBelow = rScreen.bottom-rDocked.bottom > RectHi(rWin);
+					bool	roomLeft = rDocked.left-rScreen.left > RectWi(rWin);
 					bool roomRight = rScreen.right-rDocked.right > RectWi(rWin);
 					bool moveLeft = (rWin.left+rWin.right)/2 < (rDocked.left+rDocked.right)/2;
 					bool moveAbove = (rWin.top+rWin.bottom)/2 < (rDocked.top+rDocked.bottom)/2;
@@ -213,7 +213,7 @@ void DockedDragProc(EUDORA_Point *pt, EUDORA_RgnHandle winRgn, long refCon)
 /**********************************************************************
  * GetScreenRect - get rect of screen containing specified window
  **********************************************************************/
-void GetScreenRect(EUDORA_WindowPtr theWindow, EUDORA_Rect *rWin, EUDORA_Rect *rScreen)
+void GetScreenRect(GtkWindow * theWindow, EUDORA_Rect *rWin, EUDORA_Rect *rScreen)
 {
 	GDHandle	gd;
 
@@ -235,10 +235,10 @@ void GetScreenRect(EUDORA_WindowPtr theWindow, EUDORA_Rect *rWin, EUDORA_Rect *r
 /**********************************************************************
  * PositionDockedWindow - make sure docked window is positioned correctly
  **********************************************************************/
-void PositionDockedWindow(EUDORA_WindowPtr winWP)
+void PositionDockedWindow(GtkWindow * winWP)
 {
 	MyWindowPtr	win = GetWindowMyWindowPtr (winWP);
-	EUDORA_Point	pt;
+	GdkPoint	pt;
 	EUDORA_RgnHandle	rgn = NULL;
 	EUDORA_Rect	rStruc,rCont;
 	
@@ -262,7 +262,7 @@ void PositionDockedWindow(EUDORA_WindowPtr winWP)
  **********************************************************************/
 void PositionDockedWindows(void)
 {
-	EUDORA_WindowPtr	theWindow;
+	GtkWindow *	theWindow;
     
 	for (theWindow = GetWindowList(); theWindow; theWindow = GetNextWindow (theWindow))
 		PositionDockedWindow(theWindow);
@@ -271,9 +271,9 @@ void PositionDockedWindows(void)
 /**********************************************************************
  * DockWinReduce - reduce a rect to not include docked windows
  **********************************************************************/
-void DockedWinReduce(EUDORA_WindowPtr checkWinWP, EUDORA_Rect *winRect, EUDORA_Rect *r)
+void DockedWinReduce(GtkWindow * checkWinWP, EUDORA_Rect *winRect, EUDORA_Rect *r)
 {
-	EUDORA_WindowPtr	winWP;
+	GtkWindow *	winWP;
 	MyWindowPtr	win;
 	EUDORA_Rect	rWin;
 	
@@ -351,9 +351,9 @@ void DockedWinReduce(EUDORA_WindowPtr checkWinWP, EUDORA_Rect *winRect, EUDORA_R
 /**********************************************************************
  * DockedWinRemove - subtract docked windows from a region
  **********************************************************************/
-void DockedWinRemove(EUDORA_RgnHandle rgn,EUDORA_WindowPtr ignoreWinWP)
+void DockedWinRemove(EUDORA_RgnHandle rgn,GtkWindow * ignoreWinWP)
 {
-	EUDORA_WindowPtr	winWP;
+	GtkWindow *	winWP;
 	MyWindowPtr	win;
 	
 	for (winWP = GetWindowList (); winWP; winWP = GetNextWindow (winWP))
@@ -372,7 +372,7 @@ void DockedWinRemove(EUDORA_RgnHandle rgn,EUDORA_WindowPtr ignoreWinWP)
 /**********************************************************************
  * Returns true if this is the frontmost, non floating window
  **********************************************************************/
-bool IsTopNonFloater(EUDORA_WindowPtr theWindow)
+bool IsTopNonFloater(GtkWindow * theWindow)
 {
 	return (theWindow == MyFrontNonFloatingWindow());
 }
@@ -390,7 +390,7 @@ bool IsTopNonFloater(EUDORA_WindowPtr theWindow)
  * non-floating window should be perfectly safe.  In the classic
  * version, MyFrontNonFloatingWindow NEVER returns an invisible window.
  **********************************************************************/
-EUDORA_WindowPtr MyFrontNonFloatingWindow(void)
+GtkWindow * MyFrontNonFloatingWindow(void)
 {
 	return FrontNonFloatingWindow();
 }
@@ -401,9 +401,9 @@ EUDORA_WindowPtr MyFrontNonFloatingWindow(void)
  * screen.  Return 0 if there are no windows here, or those that are
  * aren't floating windows.
  **********************************************************************/
-MyWindowPtr FloaterAtPoint(EUDORA_Point mouse)
+MyWindowPtr FloaterAtPoint(GdkPoint mouse)
 {
-	EUDORA_WindowPtr aFloater = NULL;
+	GtkWindow * aFloater = NULL;
 	EUDORA_Rect r;
 	
 	LocalToGlobal(&mouse);
@@ -426,7 +426,7 @@ MyWindowPtr FloaterAtPoint(EUDORA_Point mouse)
 /**********************************************************************
  * Hide a window, but activate the next non-floating window.
  **********************************************************************/
-void MyHideWindow(EUDORA_WindowPtr theWindow)
+void MyHideWindow(GtkWindow * theWindow)
 {
 
 	HideWindow(theWindow);
@@ -439,7 +439,7 @@ void MyHideWindow(EUDORA_WindowPtr theWindow)
  * IsFloating - returns true if this window floats above others.  
  * Currently this includes kFloating and kDockable windows.
  **********************************************************************/
-bool IsFloating(EUDORA_WindowPtr winWP)
+bool IsFloating(GtkWindow * winWP)
 {
 	MyWindowPtr	win = GetWindowMyWindowPtr (winWP);
 
