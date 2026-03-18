@@ -867,7 +867,7 @@ int HeaderRecvLine(TransStream stream, char *buffer, long *size)
 				break;
 			}
 		}
-		BMD(parseHeaderHandle + parseHeaderOffset, buffer, endOffset - parseHeaderOffset);
+		memmove(buffer, parseHeaderHandle + parseHeaderOffset, endOffset - parseHeaderOffset);
 		*size = (endOffset - parseHeaderOffset);
 		bufLen -= (endOffset - parseHeaderOffset);
 		parseHeaderSize -= (endOffset - parseHeaderOffset);
@@ -898,7 +898,7 @@ int ParseAHeaderLo(StringHandle h, HeaderDHandle *hdhp, short funFieldsID, short
 	
 	parseHeaderHandle = h;
 	parseHeaderOffset = 0L;
-	parseHeaderSize = GetHandleSize(h);
+	parseHeaderSize = strlen((char *)h);
 	
 	/* Set the trans routine */
 	CurTrans = HeaderTrans;

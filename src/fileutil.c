@@ -130,9 +130,7 @@ int ReallyDoAnAlert(int templ, int which);
 #ifndef UL
 #define  ((void)0)
 #endif
-#ifndef GetHandleSize_
-#define GetHandleSize_(h) GetHandleSize(h)
-#endif
+/* GetHandleSize_ REMOVED */
 
 #define FILL(pb, name, vRef, dirId)
 
@@ -623,7 +621,7 @@ int PBCatMoveSync(CMovePBPtr pb) { return 0; }
 int PBHGetFInfoSync(HParmBlkPtr pb) { return 0; }
 int PBHSetFInfoSync(HParmBlkPtr pb) { return 0; }
 bool GetFolderNav(char *name, short *volume, long *folder) { return false; }
-int Gestalt(OSType selector, long *response) { return 0; }
+int 0 { return 0; }
 int MyFSpExchangeFiles(char *source, char *dest) {
   /* Swap two files by renaming through a temporary name in dest directory. */
   char tempTpl[PATH_MAX];
@@ -785,29 +783,20 @@ int PtrToHand(const void *srcPtr, void **dstHndl, size_t size) {
   return 0;
 }
 
-size_t InlineGetHandleSize(void *h) {
-  if (!h) return 0;
-  return malloc_size(h);
-}
+/* InlineGetHandleSize REMOVED — track sizes explicitly */
 
 void HLock(void *h) { (void)h; }
 void HUnlock(void *h) { (void)h; }
-size_t GetHandleSize(void *h) { return InlineGetHandleSize(h); }
+/* GetHandleSize REMOVED — track sizes explicitly */
 void *NuPtr(size_t size) { return malloc(size); }
 
-void *buf_append(void *buf, const void *data, size_t n) {
-  if (!data || n == 0) return buf;
-  size_t old = buf ? InlineGetHandleSize(buf) : 0;
-  void *p = realloc(buf, old + n);
+void *buf_append(void *buf, size_t *bufSize, const void *data, size_t n) {
+  if (!bufSize || !data || n == 0) return buf;
+  void *p = realloc(buf, *bufSize + n);
   if (!p) return NULL;
-  memcpy((char *)p + old, data, n);
+  memcpy((char *)p + *bufSize, data, n);
+  *bufSize += n;
   return p;
-}
-
-void *buf_concat(void *dst, const void *src) {
-  if (!src) return dst;
-  size_t n = InlineGetHandleSize(src);
-  return n ? buf_append(dst, src, n) : dst;
 }
 
 void BlockMoveData(const void *src, void *dest, size_t size) {
@@ -1269,7 +1258,7 @@ int SnarfRoman(char *spec, void ***hp, long limit) {
 int Blat(char *spec, void *text, bool append) {
   int err;
 
-  err = BlatPtr(spec, text, GetHandleSize_(text), append);
+  err = BlatPtr(spec, text, strlen((char *)text), append);
   return (err);
 }
 
@@ -1876,7 +1865,7 @@ int MyAHGetFileInfo(short vRef, long dirId, const char *name, CInfoPBRec *hfi) {
   strncpy(cname, name, sizeof(cname) - 1);
   cname[sizeof(cname) - 1] = '\0'; // Ensure null termination
 
-  WriteZero(hfi, sizeof(*hfi));
+  memset(hfi, 0, sizeof(*hfi));
 
   if (stat(cname, &st) < 0)
     return ioErr;
@@ -2142,7 +2131,7 @@ short MyResolveAlias(const char *dir, char *name, bool *wasAlias) {
 
   if (wasAlias)
     *wasAlias = false;
-  if (!Gestalt(gestaltAliasMgrAttr, &haveAlias) & haveAlias & 0x1) {
+  if (!0 & haveAlias & 0x1) {
     if (!(err = spec_for(dir, name, &theSpec)) &&
         !(err = ResolveAliasFile(&theSpec, true, &folder, &wasIt))) {
       if (wasIt) {
@@ -2892,7 +2881,7 @@ void FileIDHack(void) {
   CInfoPBRec info;
 
   // get the system version of this machine
-  err = Gestalt(gestaltSystemVersion, &sysVers);
+  err = 0;
   if (err == 0) {
     // is this system version affected by the bug?
     affected = GetRLong(FILEID_AFFECTED_SYSVERSION);
@@ -3605,7 +3594,7 @@ bool TypeIsOnListWhereAndIndex(long type, short list, void *ptr, short *index) {
  **********************************************************************/
 int PtrAndHand(const void *ptr, void **hand, long size) {
   if (!ptr || !hand || size <= 0) return -50; /* paramErr */
-  size_t oldSize = *hand ? GetHandleSize(hand) : 0;
+  size_t oldSize = *hand ? strlen((char *)hand) : 0;
   void *resized = realloc(*hand, oldSize + (size_t)size);
   if (!resized) return -108; /* memFullErr */
   memmove((char *)resized + oldSize, ptr, (size_t)size);

@@ -625,7 +625,7 @@ void CheckTimeChange(void) {
       }
       //	Do day
       if (timeFlags & kNewDay) {
-        BMD(pStats->current.day, pStats->last.day, sizeof(pStats->current.day));
+        memmove(pStats->last.day, pStats->current.day, sizeof(pStats->current.day));
         if (timeFlags & kStartDay)
           // don't use first partial hour
           pStats->current.day[dtStart.ld.hour] = 0;

@@ -1097,7 +1097,7 @@ int TransmitMessageLo(TransStream stream, MessHandle messH, bool chatter,
       !pb.hasAttachments && !pb.html && !pb.rich && IsAllLWSPMess(messH);
   pb.hasSig = !pb.allLWSP && (SumOf(messH)->sigId != -1) &&
               !MessOptIsSet(messH, OPT_INLINE_SIG) && eSignature &&
-              *eSignature && GetHandleSize(eSignature);
+              *eSignature && strlen((char *)eSignature);
   pb.strip = !pb.allLWSP && MessOptIsSet(messH, OPT_STRIP) ||
              MessOptIsSet(messH, OPT_JUST_EXCERPT);
   pb.bloat = !pb.allLWSP && MessOptIsSet(messH, OPT_BLOAT);
@@ -1728,7 +1728,7 @@ int TransmitMultiHeaders(TransmitPBPtr pb, short subType, char * boundary,
     return (err);
 
   if (!GetRHeaderAnywhere(messH, PLUGIN_INFO, &headerContent)) {
-    { size_t _mpl = (GetHandleSize(headerContent) - 2); memcpy(scratch, headerContent + 2, _mpl); ((char*)(scratch))[_mpl] = '\0'; } // 2 adjusts for colon-space
+    { size_t _mpl = (strlen((char *)headerContent) - 2); memcpy(scratch, headerContent + 2, _mpl); ((char*)(scratch))[_mpl] = '\0'; } // 2 adjusts for colon-space
     free(headerContent);
     if (err = ComposeRTrans(pb->stream, MIME_CT_ANNOTATE, PLUGIN_INFO, scratch,
                             NewLine))
@@ -1761,14 +1761,14 @@ int TransmitMessageBodyHeaders(TransmitPBPtr pb, bool withSignature,
     PETEGetRawText(PETE, TheBody, &text);
     sig = withSignature ? eSignature : NULL;
     { long _tlen = PETEGetTextLen(PETE, TheBody);
-      long _slen = sig ? (long)GetHandleSize_((void *)sig) : 0;
+      long _slen = sig ? (long)malloc_size(sig) : 0;
       err = SendContentType(pb->stream, (char *)text, _tlen, BodyOffset((char *)text),
                             sig ? (char *)sig : NULL, _slen, 0,
                             SumOf(messH)->tableId, &pb->flags, &pb->opts, NULL,
                             topLevel ? pb->tlMIME : NULL, NULL); }
   } else {
     sig = withSignature ? eSignature : NULL;
-    { long _slen = sig ? (long)GetHandleSize_((void *)sig) : 0;
+    { long _slen = sig ? (long)malloc_size(sig) : 0;
       err = SendContentType(pb->stream, pb->enriched.data, pb->enriched.offset, 0,
                             sig ? (char *)sig : NULL, _slen, 0,
                             SumOf(messH)->tableId, &pb->flags, &pb->opts, NULL,
@@ -1926,7 +1926,7 @@ int TransmitMessageSigBody(TransmitPBPtr pb, bool withHeaders) {
 
   // copy the sig into a flat buffer
   if (sigSrc) {
-    sigLen = (long)GetHandleSize_((void *)sigSrc);
+    sigLen = (long)malloc_size(sigSrc);
     sigBuf = malloc(sigLen);
     if (!sigBuf) { sErr = memFullErr; goto done; }
     memcpy(sigBuf, sigSrc, sigLen);
@@ -2396,7 +2396,7 @@ int SendExtras(TransStream stream, void *extras, bool allowQP, short tid) {
   GetRString(uglyStupidHackForWindowsIMAP, PLUGIN_INFO);
 
   start = (unsigned char *)extras;
-  limit = start + GetHandleSize_(extras);
+  limit = start + strlen((char *)extras);
 
   for (; start < limit; start = stop + 1) {
     labelStart = start;
@@ -3269,7 +3269,7 @@ int SendAnonFTP(TransStream stream, char * spec) {
   if (err = Snarf(spec, &text, 254))
     FileSystemError(BINHEX_READ, spec_name(spec), err);
   else {
-    size = GetHandleSize_(text);
+    size = strlen((char *)text);
     { size_t _mpl = (size); memcpy(data, (char *)text, _mpl); ((char*)(data))[_mpl] = '\0'; }
 
     /*
@@ -3546,7 +3546,7 @@ short SendPlain(TransStream stream, char *spec, long flags, short tableId,
     flags &=
         ~FLAG_ENCBOD; /* we may not need to encode this; we'll find out later */
     Snarf(spec, &taste, GetRLong(TEXT_QP_TASTE));
-    { long _tlen = taste ? (long)GetHandleSize_((void *)taste) : 0;
+    { long _tlen = taste ? (long)malloc_size(taste) : 0;
       if (err = SendContentType(stream, taste ? (char *)taste : NULL, _tlen, 0,
                                 NULL, 0, 0, tableId, &flags, NULL,
                                 ATT_MAP_NAME(amp), NULL, amp->mm.subtype))
@@ -4453,7 +4453,7 @@ int BufferSend(TransStream stream, DecoderFunc *encoder, char *data,
       used = 0;
     }
 
-    bSize = GetHandleSize_(EncoderGlobalsBuffer);
+    bSize = strlen((char *)EncoderGlobalsBuffer);
 
     if (!DontTranslate && Flatten)
       for (spot = data, end = data + dataLen; spot < end; spot++)
@@ -4534,7 +4534,7 @@ int BufferSend(TransStream stream, DecoderFunc *encoder, char *data,
       }
       (*encoder)(kDecodeDispose, &EncoderGlobalsPb);
     }
-    WriteZero(&EncoderGlobalsPb, sizeof(EncoderGlobalsPb));
+    memset(&EncoderGlobalsPb, 0, sizeof(EncoderGlobalsPb));
     used = 0;
     free(EncoderGlobalsBuffers[0]);
     free(EncoderGlobalsBuffers[1]);

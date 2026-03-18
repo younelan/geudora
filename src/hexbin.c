@@ -272,7 +272,7 @@ void BeginHexBin(HeaderDHandle hdh)
 	HBG = NewH(HexBinGlobals);
 	if (HBG)
 	{
-		WriteZero(HBG,sizeof(HexBinGlobals));
+		memset(HBG, 0, sizeof(HexBinGlobals));
 		State = HexDone;
 		GetRString(intro,BINHEX);
 		memcpy(BinHexIntro, intro, 64);

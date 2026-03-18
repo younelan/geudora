@@ -867,7 +867,7 @@ void PathToMailboxName(CStr path, char mboxName[64], char delimiter) {
   char pInbox[256];
 
   // initialize mboxName
-  WriteZero(mboxName, 64);
+  memset(mboxName, 0, 64);
 
   // must have been given a path to convert
   if (!path || (*path == 0))
@@ -886,7 +886,7 @@ void PathToMailboxName(CStr path, char mboxName[64], char delimiter) {
 
   // convert the good bit to a PString.
   mboxName[0] = MIN(strlen(scan), MAX_BOX_NAME);
-  BlockMoveData(scan, &mboxName[1], mboxName[0]);
+  memmove(&mboxName[1], scan, mboxName[0]);
 
   // make sure the PString name doesn't end with the delimiter
   if (mboxName[mboxName[0]] == delimiter)
@@ -952,7 +952,6 @@ void PersNameToCacheName(PersHandle pers, unsigned char * cacheName) {
   for (spot = cacheName; *spot; spot++)
     if (*spot == ':')
       *spot = '-';
-  HSetState((void *)pers, state);
 }
 
 /***************************************************************************
@@ -964,6 +963,7 @@ int WriteIMAPMailboxInfo(char * spec, MailboxNodeHandle node) {
   long count = 0;
   short oldResFile = CurResFile();
   void *resource = 0;
+  size_t resource_sz = 0;
 
   // FSpCreateResFile is no-op on POSIX (no resource forks)
 
@@ -1010,7 +1010,7 @@ int WriteIMAPMailboxInfo(char * spec, MailboxNodeHandle node) {
     }
 
     // add the flag info to the resource
-    if (node->queuedFlags && GetHandleSize(node->queuedFlags)) {
+    if (node->queuedFlags && malloc_size(node->queuedFlags)) {
 
       resource = DupHandle((void *)(node->queuedFlags));
       if (resource) {
@@ -1024,9 +1024,9 @@ int WriteIMAPMailboxInfo(char * spec, MailboxNodeHandle node) {
     }
 
     // Add the name to the resource as well
-    resource = malloc(0);
+    resource = NULL; resource_sz = 0;
     if (resource && (err = 0) == noErr) {
-      if (!buf_append(resource, node->mailboxName, strlen(node->mailboxName) + 1))
+      if (!buf_append(resource, &resource_sz, node->mailboxName, strlen(node->mailboxName) + 1))
         err = memFullErr;
       if (err == noErr) {
         AddResource(resource, BOX_NAME_TYPE, IMAP_ID,
@@ -1200,6 +1200,7 @@ int ReadIMAPMailboxInfo(char * spec, MailboxNodeHandle node) {
   short refN = -1;
   short oldResFile = CurResFile();
   void *resource = 0;
+  size_t resource_sz = 0;
   char *mailboxName = 0;
 
   Zero(*node);
@@ -1219,7 +1220,7 @@ int ReadIMAPMailboxInfo(char * spec, MailboxNodeHandle node) {
         err = resNotFound;
       if ((err == noErr) && ((err = ResError()) == noErr) && resource != 0) {
         BlockMove(resource, node,
-                  MIN(GetHandleSize(resource), sizeof(MailboxNode)));
+                  MIN(resource_sz, sizeof(MailboxNode)));
 
         // initialize garbage fields
         node->next = 0;
@@ -1375,7 +1376,7 @@ void DisposeMailboxTree(MailboxNodeHandle *tree) {
  **********************************************************************/
 void ZapMailboxNode(MailboxNodeHandle *node) {
   if ((*node) && (*node)->mailboxName) {
-    DisposePtr((*node)->mailboxName);
+    free((*node)->mailboxName);
     (*node)->mailboxName = 0;
   }
   free(*node);
@@ -1478,7 +1479,6 @@ void LocateNodeByVDInAllPersTrees(short vRef, long dirId,
     state = HGetState((void *)*pers);
     if ((*node = LocateNodeByVD((*pers)->mailboxTree, vRef, dirId)))
       break;
-    HSetState((void *)(*pers), state);
   }
 }
 
@@ -2624,7 +2624,6 @@ MailboxNodeHandle GetSpecialMailbox(PersHandle pers, bool createIfNeeded,
       MBTickle(0, 0);
     }
   }
-  HSetState((void *)CurPers, state);
   CurPers = oldPers;
 
   return (specialMBox);
@@ -2646,7 +2645,6 @@ void ResetSpecialMailbox(PersHandle pers, long mboxAtt) {
               LocateSpecialMailbox(CurPers->mailboxTree, mboxAtt)) != 0)
     specialMBox->attributes &= ~mboxAtt;
 
-  HSetState((void *)CurPers, state);
   CurPers = oldPers;
 
   MBTickle(0, 0);
@@ -2735,7 +2733,6 @@ MailboxNodeHandle CreateSpecialMailbox(bool tryCreate, long mboxAtt) {
           state = HGetState((void *)CurPers);
           specialMbox = LocateNodeByMailboxName(CurPers->mailboxTree,
                                                 (char *)specialMailboxName + 1);
-          HSetState((void *)CurPers, state);
         }
       }
     }
@@ -2748,7 +2745,6 @@ MailboxNodeHandle CreateSpecialMailbox(bool tryCreate, long mboxAtt) {
     state = HGetState((void *)CurPers);
     specialMbox = LocateNodeByMailboxName(CurPers->mailboxTree,
                                           (char *)specialMailboxName + 1);
-    HSetState((void *)CurPers, state);
 
     // did we find a mailbox with the same name?
     if (specialMbox) {
@@ -2765,7 +2761,6 @@ MailboxNodeHandle CreateSpecialMailbox(bool tryCreate, long mboxAtt) {
     if (ChooseSpecialMailbox(CurPers, chooseMessage, &specialSpec)) {
       state = HGetState((void *)CurPers);
       specialMbox = LocateNodeBySpec(CurPers->mailboxTree, &specialSpec);
-      HSetState((void *)CurPers, state);
 
       // Make sure the user really wants to use this mailbox as the special
       // mailbox.
@@ -3605,7 +3600,7 @@ bool IMAPMailboxExists(char mailboxName[256]) {
     return (0);
 
   Zero(cName);
-  BMD(mailboxName + 1, cName, mailboxName[0]);
+  memmove(cName, mailboxName + 1, mailboxName[0]);
 
   // Set up to connect to the server
   if (imapStream = GetIMAPConnection(UndefinedTask, CAN_PROGRESS)) {

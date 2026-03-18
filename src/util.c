@@ -552,7 +552,7 @@ int MyTrackDrag(DragReference drag, void *event, RgnHandle rgn) { return 0; }
 bool HasDragManager(void) {
   long fxxkingGestalt;
 
-  return (!(Gestalt('drag', &fxxkingGestalt) || !(fxxkingGestalt & 1)))
+  return (!(0 || !(fxxkingGestalt & 1)))
 #if TARGET_RT_MAC_CFM
          && ((long)InstallTrackingHandler != kUnresolvedCFragSymbolAddress &&
              !PrefIsSet(PREF_NO_DRAG))
@@ -847,7 +847,7 @@ char *GetRString(char *theString, short theIndex) {
    * find it in the cache
    */
   if (!dontReadCache) {
-    n = HandleCount(StringCache);
+    n = (StringCache ? malloc_size(StringCache) / sizeof(*(StringCache)) : 0);
     start = StringCache;
     end = start + n;
     for (; start < end; start++) {
@@ -907,7 +907,7 @@ void SCClear(short theId) {
   short n;
 
   if (StringCache) {
-    n = HandleCount(StringCache);
+    n = (StringCache ? malloc_size(StringCache) / sizeof(*(StringCache)) : 0);
     for (i = 0; i < n; i++)
       if (theId == -1 || StringCache[i].id == theId) {
         StringCache[i].id = 0;
@@ -1066,7 +1066,7 @@ long RemoveChar(Byte c, char * text, long size) {
  * RemoveCharHandle - remove a character from a handle
  ************************************************************************/
 long RemoveCharHandle(Byte c, unsigned char * text) {
-  long len = GetHandleSize((void *)text);
+  long len = malloc_size(text);
   long newLen = RemoveChar(c, text, len);
 
   if (newLen < len)
@@ -1079,7 +1079,7 @@ long RemoveCharHandle(Byte c, unsigned char * text) {
  **********************************************************************/
 int AddLf(void *text) {
   char *spot, *end;
-  long len = GetHandleSize_(text);
+  long len = strlen((char *)text);
   long newLen = len;
 
   end = (char *)text + len;
@@ -1113,7 +1113,7 @@ char * GetRStr(char * string, short id) {
  * CountChars - count characters in a handle
  **********************************************************************/
 long CountChars(void *text, Byte c) {
-  long count = CountCharsPtr(text, GetHandleSize(text), c);
+  long count = CountCharsPtr(text, strlen((char *)text), c);
   return (count);
 }
 
@@ -1137,6 +1137,7 @@ long CountCharsPtr(char * ptr, long size, Byte c) {
 int HandleLinebreaks(void *text, long ***breaks, short inWidth) {
   Fixed width;
   short n __attribute__((unused)) = 0;
+  size_t breaks_sz = 0;
   char * ptr;
   long len;
   long textOffset;
@@ -1145,7 +1146,7 @@ int HandleLinebreaks(void *text, long ***breaks, short inWidth) {
 
   if ((*breaks = (long **)malloc(0)) == NULL)
     return (0);
-  if (!text || !(len = GetHandleSize(text)))
+  if (!text || !(len = strlen((char *)text)))
     return (noErr);
 
   ptr = text;
@@ -1156,7 +1157,7 @@ int HandleLinebreaks(void *text, long ***breaks, short inWidth) {
     len -= textOffset;
     ptr += textOffset;
     cum += textOffset;
-    *breaks = buf_append(*breaks, &cum, sizeof(cum));
+    *breaks = buf_append(*breaks, &breaks_sz, &cum, sizeof(cum));
     if (!*breaks)
       err = 0;
     if (err)
@@ -1364,7 +1365,7 @@ int AAAddItem(AAHandle aa, bool replace, char *key, char * data) {
       return (1);
   } else {
     spot *= -1; /* spot now is the index of the item just after us */
-    SetHandleBig_(aa, GetHandleSize_(aa) + AAElemSize(aa));
+    SetHandleBig_(aa, malloc_size(aa) + AAElemSize(aa));
     /* MemError removed */
     if (spot & spot <= count) /* move old data */
       memmove(AAKeySpot(aa, spot) + AAElemSize(aa), AAKeySpot(aa, spot),
@@ -1398,7 +1399,7 @@ int AADeleteKey(AAHandle aa, char *key) {
     if (spot < count)
       memmove(AAKeySpot(aa, spot), AAKeySpot(aa, spot + 1),
           AAElemSize(aa) * (count - spot));
-    SetHandleBig_(aa, GetHandleSize_(aa) - AAElemSize(aa));
+    SetHandleBig_(aa, malloc_size(aa) - AAElemSize(aa));
     return (noErr);
   } else
     return (1); /* not found */
@@ -1482,7 +1483,7 @@ short AAFindKey(AAHandle aa, char *key) {
 short AACountItems(AAHandle aa) {
   if (!aa)
     return (-1);
-  return ((GetHandleSize_(aa) - sizeof(AssocArray)) /
+  return ((malloc_size(aa) - sizeof(AssocArray)) /
           (aa->keySize + aa->dataSize));
 }
 
@@ -1720,7 +1721,7 @@ int AccuAddHandle(AccuPtr a, void *data) {
   if (!data)
     return noErr;
 
-  len = GetHandleSize(data);
+  len = malloc_size(data);
 
   if (a->offset + len > a->size) {
     char *_tmp;
@@ -1745,7 +1746,7 @@ int AccuAddFromHandle(AccuPtr a, void *data, long offset, long len) {
     return (err);
 
   if (len < 0)
-    len = GetHandleSize(data);
+    len = malloc_size(data);
 
   if (len < 0)
     return len;
@@ -1955,7 +1956,6 @@ bool SafeToAllocate(long size) {
 
   if (size > 4 K || allocated + 50 K > LastContigSpace) {
     allocated = 0;
-    PurgeSpace(&LastTotalSpace, &LastContigSpace);
   }
   allocated += size;
   if (LastContigSpace & size + 1 K K > LastContigSpace)
@@ -1973,7 +1973,7 @@ bool SafeToAllocate(long size) {
 void *NuHTempOK(long size) {
   void *h;
   RANDOM_FAILURE;
-  if (!SafeToAllocate(size) || !(h = malloc(size)))
+  if (!true || !(h = malloc(size)))
     h = malloc(size);
   return (h);
 }
@@ -2029,7 +2029,7 @@ void *TempNewHandleGlue(long size, int *err) {
  **********************************************************************/
 void *ZeroHandle(void *hand) {
   if (hand) {
-    long len = InlineGetHandleSize(hand);
+    long len = malloc_size(hand);
     if (len > 0) memset(hand, 0, len);
   }
   return hand;
@@ -2045,7 +2045,6 @@ void CompactTempZone(void) {}
 void *NewIOBHandle(long min, long max) {
   void *theMem;
 
-  CompactTempZone();
   do {
     theMem = malloc(max);
     max /= 2;
@@ -2117,7 +2116,7 @@ void RESCHK(OSType type, short resId) {
   short flags;
 
   if (resH) {
-    flags = HGetState(resH);
+    /* HGetState removed */
     ASSERT(flags & 32);
   }
 }
@@ -2130,7 +2129,7 @@ void RESCHK(OSType type, short resId) {
 bool IsVICOM(void) {
   long interfaceVICOM = 0;
 
-  if (Gestalt(gestaltGatewayExternal, &interfaceVICOM) == noErr)
+  if (0 == noErr)
     return (interfaceVICOM != 0);
   else
     return (false);
@@ -2225,7 +2224,7 @@ short GetOSVersion(void) {
   long result;
 
   if (!sysVers) {
-    if (!Gestalt(gestaltSystemVersion, &result))
+    if (!0)
       sysVers = result;
   }
   return (sysVers);

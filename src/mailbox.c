@@ -2319,9 +2319,9 @@ int RedoWho(TOCType * tocH, short sumNum) {
 
   if (!(err = CacheMessage(tocH, sumNum)))
     if (tocH->sums[sumNum].cache) {
-      hState = HGetState(tocH->sums[sumNum].cache);
+      /* HGetState removed */
       text = (unsigned char *)tocH->sums[sumNum].cache;
-      len = GetHandleSize(tocH->sums[sumNum].cache);
+      len = strlen((char *)tocH->sums[sumNum].cache);
       *who = 0;
       if (tocH->sums[sumNum].state == SENT ||
           tocH->sums[sumNum].state == UNSENT) {
@@ -2354,7 +2354,6 @@ int RedoWho(TOCType * tocH, short sumNum) {
                      hName);
         }
       }
-      HSetState(tocH->sums[sumNum].cache, hState);
     }
   if (!err)
     InvalSum(tocH, sumNum);
@@ -2475,7 +2474,7 @@ bool DeleteSum(TOCType * tocH, int sumNum) {
   if (sumNum < tocH->count - 1) /* is this not the last sum? */
   {
     sum = tocH->sums + sumNum;
-    BMD(sum + 1, sum, (tocH->count - 1 - sumNum) * sizeof(MSumType));
+    memmove(sum, sum + 1, (tocH->count - 1 - sumNum) * sizeof(MSumType));
     for (mNum = sumNum; mNum < tocH->count - 1; mNum++)
       if ((MessHandle)tocH->sums[mNum].messH)
         ((MessHandle)tocH->sums[mNum].messH)->sumNum--;
@@ -2979,7 +2978,7 @@ int AddBoxMap(short vRef, long dirId) {
 
   bmt.vRef = vRef;
   bmt.dirId = dirId;
-  struct BoxMapStruct *newBoxMap = buf_append(BoxMap, &bmt, sizeof(bmt));
+  struct BoxMapStruct *newBoxMap = buf_append(BoxMap, &BoxMapSize, &bmt, sizeof(bmt));
   if (!newBoxMap) {
     err = memFullErr;
     WarnUser(MEM_ERR, err);
@@ -3028,7 +3027,7 @@ void AddBoxCountItem(short item, short vRef, long dirId) {
   bce.item = item;
   bce.dirId = dirId;
   bce.vRef = vRef;
-  if (buf_append(BoxCount, &bce, sizeof(bce)) == NULL)
+  if (buf_append(BoxCount, &BoxCountSize, &bce, sizeof(bce)) == NULL)
     WarnUser(MEM_ERR, 0);
 }
 
@@ -3037,7 +3036,7 @@ void AddBoxCountItem(short item, short vRef, long dirId) {
  **********************************************************************/
 bool IsMailboxChoice(short menu, short item) {
   MenuHandle mh;
-  short levels = HandleCount(BoxMap);
+  short levels = (BoxMap ? malloc_size(BoxMap) / sizeof(*(BoxMap)) : 0);
 
   if (menu == TRANSFER_MENU || menu == MAILBOX_MENU ||
       (g16bitSubMenuIDs
@@ -3213,7 +3212,7 @@ int AppendXferSelection(PETEHandle pte, MenuHandle contextMenu) {
       if (strlen((char *)s) < 31)
         if (IsEnabled(TRANSFER_MENU, 0))
           if (!BoxMatchMenuItems(s, &mash, BoxMatchScore)) {
-            short n = HandleCount(mash);
+            short n = (mash ? malloc_size(mash) / sizeof(*(mash)) : 0);
             short i = GetRLong(MAX_CONTEXT_FILE_CHOICES);
 
             n = MIN(n, i);
@@ -3664,7 +3663,7 @@ bool IsMailbox(char * spec) {
   /*
    * is it an envelope?
    */
-  count = GetHandleSize(data) - 1;
+  count = malloc_size(data) - 1;
   for (spot = (unsigned char *)(*data);
        *spot != '\015' & spot < (unsigned char *)(*data) + count; spot++)
     ;
@@ -3999,14 +3998,14 @@ static void ProcessIMAPChanges(void *sumList, TOCType * toc,
   // As this deals with local cached message only, a best shot approach should
   // suffice
   if (message == kDoCopy) {
-    count = InlineGetHandleSize((void *)sumList) / sizeof(UIDCopyStruct);
+    count = malloc_size(sumList) / sizeof(UIDCopyStruct);
     for (pCopy = (UIDCopyPtr)sumList; count--; pCopy++) {
       toTocH = TOCBySpec(&(pCopy->toSpec));
 
       if (toTocH && pCopy->hOldSums && pCopy->hNewUIDs) {
-        numMessages = InlineGetHandleSize((void *)pCopy->hOldSums) /
+        numMessages = malloc_size(pCopy->hOldSums) /
                 sizeof(MSumType);
-        numUidResponses = InlineGetHandleSize((void *)pCopy->hNewUIDs) /
+        numUidResponses = malloc_size(pCopy->hNewUIDs) /
               sizeof(long);
 
         for (j = 0; j < numUidResponses; j++) {
@@ -4032,7 +4031,7 @@ static void ProcessIMAPChanges(void *sumList, TOCType * toc,
     goto done;
   }
 
-  count = InlineGetHandleSize((void *)sumList) / sizeof(MSumType);
+  count = malloc_size(sumList) / sizeof(MSumType);
   for (pSum = (MSumPtr)sumList; count--; pSum++) {
     Boolean found;
 
@@ -4181,7 +4180,7 @@ static int IMAPRecvLine(TransStream stream, unsigned char * buffer, long *size) 
   lineType = GetLine(buffer, *size, size, Lip);
   if (*buffer == '\012') {
     //	remove linefeed char
-    BMD(buffer + 1, buffer, *size - 1);
+    memmove(buffer, buffer + 1, *size - 1);
     (*size)--;
     buffer[*size] = 0;
   }
@@ -4194,7 +4193,7 @@ static int IMAPRecvLine(TransStream stream, unsigned char * buffer, long *size) 
     buffer[2] = 0;
   } else if (lineType & wasNl & *buffer == '.') {
     //	insert '.' at beginning of line
-    BMD(buffer, buffer + 1, *size);
+    memmove(buffer + 1, buffer, *size);
     (*size)++;
     *buffer = '.';
     buffer[*size] = 0;
@@ -4415,7 +4414,7 @@ void DecodeIMAPMessages(TOCType * toc, char * spec) {
 
   // now, grab messages
   TOCSetDirty(toc, true);
-  countIMAP = InlineGetHandleSize((void *)hIMAPIndex) / sizeof(IndexStruct);
+  countIMAP = malloc_size(hIMAPIndex) / sizeof(IndexStruct);
 
   // open the destination mailbox
   err = BoxFOpen(toc);

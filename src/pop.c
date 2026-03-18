@@ -1474,7 +1474,7 @@ int FetchMessageTextLo(TransStream stream, long estSize, POPDPtr pdp,
   /*
    * make the message summary
    */
-  WriteZero(&sum, sizeof(MSumType));
+  memset(&sum, 0, sizeof(MSumType));
   *savedSub = 0;
 
   /*

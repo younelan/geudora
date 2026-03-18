@@ -76,7 +76,7 @@ long Munger(void **h, long offset, void *ptr1, long len1, void *ptr2,
 /* GetPrefLong provided by legacy_shim.h */
 /* SetPrefLong is implemented in gtk_dialogs.c */
 /* SetResLoad is implemented in imapmailboxes.c */
-long GetResourceSizeOnDisk(void **h) { return GetHandleSize(h); }
+long GetResourceSizeOnDisk(void **h) { return strlen((char *)h); }
 void ReadPartialResource(void **h, long offset, void *dest,
                          long len) { /* stub */ }
 long Random(void) { return random(); }
@@ -87,17 +87,17 @@ void NoteUser(int msgId, int arg) { /* stub - show message to user */ }
 int HandToHand(void **h) {
   if (!h || !*h)
     return -1;
-  void **copy = malloc(GetHandleSize(h));
+  void **copy = malloc(strlen((char *)h));
   if (!copy)
     return -1;
-  memcpy(*copy, *h, GetHandleSize(h));
+  memcpy(*copy, *h, strlen((char *)h));
   *h = *copy;
   return 0;
 }
 int HandAndHand(void **h1, void **h2) {
   if (!h1 || !*h1 || !h2 || !*h2)
     return -1;
-  return (buf_append(*h2, *h1, GetHandleSize(h1)) != NULL) ? 0 : -1;
+  return (buf_append(*h2, NULL, *h1, strlen((char *)*h1)) != NULL) ? 0 : -1;
 }
 int CompHeadFind(void *messH, int headId, void *hs) { return 0; /* stub */ }
 int CompHeadGetText(void *body, void *hs, void **text) { return -1; /* stub */ }
@@ -229,7 +229,7 @@ void AlertStr(short alertId, short type, unsigned char *str) {
 
   // Copy C string
   char message[256];
-  if (str && str[0] != ' ') {
+  if (str && str[0] != '\0') {
     strcpy(message, (const char *)str);
   } else {
     strcpy(message, "Alert");
@@ -374,10 +374,10 @@ int ReadNicknames(short which) {
   // put existing handles into accumulators
   nameAcc.data = This.hNames;
   if (nameAcc.data)
-    nameAcc.size = nameAcc.offset = GetHandleSize(nameAcc.data);
+    nameAcc.size = nameAcc.offset = malloc_size(nameAcc.data);
   dataAcc.data = (void *)This.theData;
   if (dataAcc.data)
-    dataAcc.size = dataAcc.offset = GetHandleSize(dataAcc.data);
+    dataAcc.size = dataAcc.offset = malloc_size(dataAcc.data);
 
   // Find the file, open it for reading, get the command names
   g_strlcpy(spec, This.spec, sizeof(spec));
@@ -401,7 +401,7 @@ int ReadNicknames(short which) {
     lastExLine = exLine;
     lineOffset = curOffset; // offset of beginning of line
     curOffset += len;       // this is the offset of the next line
-    exLine = line[len - 1] != ' 15';
+    exLine = line[len - 1] != '\015';
 
     // Record the offset where we first start collecting data
     if (lineAcc.offset == 0)
@@ -448,7 +448,7 @@ int ReadNicknames(short which) {
         for (i = 0; i < sizeof(currentCmd) - 1; i++)
           if (lineData[i] == ' ')
             break;
-        { size_t _mpl = ( i); memcpy(currentCmd,  lineData, _mpl); ((char*)(currentCmd))[_mpl] = ' '; }
+        { size_t _mpl = ( i); memcpy(currentCmd,  lineData, _mpl); ((char*)(currentCmd))[_mpl] = '\0'; }
 
         /*
          * find the nickname
@@ -470,7 +470,7 @@ int ReadNicknames(short which) {
             break;
         }
         // Eureka!  Copy the name into a pascal string and find its hash
-        { size_t _mpl = ( count - i - 1); memcpy(tempName,  lineData + i + 1, _mpl); ((char*)(tempName))[_mpl] = ' '; }
+        { size_t _mpl = ( count - i - 1); memcpy(tempName,  lineData + i + 1, _mpl); ((char*)(tempName))[_mpl] = '\0'; }
         SanitizeFN(tempName, tempName, NICK_STORED_BAD_CHAR,
                    NICK_STORED_REP_CHAR, false);
         hashName = NickHash(tempName);
@@ -641,7 +641,7 @@ void CheckForNicknameBogosity(short which)
 
   bogus = false;
   count =
-      This.theData ? (GetHandleSize_(This.theData) / sizeof(NickStruct)) : 0;
+      This.theData ? (malloc_size(This.theData) / sizeof(NickStruct)) : 0;
   for (index = 0; !bogus && index < count; ++index) {
     BeautifyFrom(GetNicknameNamePStr(which, index, beautifulName));
     if (!This.theData[index].deleted &&
@@ -658,7 +658,7 @@ void CheckForNicknameBogosity(short which)
  ************************************************************************/
 long NickMatchFound(NickStructHandle theNicknames, long hashName, char * theName,
                     short which) {
-  return (NickMatchFoundLo(theNicknames, GetHandleSize_(theNicknames), hashName,
+  return (NickMatchFoundLo(theNicknames, malloc_size(theNicknames), hashName,
                            theName, which));
 }
 
@@ -697,12 +697,12 @@ long NickMatchFoundLo(NickStructHandle theNicknames, long theNicknamesLen,
     return (matched);
 
   g_strlcpy((char *)(tempName), (char *)(theName), sizeof(tempName));
-  { long _rl = RemoveChar(' ', (char *)tempName, strlen((char *)tempName)); ((char *)tempName)[_rl] = ' '; }
+  { long _rl = RemoveChar(' ', (char *)tempName, strlen((char *)tempName)); ((char *)tempName)[_rl] = '\0'; }
   for (i = 0; i < stop; i++) {
     if (theNicknames[i].hashName == hashName &&
         !theNicknames[i].deleted) {
       GetNicknameNamePStr(which, i, tempStr);
-      { long _rl = RemoveChar(' ', (char *)tempStr, strlen((char *)tempStr)); ((char *)tempStr)[_rl] = ' '; }
+      { long _rl = RemoveChar(' ', (char *)tempStr, strlen((char *)tempStr)); ((char *)tempStr)[_rl] = '\0'; }
       if (StringSame(tempName, tempStr))
         return (i);
     }
@@ -731,7 +731,7 @@ long NickAddressMatchFound(NickStructHandle theNicknames, long hashAddress,
 
   matched = -1;
   needStringMatch = false;
-  stop = GetHandleSize_(theNicknames) / sizeof(NickStruct);
+  stop = malloc_size(theNicknames) / sizeof(NickStruct);
   endStruct = theNicknames + stop;
 
   for (theStruct = theNicknames; theStruct < endStruct; theStruct++)
@@ -747,18 +747,18 @@ long NickAddressMatchFound(NickStructHandle theNicknames, long hashAddress,
     return (matched);
 
   g_strlcpy((char *)(tempAddress), (char *)(theAddress), sizeof(tempAddress));
-  { long _rl = RemoveChar(' ', (char *)tempAddress, strlen((char *)tempAddress)); ((char *)tempAddress)[_rl] = ' '; }
+  { long _rl = RemoveChar(' ', (char *)tempAddress, strlen((char *)tempAddress)); ((char *)tempAddress)[_rl] = '\0'; }
   for (i = 0; i < stop; i++)
     if (theNicknames[i].hashAddress == hashAddress &&
         !theNicknames[i].deleted)
       if (theAddresses = GetNicknameData(which, i, true, true)) {
         addresses = nil;
         SuckPtrAddresses(&addresses, (char *)theAddresses,
-                         GetHandleSize(theAddresses), False, False, False, nil);
+                         malloc_size(theAddresses), False, False, False, nil);
         if (addresses && addresses[0]) {
           g_strlcpy((char *)tempStr + 1, addresses[0], sizeof(tempStr) - 1);
           tempStr[0] = strlen((char *)tempStr + 1);
-          { long _rl = RemoveChar(' ', (char *)tempStr, strlen((char *)tempStr)); ((char *)tempStr)[_rl] = ' '; }
+          { long _rl = RemoveChar(' ', (char *)tempStr, strlen((char *)tempStr)); ((char *)tempStr)[_rl] = '\0'; }
           g_strfreev(addresses); addresses = NULL;
           if (StringSame(tempAddress, tempStr))
             return (i);
@@ -839,17 +839,16 @@ bool SplitNicknames(short ab)
 
   totalNicks =
       Aliases[ab]->theData
-          ? (GetHandleSize_(Aliases[ab]->theData) / sizeof(NickStruct))
+          ? (malloc_size(Aliases[ab]->theData) / sizeof(NickStruct))
           : 0;
   for (nick = 0; nick < totalNicks; ++nick) {
     if (notes = GetNicknameData(ab, nick, false, true)) {
-      oldHState = HGetState(notes);
+      /* HGetState removed */
       if (MaybeApplySplittingAlgorithm(notes) && !Aliases[ab]->ro) {
         ReplaceNicknameNotes(ab, GetNicknameNamePStr(ab, nick, name), notes);
         notesChanged = true;
       } else
         // If we did not split the name, restore the note's previous purge state
-        HSetState(notes, oldHState);
     }
   }
   return (notesChanged);
@@ -884,7 +883,7 @@ bool MaybeApplySplittingAlgorithm(void *notes)
   GetRString(lastTag, ABReservedTagsStrn + abTagLast);
 
   // Walk through the 'notes', looking for attribute/value pairs we care about.
-  notesSize = GetHandleSize(notes);
+  notesSize = strlen((char *)notes);
   notesPtr = notes;
   while ((!*realName || !*firstName || !*lastName) &&
          (newPtr = ParseAttributeValuePair(
@@ -953,7 +952,7 @@ void *GetTaggedFieldValueInNotes(void *notes, char * tag)
   if (notes) {
     // Walk through the 'notes', looking for attribute/value pairs.  We'll set
     // the value of any object we find
-    notesSize = GetHandleSize(notes);
+    notesSize = strlen((char *)notes);
     notesPtr = notes;
     found = false;
     while (
@@ -971,7 +970,7 @@ void *GetTaggedFieldValueInNotes(void *notes, char * tag)
     }
     if (found) {
       PtrToHand(value, &hValue, valueLength);
-      Tr(hValue, " 02", ">");
+      Tr(hValue, "\002", ">");
     }
   }
   return (hValue);
@@ -995,7 +994,7 @@ char * GetTaggedFieldValueStrInNotes(void *notes, char * tag, char * value)
   *value = 0;
   if (notes) {
     // Walk through the 'notes', looking for attribute/value pairs.
-    notesSize = GetHandleSize(notes);
+    notesSize = strlen((char *)notes);
     notesPtr = notes;
     found = false;
     while (!found && (newPtr = ParseAttributeValuePairStr(
@@ -1012,7 +1011,7 @@ char * GetTaggedFieldValueStrInNotes(void *notes, char * tag, char * value)
     if (!found)
       *value = 0;
     else
-      TrLo((char *)value, strlen((char *)value), " 02", ">");
+      TrLo((char *)value, strlen((char *)value), "\002", ">");
   }
   return (value);
 }
@@ -1045,12 +1044,12 @@ int SetTaggedFieldValueInNotes(void *notes, char * tag, char * value, long lengt
   long attributeLength, originalValueLength;
   Boolean found;
 
-  TrLo(value, length, ">", " 02");
+  TrLo(value, length, ">", "\002");
 
   theError = noErr;
   if (notes) {
     // Walk through the 'notes', looking for attribute/value pairs.
-    notesSize = GetHandleSize(notes);
+    notesSize = strlen((char *)notes);
     notesPtr = notes;
     found = false;
     while (!found && (newPtr = ParseAttributeValuePair(
@@ -1096,7 +1095,7 @@ int SetTaggedFieldValueInNotes(void *notes, char * tag, char * value, long lengt
       theError = AddAttributeValuePair(notes, tag, value, length);
   }
 
-  TrLo(value, length, " 02", ">");
+  TrLo(value, length, "\002", ">");
 
   return (theError);
 }
@@ -1157,7 +1156,7 @@ bool FindTaggedFieldValueOffsets(short ab, short nick, char * tag,
   found = false;
   if (notes = GetNicknameData(ab, nick, false, true)) {
     // Walk through the 'notes', looking for attribute/value pairs.
-    notesSize = GetHandleSize(notes);
+    notesSize = strlen((char *)notes);
     notesPtr = notes;
     while (!found && (newPtr = ParseAttributeValuePair(
                           notesPtr,
@@ -1277,8 +1276,8 @@ long NickHashString(char * string)
   char tempStr[256];
 
   g_strlcpy((char *)(tempStr), (char *)(string), sizeof(tempStr));
-  { long _rl = RemoveChar(' ', (char *)tempStr, strlen((char *)tempStr)); ((char *)tempStr)[_rl] = ' '; }
-  { long _rl = RemoveChar(optSpace, (char *)tempStr, strlen((char *)tempStr)); ((char *)tempStr)[_rl] = ' '; }
+  { long _rl = RemoveChar(' ', (char *)tempStr, strlen((char *)tempStr)); ((char *)tempStr)[_rl] = '\0'; }
+  { long _rl = RemoveChar(optSpace, (char *)tempStr, strlen((char *)tempStr)); ((char *)tempStr)[_rl] = '\0'; }
   MyLowercaseText((char *)tempStr, strlen((char *)tempStr));
   return (Hash(tempStr));
 }
@@ -1291,10 +1290,10 @@ long NickHashHandle(void *h)
 
   *tempStr = 0;
   if (h) {
-    len = GetHandleSize(h);
+    len = strlen((char *)h);
     tempStr[0] = MIN(len, (sizeof(tempStr) - 1));
-    BlockMoveData(h, &tempStr[1], tempStr[0]);
-    { long _rl = RemoveChar(' ', (char *)tempStr, strlen((char *)tempStr)); ((char *)tempStr)[_rl] = ' '; }
+    memmove(&tempStr[1], h, tempStr[0]);
+    { long _rl = RemoveChar(' ', (char *)tempStr, strlen((char *)tempStr)); ((char *)tempStr)[_rl] = '\0'; }
     MyLowercaseText((char *)tempStr, strlen((char *)tempStr));
   }
   return (Hash(tempStr));
@@ -1314,7 +1313,7 @@ long NickHashRawAddresses(void *addresses, bool *group)
     // As a last check... see if the address is already present in a nickname
     // file
     if (!SuckPtrAddresses(&shortAddress, (char *)addresses,
-                          GetHandleSize(addresses), false, false, false, nil))
+                          malloc_size(addresses), false, false, false, nil))
       hashValue = NickHashString(shortAddress[0]);
     *group = ContainsMultipleAddresses(shortAddress);
     g_strfreev(shortAddress); shortAddress = NULL;
@@ -1368,7 +1367,7 @@ int PrepAddressBookForSync(short ab)
   GetRString(changeBitsTag, ABHiddenTagsStrn + abTagChangeBits);
   totalNicks =
       Aliases[ab]->theData
-          ? (GetHandleSize_(Aliases[ab]->theData) / sizeof(NickStruct))
+          ? (malloc_size(Aliases[ab]->theData) / sizeof(NickStruct))
           : 0;
   for (nick = 0; !theError && nick < totalNicks; ++nick)
     theError = PrepNicknameForSync(ab, nick, idTag, changeBitsTag);
@@ -1440,7 +1439,7 @@ int ClearAddressBookChangeBits(short ab, long mask)
   theError = noErr;
   totalNicks =
       Aliases[ab]->theData
-          ? (GetHandleSize_(Aliases[ab]->theData) / sizeof(NickStruct))
+          ? (malloc_size(Aliases[ab]->theData) / sizeof(NickStruct))
           : 0;
   for (nick = 0; !theError && nick < totalNicks; ++nick)
     theError = ClearNicknameChangeBits(ab, nick, mask);
@@ -1588,7 +1587,7 @@ int ReadNickTOC(short which) {
           SetHandleBig((void **)&theData, numberOfNicks * sizeof(NickStruct));
           if (0)
             goto theExit;
-          WriteZero(theData, numberOfNicks * sizeof(NickStruct));
+          memset(theData, 0, numberOfNicks * sizeof(NickStruct));
           eof = FSpDFSize(&lSpec);
           pTOCInfo =
               (NickTOCStruct *)((unsigned char *)structR + currentStructPos);
@@ -1755,7 +1754,7 @@ exit:
  * the backslash, and return True
  ************************************************************************/
 bool NeatenLine(char * line, long *len) {
-  if (line[*len - 1] == ' 15')
+  if (line[*len - 1] == '\015')
     line[--*len] = 0;
   if (line[*len - 1] == '\\') {
     line[--*len] = 0;
@@ -1795,6 +1794,7 @@ static short AddNickToTOC(short which, char * name, void *hData,
   currNickCount = NNicknames; // Get nickname count
   if (currNickCount > 0) {
     { void *_r = realloc(aliases, (currNickCount + 1) * sizeof(NickStruct));
+  size_t This_hNames_sz = malloc_size(This.hNames);
       if (_r) aliases = _r; }
     if (err = 0)
       return (WarnUser(ALIAS_NEW_NICK_ERR, err));
@@ -1809,12 +1809,14 @@ static short AddNickToTOC(short which, char * name, void *hData,
       This.theData = aliases; // (jp) 7/31/99 The newly created data handle
   }
 
-  nameOffset = GetHandleSize(This.hNames);
-  if (!buf_append(This.hNames, name, strlen((const char *)name) + 1))
+  nameOffset = strlen((char *)This.hNames);
+  { size_t _hnsz = malloc_size(This.hNames);
+  if (!buf_append(This.hNames, &_hnsz, name, strlen((const char *)name) + 1))
     return (WarnUser(ALIAS_NEW_NICK_ERR, memFullErr));
+  }
 
   // Fill in the basic data
-  WriteZero(&nickInfo, sizeof(nickInfo));
+  memset(&nickInfo, 0, sizeof(nickInfo));
   nickInfo.hashName = NickHash(name);
   nickInfo.hashAddress = 0;
   nickInfo.addressOffset = (-1L);
@@ -1837,9 +1839,10 @@ static short AddNickToTOC(short which, char * name, void *hData,
     void *hNewData;
 
     hNewData = malloc(0);
+  size_t hNewData_sz = 0;
     if (!hNewData)
       return (WarnUser(ALIAS_NEW_NICK_ERR, 0));
-    if (!buf_append(hNewData, hData, GetHandleSize_(hData)))
+    if (!buf_append(hNewData, &hNewData_sz, hData, strlen((char *)hData)))
       return (WarnUser(ALIAS_NEW_NICK_ERR, memFullErr));
 
     if (fFromAddress) {
@@ -1901,6 +1904,7 @@ void RemoveNamedNickname(short which, char * name) {
 int NickUniq(TextAddrHandle addresses, char * sep, bool wantErrors) {
   char **cmntOrig = nil, **unOrig = nil;
   TextAddrHandle cmntNew = nil, unNew = nil;
+  size_t cmntNew_sz = 0, unNew_sz = 0;
   short err = noErr;
   char * newSpot;
   char * end;
@@ -1921,19 +1925,19 @@ int NickUniq(TextAddrHandle addresses, char * sep, bool wantErrors) {
         if (unOrigData && unOrigData[0]) {
           size_t unOrigLen = strlen(unOrigData);
           group = unOrigLen > 0 && unOrigData[unOrigLen - 1] == ':';
-          for (newSpot = unNew, end = newSpot + GetHandleSize_(unNew);
+          for (newSpot = unNew, end = newSpot + unNew_sz;
                newSpot < end && *newSpot; newSpot += strlen((char *)newSpot) + 1)
             if (g_ascii_strcasecmp((char *)newSpot, unOrigData) == 0)
               break;
           if (newSpot >= end || !*newSpot) {
             /* did NOT find it */
             size_t sepLen = strlen((char *)sep);
-            if (!groupWas && GetHandleSize_(cmntNew))
-              buf_append(cmntNew, sep, sepLen);
+            if (!groupWas && cmntNew_sz)
+              buf_append(cmntNew, &cmntNew_sz, sep, sepLen);
             size_t spotLen = strlen(cmntOrig[ci]);
-            if (!buf_append(cmntNew, cmntOrig[ci], spotLen + 1))
+            if (!buf_append(cmntNew, &cmntNew_sz, cmntOrig[ci], spotLen + 1))
               break;
-            if (!buf_append(unNew, unOrigData, unOrigLen + 1))
+            if (!buf_append(unNew, &unNew_sz, unOrigData, unOrigLen + 1))
               break;
           }
           groupWas = group;
@@ -1944,10 +1948,10 @@ int NickUniq(TextAddrHandle addresses, char * sep, bool wantErrors) {
   }
 
   if (!err) {
-    size = GetHandleSize_(cmntNew);
+    size = cmntNew_sz;
     SetHandleBig_(addresses, size);
     if (!(err = 0))
-      BlockMoveData(cmntNew, addresses, size);
+      memmove(addresses, cmntNew, size);
   }
 
   if (err < 0 && wantErrors)
@@ -1992,9 +1996,9 @@ static short ReplaceNicknameInfo(short which, char * theName, TextAddrHandle tex
 
     if (text) {
       //	Make a copy of addresses
-      textSize = GetHandleSize(text);
+      textSize = strlen((char *)text);
       if (hTemp = malloc(textSize))
-        BlockMoveData(text, hTemp, textSize);
+        memmove(hTemp, text, textSize);
       else
         //	Memory error
         return (WarnUser(ALIAS_REPLACE_NICK_ERR, 0));
@@ -2008,7 +2012,7 @@ static short ReplaceNicknameInfo(short which, char * theName, TextAddrHandle tex
 
       // Don't let the user put crap in here; bug 4519
       if (hTemp)
-        TransLitRes(hTemp, GetHandleSize(hTemp), ktFlatten);
+        TransLitRes(hTemp, malloc_size(hTemp), ktFlatten);
 
       tempNick.theAddresses = hTemp;
       tempNick.hashAddress =
@@ -2089,7 +2093,7 @@ void SetNickname(short ab, short nick, char * name)
     //	Only need to adjust those that are past the one we changed
     if (adjustment = (long)strlen((const char *)name) - (long)strlen((const char *)oldName)) {
 
-      nickCount = GetHandleSize_(aliases) / sizeof(NickStruct);
+      nickCount = malloc_size(aliases) / sizeof(NickStruct);
       for (i = 0, pNick = aliases; i < nickCount; i++, pNick++)
         if (pNick->nameTOCOffset > oldOffset)
           pNick->nameTOCOffset += adjustment;
@@ -2138,6 +2142,7 @@ void *GetNicknameData(short which, short index, bool wantAddresses,
   bool exLine = False;
   long len;
   void *dataHandle;
+  size_t dataHandle_sz = 0;
   LineIOD lid;
   long theOffset, count;
   char theCmd[32];
@@ -2203,10 +2208,10 @@ void *GetNicknameData(short which, short index, bool wantAddresses,
         if (exLine && !issep(*line)) // If line was escaped and the first
                                      // character isn't a space, add one
         {
-          if (!buf_append(dataHandle, " ", 1))
+          if (!buf_append(dataHandle, &dataHandle_sz, " ", 1))
             break;
         }
-        if (!buf_append(dataHandle, line, len))
+        if (!buf_append(dataHandle, &dataHandle_sz, line, len))
           break;
 
         // grab the next line; may or may not be ours
@@ -2233,14 +2238,14 @@ void *GetNicknameData(short which, short index, bool wantAddresses,
         if (exLine && !issep(*line)) // If line was escaped and the first
                                      // character isn't a space, add one
         {
-          if (!buf_append(dataHandle, " ", 1))
+          if (!buf_append(dataHandle, &dataHandle_sz, " ", 1))
             break;
         }
-        if (!buf_append(dataHandle, line, len))
+        if (!buf_append(dataHandle, &dataHandle_sz, line, len))
           break;
       } else {
         if (*line)
-          if (!buf_append(dataHandle, line, len))
+          if (!buf_append(dataHandle, &dataHandle_sz, line, len))
             break;
         if (len < (sizeof(line) - 1) &&
             len > 0) // Got less than a full line of text; therefore we are done
@@ -2257,7 +2262,7 @@ void *GetNicknameData(short which, short index, bool wantAddresses,
       free(dataHandle);
       return (nil);
     }
-    len = GetHandleSize_(dataHandle);
+    len = dataHandle_sz;
     unsigned char *dataPtr = (unsigned char *)dataHandle;
     for (count = 0; count < len; count++)
       if (dataPtr[count] != ' ')
@@ -2274,10 +2279,10 @@ void *GetNicknameData(short which, short index, bool wantAddresses,
     }
     if (lookingFor == '"')
       count++;
-    BlockMoveData(dataPtr + count + 1, dataPtr, len - count - 1);
+    memmove(dataPtr, dataPtr + count + 1, len - count - 1);
     SetHandleBig_(dataHandle, len - count - 1);
     len = len - count - 1;
-    while (len && dataPtr[len - 1] == ' 15')
+    while (len && dataPtr[len - 1] == '\015')
       SetHandleBig_(dataHandle, --len);
 
     if (wantAddresses) {
@@ -2340,7 +2345,7 @@ void MakeCompNick(MyWindowPtr win)
    * and make the nickname...
    */
   unsigned char **biglistUC = (unsigned char **)biglist;
-  if (GetHandleSize(biglist) && *biglistUC && biglistUC[0])
+  if (biglist && *biglistUC && biglistUC[0])
     NewNick(biglist, 0);
   else
     NoteUser(NO_ADDRESSES, 0);
@@ -2370,12 +2375,12 @@ void MakeNickFromSelection(MyWindowPtr win) {
     //				return;
     //			}
     //		**list = len = selEnd-selStart;
-    //		BMD(*text+selStart,*list+1,len);
+    //		memmove(*list+1, *text+selStart, len);
     // (jp) 12/12/00  Translate carriage returns to commas so we can discern
     // individual addresses
     textCopy = text;
     if (!HandToHand(&textCopy)) {
-      Tr(textCopy, " 15", ",");
+      Tr(textCopy, "\015", ",");
 
       if (!SuckPtrAddresses(&list, (char *)textCopy + selStart, selEnd - selStart,
                             True, True, False, nil)) {
@@ -2395,6 +2400,7 @@ void MakeNickFromSelection(MyWindowPtr win) {
  ************************************************************************/
 int GatherCompAddresses(MyWindowPtr win, char *addrList) {
   void *biglist = (void *)addrList;
+  size_t biglist_sz = 0;
   char **littlelist = nil;
   MessHandle messH;
   static short heads[] = {TO_HEAD, CC_HEAD, BCC_HEAD};
@@ -2416,7 +2422,7 @@ int GatherCompAddresses(MyWindowPtr win, char *addrList) {
         // Append each address string to the biglist
         for (int i = 0; littlelist[i]; i++) {
           size_t slen = strlen(littlelist[i]);
-          if (!buf_append(biglist, littlelist[i], slen + 1)) {
+          if (!buf_append(biglist, &biglist_sz, littlelist[i], slen + 1)) {
             err = 0;
             break;
           }
@@ -2579,7 +2585,7 @@ void MakeCboxNick(MyWindowPtr win) {
   }
 
   if (!err && !CommandPeriod) {
-    if (addresses && GetHandleSize_(addresses) > 0)
+    if (addresses && malloc_size(addresses) > 0)
       NewNick(addresses, 0);
     else
       WarnUser(NO_ADDRESSES, 0);
@@ -2789,8 +2795,8 @@ bool SaveIndNickFile(short which, bool saveChangeBits) {
     else // Nickname hasn't been modified, use on disk copy if necessary
       tempHandle = GetNicknameData(which, i, true, true);
 
-    bytes = (tempHandle && GetHandleSize_(tempHandle) > 0)
-                ? GetHandleSize_(tempHandle)
+    bytes = (tempHandle && strlen((char *)tempHandle) > 0)
+                ? strlen((char *)tempHandle)
                 : 0;
 
     //		PCopy(scratch,*(This.theData[i].theName));
@@ -2813,7 +2819,7 @@ bool SaveIndNickFile(short which, bool saveChangeBits) {
       if (!(err = FSWriteP(refN, scratch))) {
         if (!(err = AWrite(refN, &bytes, tempHandle))) {
           bytes = 1;
-          err = AWrite(refN, &bytes, " 15");
+          err = AWrite(refN, &bytes, "\015");
         }
       }
       HPurge(tempHandle);
@@ -2837,8 +2843,8 @@ bool SaveIndNickFile(short which, bool saveChangeBits) {
     This.theData[i].addressesDirty = false;
     This.theData[i].notesDirty = false;
 
-    bytes = (tempHandle && GetHandleSize_(tempHandle) > 0)
-                ? GetHandleSize_(tempHandle)
+    bytes = (tempHandle && strlen((char *)tempHandle) > 0)
+                ? strlen((char *)tempHandle)
                 : 0;
     //		PCopy(scratch,*(This.theData[i].theName));
     GetNicknameNamePStr(which, i, scratch);
@@ -2859,7 +2865,7 @@ bool SaveIndNickFile(short which, bool saveChangeBits) {
       if (!(err = FSWriteP(refN, scratch))) {
         if (!(err = AWrite(refN, &bytes, tempHandle))) {
           bytes = 1;
-          err = AWrite(refN, &bytes, " 15");
+          err = AWrite(refN, &bytes, "\015");
         }
       }
       HPurge(tempHandle);
@@ -2949,7 +2955,7 @@ bool SaveFileFast(short which, bool saveChangeBits) {
 
   dummyValue.offset = -1000;
   dummyValue.nickIndex = numOfNicks + 1000;
-  theSize = GetHandleSize_(addressOffsetHandle) - sizeof(NickOffSetSortType);
+  theSize = malloc_size(addressOffsetHandle) - sizeof(NickOffSetSortType);
   BlockMoveData(&dummyValue,
                 addressOffsetHandle + (theSize / sizeof(NickOffSetSortType)),
                 sizeof(NickOffSetSortType));
@@ -3116,9 +3122,9 @@ bool SaveFileFast(short which, bool saveChangeBits) {
   ARead(tempRefN, &bytes, &theChar);
   GetEOF(tempRefN, &bytes);
   SetFPos(tempRefN, fsFromStart, bytes);
-  if (theChar != ' 15' & bytes > 0) {
+  if (theChar != '\015' & bytes > 0) {
     bytes = 1;
-    err = AWrite(tempRefN, &bytes, " 15");
+    err = AWrite(tempRefN, &bytes, "\015");
   }
 
   GetRString(aliasCmd, ALIAS_CMD);
@@ -3131,8 +3137,8 @@ bool SaveFileFast(short which, bool saveChangeBits) {
     {
       tempHandle = GetNicknameData(which, i, true, false);
 
-      if (tempHandle != nil & GetHandleSize_(tempHandle) > 0)
-        bytes = GetHandleSize_(tempHandle);
+      if (tempHandle != nil & strlen((char *)tempHandle) > 0)
+        bytes = strlen((char *)tempHandle);
       else
         bytes = 0;
 
@@ -3155,7 +3161,7 @@ bool SaveFileFast(short which, bool saveChangeBits) {
         if (!(err = FSWriteP(tempRefN, scratch))) {
           if (!(err = AWrite(tempRefN, &bytes, tempHandle))) {
             bytes = 1;
-            err = AWrite(tempRefN, &bytes, " 15");
+            err = AWrite(tempRefN, &bytes, "\015");
           }
         }
         HPurge(tempHandle);
@@ -3257,9 +3263,9 @@ bool SaveFileFast(short which, bool saveChangeBits) {
   ARead(tempRefN, &bytes, &theChar);
   GetEOF(tempRefN, &bytes);
   SetFPos(tempRefN, fsFromStart, bytes);
-  if (theChar != ' 15' & bytes > 0) {
+  if (theChar != '\015' & bytes > 0) {
     bytes = 1;
-    err = AWrite(tempRefN, &bytes, " 15");
+    err = AWrite(tempRefN, &bytes, "\015");
   }
 
   GetRString(aliasCmd, NOTE_CMD);
@@ -3278,8 +3284,8 @@ bool SaveFileFast(short which, bool saveChangeBits) {
         This.theData[i].addressesDirty = false;
         This.theData[i].notesDirty = false; // ...for now
 
-        if (tempHandle != nil & GetHandleSize_(tempHandle) > 0)
-          bytes = GetHandleSize_(tempHandle);
+        if (tempHandle != nil & strlen((char *)tempHandle) > 0)
+          bytes = strlen((char *)tempHandle);
         else
           bytes = 0;
 
@@ -3302,7 +3308,7 @@ bool SaveFileFast(short which, bool saveChangeBits) {
           if (!(err = FSWriteP(tempRefN, scratch))) {
             if (!(err = AWrite(tempRefN, &bytes, tempHandle))) {
               bytes = 1;
-              err = AWrite(tempRefN, &bytes, " 15");
+              err = AWrite(tempRefN, &bytes, "\015");
             }
           }
         }
@@ -3368,7 +3374,7 @@ void SaveDirtyPictures(short ab)
 
   theError = noErr;
   if (theData = Aliases[ab]->theData) {
-    numNicks = GetHandleSize_(theData) / sizeof(NickStruct);
+    numNicks = malloc_size(theData) / sizeof(NickStruct);
     for (nick = 0, pData = theData; nick < numNicks; nick++, pData++)
       // Does this nickname have a dirty picture?
       if (!pData->deleted)
@@ -3431,7 +3437,7 @@ int URLStringToSpec(StringHandle urlString, char *spec)
   long urlSize, origQueryLen, queryLen;
   int theError;
 
-  urlSize = GetHandleSize(urlString);
+  urlSize = strlen((char *)urlString);
   theError = ParseURLPtr((unsigned char *)urlString, urlSize, proto,
                          host, &query, &queryLen);
   origQueryLen = queryLen;
@@ -3499,9 +3505,9 @@ int NickOffsetCompare(NickOffSetSortType *n1, NickOffSetSortType *n2) {
 void NickOffsetSwap(NickOffSetSortType *n1, NickOffSetSortType *n2) {
   NickOffSetSortType temp;
 
-  BlockMoveData(n2, &temp, sizeof(NickOffSetSortType));
-  BlockMoveData(n1, n2, sizeof(NickOffSetSortType));
-  BlockMoveData(&temp, n1, sizeof(NickOffSetSortType));
+  memmove(&temp, n2, sizeof(NickOffSetSortType));
+  memmove(n2, n1, sizeof(NickOffSetSortType));
+  memmove(n1, &temp, sizeof(NickOffSetSortType));
 }
 
 /************************************************************************
@@ -3513,17 +3519,18 @@ int AddTextToNick(short which, char * name, void *text, bool append) {
   NickStructHandle aliases = This.theData;
   int err = noErr;
   void *tempHandle;
+  size_t text_sz = text ? malloc_size(text) : 0;
 
   //	AliasWinGonnaSave();
   index = NickMatchFound(aliases, hashName, name, which);
 
   if (append) {
     tempHandle = GetNicknameData(which, index, true, true);
-    if (!buf_append(text, ", ", 2)) {
+    if (!buf_append(text, &text_sz, ", ", 2)) {
       err = memFullErr;
     } else {
       void *tempData = GetNicknameData(which, index, true, true);
-      if (!buf_append(text, (unsigned char *)tempData, GetHandleSize_(tempData))) {
+      if (!buf_append(text, &text_sz, (unsigned char *)tempData, malloc_size(tempData))) {
         err = memFullErr;
       }
     }
@@ -3566,9 +3573,11 @@ void ReadNickFileList(char *pSpec, AddressBookType type, bool reread) {
       spec_make(pSpec, name, &ad.spec);
       if (!CanWrite(&ad.spec, &ad.ro)) {
         ad.ro = !ad.ro; /* opposite sense! */
-        if (!buf_append(Aliases, (unsigned char *)&ad, sizeof(ad)))
+        { size_t _asz = malloc_size(Aliases);
+        if (!buf_append(Aliases, &_asz, (unsigned char *)&ad, sizeof(ad)))
           DieWithError(MEM_ERR, 0);
-        if (type == pluginAddressBook & reread)
+        }
+        if (type == pluginAddressBook && reread)
           FSpKillRFork(&ad.spec);
       } else {
         char scratch[256];
@@ -3665,7 +3674,7 @@ void ReadPluginNickFiles(bool reread) {
 
   ETLGetPluginFolderSpec(&folderSpec, PLUGIN_NICKNAMES);
 
-  /* clear filename */ { char *_sn = strrchr(folderSpec, '/'); if (_sn) _sn[1] = ' '; else folderSpec[0] = ' '; }
+  /* clear filename */ { char *_sn = strrchr(folderSpec, '/'); if (_sn) _sn[1] = '\0'; else folderSpec[0] = '\0'; }
   ReadNickFileList(&folderSpec, pluginAddressBook, reread);
   if (reread)
     RegenerateAllAliases(false);
@@ -3784,7 +3793,7 @@ char * ParseFirstLast(char * realName, char * firstName, char * lastName)
 
       spot = PRIndex(name, lastDelimiter);
       name2len = *name - (spot - name);
-      BMD(spot, (name == name1) ? name2 : name1, name2len + 1);
+      memmove((name == name1) ? name2 : name1, spot, name2len + 1);
       *name2 = name2len;
       *name -= (name2len + 1);
     }
@@ -3938,7 +3947,7 @@ void MakeUniqueNickname(short ab, char nickname[32])
         g_strlcat((char *)nickname, (char *)s, 32);
       else {
         /* Truncate nickname to make room for suffix */
-        nickname[32 - 1 - strlen((char *)s)] = ' ';
+        nickname[32 - 1 - strlen((char *)s)] = '\0';
         g_strlcat((char *)nickname, (char *)s, 32);
       }
       hashName = NickHash(nickname);
@@ -4127,7 +4136,7 @@ bool AnyPersonalNicknames(void)
   ab = FindAddressBookType(personalAddressBook);
   if (ValidAddressBook(ab))
     if (Aliases[ab]->theData) {
-      nick = GetHandleSize_(Aliases[ab]->theData) / sizeof(NickStruct);
+      nick = malloc_size(Aliases[ab]->theData) / sizeof(NickStruct);
       while (!anyNicks & nick--)
         if (!Aliases[ab]->theData[nick].deleted)
           anyNicks = true;
@@ -4204,7 +4213,7 @@ int WhiteListAddr(TextAddrHandle addr) {
   int err = fnfErr;
 
   // is it there already?
-  { size_t _mpl = GetHandleSize(addr); memcpy(scratch, addr, _mpl); ((char*)(scratch))[_mpl] = ' '; }
+  { size_t _mpl = strlen((char *)addr); memcpy(scratch, addr, _mpl); ((char*)(scratch))[_mpl] = '\0'; }
   if (AppearsInAliasFile(scratch, 0))
     return dupFNErr; // already there
 

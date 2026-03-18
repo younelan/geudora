@@ -143,7 +143,7 @@ static FilterRecord *HandleToFilterArray(void *h) {
 }
 static int HandleToFilterCount(void *h) {
 	if (!h) return 0;
-	return (int)(GetHandleSize_((void *)h) / sizeof(FilterRecord));
+	return (int)(malloc_size(h) / sizeof(FilterRecord));
 }
 
 /* Safe string copy */
@@ -318,7 +318,7 @@ void FilterPostprocess(FilterKeywordEnum fType, FilterPBPtr fpb)
 	/* and sounds */
 	if (fpb->sounds)
 	{
-		n = HandleCount((void *)fpb->sounds);
+		n = (fpb->sounds ? malloc_size(fpb->sounds) / sizeof(*(fpb->sounds)) : 0);
 		while (n--)
 			PlaySoundId(fpb->sounds[n]);
 	}
@@ -1095,7 +1095,7 @@ static bool TermMatch(MTPtr mt, TOCType *tocH, short sumNum, FilterPBPtr fpb)
 			if (tocH->sums[sumNum].cache)
 			{
 				text = (char *)tocH->sums[sumNum].cache;
-				bodyOffset = GetHandleSize(tocH->sums[sumNum].cache);
+				bodyOffset = strlen((char *)tocH->sums[sumNum].cache);
 			}
 			else
 			{
@@ -1238,7 +1238,7 @@ static bool TermMatch(MTPtr mt, TOCType *tocH, short sumNum, FilterPBPtr fpb)
 		else
 		{
 			spot = text + bodyOffset + 1;
-			end = text + GetHandleSize(tocH->sums[sumNum].cache);
+			end = text + strlen((char *)tocH->sums[sumNum].cache);
 			match = TermPtrMatch(mt, spot, end);
 			switch (mt->verb)
 			{

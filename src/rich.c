@@ -85,10 +85,7 @@ enum { teFlushDefault = 0, teCenter = 1, teFlushRight = -1, teFlushLeft = -2 };
 #define OPT_JUST_EXCERPT (1<<21)
 #endif
 
-/* GetHandleSize without underscore — map to GetHandleSize_ */
-#ifndef GetHandleSize
-#define GetHandleSize(h) GetHandleSize_(h)
-#endif
+/* GetHandleSize REMOVED */
 
 /* IntlConverter — Mac text encoding converter. GTK is always UTF-8.
    Provide a minimal typedef and no-op stubs. */
@@ -720,12 +717,12 @@ int PeteRich(PETEHandle pte,long start,long stop,bool unwrap)
 	 * grab the text/enriched
 	 */
 	PETEGetRawText(PETE,pte,&text);
-	len = stop ? stop-start : GetHandleSize_(text)-start;
+	len = stop ? stop-start : strlen((char *)text)-start;
 	enriched = malloc(len);
 	if (!enriched) err = 0;
 	else
 	{
-		BMD(text+start,enriched,len);
+		memmove(enriched, text+start, len);
 		
 		/*
 		 * now remove the rich text from the edit record
@@ -767,7 +764,7 @@ int InsertRichLo(unsigned char * text,long textOffset,long textLen,long offset,b
 	
 	if (!text) return(noErr);
 	
-	if (textLen==-1) textLen = GetHandleSize(text);
+	if (textLen==-1) textLen = strlen((char *)text);
 	
 	if (textLen && text[textLen-1]=='\015') textLen--;	// trim one trailing newline
 	
@@ -1548,7 +1545,7 @@ int EnrichedToken(unsigned char * enriched,long maxLen,bool headers,short *cmdId
 {
 	unsigned char *start, *stop, *end;
 	char cmd[64];
-	long len = GetHandleSize(enriched);
+	long len = strlen((char *)enriched);
 	
 	if (maxLen<len) len = maxLen;
 	
@@ -1606,10 +1603,11 @@ void AddToStyle(EnrichedEnum cmd,bool neg,long offset,OffsetAndStyleHandle *styl
 {
 	OffsetAndStyle current;
 	short n;
+	size_t styles_sz = *styles ? malloc_size(*styles) : 0;
 	
 	if (!styles || !*styles) return;
 	
-	n = HandleCount(*styles);
+	n = (*styles ? (int)(malloc_size(*styles) / sizeof(**styles)) : 0);
 	
 	/*
 	 * fill in current style
@@ -1683,7 +1681,7 @@ void AddToStyle(EnrichedEnum cmd,bool neg,long offset,OffsetAndStyleHandle *styl
 	else
 	{
 		current.offset = offset;
-		void *newStyles = buf_append(*styles, &current, sizeof(current));
+		void *newStyles = buf_append(*styles, &styles_sz, &current, sizeof(current));
 		if (!newStyles)
 			free(*styles);
 		else
@@ -1696,7 +1694,7 @@ void AddToStyle(EnrichedEnum cmd,bool neg,long offset,OffsetAndStyleHandle *styl
  **********************************************************************/
 short IncrementTextSize(short size,short increment)
 {
-  short nSizes = HandleCount(StdSizes);
+  short nSizes = 10 /* StdSizes has 10 entries */;
   short sizeIndex = FindSizeInc(size);
 
 	sizeIndex += increment;
@@ -1710,7 +1708,7 @@ short IncrementTextSize(short size,short increment)
  **********************************************************************/
 short FindSizeInc(short size)
 {
-  short nSizes = HandleCount(StdSizes);
+  short nSizes = 10 /* StdSizes has 10 entries */;
 	short *std;
 	short sizeIndex;
 	short tempSize;

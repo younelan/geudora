@@ -830,7 +830,7 @@ bool SaveMess(MyWindowPtr win) {
               if (!(err = HTMLPreamble(&enriched, scratch, 0, true))) {
                 NumToString(SumOf(messH)->msgIdHash, scratch);
                 if (!(err = BuildHTML(&enriched, TheBody, nil,
-                                      GetHandleSize(text), hSpec.value,
+                                      strlen((char *)text), hSpec.value,
                                       nil, nil, 1, scratch, nil, nil)))
                   err = HTMLPostamble(&enriched, true);
               }
@@ -1310,7 +1310,7 @@ static short SaveAsToOpenFileLo(short refN, MessHandle messH) {
   }
 
   where = (unsigned char *)text;
-  bytes = GetHandleSize(text);
+  bytes = strlen((char *)text);
   if (exclHead) {
     where = (unsigned char *)text + hs.value;
     bytes = hs.stop - hs.value;
@@ -1733,7 +1733,7 @@ int ExportHTML(MessHandle messH) {
   cache = SumOf(messH)->cache;
   if (!cache) return -1;
 
-  grandLen = GetHandleSize(cache);
+  grandLen = strlen((char *)cache);
   char *data = (char *)cache;
   char *htmlStart = NULL, *htmlEnd = NULL;
   int inHTML = 0;

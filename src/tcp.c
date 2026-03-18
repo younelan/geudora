@@ -149,7 +149,7 @@ void NoteAddrGoodness(struct hostInfo *hip, uint32_t addr, short err) {
     if (count == 1)
       *hip->cname = 0;
   } else {
-    WriteZero(hip->addr, sizeof(uint32_t) * NUM_ALT_ADDRS);
+    memset(hip->addr, 0, sizeof(uint32_t) * NUM_ALT_ADDRS);
     hip->addr[0] = addr;
   }
 }

@@ -1241,7 +1241,7 @@ void ScoreOneMessage(TLMHandle tList, TOCType * tocH, short sumNum,
   void **text;
 
   ASSERT(tList != NULL);
-  ASSERT(HandleCount(tList) > 0);
+  ASSERT((tList ? malloc_size(tList) / sizeof(*(tList)) : 0) > 0);
 
   // don't score plugins if we've been asked not to
   if (!CanScoreToc(tocH))
@@ -1271,7 +1271,7 @@ void ScoreOneMessage(TLMHandle tList, TOCType * tocH, short sumNum,
 
     //	The headers are seperated from the body by a <CR><CR> sequence
     bodyOffset = BodyOffset(text); // first byte of the body
-    textSz = GetHandleSize(text);  // total size of the message
+    textSz = strlen((char *)text);  // total size of the message
     hdrSz = bodyOffset - envSz;    // bytes in the header
     if (bodyOffset == textSz) {
       //	couldn't find "\n\n" - empty message body?
@@ -1280,12 +1280,12 @@ void ScoreOneMessage(TLMHandle tList, TOCType * tocH, short sumNum,
       long bodySz = textSz - bodyOffset;
       ASSERT(bodySz > 0);
       body = NewHandleClear(bodySz + 1);
-      BlockMoveData(*text + bodyOffset, *body, bodySz);
+      memmove(*body, *text + bodyOffset, bodySz);
     }
 
     ASSERT(hdrSz > 0);
     headers = NewHandleClear(hdrSz + 1);
-    BlockMoveData(*text + envSz, *headers, hdrSz);
+    memmove(*headers, *text + envSz, hdrSz);
 
     //	For each translator in the list, score the message
     if (err == 0) {
@@ -1318,7 +1318,7 @@ void ScoreOneMessage(TLMHandle tList, TOCType * tocH, short sumNum,
       //	Need to fill in more of mimeInfo and messageInfo
       //	And the fromAddressStatus, too!
 
-      numPlugins = HandleCount(tList) - 1; // don't call the sentinel!
+      numPlugins = (tList ? malloc_size(tList) / sizeof(*(tList)) : 0) - 1; // don't call the sentinel!
       for (i = 0; i < numPlugins; ++i) {
         aModule = &tList[i];
         Zero(junkScore);
@@ -1625,7 +1625,7 @@ void JunkMoveIMAPMessages(TOCType * tocH, bool isJunk) {
       // move the messages if they're going anywhere.
       if (destTocH) {
         AccuTrim(&a);
-        void *uidsH = NULL;
+        GArray *uidsH = NULL;
         if (PtrToHand(a.data, &uidsH, a.offset) == noErr) {
           IMAPTransferMessages(realToc, destTocH, uidsH, false, false);
           free(uidsH);

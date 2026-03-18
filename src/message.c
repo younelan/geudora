@@ -810,7 +810,7 @@ int CacheMessage(TOCType * tocH, short sumNum) {
        * continues to work.
        */
       unsigned char *bufp = (unsigned char *)cache;
-      long hsz = GetHandleSize(cache);
+      long hsz = strlen((char *)cache);
       if (hsz <= 0) {
         free(cache);
         err = 0;
@@ -880,13 +880,13 @@ char *GetMessText(MessHandle messH) {
    */
   if (cache) {
     if (buf) {
-      size_t cacheSize = GetHandleSize(cache);
+      size_t cacheSize = strlen((char *)cache);
       if (cacheSize > bufSize) cacheSize = bufSize;
       memmove(buf, cache, cacheSize);
       bufSize = cacheSize;
     } else {
       /* use cache directly — take ownership */
-      bufSize = GetHandleSize(cache);
+      bufSize = strlen((char *)cache);
       buf = (char *)g_malloc(bufSize + 1);
       if (buf) memmove(buf, cache, bufSize);
       free(cache);
@@ -1366,7 +1366,7 @@ int MoveSelectedMessagesLo(TOCType * tocH, char * toSpec, bool copy,
   bool outWarning;
   long count;
   gint64 pTicks = g_get_monotonic_time();
-  void *uidsH = NULL;
+  GArray *uidsH = NULL;
   int err = noErr;
   TOCType * realTocH;
   short realSum;
@@ -1786,7 +1786,7 @@ long FindAnAttachment(void *text, long offset, char * spec, bool attach,
   bool result = false;
   unsigned char line[256];
 
-  end = (unsigned char *)text + GetHandleSize_(text);
+  end = (unsigned char *)text + strlen((char *)text);
   spot = (unsigned char *)text + offset;
   while (spot < end && *spot++ != '\015')
     ;
@@ -2147,9 +2147,9 @@ int RecordTransAttachments(const char *path) {
         return (0);
       messH->etlFiles = h;
     }
-    return (buf_append(messH->etlFiles, &tmpSpec, sizeof(tmpSpec)) != NULL)
-               ? 0
-               : -1;
+    { size_t _esz = malloc_size(messH->etlFiles);
+      return buf_append(messH->etlFiles, &_esz, &tmpSpec, sizeof(tmpSpec)) ? 0 : -1;
+    }
   }
   return noErr;
 }
@@ -2251,7 +2251,7 @@ void DoIterativeThingyLo(TOCType * tocH, int item, long modifiers,
 
 
   if (item == MESSAGE_DELETE_ITEM && tocH->imapTOC && !nuke) {
-    void *uids = NULL;
+    GArray *uids = NULL;
     long c = CountSelectedMessages(tocH);
     long sumNum;
 
@@ -2537,15 +2537,15 @@ short BoxNextSelected(TOCType * tocH, short afterNum) {
  **********************************************************************/
 int SaveTextAsMessage(void *preText, void *text, TOCType * tocH,
                         long *fromLen) {
-  long size = GetHandleSize(text);
+  long size = strlen((char *)text);
   int err;
 
   if (size && ((char *)text)[size - 1] != '\015') {
-    buf_append(text, "\015", 1);
+    { size_t _tsz = strlen((char *)text); text = buf_append(text, &_tsz, "\015", 1); }
     size++;
   }
   err = SavePtrAsMessage(preText ? preText : NULL,
-                         preText ? GetHandleSize(preText) : 0,
+                         preText ? strlen((char *)preText) : 0,
                          text, size, tocH, fromLen);
 
   return (err);
@@ -2721,7 +2721,7 @@ MyWindowPtr DoSalvageMessageLo(MyWindowPtr win, bool forXfer, bool forIMAP) {
     if (GetWindowKind(winWP) == COMP_WIN && origMessH->hTranslators) {
       /* Duplicate the translator handle */
       void *origH = (void *)origMessH->hTranslators;
-      long hSize = GetHandleSize(origH);
+      long hSize = strlen((char *)origH);
       void *dup = malloc(hSize);
       if (dup) memcpy(dup, origH, hSize);
       newMessH->hTranslators = (void *)dup;
@@ -2740,7 +2740,7 @@ MyWindowPtr DoSalvageMessageLo(MyWindowPtr win, bool forXfer, bool forIMAP) {
     PeteGetTextAndSelection(origMessH->bodyPTE, (void **)&text, NULL, NULL);
     if (text) {
         beginning = spot = (unsigned char *)(*(text));
-      total = size = GetHandleSize_(text);
+      total = size = strlen((char *)text);
       end = spot + size;
     } else {
       beginning = spot = end = NULL;
@@ -2850,9 +2850,9 @@ int UniqueHeader(MessHandle messH, short head, bool wantErrors) {
 
   if (CompHeadFind(messH, head, &hs) &&
       !CompHeadGetText(TheBody, &hs, (char **)&addresses)) {
-    oldSize = GetHandleSize_(addresses);
+    oldSize = malloc_size(addresses);
     err = NickUniq(addresses, ", ", wantErrors);
-    if (oldSize != GetHandleSize_(addresses))
+    if (oldSize != malloc_size(addresses))
       CompHeadSet(TheBody, &hs, (char *)addresses);
     free(addresses);
   }
@@ -3139,7 +3139,7 @@ void QuoteLines(GtkWidget *pte, long from, long to, short pfid, long *qEnd) {
   }
 
   PETEGetRawText(PETE, pte, &text);
-  this = GetHandleSize(text);
+  this = strlen((char *)text);
   to = MIN(to, this);
 
   for (this = to - 2; this >= from; this --)
@@ -3604,14 +3604,14 @@ int ReplyReferences(MessHandle origMessH, MessHandle newMessH) {
   /* Should probably strip anything that's not an MID (like phrases) */
   //	if (t1)
   //	{
-  //		SetHandleSize(t1,RemoveChar('\015',t1,GetHandleSize(t1)));
+  //		SetHandleSize(t1,RemoveChar('\015',t1,strlen((char *)t1)));
   //		;
   //	}
   if (t2) {
-    SetHandleSize((void **)&t2, RemoveChar('\015', t2, GetHandleSize(t2)));
+    SetHandleSize((void **)&t2, RemoveChar('\015', t2, strlen((char *)t2)));
   }
   if (t3) {
-    SetHandleSize((void **)&t3, RemoveChar('\015', t3, GetHandleSize(t3)));
+    SetHandleSize((void **)&t3, RemoveChar('\015', t3, strlen((char *)t3)));
   }
 
   /* If there's a message ID, add IRT header */
@@ -4633,7 +4633,7 @@ void SetHashLo(TOCType * tocH, short sumNum, unsigned long hash, bool soft) {
 void RehashLo(TOCType * tocH, short sumNum, unsigned char * text, bool soft) {
   unsigned char scratch[256];
   unsigned char * spot;
-  long size = GetHandleSize_(text);
+  long size = strlen((char *)text);
   unsigned long hash;
 
   spot = (unsigned char *)(*text);
@@ -4909,7 +4909,7 @@ void HTMLifyText(MyWindowPtr win, void *text) {
     spot = (char *)text;
     lastChar = 0;
     lastSpot = spot;
-    for (end = spot + GetHandleSize(text); spot < end; spot++) {
+    for (end = spot + strlen((char *)text); spot < end; spot++) {
       if (*spot == '\r') {
         AccuAddPtr(&a, lastSpot, spot - lastSpot);
         AccuAddChar(&a, '<'); //	Add <BR>
@@ -4942,7 +4942,7 @@ void HTMLifyText(MyWindowPtr win, void *text) {
 
     StackQueue(&pd, &stack);
     //	Remove related line
-    lineEnd2 = (char *)text + GetHandleSize_(text);
+    lineEnd2 = (char *)text + strlen((char *)text);
     for (lineEnd = (char *)text + offset; lineEnd < lineEnd2 && *lineEnd != '\015';
          lineEnd++)
       ;

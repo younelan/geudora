@@ -1318,7 +1318,7 @@ short SendTheQueue(TransStream stream, XferFlags flags) {
           /* fcc and filtering of outgoing messages should be done after all
            * messages sent in the main thread */
           if (!inThread) {
-            if (fccList && GetHandleSize_(fccList))
+            if (fccList && strlen((char *)fccList))
               DoFcc(tocH, sumNum, fccList);
             if (messH) {
               err = FilterMessage(flkOutgoing, tocH, sumNum);
@@ -1633,7 +1633,7 @@ void NotifyNewMailLo(short gotSome, bool noXfer, TOCType * tocH,
         // causes some window layering confusion in the Carbon version.
         // -jdboyd
         //
-        if (fpb.mailbox && (GetHandleSize((void *)fpb.mailbox) == 0))
+        if (fpb.mailbox && (malloc_size((void *)fpb.mailbox) == 0))
           free(fpb.mailbox);
 
         // Show NoNewMail if no mail arrived, and there's no other check
@@ -1886,7 +1886,7 @@ bool AddSigIntro(GtkWidget *pte, void **text) {
 
   long introLen = strlen((char *)sigIntro);
   if (text && *text) {
-    len = GetHandleSize((void *)text);
+    len = malloc_size(text);
     if (len > 0) {
       char *ptr = (char *)text;
       if (len < introLen || memcmp(ptr, sigIntro, introLen) != 0) {
@@ -1926,7 +1926,7 @@ bool RemoveSigIntro(GtkWidget *pte, void **text) {
 
   long introLen = strlen((char *)sigIntro);
   if (text && *text) {
-    len = GetHandleSize((void *)text);
+    len = malloc_size(text);
     if (len >= introLen) {
       char *ptr = (char *)text;
       if (memcmp(ptr, sigIntro, MIN(introLen, 4)) == 0) {
@@ -1942,7 +1942,7 @@ bool RemoveSigIntro(GtkWidget *pte, void **text) {
     void * h = NULL;
     PeteGetTextAndSelection(pte, &h, NULL, NULL);
     if (h) {
-      len = GetHandleSize(h);
+      len = strlen((char *)h);
       if (len >= *sigIntro) {
         char *ptr = (char *)h;
         if (memcmp(ptr, sigIntro + 1, MIN(*sigIntro, 4)) == 0) {

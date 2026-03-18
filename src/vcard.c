@@ -307,7 +307,7 @@ static int VCardAccuAddValue (AccuPtr a, void *value, bool quotedPrintable)
 			
 		offset	 = 0;
 		spot		 = LDRef (value);
-		end			 = spot + GetHandleSize (value);
+		end			 = spot + malloc_size(value);
 		
 		while (spot < end && !theError) {
 			if (isSEMI (*spot)) {
@@ -339,7 +339,7 @@ static int VCardAccuAddValueQuotedPrintable (AccuPtr a, void *value)
 	offset	 = 0;
 	count		 = 0;
 	spot		 = LDRef (value);
-	end			 = spot + GetHandleSize (value);
+	end			 = spot + malloc_size(value);
 	
 	while (spot < end && !theError) {
 		theError = VCardAccuMaybeQuotedPrintableSoftline (a, value, &offset, &count, 74);				// Room for "="
@@ -401,7 +401,7 @@ static bool VCardValueContainsCRLFs (void *value)
 	Size	length;
 	
 	if (value) {
-		length = GetHandleSize (value);
+		length = malloc_size(value);
 		for (spot = *value; spot < *value + length; spot++)
 			if (*spot == '\r' || *spot == '\n')
 				return (true);
@@ -703,7 +703,7 @@ static int VCardAccuAddNotes (AccuPtr a, void *notes)
 			theError = MemError ();
 		}
 		else
-			theError = buf_append(value, "\r\n", 2));
+			theError = buf_append(value, &value_sz, "\r\n", 2));
 		if (!theError)
 			theError = buf_concat(value, leftovers);
 	}
@@ -748,7 +748,7 @@ int ParseVCard (void *data, uLong *offset, XDashStringHandle xDashStrings, VCard
 
 	parser.data			 = data;
 	parser.spot			 = LDRef (data) + *offset;
-	parser.end			 = *data + GetHandleSize (data) - 1;
+	parser.end			 = *data + malloc_size(data) - 1;
 	parser.error		 = vcErrorNone;
 	parser.xdash		 = xDashStrings;
 	parser.itemProc	 = itemProc;
@@ -1767,7 +1767,7 @@ static int VCardParserWord (VCardParserPtr parserPtr, void *value)
 
 	// If the pointer moved, there is value to what we're doing
 	if (parserPtr->spot > oldSpot)
-		theError = buf_append(value, oldSpot, (long)) (parserPtr->spot - oldSpot));
+		theError = buf_append(value, &value_sz, oldSpot, (long)) (parserPtr->spot - oldSpot));
 	else
 		parserPtr->error = vcErrorExpectingValue;
 
@@ -1841,7 +1841,7 @@ static int VCardAppendKeywordToGroup (VCardItemPtr itemPtr, char keyword[256])
 	int	theError;
 	
 	theError = noErr;
-	if (GetHandleSize (itemPtr->group))
+	if (malloc_size(itemPtr->group))
 		theError = buf_append(itemPtr->group, ".", 1));
 	if (!theError)
 		theError = buf_append(itemPtr->group, keyword, strlen(keyword)));
@@ -1855,10 +1855,10 @@ static int VCardParserAppendPropertyValueString (VCardParserPtr parserPtr, VCard
 	int	theError;
 	
 	paramPtr->pValue = vcKeyString;
-	paramPtr->offset = GetHandleSize (strings);
+	paramPtr->offset = malloc_size(strings);
 	theError = VCardParserWord (parserPtr, strings);
 	if (!theError)
-		paramPtr->length = GetHandleSize (strings) - paramPtr->offset;
+		paramPtr->length = malloc_size(strings) - paramPtr->offset;
 	return (theError);
 }
 
@@ -1912,7 +1912,7 @@ static short FindXDashString (XDashStringHandle xdash, char * keyword)
 	index = 0;
 	if (xdash) {
 		spot	= LDRef (xdash);
-		end	= spot + GetHandleSize (xdash);
+		end	= spot + malloc_size(xdash);
 		while (spot < end && !found) {
 			if (StringSame (spot, keyword))
 				found = true;

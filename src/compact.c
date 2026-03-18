@@ -674,7 +674,7 @@ bool InTranslator(TransInfoHandle translators, long id)
 	if (!translators)
 		return false;
 
-	long size = GetHandleSize_((void *)translators);
+	long size = malloc_size(translators);
 	short count = size / sizeof(TransInfo);
 	for (short i = 0; i < count; i++) {
 		if (translators[i].id == id)
@@ -698,7 +698,7 @@ int AddMessTranslator(MessHandle messH, long which, void *properties)
 		return -1;
 
 	if (messH->hTranslators)
-		n = GetHandleSize_((void *)messH->hTranslators) / sizeof(TransInfo);
+		n = malloc_size(messH->hTranslators) / sizeof(TransInfo);
 	else
 		n = 0;
 
@@ -733,7 +733,7 @@ int RemoveMessTranslator(MessHandle messH, long which)
 	long id = ETLIconToID(which);
 
 	if (messH->hTranslators)
-		n = GetHandleSize_((void *)messH->hTranslators) / sizeof(TransInfo);
+		n = malloc_size(messH->hTranslators) / sizeof(TransInfo);
 	else
 		n = 0;
 
@@ -843,7 +843,7 @@ void ApplyStationeryLo(MyWindowPtr win, char *spec, bool dontCleanse, bool perso
 	if (!textH) return;
 
 	char *text = (char *)textH;
-	long textLen = InlineGetHandleSize(textH);
+	long textLen = strlen((char *)textH);
 	ApplyStationeryHandle(win, text, textLen, dontCleanse, personality, editStationery);
 
 	free(textH);
@@ -1153,7 +1153,7 @@ int NickExpandAndCacheHead(MessHandle messH, short head, bool cacheOnly)
 						g_strfreev(raw);
 						raw = NULL;
 						CommaList(expanded);
-						long len = GetHandleSize_(expanded);
+						long len = strlen((char *)expanded);
 						if (len > 0) {
 							/* Check if expansion caused any changes.
 							 * Don't replace text if no changes so selection doesn't change. */

@@ -946,7 +946,7 @@ short AbOpen(void)
 			Buffer = buffer;
 		else
 			return(WarnUser(BINHEX_MEM,err=0));
-	BSize = GetHandleSize_(Buffer);
+	BSize = malloc_size(Buffer);
 	if (State == AbResFork) {
 		refN = -1; // No resource fork
 		err = noErr;
@@ -1068,7 +1068,7 @@ UUHeader header;
 	AttMap localAM = *amp;
 	long dates[4];
 	
-	WriteZero(&header,sizeof(header));
+	memset(&header, 0, sizeof(header));
 	struct stat st_1065;
 	/* Build a temporary FSSpec from the POSIX path */
 	FSSpec localSpec;
@@ -1538,7 +1538,7 @@ bool ReallyIsText(char * spec)
 	
 	Snarf(spec,&taste,GetRLong(TEXT_QP_TASTE));
 	if (!taste) return(true);// cross your fingers...
-	if (!(size=GetHandleSize(taste))) return(true);
+	if (!(size=strlen((char *)taste))) return(true);
 	end = (char *)taste + size;
 	for (spot = (char *)taste; spot<end; spot++)
 		if (*spot<' ' && *spot!='\009' && *spot!='\015' && *spot!='\014') controls++;

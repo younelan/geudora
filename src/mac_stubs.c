@@ -37,9 +37,11 @@ void AuditPersRename(uint32_t oldId, uint32_t newHash) {
 void BeginPGP(void* pgpc) {
 }
 /* BoxCenterSelection — real implementation elsewhere */
-void *BoxCount = NULL; /* void ** void **/
+void *BoxCount = NULL;
+size_t BoxCountSize = 0;
 /* BoxFOpen — real implementation in mailbox.c */
 struct BoxMapStruct *BoxMap = NULL;
+size_t BoxMapSize = 0;
 void BoxPreviewProfile() {}
 /* BoxSelectAfter — real implementation elsewhere */
 /* BoxSetSummarySelected — real implementation elsewhere */

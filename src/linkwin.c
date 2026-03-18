@@ -1182,7 +1182,7 @@ static long ViewListCallBack(ViewListPtr pView, VLCallbackMessage message,
     hUrl = GetLinkURL(pSendData->info);
     err = 0; /* SetDragItemFlavorData(pSendData->drag, pSendData->itemRef,
                                 pSendData->flavor, *hUrl,
-                                InlineGetHandleSize((void *)hUrl), 0L); */
+                                malloc_size(hUrl), 0L); */
     break;
   }
   return err;

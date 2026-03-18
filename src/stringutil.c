@@ -744,7 +744,7 @@ char * PXWCat(char * string, short num) {
  * Tr - translate text in a handle
  ************************************************************************/
 bool Tr(void *text, char *fromS, char *toS) {
-  long len = GetHandleSize(text);
+  long len = strlen((char *)text);
   return TrLo((char *)text, len, fromS, toS);
 }
 

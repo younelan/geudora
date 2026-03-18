@@ -2622,13 +2622,14 @@ BoundaryType ReadSingle(TransStream stream,short refN,MIMESHandle mimeSList,char
  ************************************************************************/
 void GenMIMEMap(MIMEMapHandle *mmhp, OSType resType)
 {
+	size_t mmhp_sz = 0;
 	(void)resType; /* GTK port: type not used; all maps in one JSON file */
 
 	if (!*mmhp)
 	{
 		if (*mmhp) {free(*mmhp);}
-		*mmhp = malloc(0);
-		if (*mmhp==NULL) return;
+		*mmhp = NULL;
+		mmhp_sz = 0;
 
 		/* Load from GResource JSON */
 		GBytes *bytes = resource_manager_lookup_data("/org/eudora/resources/mime_maps.json");
@@ -2652,7 +2653,7 @@ void GenMIMEMap(MIMEMapHandle *mmhp, OSType resType)
 				g_strlcpy(mm.subtype, s, sizeof(mm.subtype));
 				g_strlcpy(mm.suffix, sfx, sizeof(mm.suffix));
 				mm.flags = (unsigned long)json_object_get_int_member_with_default(obj, "flags", 0);
-				buf_append(*mmhp, &mm, sizeof(mm));
+				buf_append(*mmhp, &mmhp_sz, &mm, sizeof(mm));
 			}
 		} else {
 			if (err) g_clear_error(&err);
@@ -2709,7 +2710,7 @@ bool FindMIMEMapPtr(char * type, char * subType,char * name,MIMEMapPtr mmp)
 		/*
 		 * where does the array end?
 		 */
-		end = MMIn+HandleCount(MMIn);
+		end = MMIn+(MMIn ? malloc_size(MMIn) / sizeof(*(MMIn)) : 0);
 
 		/*
 		 * fetch the suffix, if any
@@ -3251,7 +3252,7 @@ int RecordTL(char * spec,void **tl)
 	int err=noErr;
 	short i;
 
-	for(i = HandleCount(tlh);i--;)
+	for(i = (tlh ? malloc_size(tlh) / sizeof(*(tlh)) : 0);i--;)
 		if (tlh[i].result==EMSR_NOT_NOW || tlh[i].result==EMSR_NOW) break;
 	
 	if (i<0) return fnfErr;
@@ -3304,7 +3305,7 @@ void FigureMIMEFromApple(OSType creator, OSType type,char * name,char * mimeType
 		/*
 		 * where does the array end?
 		 */
-		end = MMOut+HandleCount(MMOut);
+		end = MMOut+(MMOut ? malloc_size(MMOut) / sizeof(*(MMOut)) : 0);
 
 		/*
 		 * search for a match

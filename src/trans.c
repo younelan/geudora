@@ -127,7 +127,8 @@ int AddTLMIME(emsMIMEHandle tlMIME, short what, char * name, char * value)
 				{
 					if (value && valueLen > 0)
 					{
-						buf_append((void *)scan->value, value, (long)valueLen);
+						size_t _vsz = malloc_size(scan->value);
+						buf_append((void *)scan->value, &_vsz, value, (long)valueLen);
 						/* MemError removed */
 					}
 					return(noErr);
@@ -142,7 +143,7 @@ int AddTLMIME(emsMIMEHandle tlMIME, short what, char * name, char * value)
 				spec_set_name(h3, (const char *)name);
 				if (h2 && valueLen > 0)
 				{
-					BMD(value, h2, valueLen);
+					memmove(h2, value, valueLen);
 					h3->value = h2;
 				}
 				if (what==TLMIME_PARAM)
@@ -212,7 +213,7 @@ int FlattenTLMIME(emsMIMEHandle tlMIME, FlatTLMIMEHandle *flat)
 					if (!(err=AccuAddPtr(&a, &nameLen, 1)))
 					if (!(err=AccuAddPtr(&a, localParam.name, nameLen)))
 					{
-						len = (short)GetHandleSize((void *)p->value);
+						len = (short)malloc_size(p->value);
 						if (!(err=AccuAddPtr(&a, (void*)&len, 2)))
 							err = AccuAddHandle(&a, (unsigned char *)p->value);
 					}
@@ -245,7 +246,7 @@ int UnflattenTLMIME(FlatTLMIMEHandle flat, emsMIMEHandle *tlMIME)
 
 	if ((err = NewTLMIME(tlMIME))) return(err);
 
-	len = GetHandleSize((void *)flat);
+	len = malloc_size(flat);
 
 	/* type */
 	if (!err && offset<len)
@@ -311,7 +312,7 @@ int UnflattenTLMIME(FlatTLMIMEHandle flat, emsMIMEHandle *tlMIME)
 int ETLBuildAddrList(void **textIn, void **moreHeaders, HeaderDHandle hdh,
                      emsHeaderDataP addrList, short context)
 {
-	WriteZero(addrList, sizeof(emsHeaderData));
+	memset(addrList, 0, sizeof(emsHeaderData));
 	addrList->size = sizeof(emsHeaderData);
 	return(noErr);
 }

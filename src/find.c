@@ -1092,7 +1092,7 @@ static void ReportFindFailure(void)
     if (!FG)
         return;
 
-    /* Original: if PrefIsSet(PREF_NO_NOT_FOUND_ALERT) SysBeep(1);
+    /* Original: if PrefIsSet(PREF_NO_NOT_FOUND_ALERT) gdk_display_beep(gdk_display_get_default());
        else AlertStr(NOT_FOUND_ALRT, Note, what); */
     if (PrefIsSet(PREF_NO_NOT_FOUND_ALERT)) {
         gdk_display_beep(gdk_display_get_default());

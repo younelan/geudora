@@ -583,7 +583,7 @@ Char822Enum LexFill(TransStream stream, L822SPtr l822p, AccuPtr rawBytes) {
     *readHere = '\015';   /* back out of current token. */
     size = 0;             /* ignore anything we might have gotten */
   } else if (IsFromLine(readHere)) {
-    BMD(readHere, readHere + 1, ++size);
+    memmove(readHere + 1, readHere, ++size);
     *readHere = '>'; /* escape envelope */
   }
 #ifdef BITNET_MATTERS_ANYMORE
@@ -692,7 +692,7 @@ bool Fix1342(unsigned char *chars, long *len) {
         Translate1342(text, charset, encoding)) {
       long textLen = strlen((const char *)text);
       /* move new chars into place */
-      BMD(text, equal, textLen);
+      memmove(equal, text, textLen);
       /* check for stuff we should or should not remove */
       { /* if the next thing is an encoded word, toast intervening */
         for (nextEqual = lastEqual + 1; nextEqual < end; nextEqual++)
@@ -703,7 +703,7 @@ bool Fix1342(unsigned char *chars, long *len) {
             break;
       }
       /* move chars from after encoded text to after decoded text */
-      BMD(lastEqual + 1, equal + textLen, end - lastEqual - 1);
+      memmove(equal + textLen, lastEqual + 1, end - lastEqual - 1);
       /* adjust end to account for deleted chars */
       end -= lastEqual - equal + 1 - textLen;
       *len = end - chars;

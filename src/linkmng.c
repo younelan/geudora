@@ -167,6 +167,7 @@ typedef struct LHPIconCacheStruct {
 
 // Global list of all known history files
 HistoryDHandle gHistories = NULL;
+size_t gHistories_sz = 0;
 
 /* Global list of loaded preview icons */
 LHPIconCacheHandle gPreviewIcons = NULL;
@@ -196,7 +197,7 @@ LinkTypeEnum gLabelTheseLinks[] = {ltAd, ltHttp, ltFtp, ltMail,
 #define DEFAULT_LINK_TYPE_ICON HTTP_LINK_TYPE_ICON
 #define This gHistories[which]
 #define NHistoryFiles                                                          \
-  (gHistories ? GetHandleSize_(gHistories) / sizeof(HistoryDesc) : 0)
+  (gHistories ? gHistories_sz / sizeof(HistoryDesc) : 0)
 
 //
 // Link management prototypes
@@ -278,6 +279,7 @@ int AddURLToHistory(short which, char * url, char * name, int urlOpenErr) {
   char proto[256], host[256], query[256];
   long hashName;
   void *hUrl = nil;
+  size_t hUrl_sz = 0;
   URLNameStr urlName;
   LinkLabelEnum linkLabel = llNone;
   LinkTypeEnum linkType;
@@ -334,10 +336,8 @@ int AddURLToHistory(short which, char * url, char * name, int urlOpenErr) {
     }
 
     // Turn the url into a handle
-    hUrl = malloc(0);
-    if (!hUrl)
-      return (WarnUser(LINK_HISTORY_NEW_HISTORY_ERR, 0));
-    err = (buf_append(hUrl, url + 1, url[0]) == NULL) ? -1 : 0;
+    hUrl = NULL; hUrl_sz = 0;
+    err = (buf_append(hUrl, &hUrl_sz, url + 1, url[0]) == NULL) ? -1 : 0;
     if (err)
       return (WarnUser(LINK_HISTORY_NEW_HISTORY_ERR, err));
 
@@ -384,7 +384,7 @@ void MakeLinkName(char host[256], char query[256], URLNameStr urlName) {
   short linkNameLength = sizeof(URLNameStr);
 
   // initialize the name
-  WriteZero(urlName, linkNameLength);
+  memset(urlName, 0, linkNameLength);
 
   // start with the host name
   g_strlcpy((char *)urlName, (char *)host, sizeof(URLNameStr));
@@ -569,7 +569,7 @@ int GenHistoriesList(void) {
    * string-based char */
   GetRString(name, LINK_HISTORY_FILE);
   strncpy(spec_name(ad.spec), (char *)name, sizeof(spec_name(ad.spec)) - 1);
-  if (buf_append(gHistories, &ad, sizeof(ad)) == NULL)
+  if (buf_append(gHistories, &gHistories_sz, &ad, sizeof(ad)) == NULL)
     DieWithError(MEM_ERR, 0);
   RegenerateLinkHistory(MAIN_HISTORY_FILE, true);
 
@@ -662,7 +662,7 @@ int AddHistoryToTOC(short which, char * name, long hashName,
   //
 
   // Fill in the basic data
-  WriteZero(&histInfo, sizeof(histInfo));
+  memset(&histInfo, 0, sizeof(histInfo));
   histInfo.version = LINK_HISTORY_VERSION;
   histInfo.hashName = hashName;
   g_strlcpy((char *)histInfo.name, (char *)name, sizeof(histInfo.name));
@@ -782,7 +782,7 @@ int SaveIndHistoryFile(short which) {
 
     gHistories[which].theData[i].dirty = false;
 
-    bytes = tempHandle ? GetHandleSize_(tempHandle) : 0;
+    bytes = tempHandle ? strlen((char *)tempHandle) : 0;
 
     if (bytes > 0 && !gHistories[which].theData[i].deleted) {
       GetFPos(refN, &offset);
@@ -903,6 +903,7 @@ void *GetHistoryData(short which, short index, bool readFromDisk) {
   bool exLine = False;
   long len;
   void *dataHandle;
+  size_t dataHandle_sz = 0;
   LineIOD lid;
   long theOffset;
   char theCmd[32];
@@ -957,13 +958,13 @@ void *GetHistoryData(short which, short index, bool readFromDisk) {
         if (exLine && !issep(*line)) // If line was escaped and the first
                                      // character isn't a space, add one
         {
-          if (buf_append(dataHandle, " ", 1) == NULL) {
+          if (buf_append(dataHandle, &dataHandle_sz, " ", 1) == NULL) {
             err = -1;
             break;
           }
         }
         err = 0;
-        if (buf_append(dataHandle, line, len) == NULL) {
+        if (buf_append(dataHandle, &dataHandle_sz, line, len) == NULL) {
           err = -1;
           break;
         }
@@ -1027,7 +1028,7 @@ int ReadHistTOC(short which) {
           gHistories[which].theData = theToc;
 
           // iterate through the toc and reset garbage fields
-          count = GetHandleSize_(theToc) / sizeof(HistoryStruct);
+          count = malloc_size(theToc) / sizeof(HistoryStruct);
           for (i = 0; i < count; i++)
             theToc[i].hUrl = nil;
         } else {
@@ -1068,7 +1069,7 @@ bool CorrectVersion(HistoryStructHandle theToc) {
   bool result = false;
 
   if (theToc) {
-    if (GetHandleSize(theToc) > 0) {
+    if (malloc_size(theToc) > 0) {
       if (theToc->version == LINK_HISTORY_VERSION)
         result = true;
     }
@@ -1083,9 +1084,10 @@ bool CorrectVersion(HistoryStructHandle theToc) {
 long HistMatchFound(long hashName, void *theUrl, short which) {
   long i;
   void *hUrl = nil;
+  size_t hUrl_sz = 0;
   URLNameStr tempStr, tempName;
   HistoryStructHandle theHistories = gHistories[which].theData;
-  long stop = (GetHandleSize_(theHistories) / sizeof(HistoryStruct));
+  long stop = (malloc_size(theHistories) / sizeof(HistoryStruct));
   Boolean needStringMatch = false;
   long matched = -1;
   HistoryStruct *theStruct, *endStruct;
@@ -1194,7 +1196,7 @@ int CompactHistTOC(short which) {
 short HistoryCount(short which) {
   if (gHistories[which].theData)
     return (
-        (GetHandleSize_(gHistories[which].theData) / sizeof(HistoryStruct)));
+        (malloc_size(gHistories[which].theData) / sizeof(HistoryStruct)));
   else
     return (0);
 }
@@ -1213,7 +1215,7 @@ void AddAllHistoryItems(ViewListPtr pView, bool needsSort,
   // get a sorted list of all history entries to add
   err = BuildListOfHistoriesForWindow(&histories, needsSort, sortType);
   if ((err == noErr) && histories) {
-    count = GetHandleSize(histories) / sizeof(ShortHistoryStruct);
+    count = malloc_size(histories) / sizeof(ShortHistoryStruct);
     for (i = 0; i < count; i++) {
       cur = reverseSort ? (count - 1 - i) : i;
 
@@ -1455,7 +1457,7 @@ int OpenHistoryEntry(VLNodeInfo *info) {
   else
     hUrl = GetHistoryData(which, index, true);
 
-  if (hUrl && (len = GetHandleSize(hUrl))) {
+  if (hUrl && (len = strlen((char *)hUrl))) {
     char *url = hUrl;
 
     // parse and open this URL
@@ -1615,7 +1617,7 @@ void SortShortHistoryHandle(ShortHistoryStructHandle toSort, int (*compare)()) {
   short count = 0;
 
   if (compare) {
-    count = GetHandleSize(toSort) / sizeof(ShortHistoryStruct);
+    count = malloc_size(toSort) / sizeof(ShortHistoryStruct);
     /* GTK port: QuickSort is Mac-specific; use stdlib qsort */
     qsort(toSort, count, sizeof(ShortHistoryStruct),
           (int (*)(const void *, const void *))compare);
@@ -1832,6 +1834,7 @@ int AddAdToLinkHistory(AdId adId, char *pUrl, char adTitle[256],
   int labelableErrors[] = {0};
   long hashName;
   void *hUrl = NULL;
+  size_t hUrl_sz = 0;
   URLNameStr urlName;
   bool needSave = false;
 
@@ -1862,10 +1865,8 @@ int AddAdToLinkHistory(AdId adId, char *pUrl, char adTitle[256],
       hashName = NickHashString(pUrl);
 
       // Turn the url into a handle we can keep around ...
-      hUrl = malloc(0);
-      if (!hUrl)
-        return (WarnUser(LINK_HISTORY_NEW_HISTORY_ERR, 0));
-      if (buf_append(hUrl, pUrl + 1, pUrl[0]) == NULL)
+      hUrl = NULL; hUrl_sz = 0;
+      if (buf_append(hUrl, &hUrl_sz, pUrl + 1, pUrl[0]) == NULL)
         return (WarnUser(LINK_HISTORY_NEW_HISTORY_ERR, -1));
 
       // Make sure the history files are around somewhere
