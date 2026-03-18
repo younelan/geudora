@@ -745,7 +745,7 @@ int EnsureMID(TOCType * tocH, short sumNum) {
  **********************************************************************/
 int EnsureFromHash(TOCType * tocH, short sumNum) {
   int err = 0;
-  unsigned char scratch[256], shortAddr[256];
+  char scratch[256], shortAddr[256];
   unsigned long addrHash;
 
   if (tocH->sums[sumNum].fromHash == kNeverHashed) {
@@ -1031,7 +1031,7 @@ int MoveMessageLo(TOCType * tocH, int sumNum, char * toSpec, bool copy,
         LOG_MOVE, NULL, "%s \"%s,%s\"  \"%s\"->\"%s\"\r",
         copy ? "Copy" : "Transfer", tocH->sums[sumNum].from,
         tocH->sums[sumNum].subj,
-        GetMailboxName(tocH, sumNum, name), spec_name(toSpec));
+        GetMailboxName(tocH, sumNum, name), path_basename(toSpec));
 
 
   if ((toTocH = TOCBySpec(toSpec)) == NULL)
@@ -1077,7 +1077,7 @@ int MoveMessageLo(TOCType * tocH, int sumNum, char * toSpec, bool copy,
       ComposeLogS(
           LOG_PLUG, NULL,
           "A plugin has deleted an IMAP message: '%s' in '%s'",
-          tocH->sums[sumNum].subj, spec_name(tocH->mailbox.spec));
+          tocH->sums[sumNum].subj, path_basename(tocH->mailbox.spec));
       return (0);
     } else if (!downloaded)
       return (1);
@@ -1151,7 +1151,7 @@ int AppendMessage(TOCType * fromTocH, int fromN, TOCType ** toTocHP, bool copy,
   MessHandle fromMH;
   long newBodyOffset, newLength;
   mesgErrorHandle mesgErrH;
-  FSSpec toSpec;
+  char toSpec[PATH_MAX];
   /*
    * if it's an outgoing message, save it first
    */
@@ -1192,9 +1192,9 @@ int AppendMessage(TOCType * fromTocH, int fromN, TOCType ** toTocHP, bool copy,
    * Are there too many messages in the destination?
    */
   if (toTocH->count >= MAX_MESSAGES_PER_MAILBOX) {
-    unsigned char s[256];
+    char s[256];
     ComposeStdAlert(Stop, TOO_MANY_MESSAGES,
-                    strcpy((char *)s, spec_name(toTocH->mailbox.spec)));
+                    strcpy((char *)s, path_basename(toTocH->mailbox.spec)));
     return MessErr = 1;
   }
 
@@ -1234,7 +1234,7 @@ int AppendMessage(TOCType * fromTocH, int fromN, TOCType ** toTocHP, bool copy,
           CopyFBytes(fromTocH->refN, fromTocH->sums[fromN].offset,
                      fromTocH->sums[fromN].length, toTocH->refN, eof);
     if (MessErr) {
-      FileSystemError(COPY_FAILED, spec_name(toSpec), MessErr);
+      FileSystemError(COPY_FAILED, path_basename(toSpec), MessErr);
       return (MessErr);
     }
     (void)ftruncate(toTocH->refN, eof + fromTocH->sums[fromN].length);
@@ -1358,7 +1358,7 @@ int MoveSelectedMessagesLo(TOCType * tocH, char * toSpec, bool copy,
   unsigned char trashName[32];
   short oldCount;
     bool toTrash =
-      IsRoot(toSpec) && StringSame(spec_name(toSpec), GetRString(trashName, TRASH));
+      IsRoot(toSpec) && StringSame(path_basename(toSpec), GetRString(trashName, TRASH));
   long needRoom = 0;
   bool outWarning;
   long count;
@@ -1542,7 +1542,7 @@ int MoveSelectedMessagesLo(TOCType * tocH, char * toSpec, bool copy,
                     "%s \"%s,%s\"  \"%s\"->\"%s\"\r",
                     copy ? "Copy" : "Transfer", realTocH->sums[realSum].from,
                     realTocH->sums[realSum].subj,
-                    GetMailboxName(realTocH, realSum, name), spec_name(toSpec));
+                    GetMailboxName(realTocH, realSum, name), path_basename(toSpec));
 
       if (oldCount != tocH->count) {
         lastSelected = sumNum;
@@ -1879,14 +1879,14 @@ void DeleteMessage(TOCType * tocH, int sumNum, bool nuke) {
 void DeleteMessageLo(TOCType * tocH, int sumNum, bool nuke) {
   MessHandle messH = (MessHandle)tocH->sums[sumNum].messH;
   // bool dirt = 0; // Unused variable removed
-  FSSpec trashSpec;
+  char trashSpec[PATH_MAX];
   int oldN = tocH->count;
   bool wipe = PrefIsSet(PREF_WIPE) && (tocH->sums[sumNum].opts && OPT_WIPE);
 
   if (tocH->which != TRASH && !wipe && !nuke) {
-    g_strlcpy(trashSpec, MailRoot.path, sizeof(trashSpec));
-    GetRString(spec_name(trashSpec), TRASH);
-    MoveMessageLo(tocH, sumNum, &trashSpec, false, false, true);
+    { char trashName[64]; GetRString(trashName, TRASH);
+      snprintf(trashSpec, sizeof(trashSpec), "%s/%s", MailRoot.path, trashName); }
+    MoveMessageLo(tocH, sumNum, trashSpec, false, false, true);
   } else {
     if (wipe)
       WipeMessage(tocH, sumNum);
@@ -2120,19 +2120,11 @@ void Fix1MessServerArea(MyWindowPtr win) {
 int RecordTransAttachments(const char *path) {
   GtkWidget * InsertWinWP = GetMyWindowWindowPtr(InsertWin);
   MessHandle messH;
-  FSSpecHandle h;
-  FSSpec tmpSpec = {0};
+  char *h;
+  char tmpSpec[PATH_MAX] = {0};
 
-  /* Build a temporary FSSpec from the path for buf_append storage */
   if (path) {
-    strncpy(tmpSpec, path, sizeof(tmpSpec) - 1);
-    {
-      char pathCopy[1024];
-      strncpy(pathCopy, path, sizeof(pathCopy) - 1);
-      pathCopy[sizeof(pathCopy) - 1] = '\0';
-      const char *base = basename(pathCopy);
-      strncpy(spec_name(tmpSpec), base, sizeof(spec_name(tmpSpec)) - 1);
-    }
+    g_strlcpy(tmpSpec, path, sizeof(tmpSpec));
   }
 
   if (InsertWin && GetWindowKind(InsertWinWP) == MESS_WIN) {
@@ -2160,8 +2152,7 @@ static bool CleanSpoolCallback(DirIterateInfo *info) {
   MiniEvents();
 
   if (info->isDir &&
-      AllDigits(strrchr(info->path, '/') ? strrchr(info->path, '/') + 1 : info->path,
-                strlen(strrchr(info->path, '/') ? strrchr(info->path, '/') + 1 : info->path))) {
+      AllDigits(path_basename(info->path), strlen(path_basename(info->path)))) {
     if (info->modifyDate < spoolAge) {
       RemoveDir(info->path);
     }
@@ -2170,13 +2161,13 @@ static bool CleanSpoolCallback(DirIterateInfo *info) {
 }
 
 int CleanSpoolFolder(unsigned long age) {
-  FSSpec spec;
+  char spec[PATH_MAX];
 
-  if (SubFolderSpec(SPOOL_FOLDER, &spec))
+  if (SubFolderSpec(SPOOL_FOLDER, spec))
     return (0);
 
   spoolAge = LocalDateTime() - 24 * 3600 * age;
-  return DirIterate(&spec, NULL, CleanSpoolCallback);
+  return DirIterate(spec, NULL, CleanSpoolCallback);
 }
 
 /************************************************************************
@@ -2233,7 +2224,7 @@ void DoIterativeThingyLo(TOCType * tocH, int item, long modifiers,
   short toWhom = (short)(long)addr;
   short lastSelected = -1;
   char title[256];
-  FSSpec trashSpec;
+  char trashSpec[PATH_MAX];
   long count;
   long size;
   long gran;
@@ -2285,9 +2276,9 @@ void DoIterativeThingyLo(TOCType * tocH, int item, long modifiers,
   }
 
   if (item == MESSAGE_DELETE_ITEM && !nuke) {
-    g_strlcpy(trashSpec, MailRoot.path, sizeof(trashSpec));
-    GetRString(spec_name(trashSpec), TRASH);
-    MoveSelectedMessagesLo(tocH, &trashSpec, false, true, true, warnings);
+    { char trashName[64]; GetRString(trashName, TRASH);
+      snprintf(trashSpec, sizeof(trashSpec), "%s/%s", MailRoot.path, trashName); }
+    MoveSelectedMessagesLo(tocH, trashSpec, false, true, true, warnings);
     if (oldEzOpenSerialNum &&
         (sumNum = FindSumBySerialNum(tocH, oldEzOpenSerialNum)) >= 0 &&
         !(modifiers & GDK_SHIFT_MASK))
@@ -2421,7 +2412,7 @@ bool DoMessageMenu(short item, TOCType * tocH, short sumNum, short toWhom,
                    void *addr, long modifiers, bool nuke, bool *busy) {
   MyWindowPtr win;
   bool doVirtualMB = true;
-  unsigned char s[256];
+  char s[256];
 
   switch (item) {
   case MESSAGE_DELETE_ITEM:
@@ -2557,7 +2548,7 @@ int SavePtrAsMessage(unsigned char * preText, long preSize, unsigned char * text
   char name[256];
   LineIOD lid;
   MSumType sum;
-  FSSpec spec;
+  char spec[PATH_MAX];
 
   GetMailboxName(tocH, -1, name);
 
@@ -2621,7 +2612,7 @@ MyWindowPtr DoSalvageMessageLo(MyWindowPtr win, bool forXfer, bool forIMAP) {
   MessHandle newMessH;
   MyWindowPtr newWin;
   GtkWidget * newWinWP;
-  unsigned char scratch[256];
+  char scratch[256];
   short field;
   HeadSpec oldHS, newHS;
   int err = 0;
@@ -3237,7 +3228,7 @@ MyWindowPtr DoReplyMessage(MyWindowPtr win, bool all, bool self, bool quote,
   GtkWidget * winWP = GetMyWindowWindowPtr(win);
   MessHandle origMessH = (MessHandle)GetMyWindowPrivateData(win);
   MessHandle newMessH;
-  unsigned char subj[256], scratch[256], replyTo[256];
+  char subj[256], scratch[256], replyTo[256];
   long bodyOffset = -1;
   MyWindowPtr newWin = NULL;
   GtkWidget * newWinWP;
@@ -3365,8 +3356,8 @@ MyWindowPtr DoReplyMessage(MyWindowPtr win, bool all, bool self, bool quote,
         !origMessH->tocH->which &&
         !IMAPDontAutoFccMailbox(origMessH->tocH))
     {
-      FSSpec spec; GetMailboxSpec(origMessH->tocH, -1, spec);
-      Fcc(newMessH, &spec);
+      char spec[PATH_MAX]; GetMailboxSpec(origMessH->tocH, -1, spec);
+      Fcc(newMessH, spec);
     }
 
     /*
@@ -3754,7 +3745,7 @@ MyWindowPtr DoRedistributeMessage(MyWindowPtr win, void *toWhom, bool turbo,
   GtkWidget * winWP = GetMyWindowWindowPtr(win);
   MessHandle origMessH = (MessHandle)GetMyWindowPrivateData(win);
   MessHandle newMessH;
-  unsigned char scratch[256];
+  char scratch[256];
   int bodyOffset;
   MyWindowPtr newWin;
   long newBo;
@@ -3853,7 +3844,7 @@ MyWindowPtr DoRedistributeMessage(MyWindowPtr win, void *toWhom, bool turbo,
  * RedirectAnnotation - add proper annotation to redirect
  **********************************************************************/
 int RedirectAnnotation(MessHandle messH) {
-  unsigned char scratch[256], who[256], orig[256];
+  char scratch[256], who[256], orig[256];
   int err = 0;
 
   CompHeadGetStr(messH, FROM_HEAD, orig);
@@ -3888,7 +3879,7 @@ int RedirectAnnotation(MessHandle messH) {
  **********************************************************************/
 int CopyAttachments(MessHandle messH) {
   long offset, absOffset;
-  FSSpec attSpec;
+  char attSpec[PATH_MAX];
   HeadSpec hs;
 
   geditDocument *_doc = geditctrl_get_document(TheBody);
@@ -3946,7 +3937,7 @@ MyWindowPtr DoForwardMessage(MyWindowPtr win, void *toWhom, bool turbo) {
   MessHandle newMessH;
   MyWindowPtr newWin = NULL;
   GtkWidget * newWinPtr;
-  unsigned char scratch[256], subj[256];
+  char scratch[256], subj[256];
   long offset;
   PETETextStyle style;
   bool rich;
@@ -4144,8 +4135,8 @@ int DoFordirectMessage(TOCType * tocH, short sumNum, short flk,
   if (bulk)
     SetMessOpt(newMessH, OPT_BULK);
   SetMessText(newMessH, TO_HEAD, addresses, strlen((char *)addresses));
-  if (err = QueueMessage(newMessH->tocH, newMessH->sumNum, kEuSendNext, 0,
-                         true, true))
+  if ((err = QueueMessage(newMessH->tocH, newMessH->sumNum, kEuSendNext, 0,
+                         true, true)))
     DeleteMessage(newMessH->tocH, newMessH->sumNum, false);
   return (err);
 }
@@ -4177,8 +4168,8 @@ int DoReplyClosed(TOCType * tocH, short sumNum, bool all, bool self,
   SetState(tocH, sumNum, REPLIED);
   newMessH = Win2MessH(win);
   SetMessOpt(newMessH, OPT_BULK);
-  if (err = QueueMessage(newMessH->tocH, newMessH->sumNum, kEuSendNext, 0,
-                         true, true))
+  if ((err = QueueMessage(newMessH->tocH, newMessH->sumNum, kEuSendNext, 0,
+                         true, true)))
     DeleteMessage(newMessH->tocH, newMessH->sumNum, false);
   return (err);
 }
@@ -4205,7 +4196,7 @@ int FindAndCopyHeader(MessHandle origMH, MessHandle newMH, char *fromHead,
  * CopyNewsgroups - copy newsgroups into new message
  ************************************************************************/
 int CopyNewsgroups(MessHandle origMH, MessHandle newMH) {
-  unsigned char s[256];
+  char s[256];
   HeadSpec hs, origHS;
   unsigned char * text = NULL;
   char **addresses = NULL;
@@ -4349,13 +4340,13 @@ void XferCustomTable(MessHandle origMessH, MessHandle newMessH) {
  ************************************************************************/
 void WeedXAttachments(MessHandle messH, bool errReport) {
   short i;
-  FSSpec spec;
+  char spec[PATH_MAX];
   short err;
   short removed = 0;
   bool foundAny = false;
   HeadSpec hs;
 
-  for (i = 1; 1 != (err = GetIndAttachment(messH, i, &spec, NULL)); i++) {
+  for (i = 1; 1 != (err = GetIndAttachment(messH, i, spec, NULL)); i++) {
     if (err) {
       /* attachment does not exist */
       removed++;
@@ -4379,16 +4370,16 @@ int SpoolAttachments(MessHandle messH) {
   short n;
   short i;
   int err = 0;
-  FSSpec spec;
+  char spec[PATH_MAX];
 
   /*
    * count the attachments
    */
-  for (n = 0; !GetIndAttachment(messH, n + 1, &spec, NULL); n++)
+  for (n = 0; !GetIndAttachment(messH, n + 1, spec, NULL); n++)
     ;
 
   for (i = 1; i <= n; i++)
-    if (err = SpoolIndAttachment(messH, 1))
+    if ((err = SpoolIndAttachment(messH, 1)))
       break;
 
   return (err);
@@ -4398,35 +4389,35 @@ int SpoolAttachments(MessHandle messH) {
  * SpoolIndAttachment - spool a single attachment
  **********************************************************************/
 int SpoolIndAttachment(MessHandle messH, short i) {
-  FSSpec spec, newSpec;
+  char spec[PATH_MAX]; char newSpec[PATH_MAX];
   int err = 0;
 
   /*
    * make the folder
    */
-  if (err = MakeAttSubFolder(messH, SumOf(messH)->uidHash, &newSpec))
-    return (FileSystemError(COPY_ATTACHMENT, spec_name(newSpec), err));
+  if ((err = MakeAttSubFolder(messH, SumOf(messH)->uidHash, newSpec)))
+    return (FileSystemError(COPY_ATTACHMENT, path_basename(newSpec), err));
 
   /*
    * grab it
    */
-  if (!GetIndAttachment(messH, i, &spec, NULL)) {
+  if (!GetIndAttachment(messH, i, spec, NULL)) {
     /*
      * Copy the attachment
      */
-    spec_set_name(newSpec, spec_name(spec));
-    if (!SameSpec(&spec, &newSpec) && !FSpIsItAFolder(&spec)) {
-      unsigned char longName[256];
+    path_set_basename(newSpec, path_basename(spec));
+    if (!SameSpec(spec, newSpec) && !FSpIsItAFolder(spec)) {
+      char longName[256];
 
-      if ((err = FSpDupFile(&newSpec, &spec, false, false)))
-        return (FileSystemError(COPY_ATTACHMENT, spec_name(spec), err));
+      if ((err = FSpDupFile(newSpec, spec, false, false)))
+        return (FileSystemError(COPY_ATTACHMENT, path_basename(spec), err));
 
       // handle long filename
-      if (!FSpGetLongName(&spec, kTextEncodingUnknown, longName) &&
+      if (!FSpGetLongName(spec, kTextEncodingUnknown, longName) &&
           strlen((char *)longName) > 31)
-        FSpSetLongName(&newSpec, kTextEncodingUnknown, longName, &newSpec);
+        FSpSetLongName(newSpec, kTextEncodingUnknown, longName, newSpec);
 
-      CompAttachSpec(messH->win, &newSpec);
+      CompAttachSpec(messH->win, newSpec);
       RemoveIndAttachment(messH, i);
     }
   }
@@ -4438,18 +4429,18 @@ int SpoolIndAttachment(MessHandle messH, short i) {
  **********************************************************************/
 int MakeAttSubFolder(MessHandle messH, unsigned long uidHash, char * folder) {
   int err;
-  FSSpec spool;
-  unsigned char scratch[256];
+  char spool[PATH_MAX];
+  char scratch[256];
   long dirID;
 
   if (messH && !MessOptIsSet(messH, OPT_HAS_SPOOL))
     SetMessOpt(messH, OPT_HAS_SPOOL);
-  GetRString(spec_name(folder), SPOOL_FOLDER); // in case of error
+  GetRString(folder, SPOOL_FOLDER); /* fallback name in case of error */
 
   /*
    * find the folder
    */
-  if (err = SubFolderSpec(SPOOL_FOLDER, &spool))
+  if ((err = SubFolderSpec(SPOOL_FOLDER, spool)))
     return (err);
 
   /*
@@ -4487,8 +4478,8 @@ int MakeAttSubFolder(MessHandle messH, unsigned long uidHash, char * folder) {
  ************************************************************************/
 void RemoveIndAttachment(MessHandle messH, short index) {
   HeadSpec where;
-  FSSpec spec;
-  int err = GetIndAttachment(messH, index, &spec, &where);
+  char spec[PATH_MAX];
+  int err = GetIndAttachment(messH, index, spec, &where);
 
   if (err != 1) {
     CompDelAttachment(messH, &where);
@@ -4511,7 +4502,7 @@ int CopyToOut(TOCType * fromTocH, short sumNum, TOCType * toTocH) {
   fromTocH = messH->tocH;
   sumNum = messH->sumNum;
 
-  if (newWin = DoSalvageMessage(messH->win, true)) {
+  if ((newWin = DoSalvageMessage(messH->win, true))) {
     if (SaveComp(newWin)) {
       newSum = toTocH->sums[toTocH->count - 1];
       oldSum = fromTocH->sums[sumNum];
@@ -4582,7 +4573,7 @@ unsigned long HashWithSeedLo(char *s, unsigned long n, unsigned long seed) {
  * MIDHash - hash a message id, stripping <>'s first
  ************************************************************************/
 unsigned long MIDHash(unsigned char * text, long size) {
-  unsigned char scratch[256];
+  char scratch[256];
   char **addresses = NULL;
 
   SuckPtrAddresses(&addresses, (const char *)text, size, false, false, false, NULL);
@@ -4612,7 +4603,7 @@ void SetHashLo(TOCType * tocH, short sumNum, unsigned long hash, bool soft) {
  * Rehash - recompute the hash for a message
  ************************************************************************/
 void RehashLo(TOCType * tocH, short sumNum, unsigned char * text, bool soft) {
-  unsigned char scratch[256];
+  char scratch[256];
   unsigned char * spot;
   long size = strlen((char *)text);
   unsigned long hash;
@@ -4875,7 +4866,7 @@ void HTMLifyText(MyWindowPtr win, void *text) {
   Accumulator a;
   char *spot, *end, *lastSpot;
   long len;
-  unsigned char sBR[32];
+  char sBR[32];
   char lastChar;
   long offset = 0;
   PartDesc pd;
@@ -5015,7 +5006,7 @@ unsigned long GetMessageLength(TOCType * tocH, short sumNum) {
  * RedateTS - redate a message
  ************************************************************************/
 void RedateTS(TOCType * tocH, short sumNum) {
-  unsigned char dateStr[256];
+  char dateStr[256];
   unsigned long secs;
   unsigned long zoneSecs;
   int err = CacheMessage(tocH, sumNum);

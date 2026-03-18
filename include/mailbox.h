@@ -203,20 +203,22 @@ typedef struct Point {
 #define FSSPEC_DEFINED
 typedef char FSSpec[PATH_MAX];
 typedef char *FSSpecPtr;
-/* Helper: get the filename portion of a path (points into the path itself) */
-static inline const char *spec_name(const char *path) {
+/* Portable path helpers */
+static inline const char *path_basename(const char *path) {
   const char *slash = strrchr(path, '/');
   return slash ? slash + 1 : path;
 }
-/* Helper: set just the filename portion, rebuilding the full path */
-static inline void spec_set_name(char *path, const char *newName) {
+static inline void path_set_basename(char *path, const char *newName) {
   char *slash = strrchr(path, '/');
   if (slash) {
-    g_strlcpy(slash + 1, newName, PATH_MAX - (slash + 1 - path));
+    g_strlcpy(slash + 1, newName, PATH_MAX - (size_t)(slash + 1 - path));
   } else {
     g_strlcpy(path, newName, PATH_MAX);
   }
 }
+/* Legacy aliases — TODO: remove once all callers migrated */
+#define spec_name path_basename
+#define spec_set_name path_set_basename
 #endif
 
 /* VDId: Folder reference — path is the authoritative field on POSIX */
