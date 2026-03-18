@@ -1222,7 +1222,7 @@ bool imap_flag(MAILSTREAM *stream, char *sequence, char *flag, long flags) {
   char *cmd;
   IMAPPARSEDREPLY *reply;
   IMAPARG *args[4], aseq, ascm, aflg;
-  Boolean result = true;
+  bool result = true;
   MESSAGECACHE *elt = NULL;
 
   // Must have a stream
@@ -1761,12 +1761,12 @@ IMAPPARSEDREPLY *imap_send_spgm(MAILSTREAM *stream, char *tag, char **s,
     do {
       for (t = "OR ("; *t; *(*s)++ = *t++)
         ;
-      if (reply = imap_send_spgm(stream, tag, s, pgm->or->first))
+      if ((reply = imap_send_spgm(stream, tag, s, pgm->or->first)))
         return reply;
       for (t = ") ("; *t; *(*s)++ = *t++)
         ;
 
-      if (reply = imap_send_spgm(stream, tag, s, pgm->or->second))
+      if ((reply = imap_send_spgm(stream, tag, s, pgm->or->second)))
         return reply;
       *(*s)++ = ')';
     } while ((pgo = pgo->next));
@@ -1775,7 +1775,7 @@ IMAPPARSEDREPLY *imap_send_spgm(MAILSTREAM *stream, char *tag, char **s,
     do {
       for (t = "NOT ("; *t; *(*s)++ = *t++)
         ;
-      if (reply = imap_send_spgm(stream, tag, s, pgl->pgm))
+      if ((reply = imap_send_spgm(stream, tag, s, pgl->pgm)))
         return reply;
       *(*s)++ = ')';
     } while ((pgl = pgl->next));
@@ -2486,7 +2486,7 @@ char *imap_parse_string(MAILSTREAM *stream, char **txtptr,
 
       *string = '\0'; // init in case getbuffer fails
       if (rp)
-        for (k = 0; j = min((long)MAILTMPLEN, (long)i); i -= j) {
+        for (k = 0; (j = min((long)MAILTMPLEN, (long)i)); i -= j) {
           net_getbuffer(stream->transStream, j, string + k);
           (*rp)(md, k += j);
         }
@@ -2607,7 +2607,7 @@ void imap_parse_body(GETS_DATA *md, IMAPBODY **body, char *seg, char **txtptr,
       }
 
       /* point after the text */
-      if (*txtptr = strchr(s = *txtptr, ' '))
+      if ((*txtptr = strchr(s = *txtptr, ' ')))
         *(*txtptr)++ = '\0';
     }
 
@@ -2716,7 +2716,7 @@ void imap_parse_body_structure(MAILSTREAM *stream, IMAPBODY *body,
 
       } while (**txtptr == '('); // for each body part
 
-      if (body->subtype = imap_parse_string(stream, txtptr, reply, NIL, NIL))
+      if ((body->subtype = imap_parse_string(stream, txtptr, reply, NIL, NIL)))
         ucase(body->subtype);
       else {
         // Set it to "Multipart/Mixed" (JOK)
@@ -2757,7 +2757,7 @@ void imap_parse_body_structure(MAILSTREAM *stream, IMAPBODY *body,
       body->encoding = ENCOTHER; // and unknown encoding
 
       // parse type
-      if (s = ucase(imap_parse_string(stream, txtptr, reply, NIL, NIL))) {
+      if ((s = ucase(imap_parse_string(stream, txtptr, reply, NIL, NIL)))) {
         for (i = 0; (i <= TYPEMAX) && body_types[i] && strcmp(s, body_types[i]);
              i++)
           ;
@@ -2786,7 +2786,7 @@ void imap_parse_body_structure(MAILSTREAM *stream, IMAPBODY *body,
       // parse description
       body->description = imap_parse_string(stream, txtptr, reply, NIL, NIL);
 
-      if (s = ucase(imap_parse_string(stream, txtptr, reply, NIL, NIL))) {
+      if ((s = ucase(imap_parse_string(stream, txtptr, reply, NIL, NIL)))) {
         // search for body encoding
         for (i = 0;
              (i <= ENCMAX) && body_encodings[i] && strcmp(s, body_encodings[i]);
@@ -3109,7 +3109,7 @@ void imap_parse_extension(MAILSTREAM *stream, char **txtptr,
 
   case '{':    // get size of literal
     ++*txtptr; // bump past open squiggle
-    if (i = strtoul(*txtptr, txtptr, 10))
+    if ((i = strtoul(*txtptr, txtptr, 10)))
       do
         net_getbuffer(
             stream->transStream, j = min(i, (long)IMAPTMPLEN),
@@ -3408,7 +3408,7 @@ IMAPPARSEDREPLY *imap_reply(MAILSTREAM *stream, char *tag) {
 
   while (imap_connected(stream) && stream->transStream) {
     // parse reply from server
-    if (reply = imap_parse_reply(stream, net_getline(stream->transStream))) {
+    if ((reply = imap_parse_reply(stream, net_getline(stream->transStream)))) {
       if (!strcmp(reply->tag, "+"))
         return reply;
       else if (!strcmp(reply->tag, "*")) {
@@ -3576,7 +3576,7 @@ IMAPPARSEDREPLY *imap_send(MAILSTREAM *stream, char *cmd, IMAPARG *args[]) {
         break;
 
       case LITERAL: // literal, as a stringstruct
-        if (reply = imap_send_literal(stream, tag, &s, arg->text))
+        if ((reply = imap_send_literal(stream, tag, &s, arg->text)))
           return reply;
         break;
 
@@ -3585,8 +3585,8 @@ IMAPPARSEDREPLY *imap_send(MAILSTREAM *stream, char *cmd, IMAPARG *args[]) {
         c = '(';
         do {
           *s++ = c; // write prefix character
-          if (reply = imap_send_astring(stream, tag, &s, list->text.data,
-                                        list->text.size, NIL))
+          if ((reply = imap_send_astring(stream, tag, &s, list->text.data,
+                                        list->text.size, NIL)))
             return reply;
           c = ' '; // prefix character for subsequent strings
         } while ((list = list->next));
@@ -3594,7 +3594,7 @@ IMAPPARSEDREPLY *imap_send(MAILSTREAM *stream, char *cmd, IMAPARG *args[]) {
         break;
 
       case SEARCHPROGRAM: // search program
-        if (reply = imap_send_spgm(stream, tag, &s, arg->text))
+        if ((reply = imap_send_spgm(stream, tag, &s, arg->text)))
           return reply;
         break;
 
@@ -3743,7 +3743,7 @@ void imap_parse_unsolicited(MAILSTREAM *stream, IMAPPARSEDREPLY *reply) {
 
       default: // must be atom
         t = cpystr(reply->text);
-        if (txt = strchr(t, ' '))
+        if ((txt = strchr(t, ' ')))
           *txt++ = '\0';
         break;
       }
@@ -3883,7 +3883,7 @@ void imap_parse_unsolicited(MAILSTREAM *stream, IMAPPARSEDREPLY *reply) {
           stream->perm_seen = stream->perm_deleted = stream->perm_answered =
               stream->perm_draft = stream->kwd_create = NIL;
           stream->perm_user_flags = NIL;
-          if (s = strtok(LOCAL->tmp + 16, " "))
+          if ((s = strtok(LOCAL->tmp + 16, " ")))
             do {
               if (!strcmp(s, "\\SEEN"))
                 stream->perm_seen = T;
@@ -3899,7 +3899,7 @@ void imap_parse_unsolicited(MAILSTREAM *stream, IMAPPARSEDREPLY *reply) {
                 stream->kwd_create = T;
               else
                 stream->perm_user_flags |= imap_parse_user_flag(stream, s);
-            } while (s = strtok(NIL, " "));
+            } while ((s = strtok(NIL, " ")));
           return;
         } else if (!strncmp(LOCAL->tmp, "ALERT",
                             5)) // see if this is an [ALERT] -jdboyd

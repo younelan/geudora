@@ -150,21 +150,8 @@ int ReallyDoAnAlert(int templ, int which);
 #define FILL(pb, name, vRef, dirId)
 
 
-/* Portable basename - returns pointer to filename portion of path */
-static const char *pbasename(const char *path) {
-  const char *s = strrchr(path, '/');
-  return s ? s + 1 : path;
-}
-
-/* Portable path_set_basename - change filename portion, keep directory */
-static void path_set_basename(char *path, const char *newName) {
-  char *slash = strrchr(path, '/');
-  if (slash) {
-    g_strlcpy(slash + 1, newName, PATH_MAX - (size_t)(slash + 1 - path));
-  } else {
-    g_strlcpy(path, newName, PATH_MAX);
-  }
-}
+/* path_basename / path_set_basename provided by mailbox.h */
+#define pbasename path_basename
 
 /* Forward declarations */
 static int GenerateUniqueName(short volume, long *startSeed, long dir1,
@@ -425,7 +412,7 @@ void MyCloseResFile(short refN) {
 extern int GetNumBackgroundThreads(void);
 extern void MiniEventsLo(short mask, bool background);
 
-short file_read(short refNum, long *count, unsigned char *buffer) {
+short file_read(short refNum, long *count, char *buffer) {
   ssize_t bytes = read(refNum, buffer, *count);
   if (bytes < 0) {
     *count = 0;
@@ -434,7 +421,7 @@ short file_read(short refNum, long *count, unsigned char *buffer) {
   *count = (long)bytes;
   return 0;
 }
-short file_write(short refNum, long *count, unsigned char *buffer) {
+short file_write(short refNum, long *count, char *buffer) {
   /* Normalize line endings when writing: convert lone CR (\r / 0x0D)
      to CRLF (\r\n) to produce canonical mailbox files. If the
      buffer already contains CRLF sequences, leave them intact. This
@@ -502,7 +489,7 @@ short file_write(short refNum, long *count, unsigned char *buffer) {
   *count = (long)written;
   return 0;
 }
-short file_write_nc(short refNum, long *count, unsigned char *buffer) {
+short file_write_nc(short refNum, long *count, char *buffer) {
   return 0;
 }
 /* Write a C string to a file descriptor. */

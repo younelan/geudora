@@ -824,6 +824,7 @@ struct mail_stream {
 
   // used to save messages
   short refN; // refNum of open file waiting to accept message
+  char refPath[1024]; // path of the open file (portable — no fd-to-path lookup)
 
   // progress
   bool showProgress;    // set to true to display progress

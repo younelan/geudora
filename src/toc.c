@@ -28,6 +28,7 @@ MERCHANTABILITY AND FITNESS FOR A PARTICULAR PURPOSE ARE DISCLAIMED. */
 
 #define FILE_NUM 72
 #include "toc.h"
+#include <glib/gstdio.h>
 #include "buildtoc.h"
 #include "euErrors.h"
 #include "fileutil.h"
@@ -60,11 +61,7 @@ static char *toc_file_path(const char *mailboxPath, char *buf, size_t bufsz)
 }
 
 /* basename helper — pointer into path after last '/' */
-static const char *path_basename(const char *path)
-{
-  const char *s = strrchr(path, '/');
-  return s ? s + 1 : path;
-}
+/* path_basename provided by mailbox.h */
 
 /* TOC version constants */
 #ifndef CURRENT_TOC_MINOR
@@ -374,8 +371,8 @@ int KillTOC(short refN, char * spec) {
   char tocPath[PATH_MAX];
   toc_file_path(spec, tocPath, sizeof(tocPath));
 
-  if (unlink(tocPath) != 0 && errno != ENOENT) {
-    g_warning("KillTOC: failed to remove %s: %s", tocPath, strerror(errno));
+  if (g_unlink(tocPath) != 0 && errno != ENOENT) {
+    g_warning("KillTOC: failed to remove %s: %s", tocPath, g_strerror(errno));
     return -1;
   }
   return 0;
@@ -397,7 +394,7 @@ char * Box2TOCSpec(char * boxSpec, char * tocSpec) {
 bool HasExternalTOC(char * spec) {
   char tocPath[PATH_MAX];
   toc_file_path(spec, tocPath, sizeof(tocPath));
-  return access(tocPath, F_OK) == 0;
+  return g_file_test(tocPath, G_FILE_TEST_EXISTS);
 }
 
 /************************************************************************
@@ -500,13 +497,13 @@ TOCType * ReadTOC(char * spec) {
 
 /************************************************************************
  * TOCDates - get the dates off a mailbox
- * Ported from Mac: AFSpGetMod/PeekRTOC → stat(). Resource fork date = 0
+ * Ported from Mac: AFSpGetMod/PeekRTOC → g_stat(). Resource fork date = 0
  ************************************************************************/
 int TOCDates(char * spec, unsigned long *box, unsigned long *res, unsigned long *file) {
-  struct stat st;
+  GStatBuf st;
 
   /* Mailbox modification time */
-  if (stat(spec, &st) == 0)
+  if (g_stat(spec, &st) == 0)
     *box = (unsigned long)st.st_mtime;
   else
     *box = 0;
@@ -514,7 +511,7 @@ int TOCDates(char * spec, unsigned long *box, unsigned long *res, unsigned long 
   /* .toc file modification time */
   char tocPath[PATH_MAX];
   toc_file_path(spec, tocPath, sizeof(tocPath));
-  if (stat(tocPath, &st) == 0)
+  if (g_stat(tocPath, &st) == 0)
     *file = (unsigned long)st.st_mtime;
   else
     *file = 0;
@@ -542,7 +539,7 @@ static int ReadDForkTOC(char * aSpec, TOCType * *inTOC) {
 
   FILE *fp = fopen(tocPath, "rb");
   if (!fp) {
-    g_warning("ReadDForkTOC(%s): %s", baseName, strerror(errno));
+    g_warning("ReadDForkTOC(%s): %s", baseName, g_strerror(errno));
     return ENOENT;
   }
 
@@ -566,7 +563,7 @@ static int ReadDForkTOC(char * aSpec, TOCType * *inTOC) {
     return -1;
   }
 
-  if (hdr.count < 0 || hdr.count > 100000) {
+  if (hdr.count < 0 || hdr.count > 30000) {
     g_warning("ReadDForkTOC(%s): bad count %d", baseName, hdr.count);
     fclose(fp);
     return euCorruptTOC;
@@ -581,7 +578,7 @@ static int ReadDForkTOC(char * aSpec, TOCType * *inTOC) {
             baseName, fileSize, expectedSize, hdr.count);
     fclose(fp);
     /* Delete the stale .toc so CheckTOC rebuilds from mailbox */
-    unlink(tocPath);
+    g_unlink(tocPath);
     return euCorruptTOC;
   }
 
@@ -650,9 +647,9 @@ int WriteTOC(TOCType * tocH) {
   tocH->beingWritten++;
 
   /* Get mailbox file size */
-  struct stat st;
+  GStatBuf st;
   long size = 0;
-  if (stat(tocH->path, &st) == 0)
+  if (g_stat(tocH->path, &st) == 0)
     size = (long)st.st_size;
 
   tocH->boxSize = size + 1; /* +1 signals we know it's ok */
@@ -664,7 +661,7 @@ int WriteTOC(TOCType * tocH) {
 
   FILE *fp = fopen(tocPath, "wb");
   if (!fp) {
-    g_warning("WriteTOC(%s): %s", path_basename(tocH->path), strerror(errno));
+    g_warning("WriteTOC(%s): %s", path_basename(tocH->path), g_strerror(errno));
     tocH->beingWritten--;
     return -1;
   }
@@ -693,7 +690,7 @@ int WriteTOC(TOCType * tocH) {
   if (written != sizeof(hdr)) {
     g_warning("WriteTOC(%s): header write failed", path_basename(tocH->path));
     fclose(fp);
-    unlink(tocPath);
+    g_unlink(tocPath);
     tocH->beingWritten--;
     return -1;
   }
@@ -707,7 +704,7 @@ int WriteTOC(TOCType * tocH) {
       if (written != sizeof(diskSum)) {
         g_warning("WriteTOC(%s): sum[%d] write failed", path_basename(tocH->path), i);
         fclose(fp);
-        unlink(tocPath);
+        g_unlink(tocPath);
         tocH->beingWritten--;
         return -1;
       }
@@ -741,7 +738,7 @@ static void FixBoxUnread(TOCType * tocH) {
 
   bool unread = TOCUnread(tocH);
   short myMenu, myItem;
-  FSSpec spec;
+  char spec[PATH_MAX];
   unsigned long total, used;
 
   tocH->unread = unread;
@@ -841,10 +838,10 @@ TOCType * FindTOC(const char *path) {
   }
 
   /* Fallback to SameSpec for legacy callers: construct a temporary spec */
-  FSSpec tmpSpec;
+  char tmpSpec[PATH_MAX];
   spec_make(NULL, path, tmpSpec);
   for (TOCType *tocH = TOCList; tocH; tocH = tocH->next) {
-    FSSpec boxSpec; GetMailboxSpec(tocH, -1, boxSpec);
+    char boxSpec[PATH_MAX]; GetMailboxSpec(tocH, -1, boxSpec);
     if (SameSpec(boxSpec, tmpSpec))
       return tocH;
   }
@@ -935,8 +932,8 @@ TOCType * GetSpecialTOC(short nameId) {
   snprintf(path, sizeof(path), "%s/%s", get_mail_dir(), name);
 
   /* Create the mailbox file if it doesn't exist */
-  struct stat st;
-  if (stat(path, &st) != 0) {
+  GStatBuf st;
+  if (g_stat(path, &st) != 0) {
     FILE *fp = fopen(path, "w");
     if (fp) fclose(fp);
   }
@@ -945,8 +942,8 @@ TOCType * GetSpecialTOC(short nameId) {
   TOCType *tocH = TOCByPath(path);
   if (tocH) return tocH;
 
-  /* Fall back to FSSpec-based lookup (loads/builds the TOC) */
-  FSSpec spec;
+  /* Fall back to path-based lookup (loads/builds the TOC) */
+  char spec[PATH_MAX];
   memset(&spec, 0, sizeof(spec));
   g_strlcpy(spec, path, sizeof(spec));
   return TOCBySpec(spec);
@@ -1003,7 +1000,7 @@ int PeekTOC(char * spec, TOCType *tocPart) {
 
 /************************************************************************
  * InsaneTOC - see if a TOC is structurally valid
- * Ported from Mac: FSpDFSize → stat(), GetHandleSize_ check skipped
+ * Ported from Mac: FSpDFSize → g_stat(), GetHandleSize_ check skipped
  * (handle sizes are implicit in glib malloc)
  ************************************************************************/
 static int InsaneTOC(TOCType * tocH) {
@@ -1015,13 +1012,13 @@ static int InsaneTOC(TOCType * tocH) {
     return euCorruptTOC;
 
   /* Figure out how big the mailbox is */
-  struct stat st;
+  GStatBuf st;
   long boxSize = 0;
-  if (stat(tocH->path, &st) == 0)
+  if (g_stat(tocH->path, &st) == 0)
     boxSize = (long)st.st_size;
   else
     g_warning("InsaneTOC(%s): stat failed for '%s': %s",
-              path_basename(tocH->path), tocH->path, strerror(errno));
+              path_basename(tocH->path), tocH->path, g_strerror(errno));
 
   /* Right size? Allow off-by-one (Mac line ending differences) */
   if (tocH->boxSize && boxSize > 0 &&
@@ -1041,7 +1038,7 @@ static int InsaneTOC(TOCType * tocH) {
         sum->bodyOffset < 0 || sum->bodyOffset > sum->length ||
         ((sum->offset + sum->length > boxSize) && !tocH->imapTOC)) {
       g_warning("InsaneTOC(%s): bad sum #%d (o=%ld b=%ld l=%ld s=%ld)",
-                path_basename(tocH->path), i, sum->offset, sum->bodyOffset, sum->length,
+                path_basename(tocH->path), i, (long)sum->offset, (long)sum->bodyOffset, (long)sum->length,
                 boxSize);
       return euCorruptTOC;
     }
@@ -1062,29 +1059,37 @@ static int InsaneTOC(TOCType * tocH) {
  * Ported from Mac: EqualStrRes/IsRoot → strcasecmp on name
  ************************************************************************/
 static short GetMailboxType(char * spec) {
-  if (!spec || !spec_name(spec)[0])
+  if (!spec || !path_basename(spec)[0])
     return 0;
 
-  if (strcasecmp(spec_name(spec), "In") == 0)
+  if (strcasecmp(path_basename(spec), "In") == 0)
     return IN;
-  if (strcasecmp(spec_name(spec), "Out") == 0)
+  if (strcasecmp(path_basename(spec), "Out") == 0)
     return OUT;
-  if (strcasecmp(spec_name(spec), "Trash") == 0)
+  if (strcasecmp(path_basename(spec), "Trash") == 0)
     return TRASH;
-  if (strcasecmp(spec_name(spec), "Junk") == 0)
+  if (strcasecmp(path_basename(spec), "Junk") == 0)
     return JUNK;
   if (IsSpool(spec)) {
-    if (strcasecmp(spec_name(spec), "In.temp") == 0)
+    if (strcasecmp(path_basename(spec), "In.temp") == 0)
       return IN_TEMP;
-    if (strcasecmp(spec_name(spec), "Out.temp") == 0)
+    if (strcasecmp(path_basename(spec), "Out.temp") == 0)
       return OUT_TEMP;
   }
   return 0;
 }
 
+/* Callback for WantRebuildTOC alert dialog */
+typedef struct { int choice; GMainLoop *loop; } TocAlertData;
+static void toc_alert_cb(GObject *src, GAsyncResult *res, gpointer data) {
+  TocAlertData *d = data;
+  d->choice = gtk_alert_dialog_choose_finish(GTK_ALERT_DIALOG(src), res, NULL);
+  if (d->choice < 0) d->choice = 0;
+  g_main_loop_quit(d->loop);
+}
+
 /************************************************************************
  * WantRebuildTOC - ask user if they want to rebuild a corrupt TOC
- * Ported from Mac: AlertStr/ComposeStdAlert → GTK dialog
  * Returns: 0 = use old, 1 = rebuild, 2 = cancel
  ************************************************************************/
 short WantRebuildTOC(const char *boxName, int why, bool isIMAP) {
@@ -1093,31 +1098,43 @@ short WantRebuildTOC(const char *boxName, int why, bool isIMAP) {
   if (!PrefIsSet(PREF_TOC_REBUILD_ALERTS))
     return 1; /* auto-rebuild */
 
-  GtkWidget *dialog;
-  const char *msg;
-
-  if (why == euMismatchTOC)
-    msg = "The table of contents for \"%s\" does not match the mailbox. "
-          "Would you like to rebuild it?";
-  else
-    msg = "The table of contents for \"%s\" appears to be corrupt. "
-          "Would you like to rebuild it?";
-
+  const char *msg = (why == euMismatchTOC)
+    ? "The table of contents for \"%s\" does not match the mailbox.\nWould you like to rebuild it?"
+    : "The table of contents for \"%s\" appears to be corrupt.\nWould you like to rebuild it?";
   char *text = g_strdup_printf(msg, boxName);
 
-  dialog = gtk_message_dialog_new(NULL, GTK_DIALOG_MODAL, GTK_MESSAGE_WARNING,
-                                  GTK_BUTTONS_NONE, "%s", text);
+  const char *buttons_mismatch[] = { "Rebuild", "Use Old", "Cancel", NULL };
+  const char *buttons_corrupt[]  = { "Rebuild", "Cancel", NULL };
+  const char **buttons = (why == euMismatchTOC) ? buttons_mismatch : buttons_corrupt;
+
+  GtkAlertDialog *alert = gtk_alert_dialog_new("%s", text);
+  gtk_alert_dialog_set_buttons(alert, buttons);
+  gtk_alert_dialog_set_cancel_button(alert, (why == euMismatchTOC) ? 2 : 1);
+  gtk_alert_dialog_set_default_button(alert, 0);
   g_free(text);
 
-  gtk_dialog_add_button(GTK_DIALOG(dialog), "Rebuild", 1);
-  if (why == euMismatchTOC)
-    gtk_dialog_add_button(GTK_DIALOG(dialog), "Use Old", 0);
-  gtk_dialog_add_button(GTK_DIALOG(dialog), "Cancel", 2);
+  /* Block via nested main loop until user responds */
+  TocAlertData ctx;
+  ctx.choice = 0; /* default: rebuild */
+  ctx.loop = g_main_loop_new(NULL, FALSE);
 
-  /* For GTK4, dialogs are async - but for simplicity during port,
-     default to auto-rebuild */
-  gtk_window_destroy(GTK_WINDOW(dialog));
-  return 1; /* rebuild by default */
+  extern GtkWidget *get_main_window(void);
+  GtkWindow *parent = get_main_window() ? GTK_WINDOW(get_main_window()) : NULL;
+
+  gtk_alert_dialog_choose(alert, parent, NULL, toc_alert_cb, &ctx);
+
+  g_main_loop_run(ctx.loop);
+  g_main_loop_unref(ctx.loop);
+  g_object_unref(alert);
+
+  int choice = ctx.choice;
+  if (why == euMismatchTOC) {
+    /* 0=Rebuild, 1=Use Old, 2=Cancel */
+    return choice;
+  } else {
+    /* 0=Rebuild, 1=Cancel */
+    return (choice == 0) ? 1 : 2;
+  }
 }
 
 /************************************************************************
@@ -1130,7 +1147,7 @@ static TOCType * FixErrantTOC(char * spec, TOCType * tocH, short why) {
   if (which == IN_TEMP || which == OUT_TEMP)
     return RebuildTOC(spec, tocH, false, true);
 
-  short result = WantRebuildTOC(spec_name(spec), why,
+  short result = WantRebuildTOC(path_basename(spec), why,
                                 tocH && tocH->imapTOC != NULL);
 
   switch (result) {
@@ -1151,7 +1168,7 @@ static TOCType * FixErrantTOC(char * spec, TOCType * tocH, short why) {
 
 /************************************************************************
  * GetTOCK - grab the K counts for a mailbox
- * Ported from Mac: AFSpGetHFileInfo → stat()
+ * Ported from Mac: AFSpGetHFileInfo → g_stat()
  ************************************************************************/
 static short GetTOCK(TOCType * tocH, unsigned long *usedK, unsigned long *totalK) {
   if (!tocH) {
@@ -1166,8 +1183,8 @@ static short GetTOCK(TOCType * tocH, unsigned long *usedK, unsigned long *totalK
   }
   *usedK = (unsigned long)(used / 1024);
 
-  struct stat st;
-  if (stat(tocH->path, &st) == 0)
+  GStatBuf st;
+  if (g_stat(tocH->path, &st) == 0)
     *totalK = (unsigned long)(st.st_size / 1024);
   else
     *totalK = 0;
@@ -1350,12 +1367,12 @@ int toc_get_unread_count(TOCType *toc) {
 TOCType *toc_load(const char *path) {
   if (!path || !path[0]) return NULL;
 
-  /* Try path-based lookup first (no FSSpec needed) */
+  /* Try path-based lookup first (path-based) */
   TOCType *tocH = TOCByPath(path);
   if (tocH) return tocH;
 
   /* Fall back to CheckTOC which loads/builds the TOC */
-  FSSpec spec;
+  char spec[PATH_MAX];
   memset(&spec, 0, sizeof(spec));
   g_strlcpy(spec, path, sizeof(spec));
   return CheckTOC(spec);

@@ -64,10 +64,10 @@ bool GetPriorityRect(MyWindowPtr win, Rect *pr);
 void DrawPriority(Rect *pr, short p);
 short PriorityMenu(MyWindowPtr win);
 void ShowMessageSeparator(GtkWidget *pte, bool center);
-int UnwrapSave(unsigned char *text, long length, long offset, short refN);
+int UnwrapSave(char *text, long length, long offset, short refN);
 bool MessApp1(MyWindowPtr win, void *event);
-void SetSubject(TOCType * tocH, short sumNum, unsigned char *sub);
-void SetSender(TOCType * tocH, short sumNum, unsigned char *sender);
+void SetSubject(TOCType * tocH, short sumNum, char *sub);
+void SetSender(TOCType * tocH, short sumNum, char *sender);
 void SetFlag(TOCType * tocH, short sumNum, long flag, bool on);
 void SetOpt(TOCType * tocH, short sumNum, long flag, bool on);
 void MessIBarUpdate(MessHandle messH);
@@ -87,8 +87,8 @@ bool AttIsSelected(MyWindowPtr win, PETEHandle pte, long startWith,
                    long endWith, short what, long *start, long *stop);
 bool TransferMenuChoice(short menu, short item, TOCType * tocH, short sumNum,
                         long modifiers, bool fcc);
-int AttLine2Spec(unsigned char *line, char * spec, bool wantToOpen);
-int RelLine2Spec(unsigned char *line, char * spec, uLong *cid, uLong *relURL,
+int AttLine2Spec(char *line, char * spec, bool wantToOpen);
+int RelLine2Spec(char *line, char * spec, uLong *cid, uLong *relURL,
                  uLong *absURL);
 short AddXlateTables(bool isOut, short nowId, bool ph, void **pmh);
 void SetMessTable(TOCType * tocH, short sumNum, short tableId);

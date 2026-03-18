@@ -63,7 +63,7 @@ static inline void SetRect(Rect *r, short l, short t, short ri, short b) { if(r)
 static inline void OffsetRect(Rect *r, short dh, short dv) { r->left+=dh;r->right+=dh;r->top+=dv;r->bottom+=dv; }
 
 /* MesgError types */
-typedef struct { unsigned char errorStr[256]; uint32_t uidHash; short errorCode; } MesgErrorType;
+typedef struct { char errorStr[256]; uint32_t uidHash; short errorCode; } MesgErrorType;
 typedef MesgErrorType *mesgErrorHandle;
 
 typedef struct mstruct *MessHandle; /* message.h */
@@ -655,7 +655,7 @@ char *GetMailboxName(TOCType * tocH, short sum, char *name);
 int BoxFOpenLo(TOCType * tocH, short sumNum);
 int BoxFOpen(TOCType * tocH);
 void BoxFClose(TOCType * tocH, bool flush);
-int AddMesgError(TOCType * tocH, short sum, unsigned char *errorStr,
+int AddMesgError(TOCType * tocH, short sum, char *errorStr,
                  int errorCode);
 void NoteFreeSpace(TOCType * tocH);
 short CountSelectedMessages(TOCType * tocH);

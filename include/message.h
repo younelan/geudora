@@ -71,10 +71,10 @@ typedef struct {
 } TransInfo, *TransInfoPtr, *TransInfoHandle;
 
 typedef struct {
-  FSSpec spec;
-  uint32_t cid;
-  uint32_t absURL;
-  uint32_t relURL;
+  char spec[PATH_MAX];
+  unsigned long cid;
+  unsigned long absURL;
+  unsigned long relURL;
 } PartDesc, *PDPtr, *PDHandle;
 
 /* Define MyWindow struct for gTextviewCtrl port */
@@ -178,7 +178,8 @@ struct mstruct {
   TransInfoHandle hTranslators;
   short nTransIcons;
   short sound;
-  void *etlFiles;        /* FSSpecHandle stub */
+  void *etlFiles;        /* buffer of attachment paths */
+  size_t etlFilesSize;   /* tracked size of etlFiles buffer */
   void *hStationerySpec; /* FSSpecHandle stub */
   bool textFormatBarEnabled;
   void *persGraphic;
@@ -227,7 +228,7 @@ bool SumFlagIsSet(TOCType * tocH, short sumNum, long flag);
 /* Hash function - portable version */
 uLong HashWithSeedLo(char *s, uLong n, uLong seed);
 #define HashWithSeed(s, seed)                                                  \
-  HashWithSeedLo((unsigned char *)(s), strlen((char *)(s)), seed)
+  HashWithSeedLo((char *)(s), strlen((char *)(s)), seed)
 #define Hash(s) HashWithSeed(s, 1)
 
 int TOCFindMessByMID(uLong mid, TOCType * tocH, long *sumNum);
@@ -251,4 +252,4 @@ int RemSpoolFolder(long uidHash);
 
 #endif
 
-void ComputeLocalDate(void *sum, unsigned char *dateStr);
+void ComputeLocalDate(void *sum, char *dateStr);
