@@ -65,9 +65,9 @@ void *fs_get (size_t size)
 	
 	block = NuPtrClear (size ? size : (size_t) 1);
 			
-	if (!block || (err = MemError())) 
+	if (!block || (err = 0)) 
 	{
-		WarnUser(MEM_ERR,MemError()); 
+		WarnUser(MEM_ERR,0); 
 		block = NIL;
 	}
 
@@ -86,9 +86,9 @@ void fs_resize (void **block,size_t size)
 	
 	SetPtrSize(*block,size ? size : (size_t) 1);
 	
-	if (!block || (err = MemError())) 
+	if (!block || (err = 0)) 
 	{
-		WarnUser(MEM_ERR,MemError()); 
+		WarnUser(MEM_ERR,0); 
 		block = NIL;
 	}
 }

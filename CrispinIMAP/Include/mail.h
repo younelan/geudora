@@ -814,13 +814,13 @@ struct mail_stream {
   UIDNodeHandle fUIDResults;
 
   // network traffic results handle
-  Handle fNetData; // header/message data read from network
+  void *fNetData; // header/message data read from network
 
   // mailbox resync specific
   bool chunkHeaders; // set to true to tell imap engine we're fetching minimal
                      // headers in chunks
   unsigned long headerUID; // the uid of the message we just fetched headers for
-  Handle delivery;         // place to put minimal headers
+  void *delivery;         // place to put minimal headers
 
   // used to save messages
   short refN; // refNum of open file waiting to accept message

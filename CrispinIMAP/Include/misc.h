@@ -69,7 +69,7 @@ DAMAGE. */
  * this should avoid problems with some system #include file.
  */
 
-#define write safe_write
+/* #define write safe_write — removed, using POSIX write() directly */
 
 
 /* Some C compilers have these as macros */

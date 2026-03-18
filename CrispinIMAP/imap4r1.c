@@ -65,6 +65,7 @@ ADVISED OF THE POSSIBILITY OF SUCH DAMAGE. */
  * OR IN CONNECTION WITH THE USE OR PERFORMANCE OF THIS SOFTWARE.
  *
  */
+#include <unistd.h>
 #include "imap4r1.h"
 #include "mail.h"
 
@@ -770,7 +771,7 @@ void imap_close(MAILSTREAM *stream, long options) {
 
     // free up any network data we may have stored
     if (stream->fNetData)
-      DisposeHandle(stream->fNetData);
+      free(stream->fNetData);
 
     // free up memory
     if (LOCAL->user)
@@ -2294,7 +2295,7 @@ ADDRESS *imap_parse_address(MAILSTREAM *stream, char **txtptr,
 void imap_parse_flags(MAILSTREAM *stream, MESSAGECACHE *elt, char **txtptr) {
   char *flag;
   char c = '\0';
-  Str255 sentFlag;
+  char sentFlag[256];
 
   // read the flag that we'll treat as //Sent from the settings ...
   GetRString(sentFlag, IMAP_SENT_FLAG);
@@ -2322,8 +2323,8 @@ void imap_parse_flags(MAILSTREAM *stream, MESSAGECACHE *elt, char **txtptr) {
 
     // write the line to the spool file
     if (count) {
-      AWrite(stream->flagsRefN, &count, *txtptr);
-      FSWriteP(stream->flagsRefN, (unsigned char *)"\p\r");
+      write(stream->flagsRefN, *txtptr, count);
+      write(stream->flagsRefN, "\r", 1);
     }
   }
 #endif
@@ -3184,7 +3185,7 @@ MAILSTREAM *imap_open(MAILSTREAM *stream) {
       imap_close(stream, NIL);
     // if hosts are different, close the old one.  Note, mb.host is a pstring
     else if (((mb.host[0] && imap_host(stream)) &&
-              !pstrincmp((void *)mb.host, imap_host(stream), mb.host[0])) ||
+              !strncasecmp(mb.host, imap_host(stream), strlen(mb.host))) ||
              (mb.user[0] && LOCAL->user && strcmp(mb.user, LOCAL->user))) {
       sprintf(tmp, "Closing connection to %s", imap_host(stream));
       if (!stream->silent)
@@ -3289,7 +3290,7 @@ MAILSTREAM *imap_open(MAILSTREAM *stream) {
             if (sslRequired) {
               net_close(stream->transStream);
               stream->transStream = NULL;
-              mm_log(GetRString(tmp, SSL_ERR_STRING) + 1, IMAP_ERROR);
+              mm_log(GetRString(tmp, SSL_ERR_STRING), IMAP_ERROR);
               return NIL;
             }
           } else if (stream->transStream->ESSLSetting & esslSSLInUse) {
@@ -4242,11 +4243,11 @@ OSErr StoreUIDPLUSResponses(MAILSTREAM *stream, IMAPPARSEDREPLY *reply) {
  *	find the UIDVALIDITY of the mailbox has changed on us.
  ************************************************************************/
 void VerifyUIDValidity(MAILSTREAM *stream, char *pUids, int len) {
-  Str255 scratch;
+  char scratch[256];
   unsigned long newUV;
 
-  MakePStr(scratch, pUids, MIN(len, sizeof(scratch)));
-  StringToNum(scratch, &newUV);
+  { int _ml = MIN((int)len, (int)sizeof(scratch)-1); memcpy(scratch, pUids, _ml); scratch[_ml] = 0; }
+  newUV = strtoul(scratch, NULL, 10);
 
   // first time?
   if (stream->UIDPLUSuv == 0)
@@ -4255,7 +4256,7 @@ void VerifyUIDValidity(MAILSTREAM *stream, char *pUids, int len) {
     // Zap Resposes so far, store new uidvalidity
     IMAPAccuZap(&stream->UIDPLUSResponse);
     Accumulator *pAccu = &stream->UIDPLUSResponse;
-    IMAPAccuInit(&pAccu);
+    IMAPAccuInit(pAccu);
     stream->UIDPLUSuv = newUV;
   }
   // else
@@ -4270,18 +4271,18 @@ OSErr UIDStringToUIDs(char *pUids, int len, Accumulator *pAccu) {
   OSErr err = noErr;
   unsigned long start, stop;
   char *pEnd, *pUidEnd = pUids + len;
-  Str255 scratch;
+  char scratch[256];
 
   // only handles x and x:y type sets at this point
   pEnd = strchr(pUids, ':');
   if (pEnd) {
-    MakePStr(scratch, pUids, pEnd - pUids);
-    StringToNum(scratch, &start);
+    { int _ml = (int)(pEnd - pUids); if (_ml > 254) _ml = 254; memcpy(scratch, pUids, _ml); scratch[_ml] = 0; }
+    start = strtoul(scratch, NULL, 10);
     pUids = pEnd + 1;
   }
 
-  MakePStr(scratch, pUids, pUidEnd - pUids);
-  StringToNum(scratch, &stop);
+  { int _ml = (int)(pUidEnd - pUids); if (_ml > 254) _ml = 254; memcpy(scratch, pUids, _ml); scratch[_ml] = 0; }
+  stop = strtoul(scratch, NULL, 10);
 
   // no range was specified
   if (!pEnd)

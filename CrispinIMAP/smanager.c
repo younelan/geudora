@@ -56,7 +56,9 @@ DAMAGE. */
 #include "mail.h"
 #include "osdep.h"
 #include "misc.h"
-#include "env_mac.h"
+/* env_mac.h removed — stub subscription path macros */
+#define SUBSCRIPTIONFILE(s) "/dev/null"
+#define SUBSCRIPTIONTEMP(s) "/dev/null"
 
 /* Subscribe to mailbox
  * Accepts: mailbox name

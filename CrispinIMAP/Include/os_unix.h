@@ -12,9 +12,7 @@
 #include <string.h>
 #include <sys/stat.h>
 
-/* WriteZero may be defined in mailbox.h - undef if needed */
-#undef WriteZero
-#define WriteZero(p, s) memset(p, 0, s)
+/* WriteZero removed — use memset() directly */
 #include <sys/types.h>
 #include <time.h>
 #include <unistd.h>
@@ -43,12 +41,9 @@ void mm_fatal(char *string);
 void *env_parameters(long function, void *value);
 
 /* Eudora-specific stubs/prototypes for library compatibility */
-#ifndef Handle
-typedef void **Handle;
-#define Handle Handle
-#endif
+/* Handle removed — use void * directly */
 
-void DisposeHandle(Handle h);
+static inline void DisposeHandle(void *h) { free(h); }
 /* DisposeMailboxTree is defined in imapmailboxes.h with different signature */
 #ifndef OSErr
 typedef short OSErr;
@@ -105,8 +100,8 @@ int SaveMinimalHeader(struct mail_stream *stream);
 /* Forward declarations matching actual Eudora function signatures */
 void UID_LL_Zap(struct UIDNode **list);
 /* GetRString is declared in gtk_dialogs.h with unsigned char * signature */
-short FSWriteP(short refN, unsigned char *pString);
-int pstrincmp(unsigned char *ps, const char *cs, short n);
+/* FSWriteP removed — use write() directly */
+/* pstrincmp removed — use strncasecmp() directly */
 
 /* Redefine ASSERT to be portable */
 #define gethostid clock
@@ -137,7 +132,7 @@ void InvalidatePasswords(bool pwGood, bool auxpwGood, bool all);
 void DisposeMailboxTree(MailboxNodeHandle *tree);
 
 /* File I/O */
-short AWrite(short refN, long *count, unsigned char *buf);
+/* AWrite removed — use write() directly */
 
 /* Use plain `char *` for textual parameters to match portable PStr */
 void MyStringToNum(char *string, long *num);

@@ -159,7 +159,7 @@ void DebugStr(unsigned char *s) {}
 extern long GetPrefLong(short id);
 extern long GetRLong(int id);
 
-extern void DisposeHandle(Handle h);
+/* DisposeHandle defined in os_unix.h */
 
 /* GetRString, FSWriteP, pstrincmp, Cr, UID_LL_Zap, and SaveMinimalHeader
  * have real implementations in main Eudora source - not stubbed here.

@@ -254,7 +254,7 @@ void mm_login (NETMBX *mb,char *user,char *pwd,long trial)
 	
 	// Get the user name.
 	GetPOPInfo(pUser, scratch);
-	PtoCcpy(user, pUser);
+	strcpy(user, (const char *)pUser);
 	
 	// collect password for current personality
 	if (!*(*CurPers)->password)
@@ -265,13 +265,13 @@ void mm_login (NETMBX *mb,char *user,char *pwd,long trial)
 			if (PersFillPw(CurPers,0)==noErr)
 		
 			// return the password as a C String
-			PtoCcpy(pwd, (*CurPers)->password);	
+			strcpy(pwd, (const char *)(*CurPers)->password);	
 			
 			// and don't let the password be written to the disk
 			if (KeychainAvailable() && PrefIsSet(PREF_KEYCHAIN)) Zero((*CurPers)->password);
 		}
 	}
-	else PtoCcpy(pwd, (*CurPers)->password);
+	else strcpy(pwd, (const char *)(*CurPers)->password);
 }
 
 
