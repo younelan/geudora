@@ -294,6 +294,7 @@ void MyUseResFile(short refN);
 void InvalidatePasswords(bool pwGood, bool auxpwGood, bool all);
 void InvalidateCurrentPasswords(bool pwGood, bool auxpwGood);
 // bool MiniEventsLo(long sleepTime, uLong mask);
+#define MINI_MASK 0
 #define MiniEvents() MiniEventsLo(0, MINI_MASK)
 short FindSTRNIndex(short resId, char *string);
 short FindSTRNIndexRes(unsigned char * resH, char *string);

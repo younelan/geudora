@@ -105,7 +105,7 @@ int DirIterate_Shim(short v, long d, CInfoPBPtr p) {
 #define BuildBoxMenus()
 #define MBTickle(a, b)
 #define ASSERT(x)
-#define GoOnline() 0
+#define true 0
 #define Offline 0
 #define CycleBalls() 0
 #define CleanupConnection(s)
@@ -131,7 +131,7 @@ short SFWTC;
 
 #define HiliteMenu(x)
 #define MyDisposeDialog(d)
-#define MyFrontNonFloatingWindow() 0
+#define NULL 0
 #define PopGWorld()
 #define ValidHash(h) 1
 #define DeleteIMAPSum(t, s)
@@ -317,7 +317,7 @@ void AddMailbox(MAILSTREAM *mailStream, char *name, char delimiter,
   static long lastProgress = 0;
 
   GetRString(scratch, IMAP_INBOX_NAME);
-  PtoCcpy(inbox, scratch);
+  strcpy(inbox, (const char *)scratch);
 
   // if this mailbox is the same as the ref, then ignore it.  Some servers do
   // this.  bxxxxxxs.
@@ -401,7 +401,7 @@ bool GetIMAPMailboxes(IMAPStreamPtr imapStream, bool progress) {
     // go fetch the mailbox list
     imapStream->mailStream->fListResultsHandle = GetIMAPMailboxLevel(
         imapStream,
-        (PtoCcpy(ref, GetRString(scratch, IMAP_MAILBOX_LOCATION_PREFIX)), ref),
+        (strcpy(ref, (const char *)GetRString(scratch, IMAP_MAILBOX_LOCATION_PREFIX)), ref),
         !PrefIsSet(PREF_IMAP_SKIP_TOP_LEVEL_INBOX), progress);
 
     // if successful, push the root node into the queue ...
@@ -567,7 +567,7 @@ int UpdateLocalCacheMailboxes(MailboxNodeHandle *tree, char * inSpec,
   static long lastProgress = 0;
 
   GetRString(pInbox, IMAP_INBOX_NAME);
-  PtoCcpy(cInbox, pInbox);
+  strcpy(cInbox, (const char *)pInbox);
 
   err = CleanCacheFolder(inSpec, *tree);
 
@@ -974,19 +974,17 @@ int WriteIMAPMailboxInfo(char * spec, MailboxNodeHandle node) {
 
     // Zap the old info resource
     /* SetResLoad removed */
-    resource = Get1Resource(BOX_INFO_TYPE, IMAP_ID);
+    resource = NULL;
     /* SetResLoad removed */
     if (resource) {
-      RemoveResource(resource);
       free(resource);
     }
 
     // Zap the old name resource
     /* SetResLoad removed */
-    resource = Get1Resource(BOX_NAME_TYPE, IMAP_ID);
+    resource = NULL;
     /* SetResLoad removed */
     if (resource) {
-      RemoveResource(resource);
       free(resource);
     }
 
@@ -1002,10 +1000,9 @@ int WriteIMAPMailboxInfo(char * spec, MailboxNodeHandle node) {
 
     // Zap the old flags resource
     /* SetResLoad removed */
-    resource = Get1Resource(BOX_FLAGS_TYPE, IMAP_ID);
+    resource = NULL;
     /* SetResLoad removed */
     if (resource) {
-      RemoveResource(resource);
       free(resource);
     }
 
@@ -1210,13 +1207,13 @@ int ReadIMAPMailboxInfo(char * spec, MailboxNodeHandle node) {
     // read the full pathname from the mailbox.  Store it in some string
     // somewhere.
     /* UseResFile removed */
-    if ((resource = Get1Resource(BOX_NAME_TYPE, IMAP_ID)) == 0)
+    if ((resource = NULL) == 0)
       err = ENOENT;
     if ((err == 0) && ((err = 0) == 0) && resource != 0) {
       mailboxName = cpystr((const char *)resource); // copy the pathname
 
       // read in the node from the mailbox.
-      if ((resource = Get1Resource(BOX_INFO_TYPE, IMAP_ID)) == 0)
+      if ((resource = NULL) == 0)
         err = ENOENT;
       if ((err == 0) && ((err = 0) == 0) && resource != 0) {
         BlockMove(resource, node,
@@ -1234,9 +1231,8 @@ int ReadIMAPMailboxInfo(char * spec, MailboxNodeHandle node) {
 
         // read in the queued flag info from the mailbox.  Don't care if it's
         // not there.
-        resource = Get1Resource(BOX_FLAGS_TYPE, IMAP_ID);
+        resource = NULL;
         if (((0) == 0) && resource != 0) {
-          DetachResource(resource);
           node->queuedFlags = resource;
         }
       }
@@ -1759,7 +1755,7 @@ bool IMAPAddMailbox(char * spec, bool folder, bool *success, bool silent) {
     createdIMAPMailbox = 1;
 
     // must be online to do this
-    if (Offline && GoOnline())
+    if (Offline && true)
       return (createdIMAPMailbox);
 
     // must be able to modify the mailbox tree, too.
@@ -1915,7 +1911,7 @@ int BuildIMAPMailboxName(MailboxNodeHandle parent, char * newSpec,
     {
       // prepend the location prefix to the new mailbox name. Assume it ends
       // with a delimiter
-      PtoCcpy(dest, pPrefix);
+      strcpy(dest, (const char *)pPrefix);
       // the name of the new mailbox
       strcat(dest, (const char *)spec_name(newSpec));
       // if we're creating a folder, add the delimiter char at the end of the
@@ -1944,7 +1940,7 @@ bool IMAPDeleteMailbox(char * toDelete) {
   int err = 0;
 
   // must be online to do this
-  if (Offline && GoOnline())
+  if (Offline && true)
     return (0);
 
   // must be able to modify the mailbox tree, too.
@@ -2214,7 +2210,7 @@ int IMAPRefreshPersCaches(void) {
   PersHandle oldPers = CurPers;
 
   // must be online to do this
-  if (Offline && GoOnline())
+  if (Offline && true)
     return (OFFLINE);
 
   // collect passwords for the personalities to be refreshed
@@ -2346,7 +2342,7 @@ bool IMAPRenameMailbox(char * cacheFolderSpec, unsigned char * name) {
   // figure out the new name of the mailbox
   if ((pers != 0) && (node != 0)) {
     // must be online to do this
-    if (Offline && GoOnline())
+    if (Offline && true)
       return (0);
 
     // make sure the new name doesn't have any delimiters in it.
@@ -2481,7 +2477,7 @@ bool IMAPMoveMailbox(char * fromFolderSpec, char * toSpec,
           return (1);
 
         // must be online to do this
-        if (Offline && GoOnline())
+        if (Offline && true)
           return (0);
 
         // must be able to modify the mailbox tree, too.
@@ -2893,7 +2889,7 @@ short IMAPCountTrashMessages(bool localOnly, bool currentOnly, bool all) {
   if (!localOnly) {
     // We are checking remote IMAP mailboxes for messages, at least.  We must be
     // online
-    if (Offline & GoOnline())
+    if (Offline & true)
       return (0);
 
     if (currentOnly) {
@@ -3595,7 +3591,7 @@ bool IMAPMailboxExists(char mailboxName[256]) {
   char cName[256];
 
   // must be online to do this
-  if (Offline & GoOnline())
+  if (Offline & true)
     return (0);
 
   Zero(cName);

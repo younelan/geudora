@@ -32,7 +32,6 @@ ADVISED OF THE POSSIBILITY OF SUCH DAMAGE. */
 #include <fcntl.h>
 #include <sys/stat.h>
 #include <sys/time.h>
-#include "legacy_shim.h"
 #include "lineio.h"
 #include "mailbox.h"
 #include "mydefs.h"
@@ -1017,14 +1016,13 @@ int ReadHistTOC(short which) {
     // Read to TOC handle out of the file
     //
 
-    theToc = Get1Resource(LINK_TOC_TYPE, LINK_RESID);
+    theToc = NULL;
     if (0 == (err = 0)) {
       short i, count;
 
       if (theToc != nil) {
         // is this toc the right version?
         if (CorrectVersion(theToc)) {
-          DetachResource(theToc);
           gHistories[which].theData = theToc;
 
           // iterate through the toc and reset garbage fields
@@ -1276,7 +1274,7 @@ int BuildListOfHistoriesForWindow(ShortHistoryStructHandle *histories,
 
     // Resize the handle down if we hafta.
     if (count != numEntries)
-      SetHandleSize(*histories, count * sizeof(ShortHistoryStruct));
+      *histories = realloc(*histories, count * sizeof(ShortHistoryStruct));
 
     // Sort the handle if we need to
     if (needsSort) {

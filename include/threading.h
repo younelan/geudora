@@ -37,7 +37,6 @@ ADVISED OF THE POSSIBILITY OF SUCH DAMAGE. */
 
 #include "mailbox.h"
 #include "mime.h"
-#include "portable-compat.h"
 #include "schizo.h"
 #include "util.h"
 #include <stdbool.h>

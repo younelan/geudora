@@ -26,7 +26,6 @@ ADVISED OF THE POSSIBILITY OF SUCH DAMAGE. */
 #ifndef STYWIN_H
 #define STYWIN_H
 
-#include "legacy_shim.h"
 #include "linkwin.h"
 #include "mydefs.h"
 #include "wazoo.h"

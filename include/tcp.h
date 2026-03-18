@@ -28,7 +28,6 @@ ADVISED OF THE POSSIBILITY OF SUCH DAMAGE. */
 
 #include "TransStream.h" /* TransStream, TransVector */
 #include "mydefs.h"      /* TransVector and other Eudora types */
-#include "portable-compat.h"
 
 /* POSIX networking */
 #include <arpa/inet.h>

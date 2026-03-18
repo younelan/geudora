@@ -2,7 +2,6 @@
 #include "../include/mesg_error_store.h"
 #include "../include/StringUtil.h"
 #include "../include/fileutil.h"
-#include "../include/legacy_shim.h"
 #include "../include/mailbox.h"
 #include "../include/toc.h"
 #include <errno.h>

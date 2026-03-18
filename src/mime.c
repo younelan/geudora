@@ -25,7 +25,6 @@ DAMAGE. */
 #include "fileutil.h"
 #include <fcntl.h>
 #include <sys/stat.h>
-#include "legacy_shim.h"
 #include "pop.h"
 #include "emsapi-mac.h"
 #include "util.h"
@@ -873,7 +872,7 @@ int B64Decoder(CallType callType,DecoderPBPtr pb)
 		switch (callType)
 		{
 			case kDecodeInit:
-				d64p = NuPtrClear(sizeof(Dec64));
+				d64p = calloc(1, sizeof(Dec64));
 				if (!d64p) WarnUser(MEM_ERR,err=0);
 				pb->refCon = (long)d64p;
 				break;
@@ -913,7 +912,7 @@ int B64Encoder(CallType callType,DecoderPBPtr pb)
 		switch (callType)
 		{
 			case kDecodeInit:
-				e64p = NuPtrClear(sizeof(Dec64));
+				e64p = calloc(1, sizeof(Dec64));
 				if (!e64p) {WarnUser(MEM_ERR,err=0);return(err);}
 				pb->refCon = (long)e64p;
 				break;
@@ -960,7 +959,7 @@ int QPDecoder(CallType callType,DecoderPBPtr pb)
 		switch (callType)
 		{
 			case kDecodeInit:
-				dqpp = NuPtrClear(sizeof(DecQP));
+				dqpp = calloc(1, sizeof(DecQP));
 				if (!dqpp) WarnUser(MEM_ERR,err=0);
 				pb->refCon = (long)dqpp;
 				break;
@@ -1996,7 +1995,7 @@ BoundaryType ReadText(TransStream stream,short refN,MIMESHandle mimeSList,char *
 #ifndef SAVE_MIME
 	if(!msh->hdh->hasCharset) {
 		xlate = GetResource_('taBL',msh->hdh->xlateResID);
-		if (xlate) HNoPurge_(xlate);
+		/* HNoPurge removed */
 	}
 #endif
 
@@ -2163,7 +2162,7 @@ BoundaryType ReadText(TransStream stream,short refN,MIMESHandle mimeSList,char *
 			else whiteCount += size;
 	}
 	if (lineType==plError) boundaryType=btError;
-	if (xlate) HPurge(xlate);
+	if (xlate) {}
 	
 	/*
 	 * close converters
@@ -2765,7 +2764,7 @@ bool FindMIMEMapPtr(char * type, char * subType,char * name,MIMEMapPtr mmp)
 		GetRString(suffix,DEFAULT_TYPE);
 		memmove(&mmp->type,suffix,4);
 	}
-	if (MMIn) {;HPurge((void *)MMIn);}
+	if (MMIn) {;{}}
 	
 	/*
 	 * if the creator is unspecified and the type is 'TEXT', fill
@@ -2815,7 +2814,7 @@ BoundaryType ReadGeneric(TransStream stream,short refN,MIMESHandle mimeSList,cha
 	hdh = msh->hdh;
 	xlate = GetResource_('taBL',msh->hdh->xlateResID);
 	
-	if (xlate) HNoPurge_(xlate);
+	/* HNoPurge removed */
 	/*
 	 * uudecode?
 	 */
@@ -2969,7 +2968,7 @@ done:
 		PopProgress(false);
 	}
 	if (!UUPCIn && msh==mimeSList) Progress(100,NoChange,NULL,NULL,NULL);
-  if (xlate) HPurge(xlate);
+  if (xlate) {}
 
 	return(err ? btError : boundaryType);
 }
@@ -3393,7 +3392,7 @@ void FigureMIMEFromApple(uint32_t creator, uint32_t type,char * name,char * mime
 		*flags = type=='TEXT' ? mmIsText|mmIsBasic : 0;
 	}
 
-	if (MMOut) {;HPurge((void *)MMOut);}
+	if (MMOut) {;{}}
 }
 
 /**********************************************************************

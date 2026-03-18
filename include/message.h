@@ -5,7 +5,6 @@
 #define MESSAGE_H
 
 #include "../gEditCtrl/geditctrl.h" /* For gTextviewCtrl / gEditCtrl */
-#include "legacy_shim.h"
 #include "mailbox.h" /* Defines Handle, FSSpec, unsigned char *, etc. */
 #include "mydefs.h"
 #include <gtk/gtk.h>
@@ -251,3 +250,5 @@ void NukeXfUndo(void);
 int RemSpoolFolder(long uidHash);
 
 #endif
+
+void ComputeLocalDate(void *sum, unsigned char *dateStr);

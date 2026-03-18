@@ -19,8 +19,74 @@
 #include <unistd.h>
 
 typedef int OSStatus;
-typedef struct EventRecord EventRecord;
+
+/* Key modifier constants (GDK values) */
+#ifndef optionKey
+#define optionKey 0x0800
+#define shiftKey  0x0200
+#define cmdKey    0x0100
+#define controlKey 0x1000
+#define alphaLock 0x0400
+#endif
+
+/* Point and Rect — basic geometry types */
+#ifndef POINT_DEFINED
+#define POINT_DEFINED
+typedef struct Point { short v; short h; } Point;
+#endif
+#ifndef RECT_DEFINED
+#define RECT_DEFINED
+typedef struct Rect { short top; short left; short bottom; short right; } Rect;
+#endif
+
+/* Event record — minimal struct for legacy event handling */
+typedef struct EventRecord {
+  short what;
+  unsigned long message;
+  unsigned long when;
+  Point where;
+  short modifiers;
+} EventRecord;
 typedef EventRecord *EventPtr;
+
+/* RGBColor */
+#ifndef RGBCOLOR_DEFINED
+#define RGBCOLOR_DEFINED
+typedef struct RGBColor { unsigned short red, green, blue; } RGBColor;
+#endif
+
+/* Fixed point (16.16) */
+#ifndef Fixed
+typedef long Fixed;
+#endif
+
+/* LongDateRec removed — use struct tm from <time.h> */
+
+/* Event masks */
+#define mUpMask    0x0010
+#define mDownMask  0x0008
+#define keyDownMask 0x0004
+#define updateMask 0x0040
+#define activMask  0x0100
+#define osMask     0x0C00
+
+/* Utility stubs */
+#define RANDOM_FAILURE
+#define MAX_MESSAGES_PER_MAILBOX 10000
+#define MAX_BOX_NAME 32
+static inline void *MyFrontNonFloatingWindow(void) { return NULL; }
+#define FrontWindow_ MyFrontNonFloatingWindow
+
+/* ReallyDoAnAlert — declared in shame.c */
+int ReallyDoAnAlert(int templ, int which);
+
+/* SetRect/OffsetRect — basic geometry helpers */
+static inline void SetRect(Rect *r, short l, short t, short ri, short b) { if(r){r->left=l;r->top=t;r->right=ri;r->bottom=b;} }
+static inline void OffsetRect(Rect *r, short dh, short dv) { r->left+=dh;r->right+=dh;r->top+=dv;r->bottom+=dv; }
+
+/* MesgError types */
+typedef struct { unsigned char errorStr[256]; uint32_t uidHash; short errorCode; } MesgErrorType;
+typedef MesgErrorType *mesgErrorHandle;
 
 typedef struct mstruct *MessHandle; /* message.h */
 typedef enum {

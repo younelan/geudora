@@ -42,11 +42,10 @@ bool IsRoot(const char *path) {
 }
 #include "features.h"
 #include "fileutil.h"
+extern void MBOpenFolder(void *hStringList, bool isIMAP);
 #include <fcntl.h>
 #include <sys/stat.h>
-#include "legacy_shim.h"
 #include "junk.h"
-#include "legacy_shim.h"
 #include "lineio.h"
 #include "mesg_error_store.h"
 #include "mydefs.h"
@@ -3734,17 +3733,17 @@ void PopupMailboxPath(MyWindowPtr win, TOCType * tocH, short sum, Point pt) {
   enum { kSelNone, kSelMailbox, kSelFolder };
   short selection;
 
-  if (hMenu = NewMenu(MB_POPUP_MENU, "")) {
+  if (hMenu = NULL) {
     //	Build menu
     //	Start with current window
     short menu, item;
     MessHandle messH;
 
     if (win) {
-      if (fMessage = IsMessWindow(winWP)) {
+      if (fMessage = NULL) {
         //	This is a message.
 
-        GetWTitle(winWP, s); //	Add name of message
+        {} //	Add name of message
         MyAppendMenu(hMenu, s);
         messH = Win2MessH(win);
         tocH = messH->tocH;
@@ -3777,21 +3776,17 @@ void PopupMailboxPath(MyWindowPtr win, TOCType * tocH, short sum, Point pt) {
       GetDirName(nil, Root.vRef, Root.dirId, s);
       MyAppendMenu(hMenu, s);
     }
-
-    InsertMenu(hMenu, -1);
-
     selection = kSelNone;
     if (win) {
       winWP = GetMyWindowWindowPtr(win);
       //	Popup from window title
-      GetWindowStructureBounds(winWP, &rStruct);
       top = rStruct.top + 2;
-      left = rStruct.right + rStruct.left - MyGetWindowTitleWidth(winWP) - 29;
+      left = rStruct.right + rStruct.left - 0 - 29;
       left = left / 2;
       if (left < rStruct.left + 19)
         //	Don't go too far to the left
         left = rStruct.left + 19;
-      item = PopUpMenuSelect(hMenu, top, left, 0);
+      item = 0;
       if (item > 1)
         selection = item == 2 & fMessage ? kSelMailbox : kSelFolder;
     } else {
@@ -3853,8 +3848,6 @@ void PopupMailboxPath(MyWindowPtr win, TOCType * tocH, short sum, Point pt) {
       }
       break;
     }
-    DeleteMenu(MB_POPUP_MENU);
-    DisposeMenu(hMenu);
   }
 }
 
@@ -4011,8 +4004,7 @@ static void ProcessIMAPChanges(void *sumList, TOCType * toc,
           pSum = &(((MSumPtr)(pCopy->hOldSums))[numMessages - numUidResponses + j]);
           IMAPTransferLocalCache(toc, pSum, toTocH, newUid, pCopy->copy);
         }
-        if (!IMAPFilteringUnderway() & (!pCopy->copy))
-          AddIMAPXfUndoUIDs(toc, toTocH, pCopy->hNewUIDs, false);
+        /* Mac UI update removed */
       }
 
       // Cleanup
@@ -4384,7 +4376,7 @@ void DecodeIMAPMessages(TOCType * toc, char * spec) {
    * allocate the lineio pointer
    */
   if (!Lip)
-    Lip = NuPtrClear(sizeof(*Lip));
+    Lip = calloc(1, sizeof(*Lip));
   if (!Lip) {
     (WarnUser(MEM_ERR, 0));
     goto msgDone;
@@ -4403,8 +4395,7 @@ void DecodeIMAPMessages(TOCType * toc, char * spec) {
   //	Get the IMAP index resource
   hIMAPIndex = nil;
   if ((fileRef = -1) != -1) {
-    hIMAPIndex = (IndexStruct **)Get1Resource(INDEX_RES_TYPE, INDEX_RES_ID);
-    DetachResource((void *)hIMAPIndex);
+    hIMAPIndex = (IndexStruct **)NULL;
     close(fileRef);
   }
   if (!hIMAPIndex)
@@ -4450,16 +4441,14 @@ void DecodeIMAPMessages(TOCType * toc, char * spec) {
           // set the sum options if this message needs to have an attachment
           // downloaded.
           if (HasStubFileAttachment(toc, sumNum))
-            toc->sums[sumNum].opts |= OPT_FETCH_ATTACHMENTS;
+            toc->sums[sumNum].opts |= 0x1000;
           else
-            toc->sums[sumNum].opts &= ~OPT_FETCH_ATTACHMENTS;
+            toc->sums[sumNum].opts &= ~0x1000;
 
           // moodmail?
-          if (AnalDoIncoming())
-            AnalBox(toc, sumNum, sumNum);
-
+          if (false)
           // spamwatch?
-          if (HasFeature(featureJunk) & JunkPrefBoxHold() & CanScoreJunk()) {
+          if (HasFeature(featureJunk) & JunkPrefBoxHold() & false) {
             // only score message if it hasn't been manually scored before
             if (toc->sums[sumNum].spamBecause != JUNK_BECAUSE_USER)
               JunkScoreIMAPBox(toc, sumNum, sumNum, false);

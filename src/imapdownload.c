@@ -3170,7 +3170,7 @@ bool DownloadMultipartBodyToSpoolFile(IMAPStreamPtr imapStream,
     // Is this the first part??
     if (topLevel) {
       pSection[0] = snprintf(pSection + 1, 255, "%ld", (long)(++partNum)); // no dot
-      PtoCcpy(section, (unsigned char *)pSection);
+      strcpy(section, (const char *)(unsigned char *)pSection);
     } else {
       // Copy parent section first. MUST have a
       // non-NULL parent section if not top
@@ -6458,7 +6458,7 @@ void XMacHeaders(IMAPBODY *body, uint32_t *type, uint32_t *creator) {
   while (param) {
     // x-mac-type?
     char macTypeC[256];
-    PtoCcpy(macTypeC, macType);
+    strcpy(macTypeC, (const char *)macType);
     if (!strcasecmp(param->attribute, macTypeC)) {
       if (0 == Hex2Bytes((unsigned char *)param->value, 8, scratch))
         memmove(type, scratch, sizeof(uint32_t));
@@ -6466,7 +6466,7 @@ void XMacHeaders(IMAPBODY *body, uint32_t *type, uint32_t *creator) {
     // x-mac-creator?
     else {
       char macCreatorC[256];
-      PtoCcpy(macCreatorC, macCreator);
+      strcpy(macCreatorC, (const char *)macCreator);
       if (!strcasecmp(param->attribute, macCreatorC)) {
         if (0 == Hex2Bytes((unsigned char *)param->value, 8, scratch))
           memmove(creator, scratch, sizeof(uint32_t));
@@ -6525,14 +6525,14 @@ int IE(IMAPStreamPtr imapStream, short operation, short explanation,
   // special case error descriptions that want
   // the name of the mailbox
   if ((operation == kIMAPCompleteResync) && imapStream && imapStream->mbox) {
-    PtoCcpy(fmt, GetRString(scratch, IMAP_OPERATIONS_STRN + operation));
+    strcpy(fmt, (const char *)GetRString(scratch, IMAP_OPERATIONS_STRN + operation));
     ComposeString(explanationText, fmt, spec_name(imapStream->mbox->mailboxSpec));
-    PtoCcpy(explanationTextC, explanationText);
+    strcpy(explanationTextC, (const char *)explanationText);
     ComposeRString(operationText, IMAP_ERR_OPERATION_FMT, explanationTextC);
     // have mbox name, do not append
     *mboxName = 0;
   } else {
-    PtoCcpy(fmt, GetRString(scratch, IMAP_OPERATIONS_STRN + operation));
+    strcpy(fmt, (const char *)GetRString(scratch, IMAP_OPERATIONS_STRN + operation));
     ComposeRString(operationText, IMAP_ERR_OPERATION_FMT, fmt);
   }
 
@@ -7578,7 +7578,7 @@ bool DownloadAttachmentToSpoolFile(IMAPStreamPtr imapStream,
         // Is this the first part??
         if (topLevel) {
           pSection[0] = (unsigned char)snprintf((char*)(pSection + 1), 255, "%ld", (long)(++partNum)); // no dot
-          PtoCcpy(section, (unsigned char *)pSection);
+          strcpy(section, (const char *)(unsigned char *)pSection);
         } else {
           // Copy parent section first. MUST
           // have a non-NULL parent section if
@@ -7590,7 +7590,7 @@ bool DownloadAttachmentToSpoolFile(IMAPStreamPtr imapStream,
         }
 
         // if this is an attachment ...
-        PtoCcpy(attachment, GetRString(scratch, ATTACH));
+        strcpy(attachment, (const char *)GetRString(scratch, ATTACH));
         if (body->disposition.type &&
             !strcasecmp(attachment, body->disposition.type)) {
           // and it's the section we're looking
@@ -7602,7 +7602,7 @@ bool DownloadAttachmentToSpoolFile(IMAPStreamPtr imapStream,
             // grab the previous part first if
             // we're doing AppleDouble.
             char appledoubleC[256];
-            PtoCcpy(appledoubleC, appledouble);
+            strcpy(appledoubleC, (const char *)appledouble);
             if (!strncasecmp(parentBody->subtype, appledoubleC,
                              strlen(appledoubleC))) {
               // Some versions of OE don't
@@ -7732,7 +7732,7 @@ bool SpoolFileToAttachment(MailboxNodeHandle mailbox, unsigned long uid,
    * allocate the lineio pointer
    */
   if (!Lip)
-    Lip = NuPtrClear(sizeof(*Lip));
+    Lip = calloc(1, sizeof(*Lip));
   if (!Lip) {
     (WarnUser(MEM_ERR, 0));
     goto msgDone;
@@ -8119,8 +8119,6 @@ void RedisplayIMAPMessage(MyWindowPtr win) {
   // downloadable images
   blah = FindControlByRefCon(win, mcGetGraphics);
   if (blah)
-    HiliteControl(blah, 0);
-
   // Redisplay the message
   if (ReopenMessage(win) != nil) {
     // properly enable the message icon buttons
@@ -8197,7 +8195,7 @@ bool FetchAllIMAPAttachments(TOCType * tocH, short sumNum,
               numSpecs = 1;
             } else {
               numSpecs++;
-              SetHandleSize(attachments, numSpecs * sizeof(FSSpec));
+              attachments = realloc(attachments, numSpecs * sizeof(FSSpec));
             }
 
             if (!attachments || (err = 0)) {
@@ -8399,7 +8397,7 @@ bool IMAPSearch(TOCType * searchWin, BoxCountHandle boxesToSearch,
           // then add it to the list of
           // mailboxes to be searched
           numBoxesToSearch = (malloc_size(toSearch) / sizeof(short)) + 1;
-          SetHandleSize(toSearch, numBoxesToSearch * sizeof(short));
+          toSearch = realloc(toSearch, numBoxesToSearch * sizeof(short));
           if ((err = 0)) {
             WarnUser(MEM_ERR, err);
             free(toSearch);
@@ -8552,7 +8550,7 @@ bool IMAPSearchServer(TOCType * searchWin, PersHandle pers,
     return (false);
 
   // we must be online
-  if (!bAlreadyOnline & Offline & GoOnline())
+  if (!bAlreadyOnline & Offline & true)
     return (false);
 
   // pass the search thread it's own copy of
@@ -8762,8 +8760,7 @@ bool DoIMAPServerSearch(TOCType * searchWin, BoxCountHandle allBoxes,
                      criteriaCount++) {
                   // make a c-string out of
                   // what we're searching for
-                  PtoCcpy(cSearchString,
-                          searchCriteria[criteriaCount].string);
+                  strcpy(cSearchString, (const char *)searchCriteria[criteriaCount].string);
 
                   // build the header list to
                   // search trhough
@@ -8777,7 +8774,7 @@ bool DoIMAPServerSearch(TOCType * searchWin, BoxCountHandle allBoxes,
                           sizeof(pHeaders));
                     pHeaders[0]--; // drop :
 
-                    PtoCcpy(cHeaders, pHeaders);
+                    strcpy(cHeaders, (const char *)pHeaders);
 
                     break;
                   }
@@ -8794,7 +8791,7 @@ bool DoIMAPServerSearch(TOCType * searchWin, BoxCountHandle allBoxes,
                          kAnyRecipient),
                         pHeaders);
 
-                    PtoCcpy(cHeaders, pHeaders);
+                    strcpy(cHeaders, (const char *)pHeaders);
 
                     break;
                   }
@@ -8809,7 +8806,7 @@ bool DoIMAPServerSearch(TOCType * searchWin, BoxCountHandle allBoxes,
                   LockMailboxNodeHandle(mboxToSearch);
                   PathToMailboxName(mboxToSearch->mailboxName, mNameP,
                                     mboxToSearch->delimiter);
-                  PtoCcpy(mName, mNameP);
+                  strcpy(mName, (const char *)mNameP);
                   UnlockMailboxNodeHandle(mboxToSearch);
                   ComposeRString(progressMessage, IMAP_SEARCHING_MAILBOX,
                                  mName);
@@ -9326,7 +9323,7 @@ bool IMAPTermMatch(MTPtr mt, MSumPtr sum) {
   }
 
   // build the string we're looking for ...
-  PtoCcpy((char *)cSearchString, mt->value);
+  strcpy((char *)cSearchString, (const char *)mt->value);
 
   // build the header to look for ...
   pHeaders[0] = cHeaders[0] = 0;
@@ -9336,7 +9333,7 @@ bool IMAPTermMatch(MTPtr mt, MSumPtr sum) {
     BuildHeaderSearchString(mt->headerID == FILTER_ANY,
                             mt->headerID == FILTER_ADDRESSEE, pHeaders);
 
-    PtoCcpy((char *)cHeaders, pHeaders);
+    strcpy((char *)cHeaders, (const char *)pHeaders);
 
     break;
   }
@@ -9350,7 +9347,7 @@ bool IMAPTermMatch(MTPtr mt, MSumPtr sum) {
     g_strlcpy((char *)pHeaders, (char *)mt->header, sizeof(pHeaders));
     pHeaders[0]--;
 
-    PtoCcpy((char *)cHeaders, pHeaders);
+    strcpy((char *)cHeaders, (const char *)pHeaders);
 
     break;
   }
@@ -10067,7 +10064,7 @@ void RNtoR(void *text) {
         scan++;
     }
 
-    SetHandleSize(text, textSize);
+    text = realloc(text, textSize);
   }
 }
 
@@ -10457,7 +10454,7 @@ int QueueMessFlagChange(TOCType * tocH, short sumNum, StateEnum state,
         } else {
           oldFlagSize = malloc_size(mb->queuedFlags);
           queuedFlagsSize = oldFlagSize + sizeof(LocalFlagChangeStruct);
-          SetHandleSize((void *)(mb->queuedFlags), queuedFlagsSize);
+          mb->queuedFlags = realloc(mb->queuedFlags, queuedFlagsSize);
           err = 0;
         }
 
@@ -11026,8 +11023,6 @@ bool FastIMAPMessageDelete(TOCType * tocH, GArray *uids, bool bFTM) {
 
   // add the undo if all went well ...
   if (result)
-    AddIMAPXfUndoUIDs(tocH, hidTocH, uids, true);
-
   return (result);
 }
 
@@ -11339,7 +11334,6 @@ int CacheIMAPMessageForSpamWatch(TOCType * tocH, short sumNum) {
     if (!filteringUnderway)
       IMAPStartFiltering(tocH, true);
     cache = IMAPFetchMessageHeadersForFiltering(tocH, sumNum);
-    HPurge(cache);
     if (!filteringUnderway)
       IMAPStopFiltering(true);
 

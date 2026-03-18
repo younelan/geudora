@@ -36,7 +36,6 @@ DAMAGE. */
 #include "compact.h"
 #include "comp.h"         /* CompHeadFind, CompHeadGetText, CompHeadAppendPtr, HeadSpec (via sendmail.h) */
 #include "peteglue.h"     /* PeteIsDirty, PeteDelete, PeteInsertPtr, PeteSelect, PeteLen */
-#include "legacy_shim.h"
 #include "features.h"
 #include "gtk_dialogs.h"
 #include "prefdefs.h"
@@ -462,7 +461,6 @@ int QueueMessage(TOCType *tocH, short sumNum, SendTypeEnum st, long secs, bool n
 				if (!noAnalDelay && AnalDelayOutgoing() && state != TIMED &&
 					(st == kEuSendNow || st == kEuSendNext))
 				{
-					AnalBox(tocH, sumNum, sumNum);
 					if (tocH->sums[sumNum].score > GetRLong(ANAL_DELAY_LEVEL)) {
 						st = kEuSendLater;
 						state = TIMED;
@@ -708,7 +706,7 @@ int AddMessTranslator(MessHandle messH, long which, void *properties)
 			return -1;
 		messH->hTranslators = localHandle;
 	} else {
-		SetHandleSize((void *)messH->hTranslators, (n + 1) * sizeof(TransInfo));
+		messH->hTranslators = realloc(messH->hTranslators, (n + 1) * sizeof(TransInfo));
 	}
 
 	messH->hTranslators[n].id = id;
@@ -716,7 +714,6 @@ int AddMessTranslator(MessHandle messH, long which, void *properties)
 
 	ControlHandle theCtl = FindControlByRefCon(messH->win, 0xff000000 | (which + ICON_BAR_NUM));
 	if (theCtl)
-		SetControlValue(theCtl, 1);
 	messH->win->isDirty = true;
 	return 0;
 }
@@ -749,7 +746,7 @@ int RemoveMessTranslator(MessHandle messH, long which)
 					memmove(&messH->hTranslators[i],
 						&messH->hTranslators[i + 1],
 						(n - i - 1) * sizeof(TransInfo));
-				SetHandleSize((void *)messH->hTranslators, (n - 1) * sizeof(TransInfo));
+				messH->hTranslators = realloc(messH->hTranslators, (n - 1) * sizeof(TransInfo));
 			}
 			break;
 		}
@@ -757,7 +754,6 @@ int RemoveMessTranslator(MessHandle messH, long which)
 
 	ControlHandle theCtl = FindControlByRefCon(messH->win, 0xff000000 | (which + ICON_BAR_NUM));
 	if (theCtl)
-		SetControlValue(theCtl, 0);
 	messH->win->isDirty = true;
 	return 0;
 }
@@ -1073,10 +1069,7 @@ void CompIBarUpdate(MessHandle messH)
 	for (short i = 0; i < ICON_BAR_NUM; i++) {
 		ControlHandle cntl = FindControlByRefCon(messH->win, 0xff000000 | i);
 		if (cntl) {
-			if (fBits[i] < 0)
-				SetControlValue(cntl, MessOptIsSet(messH, (-fBits[i])));
-			else
-				SetControlValue(cntl, MessFlagIsSet(messH, fBits[i]));
+			/* SetControlValue/HiliteControl removed — Mac UI */
 		}
 	}
 	RefreshSigButton(messH);
@@ -1286,9 +1279,7 @@ void CompActivateAppropriate(MessHandle messH)
  ************************************************************************/
 void CompSetFormatBarIcon(MyWindowPtr win, bool visible)
 {
-	ControlHandle cntl = FindControlByRefCon(win, 0xff000000);
-	if (cntl)
-		SetControlValue(cntl, visible ? 1 : 0);
+	/* SetControlValue removed — Mac UI */
 }
 
 /************************************************************************

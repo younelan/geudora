@@ -24,13 +24,15 @@ OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE OF THIS SOFTWARE, EVEN IF
 ADVISED OF THE POSSIBILITY OF SUCH DAMAGE. */
 
 #include "statmng.h"
+
+/* orphan brace removed */
+static short InBG = 0;
 #include "statwin.h"
 #include "StringDefs.h"
 #include "StringUtil.h"
 #include "fileutil.h"
 #include "graph.h"
 #include "junk.h"
-#include "legacy_shim.h"
 #include "mailbox.h" /* For Accumulator struct definition */
 #include "toc.h"
 #include "sendmail.h"
@@ -44,20 +46,18 @@ static int AccuAddTag(AccuPtr a, unsigned char *tag, int close) {
   (void)close;
   return 0;
 }
-/* SecondsToDate - not in GTK - use LongSecondsToDate wrapper */
 static void SecondsToDate(long secs, DateTimeRec *d) {
-  LongDateCvt cvt;
-  LongDateRec ld;
-  cvt.hl.lHigh = 0;
-  cvt.hl.lLow = (unsigned long)secs;
-  LongSecondsToDate(&cvt.c, &ld);
-  d->year = ld.ld.year;
-  d->month = ld.ld.month;
-  d->day = ld.ld.day;
-  d->hour = ld.ld.hour;
-  d->minute = ld.ld.minute;
-  d->second = ld.ld.second;
-  d->dayOfWeek = ld.ld.dayOfWeek;
+  time_t t = (time_t)secs;
+  struct tm *tm = localtime(&t);
+  if (tm && d) {
+    d->year = tm->tm_year + 1900;
+    d->month = tm->tm_mon + 1;
+    d->day = tm->tm_mday;
+    d->hour = tm->tm_hour;
+    d->minute = tm->tm_min;
+    d->second = tm->tm_sec;
+    d->dayOfWeek = tm->tm_wday + 1;
+  }
 }
 
 /* Stubs for Mac/XML platform functions not available in GTK port */
@@ -166,7 +166,7 @@ typedef struct {
  * globals
  ************************************************************************/
 static StatDataHandle gStatData;
-static LongDateRec gCurrentTime;
+static struct tm gCurrentTime;
 static bool gStatsDirty;
 static void * gFaceMeasure;
 static short gFacetimeMode;
@@ -255,8 +255,7 @@ void LongArrayOperation(long *array, long *sub, short n, OpType op);
  * InitStats - initialize statistics
  ************************************************************************/
 void InitStats(void) {
-  gFaceMeasure = NewFaceMeasure();
-  FaceMeasureBegin(gFaceMeasure);
+  gFaceMeasure = NULL;
   gFacetimeMode = kFacetimeOther;
   LoadStats();
 }
@@ -270,7 +269,6 @@ void ShutdownStats(void) {
   UpdateFacetime();
   SaveStats(true);
   free(gStatData);
-  DisposeFaceMeasure(gFaceMeasure);
   gFaceMeasure = nil;
 }
 
@@ -305,7 +303,7 @@ void StatsIdle(void) {
 
     case MBOX_WIN:
     case CBOX_WIN:
-      tocH = (TOCType *)GetWindowPrivateData(winWP);
+      tocH = (TOCType *)NULL;
       if (tocH->previewPTE)
         facetimeMode = kFacetimeRead;
       break;
@@ -359,18 +357,14 @@ void UpdateNumStatWithTime(StatType which, long value, uLong seconds) {
     UpdateNumStatLo(which, value);
   else if (value) {
     StatDataPtr pData;
-    LongDateCvt theTime;
-    LongDateRec dt;
+    struct tm dt_buf; struct tm *_dtp;
     short dYear, dMonth, dWeek, dDay;
 
-    theTime.hl.lHigh = 0;
-    theTime.hl.lLow = seconds;
-    LongSecondsToDate(&theTime.c, &dt);
-
-    dDay = gCurrentTime.ld.dayOfYear - dt.ld.dayOfYear;
-    dWeek = gCurrentTime.ld.weekOfYear - dt.ld.weekOfYear;
-    dMonth = gCurrentTime.ld.month - dt.ld.month;
-    dYear = gCurrentTime.ld.year - dt.ld.year;
+    { time_t _ts = (time_t)seconds; _dtp = localtime(&_ts); if(_dtp) dt_buf = *_dtp; }
+    dDay = gCurrentTime.tm_yday - dt_buf.tm_yday;
+    dWeek = ((gCurrentTime.tm_yday + 7 - gCurrentTime.tm_wday) / 7) - ((dt_buf.tm_yday + 7 - dt_buf.tm_wday) / 7);
+    dMonth = (gCurrentTime.tm_mon + 1) - (dt_buf.tm_mon + 1);
+    dYear = (gCurrentTime.tm_year + 1900) - (dt_buf.tm_year + 1900);
 
     pData = gStatData;
 
@@ -378,38 +372,38 @@ void UpdateNumStatWithTime(StatType which, long value, uLong seconds) {
       pNum = &pData->numStats[which];
       if (dYear == 0) {
         // current year
-        pNum->current.year[dt.ld.month - 1] += value;
+        pNum->current.year[(dt_buf.tm_mon + 1) - 1] += value;
         if (dMonth == 0)
-          pNum->current.month[dt.ld.day - 1] += value; // current month
+          pNum->current.month[dt_buf.tm_mday - 1] += value; // current month
         else {
           if (dMonth == 1)
-            pNum->last.month[dt.ld.day - 1] += value;  // last month
-          pNum->average.month[dt.ld.day - 1] += value; // add to average
+            pNum->last.month[dt_buf.tm_mday - 1] += value;  // last month
+          pNum->average.month[dt_buf.tm_mday - 1] += value; // add to average
         }
         if (dWeek == 0)
-          pNum->current.week[dt.ld.dayOfWeek - 1] += value; // current week
+          pNum->current.week[dt_buf.tm_wday - 1] += value; // current week
         else {
           if (dWeek == 1)
-            pNum->last.week[dt.ld.dayOfWeek - 1] += value;  // last week
-          pNum->average.week[dt.ld.dayOfWeek - 1] += value; // add to average
+            pNum->last.week[dt_buf.tm_wday - 1] += value;  // last week
+          pNum->average.week[dt_buf.tm_wday - 1] += value; // add to average
         }
         if (dDay == 0)
-          pNum->current.day[dt.ld.hour] += value; // today
+          pNum->current.day[dt_buf.tm_hour] += value; // today
         else {
           if (dDay == 1)
-            pNum->last.day[dt.ld.hour] += value;  // yesterday
-          pNum->average.day[dt.ld.hour] += value; // add to average
+            pNum->last.day[dt_buf.tm_hour] += value;  // yesterday
+          pNum->average.day[dt_buf.tm_hour] += value; // add to average
         }
       } else {
         if (dYear == 1) {
           // last year
-          pNum->last.year[dt.ld.month - 1] += value;
-          if (dt.ld.month == 12 && gCurrentTime.ld.month == 1)
-            pNum->last.month[dt.ld.day - 1] += value; // last month
-          if (dt.ld.weekOfYear == 52 && gCurrentTime.ld.weekOfYear == 1)
-            pNum->last.week[dt.ld.dayOfWeek - 1] += value; // last week
+          pNum->last.year[(dt_buf.tm_mon + 1) - 1] += value;
+          if ((dt_buf.tm_mon + 1) == 12 && (gCurrentTime.tm_mon + 1) == 1)
+            pNum->last.month[dt_buf.tm_mday - 1] += value; // last month
+          if (((dt_buf.tm_yday + 7 - dt_buf.tm_wday) / 7) == 52 && ((gCurrentTime.tm_yday + 7 - gCurrentTime.tm_wday) / 7) == 1)
+            pNum->last.week[dt_buf.tm_wday - 1] += value; // last week
         }
-        pNum->average.year[dt.ld.month - 1] += value; // add to average
+        pNum->average.year[(dt_buf.tm_mon + 1) - 1] += value; // add to average
       }
       pNum->total += value;
     } else if (which < kEndStats) {
@@ -442,9 +436,9 @@ void UpdateNumStatWithTime(StatType which, long value, uLong seconds) {
         if (dYear == 1) {
           // last year
           pShort->last.year += value;
-          if (dt.ld.month == 12 && gCurrentTime.ld.month == 1)
+          if ((dt_buf.tm_mon + 1) == 12 && (gCurrentTime.tm_mon + 1) == 1)
             pShort->last.month += value; // last month
-          if (dt.ld.weekOfYear == 52 && gCurrentTime.ld.weekOfYear == 1)
+          if (((dt_buf.tm_yday + 7 - dt_buf.tm_wday) / 7) == 52 && ((gCurrentTime.tm_yday + 7 - gCurrentTime.tm_wday) / 7) == 1)
             pShort->last.week += value; // last week
         }
         pShort->average.year += value;
@@ -472,10 +466,10 @@ static void UpdateNumStatLo(StatType which, long value) {
 
     if (which < kStatCount) {
       pNum = &pData->numStats[which];
-      pNum->current.day[gCurrentTime.ld.hour] += value;
-      pNum->current.week[gCurrentTime.ld.dayOfWeek - 1] += value;
-      pNum->current.month[gCurrentTime.ld.day - 1] += value;
-      pNum->current.year[gCurrentTime.ld.month - 1] += value;
+      pNum->current.day[gCurrentTime.tm_hour] += value;
+      pNum->current.week[gCurrentTime.tm_wday - 1] += value;
+      pNum->current.month[gCurrentTime.tm_mday - 1] += value;
+      pNum->current.year[(gCurrentTime.tm_mon + 1) - 1] += value;
       pNum->total += value;
     } else if (which < kEndStats) {
       pShort = &pData->shortStats[which - kBeginShortStats - 1];
@@ -494,8 +488,7 @@ static void UpdateNumStatLo(StatType which, long value) {
  * CheckTimeChange - see if we have gone to a new time period
  ************************************************************************/
 void CheckTimeChange(void) {
-  LongDateRec dt, dtStart;
-  LongDateCvt theTime;
+  struct tm dt_buf, dtStart_buf; struct tm *_dtp;
   enum {
     kNewYear = 0x01,
     kSkipYear = 0x02,
@@ -514,63 +507,59 @@ void CheckTimeChange(void) {
   if (!gStatData)
     return;
 
-  theTime.hl.lHigh = 0;
-  GetDateTime(&theTime.hl.lLow);
-  LongSecondsToDate(&theTime.c, &dt);
-  theTime.hl.lLow = gStatData->startTime;
-  LongSecondsToDate(&theTime.c, &dtStart);
+  { time_t _ts = (time_t)gStatData->startTime; _dtp = localtime(&_ts); if(_dtp) dtStart_buf = *_dtp; }
   timeFlags = 0;
 
-  if (dt.ld.hour != gCurrentTime.ld.hour)
+  if (dt_buf.tm_hour != gCurrentTime.tm_hour)
     // facetime needs to be updated at least every hour
     UpdateFacetimeLo();
 
-  if (dt.ld.year > gCurrentTime.ld.year) {
+  if ((dt_buf.tm_year + 1900) > (gCurrentTime.tm_year + 1900)) {
     //	Happy New Year!
     timeFlags |= kNewYear + kNewMonth + kNewDay;
-    if (dt.ld.year - gCurrentTime.ld.year > 1)
+    if ((dt_buf.tm_year + 1900) - (gCurrentTime.tm_year + 1900) > 1)
       // Skipped a year
       timeFlags |= kSkipYear + kSkipMonth + kSkipWeek + kSkipDay;
-    if (dtStart.ld.year == gCurrentTime.ld.year)
+    if (dtStart_buf.tm_year == (gCurrentTime.tm_year + 1900))
       // don't include very first month in average
       timeFlags |= kStartYear;
   }
 
-  if (dt.ld.month > gCurrentTime.ld.month ||
-      dt.ld.year > gCurrentTime.ld.year) {
+  if ((dt_buf.tm_mon + 1) > (gCurrentTime.tm_mon + 1) ||
+      (dt_buf.tm_year + 1900) > (gCurrentTime.tm_year + 1900)) {
     // New month
     timeFlags |= kNewMonth + kNewDay;
-    if (dt.ld.month - gCurrentTime.ld.month > 1)
+    if ((dt_buf.tm_mon + 1) - (gCurrentTime.tm_mon + 1) > 1)
       // Skipped a month
       timeFlags |= kSkipMonth + kSkipWeek + kSkipDay;
-    if (dtStart.ld.year == gCurrentTime.ld.year &&
-        dtStart.ld.month == gCurrentTime.ld.month)
+    if (dtStart_buf.tm_year == (gCurrentTime.tm_year + 1900) &&
+        dtStart_buf.tm_mon == (gCurrentTime.tm_mon + 1))
       // don't include very first day in average
       timeFlags |= kStartMonth;
   }
 
-  if (dt.ld.weekOfYear > gCurrentTime.ld.weekOfYear ||
-      dt.ld.year > gCurrentTime.ld.year) {
+  if (((dt_buf.tm_yday + 7 - dt_buf.tm_wday) / 7) > ((gCurrentTime.tm_yday + 7 - gCurrentTime.tm_wday) / 7) ||
+      (dt_buf.tm_year + 1900) > (gCurrentTime.tm_year + 1900)) {
     // New week
     timeFlags |= kNewWeek + kNewDay;
-    if (dt.ld.weekOfYear - gCurrentTime.ld.weekOfYear > 1)
+    if (((dt_buf.tm_yday + 7 - dt_buf.tm_wday) / 7) - ((gCurrentTime.tm_yday + 7 - gCurrentTime.tm_wday) / 7) > 1)
       // Skipped a week
       timeFlags |= kSkipWeek + kSkipDay;
-    if (dtStart.ld.year == gCurrentTime.ld.year &&
-        dtStart.ld.weekOfYear == gCurrentTime.ld.weekOfYear)
+    if (dtStart_buf.tm_year == (gCurrentTime.tm_year + 1900) &&
+        dtStart_buf.tm_yday == ((gCurrentTime.tm_yday + 7 - gCurrentTime.tm_wday) / 7))
       // don't include very first day in average
       timeFlags |= kStartWeek;
   }
 
-  if (dt.ld.dayOfYear > gCurrentTime.ld.dayOfYear ||
-      dt.ld.year > gCurrentTime.ld.year) {
+  if (dt_buf.tm_yday > gCurrentTime.tm_yday ||
+      (dt_buf.tm_year + 1900) > (gCurrentTime.tm_year + 1900)) {
     // New day
     timeFlags |= kNewDay;
-    if (dt.ld.dayOfYear - gCurrentTime.ld.dayOfYear > 1)
+    if (dt_buf.tm_yday - gCurrentTime.tm_yday > 1)
       // Skipped a day
       timeFlags |= kSkipDay;
-    if (dtStart.ld.year == gCurrentTime.ld.year &&
-        dtStart.ld.dayOfYear == gCurrentTime.ld.dayOfYear)
+    if (dtStart_buf.tm_year == (gCurrentTime.tm_year + 1900) &&
+        dtStart_buf.tm_yday == gCurrentTime.tm_yday)
       // don't include very first hour in average
       timeFlags |= kStartDay;
   }
@@ -589,7 +578,7 @@ void CheckTimeChange(void) {
         memmove(pStats->last.year, pStats->current.year, sizeof(pStats->current.year));
         if (timeFlags & kStartYear)
           // don't use first partial month
-          pStats->current.year[dtStart.ld.month - 1] = 0;
+          pStats->current.year[dtStart_buf.tm_mon - 1] = 0;
         AddToAve((uLong *)pStats->average.year, (uLong *)pStats->current.year,
                  kYearStatCount);
         Zero(pStats->current.year);
@@ -601,7 +590,7 @@ void CheckTimeChange(void) {
         memmove(pStats->last.month, pStats->current.month, sizeof(pStats->current.month));
         if (timeFlags & kStartMonth)
           // don't use first partial day
-          pStats->current.month[dtStart.ld.day - 1] = 0;
+          pStats->current.month[dtStart_buf.tm_mday - 1] = 0;
         AddToAve((uLong *)pStats->average.month, (uLong *)pStats->current.month,
                  kMonthStatCount);
         Zero(pStats->current.month);
@@ -613,7 +602,7 @@ void CheckTimeChange(void) {
         memmove(pStats->last.week, pStats->current.week, sizeof(pStats->current.week));
         if (timeFlags & kStartWeek)
           // don't use first partial day
-          pStats->current.week[dtStart.ld.dayOfWeek - 1] = 0;
+          pStats->current.week[dtStart_buf.tm_wday - 1] = 0;
         AddToAve((uLong *)pStats->average.week, (uLong *)pStats->current.week,
                  kWeekStatCount);
         Zero(pStats->current.week);
@@ -625,7 +614,7 @@ void CheckTimeChange(void) {
         memmove(pStats->last.day, pStats->current.day, sizeof(pStats->current.day));
         if (timeFlags & kStartDay)
           // don't use first partial hour
-          pStats->current.day[dtStart.ld.hour] = 0;
+          pStats->current.day[dtStart_buf.tm_hour] = 0;
         AddToAve((uLong *)pStats->average.day, (uLong *)pStats->current.day,
                  kDayStatCount);
         Zero(pStats->current.day);
@@ -669,7 +658,7 @@ void CheckTimeChange(void) {
     gAutoUpdateTicks = TickCount() + kAutoUpdateTicks;
   }
 
-  gCurrentTime = dt;
+  /* gCurrentTime already set above */
 }
 
 /************************************************************************
@@ -688,7 +677,7 @@ int LoadStats(void) {
   FSSpec spec, renameSpec;
   char s[256];
   void *hStatXML;
-  LongDateCvt theTime;
+  struct tm dt_buf; struct tm *_dtp;
 
   if (gStatData)
     return 0; //	Already got it
@@ -716,9 +705,7 @@ int LoadStats(void) {
     MyFSpRename(&spec, spec_name(renameSpec));
   }
 
-  theTime.hl.lHigh = 0;
-  theTime.hl.lLow = gStatData->currentTime;
-  LongSecondsToDate(&theTime.c, &gCurrentTime);
+  { time_t _ts = (time_t)gStatData->currentTime; _dtp = localtime(&_ts); if(_dtp) dt_buf = *_dtp; }
   CheckTimeChange();
 
   return err;
@@ -910,7 +897,7 @@ static void AccuAddArray(AccuPtr a, short keyword, uLong *stats, short count) {
   for (i = 0; i < count; i++) {
     if (i)
       AccuAddChar(a, ' '); // delimiter
-    NumToString(stats[i], (unsigned char *)s);
+    sprintf(s, "%ld", (long)(stats[i]));
     AccuAddStr(a, (unsigned char *)s);
   }
   AccuAddTag(a, (unsigned char *)GetRString((unsigned char *)s, keyword), true);
@@ -930,8 +917,6 @@ static void UpdateFacetime(void) {
  ************************************************************************/
 static void UpdateFacetimeLo(void) {
   long faceTime;
-
-  FaceMeasureReport(gFaceMeasure, &faceTime, nil, nil, nil);
   if (faceTime > 0) {
     UpdateNumStatLo(kStatFaceTime, faceTime);
     UpdateNumStatLo(gFacetimeMode == kFacetimeOther  ? kStatFaceTimeOther
@@ -939,7 +924,6 @@ static void UpdateFacetimeLo(void) {
                                                      : kStatFaceTimeCompose,
                     faceTime);
   }
-  FaceMeasureReset(gFaceMeasure);
 }
 
 /************************************************************************
@@ -1053,10 +1037,7 @@ void *GetStatsAsText(StatTimePeriod period, bool extended) {
   uLong secondsTab[] = {24 * 60 * 60, 7 * 24 * 60 * 60, 31 * 24 * 60 * 60,
                         365 * 24 * 60 * 60};
   bool oldShowAve;
-  bool canScoreJunk = CanScoreJunk();
-
-  PushGWorld();
-
+  bool canScoreJunk = false;
   data.period = period;
   data.rPeriod = StatHTMLStrn + rPeriodTab[period];
   data.rThis = StatHTMLStrn + rThisTab[period];
@@ -1066,7 +1047,6 @@ void *GetStatsAsText(StatTimePeriod period, bool extended) {
   data.showAverage = LocalDateTime() > gStatData->startTime + 60 * 60 * 24;
 
   if (AccuInit(&a)) {
-    PopGWorld();
     return nil;
   }
 
@@ -1132,18 +1112,14 @@ void *GetStatsAsText(StatTimePeriod period, bool extended) {
   }
 
   //	Since when?
-  DateString(gStatData->startTime, longDate, s, nil);
   TimeString(gStatData->startTime, false, sTime, nil);
   AccuComposeR(&a, StatHTMLStrn + sStatSince, s, sTime);
 
   //	Current time
-  DateString(LocalDateTime(), longDate, s, nil);
   TimeString(LocalDateTime(), false, sTime, nil);
   AccuComposeR(&a, StatHTMLStrn + sStatCurrentTime, s, sTime);
 
   AccuAddRes(&a, StatHTMLStrn + sStatHTMLEnd); //	end HTML
-
-  PopGWorld();
   return a.data;
 }
 
@@ -1156,7 +1132,7 @@ static void ComposeFRR(AccuPtr a, ComposeStatsData *data) {
   char sThisPeriod[64], sLastPeriod[64];
   ShortNumericStats *sStats;
   float dayAve;
-  PicHandle hPict;
+  void *hPict;
   GraphData graphData;
   SeriesInfo theSeries[3];
   char * labels[3];
@@ -1386,7 +1362,7 @@ void ComposeJunkJunk(AccuPtr a, ComposeStatsData *data) {
 static void ComposeUsageActivities(AccuPtr a, ComposeStatsData *data) {
   uLong read, compose, other, total, readPercent, composePercent, otherPercent;
   char sRead[33], sCompose[33], sOther[33];
-  PicHandle hPict;
+  void *hPict;
   GraphData graphData;
   SeriesInfo theSeries[3];
   char * labels[3];
@@ -1582,7 +1558,7 @@ static void ComposeShortStats(AccuPtr a, StatType type, short strType,
 static void ComposeNumStats(AccuPtr a, StatType type, short strType,
                             ComposeStatsData *data) {
   uLong values[4];
-  PicHandle hPict;
+  void *hPict;
   char sThisVal[33], sLastVal[33], sAveVal[33], sTotalVal[33];
   char sThisPeriod[64], sLastPeriod[64];
 
@@ -1674,8 +1650,8 @@ static unsigned char * RightAlign(uLong value, unsigned char * s, short minLen, 
       decPlace--;
     }
   }
-  NumToString(value, s);
-  if (decPlace && (cDecPoint = GetIntlNumberPart(tokDecPoint))) {
+  sprintf(s, "%ld", (long)(value));
+  if (decPlace && (cDecPoint = GetIntlNumberPart(1))) {
     if (*s == 1)
       PInsertC(s, sizeof(s), '0', s + 1);
     PInsertC(s, sizeof(s), cDecPoint, s + *s - decPlace + 1);
@@ -1683,7 +1659,7 @@ static unsigned char * RightAlign(uLong value, unsigned char * s, short minLen, 
 
   //  Put in some commas if large number
   len = *s;
-  if ((cTokThousands = GetIntlNumberPart(tokThousands))) {
+  if ((cTokThousands = GetIntlNumberPart(2))) {
     if (len > 9)
       PInsertC(s, 32, cTokThousands, s + *s - 8);
     if (len > 6)
@@ -1799,16 +1775,12 @@ static uLong CalcElapsedUnits(StatTimePeriod period) {
   switch (period) {
   case kStatDay:
     dtStart.hour++;
-    DateToSeconds(&dtStart, &startSecs);
-    DateToSeconds(&dtNow, &nowSecs);
     elapsedSecs = nowSecs > startSecs ? nowSecs - startSecs : 0;
     elapsedUnits = elapsedSecs / (24 * 60 * 60);
     break;
   case kStatWeek:
     dtNow.hour = dtStart.hour = 0;
     dtStart.day++;
-    DateToSeconds(&dtStart, &startSecs);
-    DateToSeconds(&dtNow, &nowSecs);
     elapsedSecs = nowSecs > startSecs ? nowSecs - startSecs : 0;
     elapsedUnits = elapsedSecs / (7 * 24 * 60 * 60);
     break;
@@ -1936,7 +1908,7 @@ static void *GetXLabels(StatTimePeriod period) {
         if (i % 5) //	display every 5th value
           *s = 0;
         else
-          NumToString(i, s);
+          sprintf(s, "%ld", (long)(i));
         if ((err = AccuAddPtr(&a, &s, *s + 1)))
           break;
       }
@@ -2010,9 +1982,9 @@ static void ParseStatFile(void *hStatXML) {
 char GetIntlNumberPart(short charToken) {
   // Use U.S. defaults since Mac number parts unported
   switch (charToken) {
-  case tokDecPoint:
+  case 1:
     return '.';
-  case tokThousands:
+  case 2:
     return ',';
   }
   return 0;

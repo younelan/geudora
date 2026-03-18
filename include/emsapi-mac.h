@@ -102,7 +102,6 @@ ADVISED OF THE POSSIBILITY OF SUCH DAMAGE. */
 #define __EMS_MAC__
 
 /* Carbon has been removed; rely on `portable-compat.h` for basic types. */
-#include "portable-compat.h"
 
 #if PRAGMA_STRUCT_ALIGN
 #pragma options align = mac68k

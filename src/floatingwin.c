@@ -150,8 +150,6 @@ void DockedDragProc(GdkPoint *pt, EUDORA_RgnHandle winRgn, long refCon)
  			if (winWP!=theWindow && IsWindowVisible (winWP) && IsFloating(winWP) && win->windowType==kDockable)
 			{
 				EUDORA_Rect rSect,rDocked;
-
-				GetWindowStructureBounds(winWP,&rDocked);
 				if (SectRect(&rWin,&rDocked,&rSect))
 				{
 					//	Overlap with this docked window
@@ -243,12 +241,10 @@ void PositionDockedWindow(GtkWindow * winWP)
 	EUDORA_Rect	rStruc,rCont;
 	
 	if (!win || !IsMyWindow(winWP) || win->windowType != kDockable || !IsWindowVisible (winWP)) return;
-	
-	GetWindowStructureBounds(winWP,&rStruc);
 	pt.v = rStruc.top;
 	pt.h = rStruc.left;
 	DockedDragProc(&pt,rgn?rgn:MyGetWindowStructureRegion(winWP),(long)winWP);
-	if (rgn) DisposeRgn(rgn);
+	if (rgn) {}
 	if (pt.h!=rStruc.left || pt.v!=rStruc.top)
 	{
 		//	pt is location of strucRgn. Move region needs location of contRgn
@@ -286,8 +282,6 @@ void DockedWinReduce(GtkWindow * checkWinWP, EUDORA_Rect *winRect, EUDORA_Rect *
 		if (IsKnownWindowMyWindow(winWP) && win && (win)->windowType == kDockable && IsWindowVisible (winWP))
 		{
 			EUDORA_Rect	rDocked,rSect;
-			
-			GetWindowStructureBounds(winWP,&rDocked);
 			if (SectRect(&rDocked,checkWinWP?&rWin:r,&rSect))
 			{
 				//	The window intersects a docked window
@@ -362,8 +356,6 @@ void DockedWinRemove(EUDORA_RgnHandle rgn,GtkWindow * ignoreWinWP)
 		if (winWP!=ignoreWinWP && IsKnownWindowMyWindow(winWP) && win && (win)->windowType == kDockable)
 		{
 			EUDORA_Rect	rDocked;
-			
-			GetWindowStructureBounds(winWP,&rDocked);
 			RgnMinusRect(rgn,&rDocked);
 		}
 	}
@@ -374,7 +366,7 @@ void DockedWinRemove(EUDORA_RgnHandle rgn,GtkWindow * ignoreWinWP)
  **********************************************************************/
 bool IsTopNonFloater(GtkWindow * theWindow)
 {
-	return (theWindow == MyFrontNonFloatingWindow());
+	return (theWindow == NULL);
 }
 /**********************************************************************
  * Return a pointer to the frontmost, non floating, visible window.
@@ -386,11 +378,11 @@ bool IsTopNonFloater(GtkWindow * theWindow)
  * replace calls to FrontWindow_() when we're looking for the frontmost
  * visible window.
  *
- * Changing MyFrontNonFloatingWindow() to return the topmost, visible, 
+ * Changing NULL to return the topmost, visible, 
  * non-floating window should be perfectly safe.  In the classic
  * version, MyFrontNonFloatingWindow NEVER returns an invisible window.
  **********************************************************************/
-GtkWindow * MyFrontNonFloatingWindow(void)
+GtkWindow * NULL
 {
 	return FrontNonFloatingWindow();
 }

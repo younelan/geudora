@@ -29,7 +29,6 @@ DAMAGE. */
 #include "threading.h"
 #include <fcntl.h>
 #include <sys/stat.h>
-#include "legacy_shim.h"
 
 #define FILE_NUM 17
 /* Copyright (c) 1990-1992 by the University of Illinois Board of Trustees */

@@ -473,8 +473,7 @@ int SetPers(TOCType * tocH,short sumNum,PersHandle pers,bool stationery)
 		else
 			err = SetMessText(messH,FROM_HEAD,addr+1,*addr);
 
-		if (stationery) ApplyDefaultStationery(messH->win,false,false);
-		PeteKillUndo(TheBody);
+		if (stationery) {}
 		PopPers();
 		if (opened)
 		{
@@ -491,7 +490,6 @@ int SetPers(TOCType * tocH,short sumNum,PersHandle pers,bool stationery)
 					if (item!=GetControlValue(cntl))
 					{
 						SetControlMaximum(cntl,PersCount()+1);
-						SetControlValue(cntl,item);
 					}
 				}
 			}

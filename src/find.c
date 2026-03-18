@@ -45,7 +45,6 @@ ADVISED OF THE POSSIBILITY OF SUCH DAMAGE. */
 #include "Globals.h"
 #include "MyRes.h"
 #include "StringUtil.h"
-#include "legacy_shim.h"
 #include "searchwin.h"
 #include "threading.h"
 #include <gtk/gtk.h>

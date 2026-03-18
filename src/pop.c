@@ -55,15 +55,7 @@ ADVISED OF THE POSSIBILITY OF SUCH DAMAGE. */
 #ifndef resChanged
 #define resChanged 2
 #define GetResAttrs(h) 0
-#define ChangedResource(h)
 #endif
-#ifndef MINI_MASK
-#define MINI_MASK 0
-#endif
-#ifndef NumToString
-#define NumToString MyNumToString
-#endif
-extern void MyNumToString(long n, char *s);
 static inline void Fix1MessServerArea(void *win) {}
 #ifndef cKrbNotLoggedIn
 #define cKrbNotLoggedIn -1
@@ -630,7 +622,7 @@ TOCType * RenameInTemp(TOCType * tocH) {
 
   // Make name for new mailbox
   GetMailboxSpec(tocH, -1, inSpec);
-  NumToString(maxFileNum + 1, name);
+  sprintf(name, "%ld", (long)(maxFileNum + 1));
   while (strlen((const char *)name) < 6)
     PInsertC(name, sizeof(name), '0', name);
   spec_for(deliverFolder, (const char *)name, &deliverSpec);
@@ -691,9 +683,9 @@ int POPPreFetch(TransStream stream, POPDHandle popDH, short message,
 
   for (; message < messageCount; message++)
     if (popDH->data[message].retr || popDH->data[message].stub) {
-      NumToString(message + 1, args);
+      sprintf(args, "%ld", (long)(message + 1));
       if (popDH->data[message].stub) {
-        NumToString(GetRLong(BIG_MESSAGE_FRAGMENT), top);
+        sprintf(top, "%ld", (long)(GetRLong(BIG_MESSAGE_FRAGMENT)));
         PCatC(args, ' ');
         PCat(args, top);
         if (capabilities[pcapaMangle] || capabilities[pcapaXMangle]) {
@@ -1349,7 +1341,7 @@ int DeletePOPMessage(TransStream stream, short number, long uidHash) {
   unsigned char args[64];
   long size;
 
-  NumToString(number + 1, args);
+  sprintf(args, "%ld", (long)(number + 1));
   size = sizeof(buffer);
   Prr = POPCmd(stream, kpcDele, args);
   if (!Prr)
@@ -1558,10 +1550,8 @@ done:
       g_strlcpy((char *)(savedSub), (char *)(sum.subj), sizeof(savedSub));
     if (part == 1 && pdp) {
       FillPOPD(pdp, hdh);
-      DBNoteUIDHash(sum.uidHash, pdp->uidHash);
       sum.uidHash = pdp->uidHash;
     } else {
-      DBNoteUIDHash(sum.uidHash, kNoMessageId);
       sum.uidHash = kNoMessageId;
     }
     if (!hdh->isMIME) {
@@ -2202,7 +2192,7 @@ bool HasBeenRead(TransStream stream, short msgNum, short count) {
            GetRString(scratch, FIRST_UNREAD), NULL);
   GetRString(terminate, ALREADY_READ);
   GetRString(status, STATUS);
-  NumToString(msgNum, scratch);
+  sprintf(scratch, "%ld", (long)(msgNum));
   PLCat(scratch, 1);
   POPCmd(stream, kpcTop, scratch);
   for (size = sizeof(scratch);
@@ -3377,7 +3367,7 @@ int FillPOPDFromServer(TransStream stream, POPDHandle popDH, short spot) {
   /*
    * get rest of message
    */
-  NumToString(spot + 1, scratch);
+  sprintf(scratch, "%ld", (long)(spot + 1));
   PLCat(scratch, 1);
   size = sizeof(scratch);
   if (Prr = POPCmdGetReply(stream, kpcTop, scratch, scratch, &size))

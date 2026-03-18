@@ -50,7 +50,6 @@ ADVISED OF THE POSSIBILITY OF SUCH DAMAGE. */
 #include "mailbox.h"
 #include "message.h"
 #include "mydefs.h"
-#include "portable-compat.h"
 #include "progress.h"
 #include "schizo.h"
 #include "log.h"

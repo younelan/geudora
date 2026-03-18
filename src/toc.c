@@ -1220,7 +1220,6 @@ void CleanseTOC(TOCType * tocH) {
 
     /* Version-based migration */
     if (vers < 1) {
-      DBNoteUIDHash(sum->uidHash, kNeverHashed);
       sum->uidHash = sum->msgIdHash = kNeverHashed;
     }
     if (minor < 1)

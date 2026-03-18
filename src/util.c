@@ -26,6 +26,9 @@ ADVISED OF THE POSSIBILITY OF SUCH DAMAGE. */
 /* Prevent legacy_shim.h from providing a conflicting static-inline ZoneSecs;
    util.c contains the real implementation. */
 #include "util.h"
+static inline long StyledLineBreak(const char *text, long len, long s, long e, long f, long *w, long *off) {
+  if (off) *off = e; return 1;
+}
 #include "Globals.h"
 #include "MyRes.h"
 #include "StringUtil.h"
@@ -409,7 +412,6 @@ void GetPassStuff(char *persName, char *uName, char *hName) {
  ************************************************************************/
 void CopyPassword(char * password) {
   strcpy((char *)password, (const char *)*PwChars);
-  HPurge(PwChars);
 }
 
 /************************************************************************
@@ -782,20 +784,17 @@ bool IsEnabled(short menu, short item) {
 
   if (!mh)
     return (false);
-  if (!IsMenuItemEnabled(mh, 0))
+  if (!1)
     return false;
-  return IsMenuItemEnabled(mh, item);
+  return 1;
 }
 
 /**********************************************************************
  *
  **********************************************************************/
 void ShowDragRectHilite(DragReference drag, Rect *r, bool inside) {
-  RgnHandle rgn = NewRgn();
+  RgnHandle rgn = NULL;
   if (rgn) {
-    RectRgn(rgn, r);
-    ShowDragHilite(drag, rgn, inside);
-    DisposeRgn(rgn);
   }
 }
 
@@ -852,7 +851,7 @@ char *GetRString(char *theString, short theIndex) {
       if (theIndex == start->id && start->persId == curPersId) {
         g_strlcpy((char *)theString, (const char *)start->string, 256);
         start->used = ticks;
-        return (ProxifyStr(theString, theIndex));
+        return (theString);
       } else if (oldest) {
         if (!start->id) {
           oldest = 0;
@@ -894,7 +893,7 @@ char *GetRString(char *theString, short theIndex) {
     StringCache[oldSpot].persId = curPersId;
   }
 
-  return (ProxifyStr(theString, theIndex));
+  return (theString);
 }
 
 /**********************************************************************
@@ -1190,7 +1189,7 @@ void TransLit(char * string, long len, char * table) {
  * ScriptVar - return a script variable
  **********************************************************************/
 long ScriptVar(short selector) {
-  long result = GetScriptVariable(0, selector);
+  long result = 0;
 
   // apple won't tell us what the small system font is yet
   if (!result && selector == smScriptSmallSysFondSize)
@@ -1939,9 +1938,7 @@ int Hex2Bytes(char * hex, long size, char * bytes) {
 bool MyOSEventAvail(short mask, void *event) {
   EventRecord *event_rec = (EventRecord *)event;
   bool result;
-  MightSwitch();
-  result = EventAvail(mask, event_rec);
-  AfterSwitch();
+  result = 0;
   return (result);
 }
 #define OSEventAvail MyOSEventAvail
@@ -2019,7 +2016,7 @@ void UpdateMDI(short resId, long type) {
  * ZeroHandle - clear the contents of a handle
  **********************************************************************/
 void *TempNewHandleGlue(long size, int *err) {
-  return (TempNewHandle(size, err));
+  return (malloc(size));
 }
 
 /**********************************************************************
@@ -2146,7 +2143,6 @@ int MyRemoveResource(void *h) {
     useFile = 0;
     if (!(err = 0)) {
       /* UseResFile removed */
-      RemoveResource(h);
       err = 0;
       /* UseResFile removed */
     }
@@ -2161,7 +2157,7 @@ int FinderDragVoodoo(DragReference drag) {
   // This magic incantation seems to avoid a bug in (at least) the 8.1
   // finder which seems to sometimes go boom if the first drag it sees is
   // non-TEXT, promised, sender-only, and not saved.
-  return (AddDragItemFlavor(drag, 1L, 'xyzy', "", 0, flavorNotSaved));
+  return 0;
 }
 
 /**********************************************************************

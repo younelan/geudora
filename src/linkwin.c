@@ -103,17 +103,14 @@ int LVSelectAll(void *list);
 int LVGetItem(void *list, int n, VLNodeInfo *data, int a);
 int LVDrag(void *list, int which, void *drag);
 void *NewIconButton(short id, void *winPtr);
-void MoveMyCntl(void *ctl, short x, short y, short w, short h);
 /* SetGreyControl - in util.h */
 void PositionBevelButtons(MyWindowPtr win, int n, void **list, short l, short b,
                           short h, short w);
-void SetControlValue(void *ctl, int val);
 short ControlHi(void *ctl);
 /* GetControlBounds - in mailbox.h */
 int FindControl(void *pt, void *winWP, void **hCtl);
 int TrackControl(void *ctl, void *pt, void *proc);
 void GlobalToLocal(void *pt);
-void SetPort(void *port);
 /* GetWindowKind - in mailbox.h */
 void *GetPortBounds(void *port, void *r);
 void *GetWindowPort(void *winWP);
@@ -134,7 +131,6 @@ void AuditHit(int a, int b, int c, int d, int e, int f, int g, int h);
 bool GetDateString(VLNodeID id, char dateStr[256]);
 /* GetLHPreviewIcon - in linkmng.h */
 void PlotIconSuite(void *r, int align, int tt, void *icon);
-void HPurge(void *v);
 void PlotIconID(void *r, int align, int ttx, short id);
 void MoveTo(short x, short y);
 void EraseRect(void *r);
@@ -451,7 +447,7 @@ void OpenLinkWin(void) {
     }
     gWinWinPtr = GetMyWindowWindowPtr(gWin.win);
     SetWinMinSize(gWin.win, 320, 12 * FontLead);
-    SetPort_(GetMyWindowCGrafPtr(gWin.win));
+    /* SetPort removed */
     ConfigFontSetup(gWin.win);
     MySetThemeWindowBackground(gWin.win, kThemeListViewBackgroundBrush, false);
 
@@ -615,7 +611,6 @@ static void LinkPositionColumnHeaders(MyWindowPtr win, short count,
   // move the column headers
   for (i = 0; i < count; i++) {
     if (pCtlList[i]) {
-      MoveMyCntl(pCtlList[i], columnLeft - 1, top, width[i], height);
       columnLeft += width[i];
     }
   }
@@ -631,8 +626,6 @@ static void SetControls(void) {
 
   // depress sorted column control
   for (i = 0; i < NUM_COLUMNS; i++)
-    SetControlValue(gWin.ctlColumns[i], (sortedColumn == i));
-
   // enable/disable buttons
   SetGreyControl(gWin.ctlView, !fSelect);
   SetGreyControl(gWin.ctlRemove, !fSelect);
@@ -710,7 +703,7 @@ static bool DoClose(MyWindowPtr win) {
  * DoUpdate - draw the window
  ************************************************************************/
 static void DoUpdate(MyWindowPtr win) {
-  CGrafPtr winPort = GetMyWindowCGrafPtr(win);
+  CGrafPtr winPort = NULL;
   Rect r, rCntl0, rCntlLast;
 
   // Tweak the link history window colors
@@ -722,8 +715,6 @@ static void DoUpdate(MyWindowPtr win) {
   LVDraw(&gWin.list, MyGetPortVisibleRegion(winPort), true, false);
 
   // Draw a rect around the column controls
-  GetControlBounds(gWin.ctlColumns[0], &rCntl0);
-  GetControlBounds(gWin.ctlColumns[NUM_COLUMNS - 1], &rCntlLast);
   SetRect(&r, rCntl0.left - 1, rCntl0.top - 1, rCntlLast.right, rCntl0.bottom);
   FrameRect(&r);
 }
@@ -766,9 +757,6 @@ void DoClick(MyWindowPtr win, EventRecord *event) {
   WindowPtr winWP = GetMyWindowWindowPtr(win);
   Point pt;
   ControlHandle hCtl;
-
-  SetPort(GetMyWindowCGrafPtr(win));
-
   if (!LVClick(&gWin.list, event)) {
     pt = event->where;
     GlobalToLocal(&pt);
@@ -1008,7 +996,7 @@ static bool LinkDrawRowCallBack(ViewListPtr pView, short item, Rect *pRect,
         if (theIcon) {
           PlotIconSuite(&rIcon, atNone + atHorizontalCenter,
                         select ? ttSelected : ttNone, theIcon);
-          HPurge(theIcon); // This icon can be purged when needed.
+          {} // This icon can be purged when needed.
           break;
         } else {
           // this ad does not have a preview for some reason
@@ -1120,11 +1108,11 @@ static void GetCellRectsForLHWin(ViewListPtr pView, CellRec *pCellData,
       if (column == NAME_COLUMN) {
         *pNamePt = pt;
         SetRect(pName, pt.h, pt.v - fInfo.ascent - fInfo.leading,
-                pt.h + StringWidth(spec_name(pCellData)), pt.v + fInfo.descent);
+                pt.h + 0, pt.v + fInfo.descent);
       } else if (column == DATE_COLUMN) {
         *pDatePt = pt;
         SetRect(pDate, pt.h, pt.v - fInfo.ascent - fInfo.leading,
-                pt.h + StringWidth(spec_name(pCellData)), pt.v + fInfo.descent);
+                pt.h + 0, pt.v + fInfo.descent);
       }
       break;
 

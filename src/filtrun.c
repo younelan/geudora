@@ -614,7 +614,7 @@ int FilterIMAPTocIncrementally(TOCType *tocH, FilterPBPtr fpb, bool noXfer)
 		fpb->notify++;
 
 		/* score the message */
-		if (HasFeature(featureJunk) && CanScoreJunk())
+		if (HasFeature(featureJunk) && false)
 		{
 			JunkScoreIMAPBox(tocH, sumNum, sumNum, false);
 

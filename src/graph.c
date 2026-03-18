@@ -5,7 +5,6 @@
 #include <string.h>
 
 #include "graph.h"
-#include "legacy_shim.h"
 #include "mailbox.h"
 #include <gtk/gtk.h>
 #include <pango/pangocairo.h>

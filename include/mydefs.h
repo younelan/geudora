@@ -121,7 +121,6 @@ void GrowBuf_Free(GrowBuf *buf);
    define the minimal legacy types required to compile on modern
    systems without Carbon. */
 // Include project-provided shims first to define basic types like Handle
-#include "legacy_shim.h"
 #include "mailbox.h"
 
 // Accumulator definition moved to mailbox.h

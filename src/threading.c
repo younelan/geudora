@@ -55,11 +55,9 @@ ADVISED OF THE POSSIBILITY OF SUCH DAMAGE. */
 #include <string.h>
 
 #include "StringUtil.h"
-#include "legacy_shim.h"
 #include "log.h"
 #include "mailbox.h"
 #include "mydefs.h"
-#include "portable-compat.h"
 
 #include "Globals.h"
 #include "StringDefs.h"

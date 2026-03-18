@@ -47,10 +47,10 @@ char IsWordChar[256] = {0};
 /* Quote822 is implemented in lex822.c */
 extern unsigned char *Quote822(unsigned char *into, unsigned char *from, bool space);
 
-void NumToString(long n, char * s) {
+void NumToString(long n, char *s) {
   if (!s)
     return;
-  sprintf((char *)s, "%ld", n);
+  sprintf(s, "%ld", n);
 }
 
 void NumToDot(unsigned long n, char * s) {
@@ -484,11 +484,11 @@ char * FormatString(uintptr_t arg, char * string, short format, short digits) {
     }
     break;
   case 'd':
-    NumToString(arg, string);
+    sprintf(string, "%ld", (long)(arg));
     break;
   case 'K':
     if (arg < 1 K)
-      NumToString(arg, string);
+      sprintf(string, "%ld", (long)(arg));
     else if (arg < 10 K) {
       arg *= 10;
       arg /= 1 K;
@@ -498,7 +498,7 @@ char * FormatString(uintptr_t arg, char * string, short format, short digits) {
         sprintf((char *)string, "%luK", arg / 10);
     } else if (arg < 1 K K) {
       arg /= 1 K;
-      NumToString(arg, string);
+      sprintf(string, "%ld", (long)(arg));
       g_strlcat((char *)string, "K", 256);
     } else if (arg < 10 K K) {
       arg *= 10;
@@ -509,7 +509,7 @@ char * FormatString(uintptr_t arg, char * string, short format, short digits) {
         sprintf((char *)string, "%luM", arg / 10);
     } else {
       arg /= 1 K K;
-      NumToString(arg, string);
+      sprintf(string, "%ld", (long)(arg));
       g_strlcat((char *)string, "M", 256);
     }
     break;

@@ -21,7 +21,6 @@
 #include "MyRes.h"
 #include "StringUtil.h"
 #include "fileutil.h"
-#include "legacy_shim.h"
 #include <string.h>
 #include <stdlib.h>
 #include <ctype.h>

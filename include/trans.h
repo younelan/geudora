@@ -27,7 +27,6 @@ ADVISED OF THE POSSIBILITY OF SUCH DAMAGE. */
 #ifndef TRANS_H
 #define TRANS_H
 
-#include "portable-compat.h"
 
 #if defined(__has_include) && __has_include(<gtk/gtk.h>)
 #include <gtk/gtk.h>

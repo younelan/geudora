@@ -34,7 +34,6 @@ bool CloseMyWindow(void *winWP);
 #ifndef COMP_H
 #define COMP_H
 
-#include "portable-compat.h"
 #include "sendmail.h"
 
 #include "mailbox.h"

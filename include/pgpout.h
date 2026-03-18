@@ -24,7 +24,7 @@ DAMAGE. */
 // Forward declarations for Mac-specific types that need portable equivalents
 typedef struct AppleEvent AppleEvent;
 typedef struct AEDescList AEDescList;
-typedef struct void void;
+/* ProcessSerialNumber removed — Mac-only type */
 
 /**********************************************************************
  * MacPGP/ViaCrypt constants

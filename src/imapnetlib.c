@@ -639,7 +639,7 @@ bool IMAPListUnSubscribed(IMAPStreamPtr imapStream, const char *pReference,
 
   // Fetch inbox if asked to.
   GetRString(pInbox, IMAP_INBOX_NAME);
-  PtoCcpy(cInbox, pInbox);
+  strcpy(cInbox, (const char *)pInbox);
   if (includeMailbox)
     mail_list(imapStream->mailStream, "", cInbox);
 

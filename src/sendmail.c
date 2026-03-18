@@ -35,7 +35,6 @@ ADVISED OF THE POSSIBILITY OF SUCH DAMAGE. */
 #include "fileutil.h"
 #include <fcntl.h>
 #include <sys/stat.h>
-#include "legacy_shim.h"
 #include "filtrun.h"
 #include "gtk_dialogs.h"
 #include "log.h"
@@ -336,7 +335,6 @@ int MySendMessage(TransStream stream, TOCType * tocH, int sumNum,
   /*
    * Log, if we must
    */
-  GetWTitle(messWinWP, buffer);
   g_debug("log: %d", SENDING, buffer);
 
   if (PrefIsSet(PREF_POP_SEND)) {
@@ -2970,7 +2968,7 @@ int SendAttachmentFolder(TransStream stream, MessHandle messH, long flags,
     return (err);
 
   // now, let's compose our boundary
-  NumToString(partID, spec_name(spec));
+  sprintf((char *)spec, "%ld", (long)(partID));
   BuildBoundary(NULL, ourBoundary, spec_name(spec));
   /*
    * send the multipart header

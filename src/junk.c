@@ -1508,7 +1508,7 @@ void JunkScoreSelected(TOCType * tocH) {
 //	Can we actually score mail?
 //	Really a shorthand for "are there any plugins that can score mail
 // installed"?
-bool CanScoreJunk() {
+bool CanScoreJunk(void) {
   TLMHandle tList = NULL;
   int err = ETLListAllTranslators(&tList, EMSF_JUNK_MAIL);
   if (tList != NULL)
@@ -1674,7 +1674,6 @@ bool WhiteListByMID(TOCType * tocH, short sumNum) {
       }
       free(references);
     }
-    HPurge(text);
   }
 
   // did we win?

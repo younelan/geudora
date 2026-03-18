@@ -47,7 +47,6 @@ ADVISED OF THE POSSIBILITY OF SUCH DAMAGE. */
 #include "StringUtil.h"
 #include "mailbox.h"
 #include "message.h"
-#include "legacy_shim.h"
 #include "imapdownload.h"
 #include "threading.h"
 #include <gtk/gtk.h>

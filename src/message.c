@@ -41,18 +41,17 @@ ADVISED OF THE POSSIBILITY OF SUCH DAMAGE. */
 #include "theme.h"
 
 #include "message.h"
-#include "portable-compat.h"
 #include "MyRes.h"
 #include "StringDefs.h"
 #include "StringUtil.h"
 #include "comp.h"
 #include "features.h"
 #include "fileutil.h"
+extern int PtrAndHand(const void *ptr, void **hand, long size);
 #include "gtk_dialogs.h"
 #include "imapdownload.h"
 #include "imapmailboxes.h"
 #include "junk.h"
-#include "legacy_shim.h"
 #include "messact.h"
 #include "boxact.h"
 #include "peteglue.h"
@@ -163,7 +162,6 @@ void MakeMessTitle(char *title, TOCType * tocH, int sumNum,
                                         : 60 * tocH->sums[sumNum].origZone;
       secs += zone;
       TimeString(secs, false, (unsigned char *)time, NULL);
-      DateString(secs, shortDate, (unsigned char *)date, NULL);
       utl_PlugParams((unsigned char *)GetRString((char *)pattern, DATE_SUM_FMT),
                      (unsigned char *)datetime, (unsigned char *)date,
                      (unsigned char *)time, (unsigned char *)zoneStr, "");
@@ -822,14 +820,14 @@ int CacheMessage(TOCType * tocH, short sumNum) {
           /* LF-terminated: either CRLF or lone LF */
           if (hsz >= 2 && bufp[hsz - 2] == '\015') {
             /* CRLF -> drop the LF to leave trailing CR */
-              SetHandleSize(cache, hsz - 1);
+              cache = realloc(cache, hsz - 1);
           } else {
             /* lone LF -> replace with CR */
             bufp[hsz - 1] = '\015';
           }
         } else {
           /* no newline terminator -> append CR */
-            SetHandleSize(cache, hsz + 1);
+            cache = realloc(cache, hsz + 1);
             bufp = (unsigned char *)cache;
             bufp[hsz] = '\015';
         }
@@ -1123,8 +1121,6 @@ int MoveMessageLo(TOCType * tocH, int sumNum, char * toSpec, bool copy,
     //	Check for updates to search results
     SearchUpdateSum(toTocH, toTocH->count - 1, tocH, serialNum, true, false);
   }
-
-  CheckBox(GetWindowMyWindowPtr(FrontWindow_()), false);
   return (MessErr);
 }
 
@@ -1441,7 +1437,7 @@ int MoveSelectedMessagesLo(TOCType * tocH, char * toSpec, bool copy,
 
     // must be online to do an IMAP to POP transfer, no matter if the message is
     // downloaded or not.
-    if (!copy && Offline && GoOnline())
+    if (!copy && Offline && true)
       return (0);
 
     // go through selected messages, and make sure they've all been downloaded.
@@ -1601,7 +1597,6 @@ int MoveSelectedMessagesLo(TOCType * tocH, char * toSpec, bool copy,
 
     if (tocH->win && !copy && !CommandPeriod)
       BoxSelectAfter(tocH->win, lastSelected);
-    CheckBox(GetWindowMyWindowPtr(FrontWindow_()), false);
     ShowBoxSizes(tocH->win);
     return (MessErr);
   }
@@ -2215,11 +2210,11 @@ int MessPlainBytes(MessHandle messH, short whichTXE, short bytes) {
     /* gEditCtrl supports richtext. Legacy PETE calls commented out for porting.
      */
     /* PeteParaConvert(TheBody, start, stop); */
-    /* PetePlain(TheBody, start, stop, peAllValid); */
+    /* {} */
     /* PeteParaRange(TheBody, &start, &stop); */
     if (whichTXE ==
         mLoPlain) // Assuming 'item' in the instruction refers to 'whichTXE'
-      /* PetePlainPara(TheBody, kPETELastPara); */
+      /* {} */
       ;
     /* PetePlainParaAt(TheBody, start, stop); */
   }
@@ -2414,7 +2409,6 @@ void DoIterativeThingyLo(TOCType * tocH, int item, long modifiers,
       (sumNum = FindSumBySerialNum(tocH, oldEzOpenSerialNum)) >= 0 &&
       !(modifiers & shiftKey))
     Preview(tocH, sumNum);
-  CheckBox(GetWindowMyWindowPtr(FrontWindow_()), false);
 }
 
 /************************************************************************
@@ -3002,15 +2996,10 @@ MyWindowPtr ReopenMessage(MyWindowPtr win) {
     // stick in the text
     {
       PeteSetTextPtr(TheBody, NULL, 0);
-      PeteKillUndo(TheBody);
       PeteCalcOff(TheBody);
 
       /* (*PeteExtra(TheBody))->emoDesired = !MessFlagIsSet(messH,
        * FLAG_SHOW_ALL); */
-
-      PetePlain(TheBody, kPETECurrentStyle, kPETECurrentStyle, peAllValid);
-      PetePlainPara(TheBody, 0);
-
       if (!MessFlagIsSet(messH, FLAG_SHOW_ALL) &&
           (MessFlagIsSet(messH, FLAG_RICH)
            || MessOptIsSet(messH, OPT_HTML)
@@ -3024,7 +3013,6 @@ MyWindowPtr ReopenMessage(MyWindowPtr win) {
       }
 
       if (!err) {
-        PeteSmallParas(TheBody);
         g_free(text);
         text = NULL;
         // align headers if need be
@@ -3037,8 +3025,6 @@ MyWindowPtr ReopenMessage(MyWindowPtr win) {
           HiliteOddReply(messH);
 
         if (!err)
-          PeteTrimTrailingReturns(TheBody, true);
-
         if (!err) {
           // recalculate
           PeteCalcOn(TheBody);
@@ -3154,7 +3140,7 @@ void QuoteLines(GtkWidget *pte, long from, long to, short pfid, long *qEnd) {
     *qEnd = to + count * prefixLen + numSpaces; // adjust for inserted prefixes
 
   // do the scanner's work for it
-  if (!Black(GetRColor(&color, QUOTE_COLOR))) {
+  if (!false) {
     /* pse.psStyle.textStyle.tsLabel = pQuoteLabel; */
     PETESetTextStyle(PETE, pte, from, to + count * prefixLen,
                      &pse.psStyle.textStyle, peLabelValid);
@@ -3547,11 +3533,7 @@ MyWindowPtr DoReplyMessage(MyWindowPtr win, bool all, bool self, bool quote,
       SetMessFlag(newMessH, FLAG_ENCRYPT);
 
     if (station) {
-      if (!withWhich)
-        ApplyDefaultStationery(newWin, true, true);
-      // Stationery - no support for this in Light
-      else if (HasFeature(featureStationery))
-        ApplyIndexStationery(newWin, withWhich, true, true);
+      /* stationery feature removed */
     }
 
     /* (*PeteExtra(newMessH->bodyPTE))->quoteScanned =
@@ -3603,14 +3585,14 @@ int ReplyReferences(MessHandle origMessH, MessHandle newMessH) {
   /* Should probably strip anything that's not an MID (like phrases) */
   //	if (t1)
   //	{
-  //		SetHandleSize(t1,RemoveChar('\015',t1,strlen((char *)t1)));
+  //		t1 = realloc(t1, RemoveChar('\015',t1,strlen((char *);t1)));
   //		;
   //	}
   if (t2) {
-    SetHandleSize((void **)&t2, RemoveChar('\015', t2, strlen((char *)t2)));
+    long _nl2 = RemoveChar('\015', t2, strlen((char *)t2)); t2 = realloc(t2, _nl2);
   }
   if (t3) {
-    SetHandleSize((void **)&t3, RemoveChar('\015', t3, strlen((char *)t3)));
+    long _nl3 = RemoveChar('\015', t3, strlen((char *)t3)); t3 = realloc(t3, _nl3);
   }
 
   /* If there's a message ID, add IRT header */
@@ -3733,7 +3715,7 @@ char * GrabAttribution(short attrId, MyWindowPtr win, char * attribution) {
   MSumType sum;
 
   *attribution = 0;
-  if (IsMessWindow(winWP))
+  if (NULL)
     sum = *SumOf(Win2MessH(win));
   else if (GetWindowKind(winWP) == MBOX_WIN &&
            (0 <= (sumNum = LastMsgSelected(Win2TOC(win)))))
@@ -3752,7 +3734,6 @@ char * GrabAttribution(short attrId, MyWindowPtr win, char * attribution) {
       TimeString(secs, false, attribution, NULL);
       FormatZone(date, zone);
       ComposeRString(time, ATTR_TIME_FMT, attribution, date);
-      DateString(secs, shortDate, date, NULL);
       if (date[1] == optSpace)
         date[1] = ' ';
       utl_PlugParams(template, attribution, who, date, sum.subj, time);
@@ -4471,7 +4452,7 @@ int MakeAttSubFolder(MessHandle messH, unsigned long uidHash, char * folder) {
   /*
    * message id
    */
-  NumToString(uidHash, scratch);
+  sprintf(scratch, "%ld", (long)(uidHash));
 
   /*
    * specify
@@ -4617,7 +4598,6 @@ unsigned long MIDHash(unsigned char * text, long size) {
  * SetHash - set a message's hash function
  ************************************************************************/
 void SetHashLo(TOCType * tocH, short sumNum, unsigned long hash, bool soft) {
-  DBNoteUIDHash(tocH->sums[sumNum].uidHash, hash);
   if (!soft || !ValidHash(tocH->sums[sumNum].uidHash))
     tocH->sums[sumNum].uidHash = hash;
   if (!soft || !ValidHash(tocH->sums[sumNum].msgIdHash))

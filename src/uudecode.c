@@ -21,7 +21,6 @@ DAMAGE. */
 #include <fcntl.h>
 #include <sys/stat.h>
 #include <errno.h>
-#include "legacy_shim.h"
 #include "threading.h"
 #include <sys/time.h>
 #define FILE_NUM 46

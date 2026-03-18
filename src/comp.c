@@ -24,6 +24,11 @@ OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE OF THIS SOFTWARE, EVEN IF
 ADVISED OF THE POSSIBILITY OF SUCH DAMAGE. */
 
 #include "fileutil.h"
+#define SEND_ITEM 100
+#define SAVE_ITEM 101
+#ifndef PREF_188
+#define PREF_188 188
+#endif
 #include "../gEditCtrl/geditctrl.h"
 #include "../gEditCtrl/gedit-state.h"
 #include "Globals.h"
@@ -984,7 +989,6 @@ MyWindowPtr OpenComp(TOCType * tocH, int sumNum, GtkWidget *winWP,
     if (buffer) {
       short len = CreateMessageBody(buffer, &uidHash);
       buffer = g_realloc(buffer, len + 1);
-      DBNoteUIDHash(SumOf(messH)->uidHash, uidHash);
       SumOf(messH)->uidHash = SumOf(messH)->msgIdHash = uidHash;
     }
   } else {
@@ -1446,7 +1450,6 @@ int GetCompTexts(MessHandle messH, bool new) {
   } else {
     len = CreateMessageBody(buffer, &uidHash);
     buffer = g_realloc(buffer, len + 1);
-    DBNoteUIDHash(SumOf(messH)->uidHash, uidHash);
     SumOf(messH)->uidHash = SumOf(messH)->msgIdHash = uidHash;
   }
 

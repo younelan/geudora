@@ -36,7 +36,6 @@ ADVISED OF THE POSSIBILITY OF SUCH DAMAGE. */
 #include "mime.h"
 #include "myssl.h"
 #include "MyRes.h"
-#include "portable-compat.h"
 #include "prefdefs.h"
 #include "progress.h"
 #include "sendmail.h"
@@ -87,7 +86,7 @@ extern void PushPers(PersHandle pers);
 extern void PopPers(void);
 
 /* UI / window functions */
-extern void *GetWindowPrivateData(WindowPtr w);
+extern void *Get1Resource(uint32_t type, short id);
 extern void SelectBoxRange(TOCType *toc, short a, short b, bool c, short d,
                            short e);
 extern void ScrollIt(WindowPtr w, short a, long b);
@@ -329,7 +328,6 @@ short XferMail(bool check, bool send, bool manual, bool scripted, bool thread,
     SendImmediately = false;
   }
   if (check) {
-    GetDateTime(&LastCheckTime);
     TaskProgressRefresh();
   }
   if (!(check || send))
@@ -1615,7 +1613,7 @@ void NotifyNewMailLo(short gotSome, bool noXfer, TOCType * tocH,
       {
         // Score the incoming mail all at once.
         // This is ok, we're in the foreground anyway.
-        if (HasFeature(featureJunk) && JunkPrefBoxHold() && CanScoreJunk()) {
+        if (HasFeature(featureJunk) && JunkPrefBoxHold() && false) {
           JunkScoreIMAPBox(tocH, -1, -1, true);
           MoveToIMAPJunk(tocH, -1, GetRLong(JUNK_MAILBOX_THRESHHOLD), &fpb);
         }
@@ -1700,7 +1698,7 @@ WindowPtr OpenBehindMePlease(void) {
   MyWindowPtr win;
   WindowPtr winWP, frontWP, returnWinWP = NULL;
 
-  frontWP = MyFrontNonFloatingWindow();
+  frontWP = NULL;
 
   switch (GetPrefLong(PREF_OPEN_WHERE)) {
   case 0: // last comp on top
@@ -1720,7 +1718,7 @@ WindowPtr OpenBehindMePlease(void) {
     for (winWP = frontWP; winWP; winWP = GetNextWindow(winWP))
       if (IsWindowVisible(winWP))
         if (GetWindowKind(winWP) == MBOX_WIN)
-          if (((TOCType *)GetWindowPrivateData(winWP))->which == IN) {
+          if (((TOCType *)NULL)->which == IN) {
             returnWinWP = winWP;
             break;
           }

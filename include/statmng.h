@@ -26,7 +26,6 @@ ADVISED OF THE POSSIBILITY OF SUCH DAMAGE. */
 #ifndef STATMNG_H
 #define STATMNG_H
 
-#include "legacy_shim.h"
 #include "mydefs.h"
 
 typedef enum {

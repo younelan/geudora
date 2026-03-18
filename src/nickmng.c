@@ -31,7 +31,6 @@ ADVISED OF THE POSSIBILITY OF SUCH DAMAGE. */
 #include <fcntl.h>
 #include <sys/stat.h>
 #include <sys/time.h>
-#include "legacy_shim.h"
 #include "lineio.h"
 #include "sort.h"
 #include "util.h"
@@ -247,7 +246,7 @@ void AlertStr(short alertId, short type, unsigned char *str) {
   g_object_unref(alert);
 }
 
-void SetHandleBig(void **h, long size) { SetHandleSize(h, size); }
+void SetHandleBig(void **h, long size) { h = realloc(h, size); }
 
 // Mac type compatibility
 typedef long Size;
@@ -1110,7 +1109,7 @@ int SetNicknameChangeBit(void *notes, ChangeBitType changeBits,
     GetRString(changeTag, ABHiddenTagsStrn + abTagChangeBits);
     num = clearFirst ? 0 : GetNicknameChangeBits(notes);
     num |= (long)changeBits;
-    NumToString(num, value);
+    sprintf(value, "%ld", (long)(num));
     theError = SetTaggedFieldValueInNotes(notes, changeTag, &value[1], *value,
                                           nickFieldReplaceExisting, 0, nil);
   }
@@ -1389,7 +1388,7 @@ int PrepNicknameForSync(short ab, short nick, char idTag[256],
     GetTaggedFieldValueStrInNotes(notes, idTag, scratch);
     if (!*scratch) {
       replaceNotes = true;
-      NumToString(NickGenerateUniqueID(), idString);
+      sprintf(idString, "%ld", (long)(NickGenerateUniqueID()));
       theError =
           SetTaggedFieldValueInNotes(notes, idTag, &idString[1], *idString,
                                      nickFieldReplaceExisting, 0, nil);
@@ -1516,27 +1515,19 @@ int ReadNickTOC(short which) {
     void *hOldTOC;
 
     /* SetResLoad removed */ //	Don't load now so we can use temporary memory
-    if (hOldTOC = Get1Resource(OLD_NICK_TYPE, OLD_NICK_RESID1)) {
+    if (hOldTOC = NULL) {
       //	Remove old-style TOC resources
-      RemoveResource(hOldTOC);
-      if (hOldTOC = Get1Resource(OLD_NICK_TYPE, OLD_NICK_RESID2))
-        RemoveResource(hOldTOC);
-    }
+          }
 
     for (oldId = NICK_BASE_RESID; oldId < NICK_RESID; oldId++) {
-      if (r1 = Get1Resource(NICK_TOC_TYPE, oldId))
-        RemoveResource(r1);
-      if (r1 = Get1Resource(NICK_NAMES_TYPE, oldId))
-        RemoveResource(r1);
-    }
+                }
 
-    r1 = Get1Resource(NICK_TOC_TYPE, NICK_RESID);
+    r1 = NULL;
     /* SetResLoad removed */
-    nameR = Get1Resource(NICK_NAMES_TYPE, NICK_RESID);
+    nameR = NULL;
     free(This.hNames);
     if (r1 && nameR) {
-      DetachResource(
-          nameR); //	Need to keep the names in memory after res file closes
+      {} //	Need to keep the names in memory after res file closes
       This.hNames = nameR; //	Save handle to nicknames
       structSize = GetResourceSizeOnDisk(r1);
       if (err = 0)
@@ -1720,8 +1711,8 @@ int WriteNickTOC(short which) {
       err = 0;
       fSaved = true;
     }
-    //	ALB DetachResource(structR);
-    //	ALB DetachResource(nameR);
+    //	ALB {}
+    //	ALB {}
     
   } else
     err = 0;
@@ -2817,7 +2808,6 @@ bool SaveIndNickFile(short which, bool saveChangeBits) {
           err = file_write(refN, &bytes, "\015");
         }
       }
-      HPurge(tempHandle);
     }
   }
 
@@ -2863,7 +2853,6 @@ bool SaveIndNickFile(short which, bool saveChangeBits) {
           err = file_write(refN, &bytes, "\015");
         }
       }
-      HPurge(tempHandle);
     }
     if (err) {
       FileSystemError(SAVE_ALIAS, spec_name(tmpSpec), err);
@@ -3155,7 +3144,6 @@ bool SaveFileFast(short which, bool saveChangeBits) {
             err = file_write(tempRefN, &bytes, "\015");
           }
         }
-        HPurge(tempHandle);
       }
     } else if (This.theData[i].deleted) {
       This.theData[i].addressOffset = -1;
@@ -3304,7 +3292,6 @@ bool SaveFileFast(short which, bool saveChangeBits) {
           }
         }
         if (tempHandle) {
-          HPurge(tempHandle);
         }
       }
     }
@@ -3606,8 +3593,7 @@ int BuildAddressHashes(short which) {
       // main addresses
       if (tempHandle) {
         err = AddHandleToAddressHashes(tempHandle, &a);
-        if (!This.theData[n].addressesDirty)
-          HPurge(tempHandle);
+        /* DetachResource removed */
       }
 
       // other addresses
@@ -4180,9 +4166,6 @@ int WhiteListTS(TOCType * tocH, short sumNum) {
           WhiteListAddr(addr);
         free(addr);
       }
-
-      HPurge(tocH->sums[sumNum].cache);
-
       // Now that we've whitelisted the message, bop its junk score
       JunkSetScore(tocH, sumNum, JUNK_BECAUSE_WHITE, 0);
     }

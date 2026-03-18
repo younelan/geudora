@@ -51,7 +51,6 @@ ADVISED OF THE POSSIBILITY OF SUCH DAMAGE. */
 #include "gtk_menus.h"
 #include "imapdownload.h"
 #include "junk.h"
-#include "legacy_shim.h"
 #include "mailbox.h"
 #include "message.h"
 #include "mydefs.h"
@@ -481,7 +480,7 @@ void SetSubject(TOCType *tocH, short sumNum, unsigned char *sub) {
   MessHandle messH = tocH->sums[sumNum].messH;
 
   g_strlcpy((char *)oldSubj, (char *)tocH->sums[sumNum].subj, 64);
-  if (!EqualString(oldSubj, sub, true, true)) {
+  if (!(strcmp((const char *)(oldSubj), (const char *)(sub)) == 0)) {
     g_strlcpy((char *)tocH->sums[sumNum].subj, (char *)sub, 60);
     InvalSum(tocH, sumNum);
     TOCSetDirty(tocH, true);
@@ -517,7 +516,7 @@ void SetSender(TOCType *tocH, short sumNum, unsigned char *sender) {
   MessHandle messH = tocH->sums[sumNum].messH;
 
   g_strlcpy((char *)oldSender, (char *)tocH->sums[sumNum].from, 64);
-  if (!EqualString(oldSender, sender, true, true)) {
+  if (!(strcmp((const char *)(oldSender), (const char *)(sender)) == 0)) {
     g_strlcpy((char *)tocH->sums[sumNum].from, (char *)sender, 48);
     InvalSum(tocH, sumNum);
     TOCSetDirty(tocH, true);
@@ -828,7 +827,7 @@ bool SaveMess(MyWindowPtr win) {
               unsigned char scratch[256];
               g_strlcpy((char *)scratch, (char *)SumOf(messH)->subj, 256);
               if (!(err = HTMLPreamble(&enriched, scratch, 0, true))) {
-                NumToString(SumOf(messH)->msgIdHash, scratch);
+                sprintf(scratch, "%ld", (long)(SumOf(messH)->msgIdHash));
                 if (!(err = BuildHTML(&enriched, TheBody, nil,
                                       strlen((char *)text), hSpec.value,
                                       nil, nil, 1, scratch, nil, nil)))
@@ -1680,26 +1679,17 @@ void MessIBarUpdate(MessHandle messH) {
   ControlHandle blah;
 
   if ((blah = FindControlByRefCon(win, mcWrite_)))
-    SetControlValue(blah, MessOptIsSet(messH, OPT_WRITE));
   if ((blah = FindControlByRefCon(win, mcBlahBlah_)))
-    SetControlValue(blah, MessFlagIsSet(messH, FLAG_SHOW_ALL));
   if ((blah = FindControlByRefCon(win, mcFixed_)))
-    SetControlValue(blah, MessFlagIsSet(messH, FLAG_FIXED_WIDTH));
   if ((blah = FindControlByRefCon(win, mcFetch_))) {
-    SetControlValue(blah, fetch);
     if (!on || !MessFlagIsSet(messH, FLAG_SKIPPED))
-      SetControlVisibility(blah, false, false);
     messH->hasFetchIcon = (blah != nil);
   }
   if ((blah = FindControlByRefCon(win, mcGetGraphics_))) {
-    if (!DisplayGetGraphics(messH->win))
-      SetControlVisibility(blah, false, false);
-    else
-      SetControlVisibility(blah, true, false);
+    /* Mac UI control update removed */
   }
   if ((blah = FindControlByRefCon(win, mcTrash_))) {
-    SetControlValue(blah, del);
-    if (!on) SetControlVisibility(blah, false, false);
+    if (!on) {}
     messH->hasDelIcon = (blah != nil);
   }
 }
