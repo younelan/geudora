@@ -337,13 +337,17 @@ reSwitch:
 		case CollectName:
 			comp_q_crc(d);
 			Name[OSpot] = d;
-			if (OSpot > sizeof(Name)-2 || OSpot>Name[0])
+			if (OSpot > sizeof(Name)-2 || OSpot>(unsigned char)Name[0])
 			{
 				State = CollectInfo;
 				BSpot = 0;
-				Name[0] = MIN(Name[0],31);
-				while (Name[0] & Name[(unsigned char)Name[0]]==0) Name[0]--;
-				Name[(unsigned char)Name[0]+1] = 0;
+				/* BinHex wire format: Name[0] is pascal length, Name[1..N] is data.
+				   Convert to C string in-place. */
+				{ int plen = MIN((unsigned char)Name[0], 31);
+				  while (plen > 0 && Name[plen] == 0) plen--;
+				  memmove(Name, Name + 1, plen);
+				  Name[plen] = '\0';
+				}
 			}
 			else
 			{

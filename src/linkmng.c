@@ -1111,7 +1111,7 @@ long HistMatchFound(long hashName, void *theUrl, short which) {
 
   // two names with equal hash values found, compare names.
   g_strlcpy((char *)tempName, (char *)theUrl, sizeof(tempName));
-  *tempName = RemoveChar(' ', tempName + 1, *tempName);
+  { long _rl = RemoveChar(' ', (char *)tempName, strlen((char *)tempName)); ((char *)tempName)[_rl] = 0; }
   for (i = 0; i < stop; i++) {
     if (theHistories[i].hashName == hashName &&
         !theHistories[i].deleted) {
@@ -1119,7 +1119,7 @@ long HistMatchFound(long hashName, void *theUrl, short which) {
                                              // It's a part of the history toc.
       if (hUrl) {
         g_strlcpy((char *)tempStr, (char *)hUrl, sizeof(tempStr));
-        *tempStr = RemoveChar(' ', tempStr + 1, *tempStr);
+        { long _rl = RemoveChar(' ', (char *)tempStr, strlen((char *)tempStr)); ((char *)tempStr)[_rl] = 0; }
         if (StringSame(tempName, tempStr))
           return (i);
       }

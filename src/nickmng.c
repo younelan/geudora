@@ -229,7 +229,7 @@ void AlertStr(short alertId, short type, unsigned char *str) {
 
   // Copy C string
   char message[256];
-  if (str && str[0] != '\0') {
+  if (str && str[0] != ' ') {
     strcpy(message, (const char *)str);
   } else {
     strcpy(message, "Alert");
@@ -401,7 +401,7 @@ int ReadNicknames(short which) {
     lastExLine = exLine;
     lineOffset = curOffset; // offset of beginning of line
     curOffset += len;       // this is the offset of the next line
-    exLine = line[len - 1] != '\015';
+    exLine = line[len - 1] != ' 15';
 
     // Record the offset where we first start collecting data
     if (lineAcc.offset == 0)
@@ -448,7 +448,7 @@ int ReadNicknames(short which) {
         for (i = 0; i < sizeof(currentCmd) - 1; i++)
           if (lineData[i] == ' ')
             break;
-        { size_t _mpl = ( i); memcpy(currentCmd,  lineData, _mpl); ((char*)(currentCmd))[_mpl] = '\0'; }
+        { size_t _mpl = ( i); memcpy(currentCmd,  lineData, _mpl); ((char*)(currentCmd))[_mpl] = ' '; }
 
         /*
          * find the nickname
@@ -470,7 +470,7 @@ int ReadNicknames(short which) {
             break;
         }
         // Eureka!  Copy the name into a pascal string and find its hash
-        { size_t _mpl = ( count - i - 1); memcpy(tempName,  lineData + i + 1, _mpl); ((char*)(tempName))[_mpl] = '\0'; }
+        { size_t _mpl = ( count - i - 1); memcpy(tempName,  lineData + i + 1, _mpl); ((char*)(tempName))[_mpl] = ' '; }
         SanitizeFN(tempName, tempName, NICK_STORED_BAD_CHAR,
                    NICK_STORED_REP_CHAR, false);
         hashName = NickHash(tempName);
@@ -679,7 +679,7 @@ long NickMatchFoundLo(NickStructHandle theNicknames, long theNicknamesLen,
   if (!theNicknames)
     return (-1);
 
-  if (*theName > 32 - 1)
+  if (strlen((char *)theName) > 32 - 1)
     return (-1);
 
   stop = (theNicknamesLen / sizeof(NickStruct));
@@ -697,12 +697,12 @@ long NickMatchFoundLo(NickStructHandle theNicknames, long theNicknamesLen,
     return (matched);
 
   g_strlcpy((char *)(tempName), (char *)(theName), sizeof(tempName));
-  *tempName = RemoveChar(' ', tempName + 1, *tempName);
+  { long _rl = RemoveChar(' ', (char *)tempName, strlen((char *)tempName)); ((char *)tempName)[_rl] = ' '; }
   for (i = 0; i < stop; i++) {
     if (theNicknames[i].hashName == hashName &&
         !theNicknames[i].deleted) {
       GetNicknameNamePStr(which, i, tempStr);
-      *tempStr = RemoveChar(' ', tempStr + 1, *tempStr);
+      { long _rl = RemoveChar(' ', (char *)tempStr, strlen((char *)tempStr)); ((char *)tempStr)[_rl] = ' '; }
       if (StringSame(tempName, tempStr))
         return (i);
     }
@@ -747,7 +747,7 @@ long NickAddressMatchFound(NickStructHandle theNicknames, long hashAddress,
     return (matched);
 
   g_strlcpy((char *)(tempAddress), (char *)(theAddress), sizeof(tempAddress));
-  *tempAddress = RemoveChar(' ', tempAddress + 1, *tempAddress);
+  { long _rl = RemoveChar(' ', (char *)tempAddress, strlen((char *)tempAddress)); ((char *)tempAddress)[_rl] = ' '; }
   for (i = 0; i < stop; i++)
     if (theNicknames[i].hashAddress == hashAddress &&
         !theNicknames[i].deleted)
@@ -758,7 +758,7 @@ long NickAddressMatchFound(NickStructHandle theNicknames, long hashAddress,
         if (addresses && addresses[0]) {
           g_strlcpy((char *)tempStr + 1, addresses[0], sizeof(tempStr) - 1);
           tempStr[0] = strlen((char *)tempStr + 1);
-          *tempStr = RemoveChar(' ', tempStr + 1, *tempStr);
+          { long _rl = RemoveChar(' ', (char *)tempStr, strlen((char *)tempStr)); ((char *)tempStr)[_rl] = ' '; }
           g_strfreev(addresses); addresses = NULL;
           if (StringSame(tempAddress, tempStr))
             return (i);
@@ -973,7 +973,7 @@ void *GetTaggedFieldValueInNotes(void *notes, char * tag)
     }
     if (found) {
       PtrToHand(value, &hValue, valueLength);
-      Tr(hValue, "\002", ">");
+      Tr(hValue, " 02", ">");
     }
   }
   return (hValue);
@@ -1014,7 +1014,7 @@ char * GetTaggedFieldValueStrInNotes(void *notes, char * tag, char * value)
     if (!found)
       *value = 0;
     else
-      TrLo(value + 1, *value, "\002", ">");
+      TrLo((char *)value, strlen((char *)value), " 02", ">");
   }
   return (value);
 }
@@ -1047,7 +1047,7 @@ int SetTaggedFieldValueInNotes(void *notes, char * tag, char * value, long lengt
   long attributeLength, originalValueLength;
   Boolean found;
 
-  TrLo(value, length, ">", "\002");
+  TrLo(value, length, ">", " 02");
 
   theError = noErr;
   if (notes) {
@@ -1098,7 +1098,7 @@ int SetTaggedFieldValueInNotes(void *notes, char * tag, char * value, long lengt
       theError = AddAttributeValuePair(notes, tag, value, length);
   }
 
-  TrLo(value, length, "\002", ">");
+  TrLo(value, length, " 02", ">");
 
   return (theError);
 }
@@ -1268,7 +1268,7 @@ void ZapPluginAliases(void) {
  * NickHash - return a hash value on the lowercase of the name
  ************************************************************************/
 long NickHash(char * newName) {
-  if (*newName > 32 - 1)
+  if (strlen((char *)newName) > 32 - 1)
     return (-1);
   return (NickHashString(newName));
 }
@@ -1280,9 +1280,9 @@ long NickHashString(char * string)
   char tempStr[256];
 
   g_strlcpy((char *)(tempStr), (char *)(string), sizeof(tempStr));
-  *tempStr = RemoveChar(' ', tempStr + 1, *tempStr);
-  *tempStr = RemoveChar(optSpace, tempStr + 1, *tempStr);
-  MyLowercaseText(tempStr + 1, *tempStr);
+  { long _rl = RemoveChar(' ', (char *)tempStr, strlen((char *)tempStr)); ((char *)tempStr)[_rl] = ' '; }
+  { long _rl = RemoveChar(optSpace, (char *)tempStr, strlen((char *)tempStr)); ((char *)tempStr)[_rl] = ' '; }
+  MyLowercaseText((char *)tempStr, strlen((char *)tempStr));
   return (Hash(tempStr));
 }
 
@@ -1297,8 +1297,8 @@ long NickHashHandle(void *h)
     len = GetHandleSize(h);
     tempStr[0] = MIN(len, (sizeof(tempStr) - 1));
     BlockMoveData(h, &tempStr[1], tempStr[0]);
-    *tempStr = RemoveChar(' ', tempStr + 1, *tempStr);
-    MyLowercaseText(tempStr + 1, *tempStr);
+    { long _rl = RemoveChar(' ', (char *)tempStr, strlen((char *)tempStr)); ((char *)tempStr)[_rl] = ' '; }
+    MyLowercaseText((char *)tempStr, strlen((char *)tempStr));
   }
   return (Hash(tempStr));
 }
@@ -1758,7 +1758,7 @@ exit:
  * the backslash, and return True
  ************************************************************************/
 bool NeatenLine(char * line, long *len) {
-  if (line[*len - 1] == '\015')
+  if (line[*len - 1] == ' 15')
     line[--*len] = 0;
   if (line[*len - 1] == '\\') {
     line[--*len] = 0;
@@ -2287,7 +2287,7 @@ void *GetNicknameData(short which, short index, bool wantAddresses,
     BlockMoveData(dataPtr + count + 1, dataPtr, len - count - 1);
     SetHandleBig_(dataHandle, len - count - 1);
     len = len - count - 1;
-    while (len && dataPtr[len - 1] == '\015')
+    while (len && dataPtr[len - 1] == ' 15')
       SetHandleBig_(dataHandle, --len);
 
     if (wantAddresses) {
@@ -2385,7 +2385,7 @@ void MakeNickFromSelection(MyWindowPtr win) {
     // individual addresses
     textCopy = text;
     if (!HandToHand(&textCopy)) {
-      Tr(textCopy, "\015", ",");
+      Tr(textCopy, " 15", ",");
 
       HLock(textCopy);
       if (!SuckPtrAddresses(&list, (char *)textCopy + selStart, selEnd - selStart,
@@ -2828,7 +2828,7 @@ bool SaveIndNickFile(short which, bool saveChangeBits) {
       if (!(err = FSWriteP(refN, scratch))) {
         if (!(err = AWrite(refN, &bytes, tempHandle))) {
           bytes = 1;
-          err = AWrite(refN, &bytes, "\015");
+          err = AWrite(refN, &bytes, " 15");
         }
       }
       HPurge(tempHandle);
@@ -2876,7 +2876,7 @@ bool SaveIndNickFile(short which, bool saveChangeBits) {
       if (!(err = FSWriteP(refN, scratch))) {
         if (!(err = AWrite(refN, &bytes, tempHandle))) {
           bytes = 1;
-          err = AWrite(refN, &bytes, "\015");
+          err = AWrite(refN, &bytes, " 15");
         }
       }
       HPurge(tempHandle);
@@ -3141,9 +3141,9 @@ bool SaveFileFast(short which, bool saveChangeBits) {
   ARead(tempRefN, &bytes, &theChar);
   GetEOF(tempRefN, &bytes);
   SetFPos(tempRefN, fsFromStart, bytes);
-  if (theChar != '\015' & bytes > 0) {
+  if (theChar != ' 15' & bytes > 0) {
     bytes = 1;
-    err = AWrite(tempRefN, &bytes, "\015");
+    err = AWrite(tempRefN, &bytes, " 15");
   }
 
   GetRString(aliasCmd, ALIAS_CMD);
@@ -3182,7 +3182,7 @@ bool SaveFileFast(short which, bool saveChangeBits) {
         if (!(err = FSWriteP(tempRefN, scratch))) {
           if (!(err = AWrite(tempRefN, &bytes, tempHandle))) {
             bytes = 1;
-            err = AWrite(tempRefN, &bytes, "\015");
+            err = AWrite(tempRefN, &bytes, " 15");
           }
         }
         HPurge(tempHandle);
@@ -3287,9 +3287,9 @@ bool SaveFileFast(short which, bool saveChangeBits) {
   ARead(tempRefN, &bytes, &theChar);
   GetEOF(tempRefN, &bytes);
   SetFPos(tempRefN, fsFromStart, bytes);
-  if (theChar != '\015' & bytes > 0) {
+  if (theChar != ' 15' & bytes > 0) {
     bytes = 1;
-    err = AWrite(tempRefN, &bytes, "\015");
+    err = AWrite(tempRefN, &bytes, " 15");
   }
 
   GetRString(aliasCmd, NOTE_CMD);
@@ -3334,7 +3334,7 @@ bool SaveFileFast(short which, bool saveChangeBits) {
           if (!(err = FSWriteP(tempRefN, scratch))) {
             if (!(err = AWrite(tempRefN, &bytes, tempHandle))) {
               bytes = 1;
-              err = AWrite(tempRefN, &bytes, "\015");
+              err = AWrite(tempRefN, &bytes, " 15");
             }
           }
         }
@@ -3698,7 +3698,7 @@ void ReadPluginNickFiles(bool reread) {
 
   ETLGetPluginFolderSpec(&folderSpec, PLUGIN_NICKNAMES);
 
-  /* clear filename */ { char *_sn = strrchr(folderSpec, '/'); if (_sn) _sn[1] = '\0'; else folderSpec[0] = '\0'; }
+  /* clear filename */ { char *_sn = strrchr(folderSpec, '/'); if (_sn) _sn[1] = ' '; else folderSpec[0] = ' '; }
   ReadNickFileList(&folderSpec, pluginAddressBook, reread);
   if (reread)
     RegenerateAllAliases(false);
@@ -3956,23 +3956,23 @@ void MakeUniqueNickname(short ab, char nickname[32])
   NickStructHandle aliases;
   char s[32];
   long hashName, suffix;
-  Byte saveLen;
+  char saveName[256];
 
   if (!*nickname)
     GetRString(nickname, UNTITLED_NICKNAME);
   if (aliases = Aliases[ab]->theData) {
     hashName = NickHash(nickname);
     suffix = 2;
-    saveLen = *nickname;
+    g_strlcpy(saveName, (char *)nickname, sizeof(saveName));
     while (NickMatchFound(aliases, hashName, nickname, ab) >= 0) {
-      *nickname = saveLen;
-      s[ *s = 1] = ' ';
-      PLCat(s, suffix++);
-      if (*nickname + *s + 1 < 32 - 1)
-        PCat(nickname, s);
+      g_strlcpy((char *)nickname, saveName, 32);
+      snprintf((char *)s, sizeof(s), " %d", suffix++);
+      if (strlen((char *)nickname) + strlen((char *)s) < 32 - 1)
+        g_strlcat((char *)nickname, (char *)s, 32);
       else {
-        BlockMoveData(&s[1], &nickname[*nickname - *s + 1], *s);
-        *nickname = 32 - 1;
+        /* Truncate nickname to make room for suffix */
+        nickname[32 - 1 - strlen((char *)s)] = ' ';
+        g_strlcat((char *)nickname, (char *)s, 32);
       }
       hashName = NickHash(nickname);
     }
@@ -4238,7 +4238,7 @@ int WhiteListAddr(TextAddrHandle addr) {
   int err = fnfErr;
 
   // is it there already?
-  { size_t _mpl = GetHandleSize(addr); memcpy(scratch, addr, _mpl); ((char*)(scratch))[_mpl] = '\0'; }
+  { size_t _mpl = GetHandleSize(addr); memcpy(scratch, addr, _mpl); ((char*)(scratch))[_mpl] = ' '; }
   if (AppearsInAliasFile(scratch, 0))
     return dupFNErr; // already there
 

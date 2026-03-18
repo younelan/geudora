@@ -2073,12 +2073,12 @@ BoundaryType ReadText(TransStream stream,short refN,MIMESHandle mimeSList,char *
 		GetRString(buf,MHTML_INFO_TAG);
 		URLEscape(base);
 		URLEscape(loc);
-		if (*buf + *base + *loc > 255)
+		if (strlen((char *)buf) + strlen((char *)base) + strlen((char *)loc) > 255)
 		{
 			// trouble in river city
-			if (*base>*loc) *base = 0;
+			if (strlen((char *)base) > strlen((char *)loc)) *base = 0;
 			else *loc = 0;
-			if (*buf + *base + *loc > 255)
+			if (strlen((char *)buf) + strlen((char *)base) + strlen((char *)loc) > 255)
 				*loc = *base = 0;
 		}
 		FSWriteP(refN,ComposeRString(buf,MHTML_INFO_TAG,base,loc,msh->hdh->mhtmlID,charset));

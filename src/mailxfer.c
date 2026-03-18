@@ -1884,19 +1884,17 @@ bool AddSigIntro(GtkWidget *pte, void **text) {
   if (!*GetRString(sigIntro, SIG_INTRO))
     return false;
 
-  /* void *the text block */
+  long introLen = strlen((char *)sigIntro);
   if (text && *text) {
     len = GetHandleSize((void *)text);
     if (len > 0) {
-      /* Check if intro is already present */
-      char *ptr = *(char **)text;
-      if (len < *sigIntro || memcmp(ptr, sigIntro + 1, *sigIntro) != 0) {
-        /* Prepend the sig intro */
-        { void *_r = realloc(text, len + *sigIntro); if (_r) text = _r; }
+      char *ptr = (char *)text;
+      if (len < introLen || memcmp(ptr, sigIntro, introLen) != 0) {
+        { void *_r = realloc(text, len + introLen); if (_r) text = _r; }
         if (!MemError()) {
-          ptr = *(char **)text;
-          memmove(ptr + *sigIntro, ptr, len);
-          memmove(ptr, sigIntro + 1, *sigIntro);
+          ptr = (char *)text;
+          memmove(ptr + introLen, ptr, len);
+          memmove(ptr, sigIntro, introLen);
           didIt = true;
         }
       }
@@ -1926,14 +1924,14 @@ bool RemoveSigIntro(GtkWidget *pte, void **text) {
   if (!*GetRString(sigIntro, SIG_INTRO))
     return false;
 
-  /* void *the text block */
+  long introLen = strlen((char *)sigIntro);
   if (text && *text) {
     len = GetHandleSize((void *)text);
-    if (len >= *sigIntro) {
-      char *ptr = *(char **)text;
-      if (memcmp(ptr, sigIntro + 1, MIN(*sigIntro, 4)) == 0) {
-        memmove(ptr, ptr + *sigIntro, len - *sigIntro);
-        { void *_r = realloc(text, len - *sigIntro); if (_r) text = _r; }
+    if (len >= introLen) {
+      char *ptr = (char *)text;
+      if (memcmp(ptr, sigIntro, MIN(introLen, 4)) == 0) {
+        memmove(ptr, ptr + introLen, len - introLen);
+        { void *_r = realloc(text, len - introLen); if (_r) text = _r; }
         didIt = true;
       }
     }

@@ -2709,9 +2709,9 @@ bool DoDownloadMessages(TOCType * tocH, void *uids, bool attachmentsToo) {
               g_strlcpy((char *)progressMessage,
                     (char *)tocH->sums[sumNum].from, sizeof(progressMessage));
               *progressMessage = MIN(*progressMessage, 31);
-              if (*progressMessage < 255)
+              if (strlen((char *)progressMessage) < 255)
                 progressMessage[++(*progressMessage)] = ',';
-              if (*progressMessage < 255)
+              if (strlen((char *)progressMessage) < 255)
                 progressMessage[++(*progressMessage)] = ' ';
               g_strlcat((char *)progressMessage,
                     (char *)tocH->sums[sumNum].subj, sizeof(progressMessage));

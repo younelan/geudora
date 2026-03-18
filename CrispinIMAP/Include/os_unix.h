@@ -88,7 +88,7 @@ int IMAPAccuAddPtr(IMAPAccumulator *pAccu, const void *ptr, long size);
 /* Symbols for ASSERT macro in mydefs.h */
 extern short RunType;
 void DebugStr(unsigned char *s);
-unsigned char *ComposeString(unsigned char *dst, const char *fmt, ...);
+char *ComposeString(char *dst, const char *fmt, ...);
 // GetRString is declared in gtk_dialogs.h with unsigned char * signature
 
 /* Extra Eudora stubs for IMAP library */
@@ -139,16 +139,8 @@ void DisposeMailboxTree(MailboxNodeHandle *tree);
 /* File I/O */
 short AWrite(short refN, long *count, unsigned char *buf);
 
-/* Pascal string helpers */
-#ifndef MakePStr
-#undef MakePStr
-#define MakePStr(pasc, ptr, l) \
-  do { \
-    (pasc)[0] = (unsigned char)(l); \
-    memcpy((pasc) + 1, (ptr), (unsigned char)(l)); \
-  } while (0)
-#endif
-void MyStringToNum(unsigned char *string, long *num);
+/* Use plain `char *` for textual parameters to match portable PStr */
+void MyStringToNum(char *string, long *num);
 #ifndef StringToNum
 #define StringToNum(a, b) MyStringToNum(a, b)
 #endif

@@ -2753,7 +2753,7 @@ int RenameMailbox(char * spec, unsigned char * newName, bool folder) {
     //	Check for existence of old .TOC file
     { char pdir[1024]; spec_parent(spec, pdir, sizeof(pdir));
     if (!spec_for(pdir, (const char *)oldTOCName, &tocSpec)) {
-      if (*newTOCName > 31) {
+      if (strlen((char *)newTOCName) > 31) {
         //	TOC file name too long
         TooLong(newName);
         err = bdNamErr;
@@ -2794,7 +2794,7 @@ bool BadMailboxName(char * spec, bool folder) {
     return (false);
   }
 
-  if (*spec_name(spec) > 31 - *GetRString(suffix, TOC_SUFFIX)) {
+  if (strlen(spec_name(spec)) > 31 - strlen((char *)GetRString(suffix, TOC_SUFFIX))) {
     TooLong(spec_name(spec));
     return (True);
   }
@@ -3210,7 +3210,7 @@ int AppendXferSelection(PETEHandle pte, MenuHandle contextMenu) {
 
   if (!AttIsSelected(nil, pte, -1, -1, 0, nil, nil))
     if (*CollapseLWSP(PeteSelectedString(s, pte)))
-      if (*s < 31)
+      if (strlen((char *)s) < 31)
         if (IsEnabled(TRANSFER_MENU, 0))
           if (!BoxMatchMenuItems(s, &mash, BoxMatchScore)) {
             short n = HandleCount(mash);

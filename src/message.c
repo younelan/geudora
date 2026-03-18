@@ -4440,7 +4440,7 @@ int SpoolIndAttachment(MessHandle messH, short i) {
 
       // handle long filename
       if (!FSpGetLongName(&spec, kTextEncodingUnknown, longName) &&
-          *longName > 31)
+          strlen((char *)longName) > 31)
         FSpSetLongName(&newSpec, kTextEncodingUnknown, longName, &newSpec);
 
       CompAttachSpec(messH->win, &newSpec);

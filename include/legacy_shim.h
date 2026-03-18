@@ -231,19 +231,17 @@ static inline void SetHandleSize(void **h, long size) {
       *h = resized;
   }
 }
+/* PtoCcpy: strings are now C strings, so this is just strcpy */
 static inline void PtoCcpy(char *cStr, const unsigned char *pStr) {
   if (!pStr || !cStr)
     return;
-  long len = pStr[0];
-  memmove(cStr, pStr + 1, len);
-  memmove(cStr, pStr + 1, len);
-  cStr[len] = '\0';
+  strcpy(cStr, (const char *)pStr);
 }
 
+/* PCopy: strings are now C strings, so this is just strcpy */
 static inline void PCopy_SHIM(unsigned char *dst, const unsigned char *src) {
   if (dst && src) {
-    long len = src[0];
-    memmove(dst, src, len + 1);
+    strcpy((char *)dst, (const char *)src);
   }
 }
 
