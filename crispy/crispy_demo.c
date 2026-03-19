@@ -12,6 +12,7 @@
 #include "crispy_pop3.h"
 #include "crispy_transport.h"
 #include "crispy_headparse.h"
+#include "crispy_msg.h"
 #include "crispy_conf.h"
 #include <stdio.h>
 #include <stdlib.h>
@@ -37,33 +38,9 @@ static Pop3Security parse_pop3_security(const char *s) {
   return POP3_PLAIN;
 }
 
-/* Build a minimal RFC 5322 message */
-static char *build_message(const char *from, const char *to,
-                           const char *subject, const char *body,
-                           long *outLen) {
-  char date[64];
-  crispy_smtp_format_date(date, sizeof(date), (long)time(NULL), 0);
+/* included above: crispy_msg.h via crispy_demo includes */
 
-  char *msg = (char *)malloc(4096);
-  if (!msg) return NULL;
-
-  int len = snprintf(msg, 4096,
-    "Date: %s\r\n"
-    "From: %s\r\n"
-    "To: %s\r\n"
-    "Subject: %s\r\n"
-    "MIME-Version: 1.0\r\n"
-    "Content-Type: text/plain; charset=UTF-8\r\n"
-    "X-Mailer: Crispy Mail Library\r\n"
-    "\r\n"
-    "%s\r\n",
-    date, from, to, subject, body);
-
-  if (outLen) *outLen = len;
-  return msg;
-}
-
-static int do_send(const CrispyConf *conf) {
+static int do_send(const CrispyConf *conf, const char **files, int fileCount) {
   const char *host = crispy_conf_get(conf, "smtp_host", NULL);
   const char *user = crispy_conf_get(conf, "smtp_user", NULL);
   const char *pass = crispy_conf_get(conf, "smtp_pass", NULL);
@@ -114,18 +91,49 @@ static int do_send(const CrispyConf *conf) {
     printf("Server does not require authentication.\n");
   }
 
-  /* Build message */
-  long msgLen;
-  char *msg = build_message(from, to,
-      "Test from Crispy Mail Library",
-      "Hello!\r\n\r\nThis message was sent by the Crispy standalone mail library.\r\n"
-      "If you're reading this, the library works!",
-      &msgLen);
+  /* Build attachments from file arguments */
+  CrispyAttachment *atts = NULL;
+  if (fileCount > 0) {
+    atts = (CrispyAttachment *)calloc(fileCount, sizeof(CrispyAttachment));
+    for (int i = 0; i < fileCount; i++) {
+      atts[i].path = files[i];
+      printf("Attaching: %s (%s)\n", files[i], crispy_mime_type(files[i]));
+    }
+  }
 
-  printf("Sending to %s ...\n", to);
-  const char *rcpts[] = { to, NULL };
-  err = crispy_smtp_send(&s, from, rcpts, msg, msgLen);
-  free(msg);
+  /* Build message using crispy_msg */
+  CrispyMsg message = {
+    .from = from,
+    .to = to,
+    .subject = fileCount ? "Test with attachments — Crispy Mail"
+                         : "Test from Crispy Mail Library",
+    .body_plain = fileCount
+      ? "Hello!\r\n\r\nThis message has attachments sent by Crispy.\r\n"
+      : "Hello!\r\n\r\nThis message was sent by the Crispy standalone mail library.\r\n"
+        "If you're reading this, the library works!",
+    .attachments = atts,
+    .attachment_count = fileCount,
+  };
+
+  long msgLen;
+  char *raw = crispy_msg_build(&message, &msgLen);
+  if (!raw) {
+    fprintf(stderr, "Failed to build message\n");
+    crispy_smtp_close(&s);
+    return 1;
+  }
+
+  /* Extract recipients from To/Cc/Bcc */
+  int rcptCount;
+  char **rcpts = crispy_msg_recipients(&message, &rcptCount);
+
+  printf("Sending to %d recipient(s) ...\n", rcptCount);
+  err = crispy_smtp_send(&s, from, (const char **)rcpts, raw, msgLen);
+
+  free(raw);
+  free(atts);
+  for (int i = 0; i < rcptCount; i++) free(rcpts[i]);
+  free(rcpts);
 
   if (err) {
     fprintf(stderr, "Send failed: %d (%s)\n", err, s.last_reply);
@@ -193,44 +201,34 @@ static int do_recv(const CrispyConf *conf, int fetchNum) {
 
     /* Fetch a specific message */
     printf("\n--- Message %d ---\n", fetchNum);
-    char *msg = NULL;
-    long len = crispy_pop3_retr(&p, fetchNum, &msg);
+    char *raw = NULL;
+    long len = crispy_pop3_retr(&p, fetchNum, &raw);
     if (len < 0) {
       fprintf(stderr, "RETR %d failed (%s)\n", fetchNum, p.last_reply);
     } else {
-      /* Parse and show headers */
-      MailHeadSpec hs;
-      char *val;
-      if (crispy_headparse_find(msg, "From: ", &hs) &&
-          crispy_headparse_get_value(msg, &hs, &val) == 0) {
-        printf("From: %s\n", val);
-        free(val);
-      }
-      if (crispy_headparse_find(msg, "Subject: ", &hs) &&
-          crispy_headparse_get_value(msg, &hs, &val) == 0) {
-        printf("Subject: %s\n", val);
-        free(val);
-      }
-      if (crispy_headparse_find(msg, "Date: ", &hs) &&
-          crispy_headparse_get_value(msg, &hs, &val) == 0) {
-        printf("Date: %s\n", val);
-        free(val);
-      }
-      printf("Size: %ld bytes\n", len);
+      /* Parse using crispy_msg */
+      CrispyMsgParsed parsed;
+      crispy_msg_parse(raw, len, &parsed);
+
+      if (parsed.from) printf("From: %s\n", parsed.from);
+      if (parsed.to) printf("To: %s\n", parsed.to);
+      if (parsed.subject) printf("Subject: %s\n", parsed.subject);
+      if (parsed.date) printf("Date: %s\n", parsed.date);
+      if (parsed.message_id) printf("Message-ID: %s\n", parsed.message_id);
+      printf("Size: %ld bytes, %d part(s)\n", len, parsed.part_count);
 
       /* Show first 20 lines of body */
-      char *body = strstr(msg, "\r\n\r\n");
-      if (body) {
-        body += 4;
+      if (parsed.body_plain && parsed.body_plain_len > 0) {
         printf("\n");
         int lines = 0;
-        for (char *s = body; *s && lines < 20; s++) {
-          putchar(*s);
-          if (*s == '\n') lines++;
+        for (long i = 0; i < parsed.body_plain_len && lines < 20; i++) {
+          putchar(parsed.body_plain[i]);
+          if (parsed.body_plain[i] == '\n') lines++;
         }
         if (lines >= 20) printf("...\n");
       }
-      free(msg);
+      crispy_msg_parsed_free(&parsed);
+      free(raw);
     }
   } else {
     /* List messages using TOP (headers only) */
@@ -362,11 +360,11 @@ static int do_rset(const CrispyConf *conf) {
 static void usage(void) {
   fprintf(stderr,
     "Usage:\n"
-    "  crispy_demo send [config]         Send a test message\n"
-    "  crispy_demo recv [config]         List messages via POP3\n"
-    "  crispy_demo recv N [config]       Fetch full message N\n"
-    "  crispy_demo top N [lines] [conf]  Fetch headers + N lines (leave on server)\n"
-    "  crispy_demo dele N [config]       Delete message N\n"
+    "  crispy_demo send [file ...] [config]   Send (with optional attachments)\n"
+    "  crispy_demo recv [config]              List messages via POP3\n"
+    "  crispy_demo recv N [config]            Fetch full message N\n"
+    "  crispy_demo top N [lines] [conf]       Headers + N lines (leave on server)\n"
+    "  crispy_demo dele N [config]            Delete message N\n"
     "\n"
     "Default config: crispy_demo.conf\n");
 }
@@ -390,6 +388,31 @@ int main(int argc, char *argv[]) {
   if (argc < 2) { usage(); return 1; }
 
   const char *cmd = argv[1];
+
+  if (strcmp(cmd, "send") == 0) {
+    /* send [file1 file2 ...] [config]
+     * Last arg ending in .conf is the config, rest are files */
+    const char *confFile = "crispy_demo.conf";
+    const char *files[32];
+    int fileCount = 0;
+
+    for (int i = 2; i < argc; i++) {
+      size_t len = strlen(argv[i]);
+      if (len > 5 && strcmp(argv[i] + len - 5, ".conf") == 0) {
+        confFile = argv[i];
+      } else {
+        if (fileCount < 32) files[fileCount++] = argv[i];
+      }
+    }
+
+    CrispyConf conf;
+    if (crispy_conf_load(&conf, confFile) != 0) {
+      fprintf(stderr, "Cannot open config file: %s\n", confFile);
+      return 1;
+    }
+    return do_send(&conf, files, fileCount);
+  }
+
   int num1 = 0, num2 = 0;
   const char *confFile = parse_args(argc, argv, &num1, &num2);
 
@@ -399,8 +422,7 @@ int main(int argc, char *argv[]) {
     return 1;
   }
 
-  if (strcmp(cmd, "send") == 0)
-    return do_send(&conf);
+  if (0) { /* send handled above */ }
   else if (strcmp(cmd, "recv") == 0)
     return do_recv(&conf, num1);
   else if (strcmp(cmd, "top") == 0) {
