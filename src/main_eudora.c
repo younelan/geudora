@@ -629,6 +629,12 @@ static void on_message_activated(GtkColumnView *col_view, guint position,
     gtk_window_set_transient_for(GTK_WINDOW(win), GTK_WINDOW(toplevel));
 
   gtk_window_present(GTK_WINDOW(win));
+
+  /* Mark message as read */
+  if (sum->state == UNREAD) {
+    extern void SetState(TOCType *tocH, short sumNum, short state);
+    SetState(toc, (short)position, READ);
+  }
 }
 
 /* Simple action handlers */
@@ -1796,6 +1802,36 @@ void eudora_open_mailbox_by_name(const char *name) {
   if (path) {
     open_mailbox_tab(name, path);
     g_free(path);
+  }
+}
+
+/* ── Refresh open mailbox tabs ── */
+void eudora_refresh_open_mailboxes(void) {
+  if (!mailbox_notebook) return;
+  int n = gtk_notebook_get_n_pages(GTK_NOTEBOOK(mailbox_notebook));
+  for (int i = 0; i < n; i++) {
+    GtkWidget *page = gtk_notebook_get_nth_page(GTK_NOTEBOOK(mailbox_notebook), i);
+    if (!page) continue;
+
+    /* The page is a vpaned with "toc" and "tree-view" data */
+    TOCType *toc = g_object_get_data(G_OBJECT(page), "toc");
+    GtkWidget *tree = g_object_get_data(G_OBJECT(page), "tree-view");
+    if (!toc || !tree) continue;
+
+    /* Reload TOC from disk in case it was updated by the delivery thread */
+    extern TOCType *toc_reload(const char *path);
+    char spec[1024];
+    extern char *GetMailboxSpec(TOCType *tocH, short num, char *outSpec);
+    GetMailboxSpec(toc, -1, spec);
+
+    /* Re-read the TOC */
+    extern int ReadTOC(TOCType *tocH);
+    ReadTOC(toc);
+
+    /* Repopulate the tree view */
+    GtkTreeModel *model = gtk_tree_view_get_model(GTK_TREE_VIEW(tree));
+    extern void populate_mbox_list(GtkListStore *store, TOCType *toc);
+    populate_mbox_list(GTK_LIST_STORE(model), toc);
   }
 }
 

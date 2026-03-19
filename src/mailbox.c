@@ -53,6 +53,7 @@ extern void MBOpenFolder(void *hStringList, bool isIMAP);
 #include "pop.h"
 #include "sort.h"
 #include "toc.h"
+#include "gtk_prefs.h"
 #include "trans.h"
 #include <assert.h>
 #include <stdarg.h>
@@ -610,6 +611,7 @@ enum {
   COL_JUNK,          /* junk score */
   COL_SUBJECT,       /* subject */
   COL_INDEX,         /* hidden: TOC index */
+  COL_LABEL_COLOR,   /* hidden: foreground color from label */
   NUM_MBOX_COLS
 };
 
@@ -752,9 +754,8 @@ static const char *state_str(StateEnum s) {
 
 /* Priority to display string */
 static const char *priority_str(int priority) {
-  int p = priority / 40;  /* convert 0-200 range to 0-5 */
-  if (p <= 0) return "";
-  switch (p) {
+  /* Priority: 1=Highest, 2=High, 3=Normal, 4=Low, 5=Lowest, 0=unset */
+  switch (priority) {
     case 1: return "\xe2\x86\x91\xe2\x86\x91"; /* ↑↑ Highest */
     case 2: return "\xe2\x86\x91";              /* ↑  High */
     case 3: return "";                           /*    Normal */
@@ -764,17 +765,41 @@ static const char *priority_str(int priority) {
   }
 }
 
-/* Label number from flags (0=none, 1-7) */
+/* Label number from flags (0=none, 1-7) using bits 14-17 */
 static int label_from_flags(unsigned long flags) {
   int hue = 0;
   if (flags & FLAG_HUE1) hue |= 1;
   if (flags & FLAG_HUE2) hue |= 2;
   if (flags & FLAG_HUE3) hue |= 4;
-  if (flags & FLAG_HUE4) hue |= 8;
   return hue;
 }
 
-static void populate_mbox_list(GtkListStore *store, TOCType *toc) {
+/* Get label color as "#RRGGBB" string. Returns "" for no label. */
+static const char *label_color_str(int label) {
+  static char buf[8];
+  if (label <= 0 || label > 7) return "";
+  /* Default colors matching original Eudora */
+  static const char *colors[] = {
+    "", "#FF0000", "#0000FF", "#009900", "#990099",
+    "#FF8000", "#009999", "#666666"
+  };
+  /* Try loading from prefs */
+  char key[32];
+  snprintf(key, sizeof(key), "color_r_%d", label - 1);
+  int r = prefs_get_int(PREFS_GROUP_LABELS, key, -1);
+  if (r >= 0) {
+    snprintf(key, sizeof(key), "color_g_%d", label - 1);
+    int g = prefs_get_int(PREFS_GROUP_LABELS, key, 0);
+    snprintf(key, sizeof(key), "color_b_%d", label - 1);
+    int b = prefs_get_int(PREFS_GROUP_LABELS, key, 0);
+    snprintf(buf, sizeof(buf), "#%02X%02X%02X",
+             (int)(r * 255 / 1000), (int)(g * 255 / 1000), (int)(b * 255 / 1000));
+    return buf;
+  }
+  return (label < 8) ? colors[label] : "";
+}
+
+void populate_mbox_list(GtkListStore *store, TOCType *toc) {
   gtk_list_store_clear(store);
   bool isOut = (toc->which == OUT);
   for (int i = 0; i < toc->count; i++) {
@@ -796,10 +821,9 @@ static void populate_mbox_list(GtkListStore *store, TOCType *toc) {
     /* Attachment indicator */
     const char *attach = (sum->flags & FLAG_HAS_ATT) ? "\xf0\x9f\x93\x8e" : "";  /* 📎 */
 
-    /* Label */
+    /* Label — show colored circle ● */
     int label = label_from_flags(sum->flags);
-    char labelbuf[8] = "";
-    if (label > 0) snprintf(labelbuf, sizeof(labelbuf), "%d", label);
+    const char *labelbuf = (label > 0) ? "\xe2\x97\x8f" : "";  /* ● */
 
     /* Junk score */
     char junkbuf[8] = "";
@@ -823,6 +847,7 @@ static void populate_mbox_list(GtkListStore *store, TOCType *toc) {
                        COL_JUNK,     junkbuf,
                        COL_SUBJECT,  safe_subj,
                        COL_INDEX,    i,
+                       COL_LABEL_COLOR, label > 0 ? label_color_str(label) : NULL,
                        -1);
     g_free(safe_who);
     g_free(safe_subj);
@@ -833,6 +858,21 @@ static void populate_mbox_list(GtkListStore *store, TOCType *toc) {
  * InitMailboxWin - initialize mailbox window with GTK message list
  * Replaces Mac custom QuickDraw drawing with GtkTreeView + preview.
  **********************************************************************/
+/* Cell data func: apply label foreground color, but let theme handle selected rows */
+static void label_color_cell_func(GtkTreeViewColumn *col, GtkCellRenderer *cell,
+                                   GtkTreeModel *model, GtkTreeIter *iter,
+                                   gpointer data) {
+  (void)col; (void)data;
+  gchar *color = NULL;
+  gtk_tree_model_get(model, iter, COL_LABEL_COLOR, &color, -1);
+  if (color && color[0]) {
+    g_object_set(cell, "foreground", color, "foreground-set", TRUE, NULL);
+  } else {
+    g_object_set(cell, "foreground-set", FALSE, NULL);
+  }
+  g_free(color);
+}
+
 void InitMailboxWin(MyWindowPtr win, TOCType * toc, bool showIt) {
   GtkWidget *winWP = GetMyWindowWindowPtr(win);
   if (!winWP) return;
@@ -868,7 +908,7 @@ void InitMailboxWin(MyWindowPtr win, TOCType * toc, bool showIt) {
   GtkListStore *store = gtk_list_store_new(NUM_MBOX_COLS,
       G_TYPE_STRING, G_TYPE_STRING, G_TYPE_STRING, G_TYPE_STRING,
       G_TYPE_STRING, G_TYPE_STRING, G_TYPE_STRING, G_TYPE_STRING,
-      G_TYPE_STRING, G_TYPE_INT);
+      G_TYPE_STRING, G_TYPE_INT, G_TYPE_STRING);
   GtkWidget *tree = gtk_tree_view_new_with_model(GTK_TREE_MODEL(store));
   g_object_unref(store);
 
@@ -891,6 +931,9 @@ void InitMailboxWin(MyWindowPtr win, TOCType * toc, bool showIt) {
     GtkCellRenderer *r = gtk_cell_renderer_text_new();
     GtkTreeViewColumn *col = gtk_tree_view_column_new_with_attributes(
         cols[c].title, r, "text", cols[c].col, NULL);
+    /* Apply label color only to non-selected rows */
+    gtk_tree_view_column_set_cell_data_func(col, r, label_color_cell_func,
+                                             GINT_TO_POINTER(cols[c].col), NULL);
     gtk_tree_view_column_set_resizable(col, TRUE);
     gtk_tree_view_column_set_reorderable(col, TRUE);
     if (cols[c].width > 0)
@@ -1532,17 +1575,132 @@ static void on_ctx_delete(GSimpleAction *a, GVariant *p, gpointer ud) {
   }
 }
 
-static void on_ctx_mark_read(GSimpleAction *a, GVariant *p, gpointer ud) {
-  (void)a; (void)p;
-  GtkTreeView *tree = GTK_TREE_VIEW(ud);
-  TOCType *toc = g_object_get_data(G_OBJECT(tree), "toc");
-  int idx = mbox_tree_selected_index(tree);
-  if (idx < 0 || !toc) return;
+/* Helper: update a tree row's column for the selected message */
+static void mbox_update_row(GtkTreeView *tree, int idx, int col, const char *val) {
+  GtkTreeModel *model = gtk_tree_view_get_model(tree);
+  GtkTreeIter iter;
+  if (!gtk_tree_model_get_iter_first(model, &iter)) return;
+  do {
+    int row_idx = -1;
+    gtk_tree_model_get(model, &iter, COL_INDEX, &row_idx, -1);
+    if (row_idx == idx) {
+      gtk_list_store_set(GTK_LIST_STORE(model), &iter, col, val, -1);
+      break;
+    }
+  } while (gtk_tree_model_iter_next(model, &iter));
+}
 
-  toc->sums[idx].state = READ;
+/* Helper: get TOC + selected index from tree, return false if none */
+static bool ctx_get_sel(gpointer ud, GtkTreeView **tree, TOCType **toc, int *idx) {
+  *tree = GTK_TREE_VIEW(ud);
+  *toc = g_object_get_data(G_OBJECT(*tree), "toc");
+  *idx = mbox_tree_selected_index(*tree);
+  return (*idx >= 0 && *toc);
+}
+
+/* --- Change Status actions --- */
+
+static void on_ctx_set_state(GSimpleAction *a, GVariant *p, gpointer ud) {
+  (void)p;
+  GtkTreeView *tree; TOCType *toc; int idx;
+  if (!ctx_get_sel(ud, &tree, &toc, &idx)) return;
+
+  /* Determine state from action name */
+  const char *name = g_action_get_name(G_ACTION(a));
+  short state = READ;
+  if (strcmp(name, "mark-unread") == 0)    state = UNREAD;
+  else if (strcmp(name, "mark-read") == 0) state = READ;
+  else if (strcmp(name, "mark-replied") == 0) state = REPLIED;
+  else if (strcmp(name, "mark-forwarded") == 0) state = FORWARDED;
+
+  toc->sums[idx].state = state;
   TOCSetDirty(toc, true);
+  extern int WriteTOC(TOCType *tocH);
+  WriteTOC(toc);
+  mbox_update_row(tree, idx, COL_STATUS, state_str(state));
+}
 
-  /* Update status column in tree */
+/* on_ctx_mark_read/unread now handled by on_ctx_set_state */
+
+/* --- Change Priority actions --- */
+
+static void on_ctx_set_priority(GSimpleAction *a, GVariant *p, gpointer ud) {
+  (void)p;
+  GtkTreeView *tree; TOCType *toc; int idx;
+  if (!ctx_get_sel(ud, &tree, &toc, &idx)) return;
+
+  const char *name = g_action_get_name(G_ACTION(a));
+  uint8_t pri = 3;
+  if (strcmp(name, "priority-highest") == 0) pri = 1;
+  else if (strcmp(name, "priority-high") == 0) pri = 2;
+  else if (strcmp(name, "priority-normal") == 0) pri = 3;
+  else if (strcmp(name, "priority-low") == 0) pri = 4;
+  else if (strcmp(name, "priority-lowest") == 0) pri = 5;
+
+  toc->sums[idx].priority = pri;
+  TOCSetDirty(toc, true);
+  extern int WriteTOC(TOCType *tocH);
+  WriteTOC(toc);
+  mbox_update_row(tree, idx, COL_PRIORITY, priority_str(pri));
+}
+
+/* --- Transfer To actions --- */
+
+static void on_ctx_transfer(GSimpleAction *a, GVariant *p, gpointer ud) {
+  (void)p;
+  GtkTreeView *tree; TOCType *toc; int idx;
+  if (!ctx_get_sel(ud, &tree, &toc, &idx)) return;
+
+  const char *mbName = g_object_get_data(G_OBJECT(a), "mailbox-name");
+  if (!mbName) return;
+
+  char spec[PATH_MAX];
+  extern int BoxSpecByName(char *spec, char *name);
+  if (BoxSpecByName(spec, (char *)mbName) == 0) {
+    extern int MoveMessageLo(TOCType *tocH, int sumNum, char *spec,
+                             bool copy, bool stranded, bool wantstranded);
+    MoveMessageLo(toc, idx, spec, false, false, false);
+
+    /* Remove from visible list */
+    GtkTreeModel *model = gtk_tree_view_get_model(tree);
+    GtkTreeIter iter;
+    if (gtk_tree_model_get_iter_first(model, &iter)) {
+      do {
+        int row_idx = -1;
+        gtk_tree_model_get(model, &iter, COL_INDEX, &row_idx, -1);
+        if (row_idx == idx) {
+          gtk_list_store_remove(GTK_LIST_STORE(model), &iter);
+          break;
+        }
+      } while (gtk_tree_model_iter_next(model, &iter));
+    }
+  }
+}
+
+/* --- Change Label actions --- */
+
+static void on_ctx_set_label(GSimpleAction *a, GVariant *p, gpointer ud) {
+  (void)p;
+  GtkTreeView *tree; TOCType *toc; int idx;
+  if (!ctx_get_sel(ud, &tree, &toc, &idx)) return;
+
+  const char *name = g_action_get_name(G_ACTION(a));
+  int label = 0;
+  if (sscanf(name, "label-%d", &label) != 1) label = 0;
+
+  /* Clear old label bits (FLAG_HUE1-3 at bits 14-16) and set new */
+  toc->sums[idx].flags &= ~(FLAG_HUE1 | FLAG_HUE2 | FLAG_HUE3);
+  if (label & 1) toc->sums[idx].flags |= FLAG_HUE1;
+  if (label & 2) toc->sums[idx].flags |= FLAG_HUE2;
+  if (label & 4) toc->sums[idx].flags |= FLAG_HUE3;
+  TOCSetDirty(toc, true);
+  extern int WriteTOC(TOCType *tocH);
+  WriteTOC(toc);
+
+  const char *labelbuf = (label > 0) ? "\xe2\x97\x8f" : ""; /* ● */
+  mbox_update_row(tree, idx, COL_LABEL, labelbuf);
+
+  /* Update row color */
   GtkTreeModel *model = gtk_tree_view_get_model(tree);
   GtkTreeIter iter;
   if (gtk_tree_model_get_iter_first(model, &iter)) {
@@ -1551,56 +1709,33 @@ static void on_ctx_mark_read(GSimpleAction *a, GVariant *p, gpointer ud) {
       gtk_tree_model_get(model, &iter, COL_INDEX, &row_idx, -1);
       if (row_idx == idx) {
         gtk_list_store_set(GTK_LIST_STORE(model), &iter,
-                           COL_STATUS, state_str(READ), -1);
+                           COL_LABEL_COLOR, label > 0 ? label_color_str(label) : NULL, -1);
         break;
       }
     } while (gtk_tree_model_iter_next(model, &iter));
   }
 }
 
-static void on_ctx_mark_unread(GSimpleAction *a, GVariant *p, gpointer ud) {
-  (void)a; (void)p;
-  GtkTreeView *tree = GTK_TREE_VIEW(ud);
-  TOCType *toc = g_object_get_data(G_OBJECT(tree), "toc");
-  int idx = mbox_tree_selected_index(tree);
-  if (idx < 0 || !toc) return;
-
-  toc->sums[idx].state = UNREAD;
-  TOCSetDirty(toc, true);
-
-  GtkTreeModel *model = gtk_tree_view_get_model(tree);
-  GtkTreeIter iter;
-  if (gtk_tree_model_get_iter_first(model, &iter)) {
-    do {
-      int row_idx = -1;
-      gtk_tree_model_get(model, &iter, COL_INDEX, &row_idx, -1);
-      if (row_idx == idx) {
-        gtk_list_store_set(GTK_LIST_STORE(model), &iter,
-                           COL_STATUS, state_str(UNREAD), -1);
-        break;
-      }
-    } while (gtk_tree_model_iter_next(model, &iter));
-  }
-}
+/* --- Junk actions --- */
 
 static void on_ctx_junk(GSimpleAction *a, GVariant *p, gpointer ud) {
   (void)a; (void)p;
-  GtkTreeView *tree = GTK_TREE_VIEW(ud);
-  TOCType *toc = g_object_get_data(G_OBJECT(tree), "toc");
-  int idx = mbox_tree_selected_index(tree);
-  if (idx < 0 || !toc) return;
+  GtkTreeView *tree; TOCType *toc; int idx;
+  if (!ctx_get_sel(ud, &tree, &toc, &idx)) return;
   toc->sums[idx].spamScore = 100;
   TOCSetDirty(toc, true);
+  { extern int WriteTOC(TOCType *tocH); WriteTOC(toc); }
+  mbox_update_row(tree, idx, COL_JUNK, "100");
 }
 
 static void on_ctx_not_junk(GSimpleAction *a, GVariant *p, gpointer ud) {
   (void)a; (void)p;
-  GtkTreeView *tree = GTK_TREE_VIEW(ud);
-  TOCType *toc = g_object_get_data(G_OBJECT(tree), "toc");
-  int idx = mbox_tree_selected_index(tree);
-  if (idx < 0 || !toc) return;
+  GtkTreeView *tree; TOCType *toc; int idx;
+  if (!ctx_get_sel(ud, &tree, &toc, &idx)) return;
   toc->sums[idx].spamScore = 0;
   TOCSetDirty(toc, true);
+  { extern int WriteTOC(TOCType *tocH); WriteTOC(toc); }
+  mbox_update_row(tree, idx, COL_JUNK, "");
 }
 
 /* Right-click handler — show context popover */
@@ -1622,13 +1757,30 @@ static void attach_mbox_context_menu(GtkWidget *tree, TOCType *toc) {
   /* Action group for context menu */
   GSimpleActionGroup *grp = g_simple_action_group_new();
   const GActionEntry entries[] = {
-    { "reply",       on_ctx_reply,       NULL, NULL, NULL },
-    { "forward",     on_ctx_forward,     NULL, NULL, NULL },
-    { "delete",      on_ctx_delete,      NULL, NULL, NULL },
-    { "mark-read",   on_ctx_mark_read,   NULL, NULL, NULL },
-    { "mark-unread", on_ctx_mark_unread, NULL, NULL, NULL },
-    { "junk",        on_ctx_junk,        NULL, NULL, NULL },
-    { "not-junk",    on_ctx_not_junk,    NULL, NULL, NULL },
+    { "reply",            on_ctx_reply,        NULL, NULL, NULL },
+    { "reply-all",        on_ctx_reply,        NULL, NULL, NULL },
+    { "forward",          on_ctx_forward,      NULL, NULL, NULL },
+    { "redirect",         on_ctx_forward,      NULL, NULL, NULL },
+    { "delete",           on_ctx_delete,       NULL, NULL, NULL },
+    { "mark-read",        on_ctx_set_state,    NULL, NULL, NULL },
+    { "mark-unread",      on_ctx_set_state,    NULL, NULL, NULL },
+    { "mark-replied",     on_ctx_set_state,    NULL, NULL, NULL },
+    { "mark-forwarded",   on_ctx_set_state,    NULL, NULL, NULL },
+    { "junk",             on_ctx_junk,         NULL, NULL, NULL },
+    { "not-junk",         on_ctx_not_junk,     NULL, NULL, NULL },
+    { "priority-highest", on_ctx_set_priority, NULL, NULL, NULL },
+    { "priority-high",    on_ctx_set_priority, NULL, NULL, NULL },
+    { "priority-normal",  on_ctx_set_priority, NULL, NULL, NULL },
+    { "priority-low",     on_ctx_set_priority, NULL, NULL, NULL },
+    { "priority-lowest",  on_ctx_set_priority, NULL, NULL, NULL },
+    { "label-0",          on_ctx_set_label,    NULL, NULL, NULL },
+    { "label-1",          on_ctx_set_label,    NULL, NULL, NULL },
+    { "label-2",          on_ctx_set_label,    NULL, NULL, NULL },
+    { "label-3",          on_ctx_set_label,    NULL, NULL, NULL },
+    { "label-4",          on_ctx_set_label,    NULL, NULL, NULL },
+    { "label-5",          on_ctx_set_label,    NULL, NULL, NULL },
+    { "label-6",          on_ctx_set_label,    NULL, NULL, NULL },
+    { "label-7",          on_ctx_set_label,    NULL, NULL, NULL },
   };
   g_action_map_add_action_entries(G_ACTION_MAP(grp), entries,
                                   G_N_ELEMENTS(entries), tree);
@@ -1636,24 +1788,111 @@ static void attach_mbox_context_menu(GtkWidget *tree, TOCType *toc) {
 
   /* Menu model */
   GMenu *menu = g_menu_new();
+
+  /* Reply / Forward section */
   GMenu *section1 = g_menu_new();
-  g_menu_append(section1, "Reply",   "msg.reply");
-  g_menu_append(section1, "Forward", "msg.forward");
+  g_menu_append(section1, "Reply",        "msg.reply");
+  g_menu_append(section1, "Reply to All", "msg.reply-all");
+  g_menu_append(section1, "Forward",      "msg.forward");
+  g_menu_append(section1, "Redirect",     "msg.redirect");
   g_menu_append_section(menu, NULL, G_MENU_MODEL(section1));
 
+  /* Change Status submenu */
+  GMenu *status_sub = g_menu_new();
+  g_menu_append(status_sub, "Unread",    "msg.mark-unread");
+  g_menu_append(status_sub, "Read",      "msg.mark-read");
+  g_menu_append(status_sub, "Replied",   "msg.mark-replied");
+  g_menu_append(status_sub, "Forwarded", "msg.mark-forwarded");
+
+  /* Change Priority submenu */
+  GMenu *priority_sub = g_menu_new();
+  g_menu_append(priority_sub, "Highest", "msg.priority-highest");
+  g_menu_append(priority_sub, "High",    "msg.priority-high");
+  g_menu_append(priority_sub, "Normal",  "msg.priority-normal");
+  g_menu_append(priority_sub, "Low",     "msg.priority-low");
+  g_menu_append(priority_sub, "Lowest",  "msg.priority-lowest");
+
+  /* Change Label submenu — read names from settings */
+  GMenu *label_sub = g_menu_new();
+  g_menu_append(label_sub, "None", "msg.label-0");
+  {
+    static const char *default_names[] = {
+      "Label 1","Label 2","Label 3","Label 4",
+      "Label 5","Label 6","Label 7"
+    };
+    for (int li = 0; li < 7; li++) {
+      char key[32], action[32];
+      snprintf(key, sizeof(key), "name_%d", li);
+      gchar *lname = prefs_get_string(PREFS_GROUP_LABELS, key,
+                                       default_names[li]);
+      snprintf(action, sizeof(action), "msg.label-%d", li + 1);
+      g_menu_append(label_sub, lname, action);
+      g_free(lname);
+    }
+  }
+
   GMenu *section2 = g_menu_new();
-  g_menu_append(section2, "Mark as Read",   "msg.mark-read");
-  g_menu_append(section2, "Mark as Unread", "msg.mark-unread");
+  g_menu_append_submenu(section2, "Change Status",   G_MENU_MODEL(status_sub));
+  g_menu_append_submenu(section2, "Change Priority", G_MENU_MODEL(priority_sub));
+  g_menu_append_submenu(section2, "Change Label",    G_MENU_MODEL(label_sub));
   g_menu_append_section(menu, NULL, G_MENU_MODEL(section2));
 
+  /* Transfer To submenu — built dynamically from mailboxes directory */
+  GMenu *transfer_sub = g_menu_new();
+  {
+    extern VDId MailRoot;
+    GDir *dir = g_dir_open(MailRoot.path, 0, NULL);
+    if (dir) {
+      const char *name;
+      while ((name = g_dir_read_name(dir)) != NULL) {
+        /* Skip hidden, .toc, temp, and Delivery Folder */
+        if (name[0] == '.') continue;
+        size_t nlen = strlen(name);
+        if (nlen > 4 && strcmp(name + nlen - 4, ".toc") == 0) continue;
+        if (strstr(name, ".temp")) continue;
+        if (strcmp(name, "Delivery Folder") == 0) continue;
+
+        /* Check it's a file (mailbox), not a directory */
+        char fullpath[PATH_MAX];
+        snprintf(fullpath, sizeof(fullpath), "%s/%s", MailRoot.path, name);
+        if (g_file_test(fullpath, G_FILE_TEST_IS_DIR)) continue;
+
+        /* Create action name: "transfer-N" (index-based, spaces not allowed in action names) */
+        static int transfer_idx = 0;
+        char action_name[128];
+        snprintf(action_name, sizeof(action_name), "transfer-%d", transfer_idx);
+
+        /* Register the action with mailbox name stored as data */
+        GSimpleAction *ta = g_simple_action_new(action_name, NULL);
+        g_object_set_data_full(G_OBJECT(ta), "mailbox-name",
+                               g_strdup(name), g_free);
+        g_signal_connect(ta, "activate", G_CALLBACK(on_ctx_transfer), tree);
+        g_action_map_add_action(G_ACTION_MAP(grp), G_ACTION(ta));
+        g_object_unref(ta);
+        transfer_idx++;
+
+        /* Add menu item */
+        char full_action[160];
+        snprintf(full_action, sizeof(full_action), "msg.%s", action_name);
+        g_menu_append(transfer_sub, name, full_action);
+      }
+      g_dir_close(dir);
+    }
+  }
+
   GMenu *section3 = g_menu_new();
-  g_menu_append(section3, "Junk",     "msg.junk");
-  g_menu_append(section3, "Not Junk", "msg.not-junk");
+  g_menu_append_submenu(section3, "Transfer To", G_MENU_MODEL(transfer_sub));
   g_menu_append_section(menu, NULL, G_MENU_MODEL(section3));
 
+  /* Junk / Delete section */
   GMenu *section4 = g_menu_new();
-  g_menu_append(section4, "Delete", "msg.delete");
+  g_menu_append(section4, "Junk",     "msg.junk");
+  g_menu_append(section4, "Not Junk", "msg.not-junk");
   g_menu_append_section(menu, NULL, G_MENU_MODEL(section4));
+
+  GMenu *section5 = g_menu_new();
+  g_menu_append(section5, "Delete", "msg.delete");
+  g_menu_append_section(menu, NULL, G_MENU_MODEL(section5));
 
   /* Popover menu */
   GtkWidget *popover = gtk_popover_menu_new_from_model(G_MENU_MODEL(menu));
@@ -1663,8 +1902,13 @@ static void attach_mbox_context_menu(GtkWidget *tree, TOCType *toc) {
 
   g_object_unref(section1);
   g_object_unref(section2);
+  g_object_unref(status_sub);
+  g_object_unref(priority_sub);
+  g_object_unref(label_sub);
   g_object_unref(section3);
+  g_object_unref(transfer_sub);
   g_object_unref(section4);
+  g_object_unref(section5);
   g_object_unref(menu);
   g_object_unref(grp);
 
@@ -1686,7 +1930,7 @@ GtkWidget *CreateMailboxPanel(TOCType *toc) {
   GtkListStore *store = gtk_list_store_new(NUM_MBOX_COLS,
       G_TYPE_STRING, G_TYPE_STRING, G_TYPE_STRING, G_TYPE_STRING,
       G_TYPE_STRING, G_TYPE_STRING, G_TYPE_STRING, G_TYPE_STRING,
-      G_TYPE_STRING, G_TYPE_INT);
+      G_TYPE_STRING, G_TYPE_INT, G_TYPE_STRING);
   GtkWidget *tree = gtk_tree_view_new_with_model(GTK_TREE_MODEL(store));
   g_object_unref(store);
 
@@ -1708,6 +1952,9 @@ GtkWidget *CreateMailboxPanel(TOCType *toc) {
     GtkCellRenderer *r = gtk_cell_renderer_text_new();
     GtkTreeViewColumn *col = gtk_tree_view_column_new_with_attributes(
         cols[c].title, r, "text", cols[c].col, NULL);
+    /* Apply label color only to non-selected rows */
+    gtk_tree_view_column_set_cell_data_func(col, r, label_color_cell_func,
+                                             GINT_TO_POINTER(cols[c].col), NULL);
     gtk_tree_view_column_set_resizable(col, TRUE);
     gtk_tree_view_column_set_reorderable(col, TRUE);
     if (cols[c].width > 0)

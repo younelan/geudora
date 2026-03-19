@@ -178,6 +178,10 @@ static void notify_new_mail_idle(void) {
 
   NeedToNotify = false;
 
+  /* Refresh open mailbox tabs to show newly delivered messages */
+  extern void eudora_refresh_open_mailboxes(void);
+  eudora_refresh_open_mailboxes();
+
   if (idle_fpb_inited) {
     NotifyNewMailLo(
         idle_fpb.doNotifyThing || idle_fpb.openMessage || idle_fpb.openMailbox,
