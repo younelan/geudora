@@ -26,4 +26,15 @@ char *crispy_hmac_md5_hex(const void *key, size_t keyLen,
                           const void *data, size_t dataLen,
                           char buf[33]);
 
+/* SHA-256 hash — used for SCRAM-SHA-256 */
+void crispy_sha256(const void *data, size_t len, unsigned char digest[32]);
+void crispy_hmac_sha256(const void *key, size_t keyLen,
+                        const void *data, size_t dataLen,
+                        unsigned char digest[32]);
+
+/* PBKDF2-SHA-256 — used for SCRAM key derivation */
+void crispy_pbkdf2_sha256(const char *password, size_t passLen,
+                          const unsigned char *salt, size_t saltLen,
+                          int iterations, unsigned char *out, size_t outLen);
+
 #endif /* CRISPY_MD5_H */

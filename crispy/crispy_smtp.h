@@ -113,6 +113,15 @@ int crispy_smtp_send(SmtpSession *s, const char *from,
 /* Authenticate with CRAM-MD5 (challenge-response, password not sent in clear). */
 int crispy_smtp_auth_cram_md5(SmtpSession *s, const char *user, const char *pass);
 
+/* Authenticate with XOAUTH2 (Gmail, Outlook). token is the OAuth2 access token. */
+int crispy_smtp_auth_xoauth2(SmtpSession *s, const char *user, const char *token);
+
+/* Authenticate with SCRAM-SHA-256. Returns 0 on success. */
+int crispy_smtp_auth_scram_sha256(SmtpSession *s, const char *user, const char *pass);
+
+/* Authenticate with DIGEST-MD5. Returns 0 on success. */
+int crispy_smtp_auth_digest_md5(SmtpSession *s, const char *user, const char *pass);
+
 /* Close connection gracefully (QUIT). */
 void crispy_smtp_close(SmtpSession *s);
 

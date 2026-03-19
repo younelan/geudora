@@ -114,6 +114,39 @@ char *crispy_mime_boundary(char *buf, size_t bufSize) {
   return buf;
 }
 
+/* Check if text has non-ASCII or long lines requiring QP encoding */
+static bool needs_encoding(const char *text, long len) {
+  int lineLen = 0;
+  for (long i = 0; i < len; i++) {
+    if ((unsigned char)text[i] > 126) return true;
+    if (text[i] == '\n') lineLen = 0;
+    else if (++lineLen > 76) return true;
+  }
+  return false;
+}
+
+/* Write a text part to buffer with automatic CTE selection */
+static void write_text_part(Buf *b, const char *mime, const char *text) {
+  if (!text) text = "";
+  long len = (long)strlen(text);
+
+  buf_fmt(b, "Content-Type: %s; charset=UTF-8\r\n", mime);
+
+  if (needs_encoding(text, len)) {
+    buf_str(b, "Content-Transfer-Encoding: quoted-printable\r\n\r\n");
+    long qpLen;
+    char *qp = crispy_qp_encode(text, len, &qpLen);
+    if (qp) {
+      buf_add(b, qp, qpLen);
+      free(qp);
+    }
+  } else {
+    buf_str(b, "Content-Transfer-Encoding: 7bit\r\n\r\n");
+    buf_add(b, text, len);
+  }
+  buf_str(b, "\r\n");
+}
+
 char *crispy_msg_gen_id(char *buf, size_t bufSize, const char *domain) {
   if (!domain) domain = "crispy.local";
   /* Hash time + random for a unique ID */
@@ -330,26 +363,17 @@ char *crispy_msg_build(const CrispyMsg *msg, long *outLen) {
 
       /* Plain part */
       buf_fmt(&b, "\r\n--%s\r\n", boundary_alt);
-      buf_str(&b, "Content-Type: text/plain; charset=UTF-8\r\n");
-      buf_str(&b, "Content-Transfer-Encoding: 8bit\r\n\r\n");
-      buf_str(&b, msg->body_plain ? msg->body_plain : "");
-      buf_str(&b, "\r\n");
+      write_text_part(&b, "text/plain", msg->body_plain);
 
       /* HTML part */
       buf_fmt(&b, "\r\n--%s\r\n", boundary_alt);
-      buf_str(&b, "Content-Type: text/html; charset=UTF-8\r\n");
-      buf_str(&b, "Content-Transfer-Encoding: 8bit\r\n\r\n");
-      buf_str(&b, msg->body_html);
-      buf_str(&b, "\r\n");
+      write_text_part(&b, "text/html", msg->body_html);
 
       buf_fmt(&b, "\r\n--%s--\r\n", boundary_alt);
     } else {
       /* mixed { plain, attachments } */
       buf_fmt(&b, "\r\n--%s\r\n", boundary_mixed);
-      buf_str(&b, "Content-Type: text/plain; charset=UTF-8\r\n");
-      buf_str(&b, "Content-Transfer-Encoding: 8bit\r\n\r\n");
-      buf_str(&b, msg->body_plain ? msg->body_plain : "");
-      buf_str(&b, "\r\n");
+      write_text_part(&b, "text/plain", msg->body_plain);
     }
 
     /* Attachments */
@@ -367,26 +391,17 @@ char *crispy_msg_build(const CrispyMsg *msg, long *outLen) {
 
     /* Plain */
     buf_fmt(&b, "\r\n--%s\r\n", boundary_alt);
-    buf_str(&b, "Content-Type: text/plain; charset=UTF-8\r\n");
-    buf_str(&b, "Content-Transfer-Encoding: 8bit\r\n\r\n");
-    buf_str(&b, msg->body_plain ? msg->body_plain : "");
-    buf_str(&b, "\r\n");
+    write_text_part(&b, "text/plain", msg->body_plain);
 
     /* HTML */
     buf_fmt(&b, "\r\n--%s\r\n", boundary_alt);
-    buf_str(&b, "Content-Type: text/html; charset=UTF-8\r\n");
-    buf_str(&b, "Content-Transfer-Encoding: 8bit\r\n\r\n");
-    buf_str(&b, msg->body_html);
-    buf_str(&b, "\r\n");
+    write_text_part(&b, "text/html", msg->body_html);
 
     buf_fmt(&b, "\r\n--%s--\r\n", boundary_alt);
 
   } else {
     /* Simple plain text */
-    buf_str(&b, "Content-Type: text/plain; charset=UTF-8\r\n");
-    buf_str(&b, "Content-Transfer-Encoding: 8bit\r\n\r\n");
-    buf_str(&b, msg->body_plain ? msg->body_plain : "");
-    buf_str(&b, "\r\n");
+    write_text_part(&b, "text/plain", msg->body_plain);
   }
 
   /* Null-terminate */
@@ -453,6 +468,64 @@ char **crispy_msg_recipients(const CrispyMsg *msg, int *count) {
   list[n] = NULL; /* null-terminate */
   if (count) *count = n;
   return list;
+}
+
+/* --- Text/enriched and text/richtext to plain text conversion --- */
+
+/* Strip enriched text tags and convert to plain text.
+ * RFC 1896 (text/enriched) and RFC 1341 (text/richtext).
+ * Tags are <bold>, <italic>, <underline>, <param>, <nofill>, etc.
+ * << is literal <. Newlines are paragraph formatting. */
+static char *enriched_to_plain(const char *in, long inLen) {
+  char *out = (char *)malloc(inLen + 1);
+  if (!out) return NULL;
+  long o = 0;
+  const char *p = in;
+  const char *end = in + inLen;
+  bool in_param = false; /* inside <param>...</param> — skip content */
+  int newline_count = 0;
+
+  while (p < end) {
+    if (*p == '<') {
+      if (p + 1 < end && p[1] == '<') {
+        /* << = literal < */
+        if (!in_param) out[o++] = '<';
+        p += 2;
+        newline_count = 0;
+        continue;
+      }
+      /* Find closing > */
+      const char *tagEnd = memchr(p, '>', end - p);
+      if (tagEnd) {
+        long tagLen = (long)(tagEnd - p - 1);
+        if (tagLen > 0 && strncasecmp(p + 1, "param", 5) == 0)
+          in_param = true;
+        else if (tagLen > 0 && strncasecmp(p + 1, "/param", 6) == 0)
+          in_param = false;
+        p = tagEnd + 1;
+        continue;
+      }
+    }
+    if (*p == '\n') {
+      newline_count++;
+      if (newline_count >= 2) {
+        /* Two+ newlines = paragraph break */
+        out[o++] = '\n';
+        newline_count = 0;
+      } else {
+        /* Single newline = soft wrap, convert to space */
+        if (o > 0 && out[o-1] != ' ' && out[o-1] != '\n')
+          out[o++] = ' ';
+      }
+      p++;
+      continue;
+    }
+    newline_count = 0;
+    if (!in_param) out[o++] = *p;
+    p++;
+  }
+  out[o] = '\0';
+  return out;
 }
 
 /* --- MIME part header helpers --- */
@@ -617,6 +690,20 @@ static int parse_one_part(const char *partStart, long partLen,
     }
   }
 
+  /* Convert text/enriched and text/richtext to plain text */
+  if (out->data && out->mime_type &&
+      (strcasecmp(out->mime_type, "text/enriched") == 0 ||
+       strcasecmp(out->mime_type, "text/richtext") == 0)) {
+    char *plain = enriched_to_plain(out->data, out->data_len);
+    if (plain) {
+      free(out->data);
+      out->data = plain;
+      out->data_len = (long)strlen(plain);
+      free(out->mime_type);
+      out->mime_type = strdup("text/plain");
+    }
+  }
+
   free(cte);
   return 0;
 }
@@ -671,7 +758,7 @@ static int parse_multipart(const char *body, long bodyLen,
     long partLen = (long)(partEnd - partStart);
     if (partLen <= 0) continue;
 
-    /* Check if this part is itself multipart */
+    /* Check if this part is itself multipart or nested message */
     char *subCt = part_header_value(partStart, partLen, "Content-Type: ");
     if (subCt && strncasecmp(subCt, "multipart/", 10) == 0) {
       char *subBoundary = extract_param(subCt, "boundary");
@@ -682,6 +769,54 @@ static int parse_multipart(const char *body, long bodyLen,
                           subBoundary, parts, count, cap);
         }
         free(subBoundary);
+      }
+      free(subCt);
+      continue;
+    }
+
+    /* message/rfc822 — nested email (forwarded as attachment) */
+    if (subCt && strncasecmp(subCt, "message/rfc822", 14) == 0) {
+      const char *nestedStart = find_body(partStart, partEnd);
+      if (nestedStart) {
+        long nestedLen = (long)(partEnd - nestedStart);
+        /* Recursively check if the nested message is itself multipart */
+        MailHeadSpec nhs;
+        char *nestedCt = NULL;
+        if (crispy_headparse_find(nestedStart, "Content-Type: ", &nhs))
+          crispy_headparse_get_value(nestedStart, &nhs, &nestedCt);
+
+        if (nestedCt && strncasecmp(nestedCt, "multipart/", 10) == 0) {
+          char *nb = extract_param(nestedCt, "boundary");
+          if (nb) {
+            const char *nestedBody = find_body(nestedStart,
+                                                nestedStart + nestedLen);
+            if (nestedBody)
+              parse_multipart(nestedBody,
+                              (long)(partEnd - nestedBody),
+                              nb, parts, count, cap);
+            free(nb);
+          }
+        } else {
+          /* Store the nested message as a single part */
+          if (*count >= *cap) {
+            *cap = *cap ? *cap * 2 : 8;
+            *parts = (CrispyMsgPart *)realloc(*parts,
+                                               *cap * sizeof(CrispyMsgPart));
+          }
+          CrispyMsgPart *np = &(*parts)[*count];
+          memset(np, 0, sizeof(*np));
+          np->mime_type = strdup("message/rfc822");
+          np->data = (char *)malloc(nestedLen + 1);
+          if (np->data) {
+            memcpy(np->data, nestedStart, nestedLen);
+            np->data[nestedLen] = '\0';
+            np->data_len = nestedLen;
+          }
+          np->is_attachment = true;
+          np->filename = strdup("message.eml");
+          (*count)++;
+        }
+        free(nestedCt);
       }
       free(subCt);
       continue;
@@ -790,4 +925,203 @@ void crispy_msg_parsed_free(CrispyMsgParsed *parsed) {
   }
   free(parsed->parts);
   memset(parsed, 0, sizeof(*parsed));
+}
+
+/* ================================================================
+ * Save attachments to directory
+ * ================================================================ */
+
+int crispy_msg_save_attachments(const CrispyMsgParsed *parsed,
+                                const char *dir) {
+  if (!parsed || !dir) return 0;
+  int saved = 0;
+
+  for (int i = 0; i < parsed->part_count; i++) {
+    CrispyMsgPart *part = &parsed->parts[i];
+    if (!part->is_attachment || !part->data || part->data_len <= 0)
+      continue;
+
+    const char *fname = part->filename ? part->filename : "attachment";
+    char path[1024];
+    snprintf(path, sizeof(path), "%s/%s", dir, fname);
+
+    /* Avoid overwriting */
+    if (access(path, F_OK) == 0) {
+      const char *dot = strrchr(fname, '.');
+      char base[256], ext[64];
+      if (dot) {
+        snprintf(ext, sizeof(ext), "%s", dot);
+        size_t blen = (size_t)(dot - fname);
+        if (blen >= sizeof(base)) blen = sizeof(base) - 1;
+        memcpy(base, fname, blen);
+        base[blen] = '\0';
+      } else {
+        snprintf(base, sizeof(base), "%s", fname);
+        ext[0] = '\0';
+      }
+      for (int n = 1; n < 1000; n++) {
+        snprintf(path, sizeof(path), "%s/%s_%d%s", dir, base, n, ext);
+        if (access(path, F_OK) != 0) break;
+      }
+    }
+
+    FILE *f = fopen(path, "wb");
+    if (f) {
+      fwrite(part->data, 1, part->data_len, f);
+      fclose(f);
+      saved++;
+    }
+  }
+  return saved;
+}
+
+/* ================================================================
+ * Build reply message
+ * ================================================================ */
+
+char *crispy_msg_build_reply(const CrispyMsgParsed *orig,
+                             const char *my_from, bool replyAll,
+                             const char *body, long *outLen) {
+  if (!orig || !my_from) return NULL;
+
+  /* Build Re: subject */
+  char subj[512];
+  if (orig->subject && orig->subject[0]) {
+    if (strncasecmp(orig->subject, "Re:", 3) == 0)
+      snprintf(subj, sizeof(subj), "%s", orig->subject);
+    else
+      snprintf(subj, sizeof(subj), "Re: %s", orig->subject);
+  } else {
+    snprintf(subj, sizeof(subj), "Re: ");
+  }
+
+  /* Build quoted body */
+  char *quoted = NULL;
+  if (orig->body_plain && orig->body_plain_len > 0) {
+    /* Add attribution + quote each line with "> " */
+    size_t qsize = orig->body_plain_len * 2 + 512;
+    quoted = (char *)malloc(qsize);
+    if (quoted) {
+      int pos = 0;
+      if (orig->from)
+        pos += snprintf(quoted + pos, qsize - pos,
+                        "On %s, %s wrote:\r\n",
+                        orig->date ? orig->date : "", orig->from);
+      pos += snprintf(quoted + pos, qsize - pos, "\r\n");
+
+      const char *p = orig->body_plain;
+      const char *end = p + orig->body_plain_len;
+      while (p < end) {
+        pos += snprintf(quoted + pos, qsize - pos, "> ");
+        while (p < end && *p != '\n') {
+          if (pos < (int)qsize - 2) quoted[pos++] = *p;
+          p++;
+        }
+        pos += snprintf(quoted + pos, qsize - pos, "\r\n");
+        if (p < end) p++; /* skip \n */
+      }
+      quoted[pos] = '\0';
+    }
+  }
+
+  /* Combine user body + quoted text */
+  char *fullBody = NULL;
+  if (body && body[0] && quoted) {
+    size_t len = strlen(body) + strlen(quoted) + 16;
+    fullBody = (char *)malloc(len);
+    snprintf(fullBody, len, "%s\r\n\r\n%s", body, quoted);
+  } else if (quoted) {
+    fullBody = quoted;
+    quoted = NULL;
+  } else if (body) {
+    fullBody = strdup(body);
+  }
+
+  CrispyMsg msg = {
+    .from = my_from,
+    .to = orig->from,
+    .cc = replyAll ? orig->cc : NULL,
+    .subject = subj,
+    .body_plain = fullBody ? fullBody : "",
+    .in_reply_to = orig->message_id,
+    .references = orig->message_id,
+  };
+
+  char *raw = crispy_msg_build(&msg, outLen);
+
+  free(fullBody);
+  free(quoted);
+  return raw;
+}
+
+/* ================================================================
+ * Build forward message
+ * ================================================================ */
+
+char *crispy_msg_build_forward(const CrispyMsgParsed *orig,
+                               const char *my_from, const char *to,
+                               const char *body, long *outLen) {
+  if (!orig || !my_from || !to) return NULL;
+
+  /* Build Fwd: subject */
+  char subj[512];
+  if (orig->subject && orig->subject[0])
+    snprintf(subj, sizeof(subj), "Fwd: %s", orig->subject);
+  else
+    snprintf(subj, sizeof(subj), "Fwd: ");
+
+  /* Build forwarded body */
+  size_t fsize = (orig->body_plain_len > 0 ? orig->body_plain_len : 0) +
+                 (body ? strlen(body) : 0) + 512;
+  char *fullBody = (char *)malloc(fsize);
+  int pos = 0;
+  if (body && body[0])
+    pos += snprintf(fullBody + pos, fsize - pos, "%s\r\n\r\n", body);
+  pos += snprintf(fullBody + pos, fsize - pos,
+                  "---------- Forwarded message ----------\r\n");
+  if (orig->from)
+    pos += snprintf(fullBody + pos, fsize - pos, "From: %s\r\n", orig->from);
+  if (orig->date)
+    pos += snprintf(fullBody + pos, fsize - pos, "Date: %s\r\n", orig->date);
+  if (orig->subject)
+    pos += snprintf(fullBody + pos, fsize - pos, "Subject: %s\r\n", orig->subject);
+  if (orig->to)
+    pos += snprintf(fullBody + pos, fsize - pos, "To: %s\r\n", orig->to);
+  pos += snprintf(fullBody + pos, fsize - pos, "\r\n");
+  if (orig->body_plain && orig->body_plain_len > 0) {
+    memcpy(fullBody + pos, orig->body_plain, orig->body_plain_len);
+    pos += orig->body_plain_len;
+  }
+  fullBody[pos] = '\0';
+
+  /* Forward with same attachments if any */
+  CrispyAttachment *fwdAtts = NULL;
+  int fwdAttCount = 0;
+  if (orig->part_count > 0) {
+    fwdAtts = (CrispyAttachment *)calloc(orig->part_count, sizeof(CrispyAttachment));
+    for (int i = 0; i < orig->part_count; i++) {
+      if (orig->parts[i].is_attachment && orig->parts[i].data) {
+        fwdAtts[fwdAttCount].data = orig->parts[i].data;
+        fwdAtts[fwdAttCount].data_len = orig->parts[i].data_len;
+        fwdAtts[fwdAttCount].filename = orig->parts[i].filename;
+        fwdAtts[fwdAttCount].mime_type = orig->parts[i].mime_type;
+        fwdAttCount++;
+      }
+    }
+  }
+
+  CrispyMsg msg = {
+    .from = my_from,
+    .to = to,
+    .subject = subj,
+    .body_plain = fullBody,
+    .attachments = fwdAtts,
+    .attachment_count = fwdAttCount,
+  };
+
+  char *raw = crispy_msg_build(&msg, outLen);
+
+  free(fullBody);
+  free(fwdAtts);
+  return raw;
 }

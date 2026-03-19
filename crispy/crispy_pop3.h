@@ -62,6 +62,15 @@ int crispy_pop3_auth(Pop3Session *s, const char *user, const char *pass);
 /* Authenticate with APOP (uses greeting timestamp). Returns 0 on success. */
 int crispy_pop3_auth_apop(Pop3Session *s, const char *user, const char *pass);
 
+/* Authenticate with CRAM-MD5 (challenge-response). Returns 0 on success. */
+int crispy_pop3_auth_cram_md5(Pop3Session *s, const char *user, const char *pass);
+
+/* Authenticate with XOAUTH2 (Gmail, Outlook). token is the OAuth2 access token. */
+int crispy_pop3_auth_xoauth2(Pop3Session *s, const char *user, const char *token);
+
+/* Authenticate with SCRAM-SHA-256. Returns 0 on success. */
+int crispy_pop3_auth_scram_sha256(Pop3Session *s, const char *user, const char *pass);
+
 /* Get message count and mailbox size (STAT). Returns 0 on success.
  * Results stored in s->msg_count and s->mailbox_size. */
 int crispy_pop3_stat(Pop3Session *s);

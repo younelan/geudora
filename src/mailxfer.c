@@ -1429,6 +1429,70 @@ static int CrispySendOneMessage(SmtpSession *smtp, TOCType *tocH, int sumNum) {
       g_strlcpy(fromBare, fromAddr, sizeof(fromBare));
   }
 
+  /* Check for attachments — look for "Attachments:" header */
+  char *attachVal = NULL;
+  if (crispy_headparse_find(msg, "Attachments: ", &hs))
+    crispy_headparse_get_value(msg, &hs, &attachVal);
+
+  /* If we have attachments, rebuild the message with MIME encoding via crispy */
+  char *mimeMsg = NULL;
+  long mimeMsgLen = 0;
+  if (attachVal && attachVal[0]) {
+    /* Find body start */
+    const char *bodyStart = strstr(msg, "\r\n\r\n");
+    if (!bodyStart) bodyStart = strstr(msg, "\n\n");
+    const char *bodyText = bodyStart ? bodyStart + (bodyStart[1] == '\n' ? 2 : 4) : "";
+
+    /* Extract subject */
+    char *subjVal = NULL;
+    if (crispy_headparse_find(msg, "Subject: ", &hs))
+      crispy_headparse_get_value(msg, &hs, &subjVal);
+
+    /* Parse attachment paths (semicolon or newline separated) */
+    CrispyAttachment atts[32];
+    int attCount = 0;
+    char *attCopy = strdup(attachVal);
+    char *tok = strtok(attCopy, ";\r\n");
+    while (tok && attCount < 32) {
+      /* Trim whitespace */
+      while (*tok == ' ' || *tok == '\t') tok++;
+      char *end = tok + strlen(tok) - 1;
+      while (end > tok && (*end == ' ' || *end == '\t')) *end-- = '\0';
+      /* Strip quotes */
+      if (*tok == '"') { tok++; if (*end == '"') *end = '\0'; }
+      if (*tok && g_file_test(tok, G_FILE_TEST_EXISTS)) {
+        memset(&atts[attCount], 0, sizeof(CrispyAttachment));
+        atts[attCount].path = tok;
+        attCount++;
+        g_print("CrispySend: attachment %d: '%s'\n", attCount, tok);
+      }
+      tok = strtok(NULL, ";\r\n");
+    }
+
+    if (attCount > 0) {
+      CrispyMsg cmsgBuild = {
+        .from = fromAddr,
+        .to = toVal,
+        .cc = ccVal,
+        .bcc = bccVal,
+        .subject = subjVal,
+        .body_plain = bodyText,
+        .attachments = atts,
+        .attachment_count = attCount,
+      };
+      mimeMsg = crispy_msg_build(&cmsgBuild, &mimeMsgLen);
+      if (mimeMsg) {
+        msg = mimeMsg;
+        msgLen = mimeMsgLen;
+        g_print("CrispySend: rebuilt as MIME with %d attachment(s), len=%ld\n",
+                attCount, mimeMsgLen);
+      }
+    }
+    free(attCopy);
+    free(subjVal);
+  }
+  free(attachVal);
+
   g_print("CrispySend: from='%s' rcpts=%d len=%ld sig=%s\n",
           fromBare, rcptCount, msgLen,
           (eSignature && *eSignature) ? "yes" : "no");
@@ -1450,6 +1514,7 @@ static int CrispySendOneMessage(SmtpSession *smtp, TOCType *tocH, int sumNum) {
   }
 
   /* Cleanup */
+  free(mimeMsg);
   g_free(msgWithSig);
   g_free(raw);
   free(fromAddr);
@@ -1525,18 +1590,59 @@ static short CrispyCheckMail(short *gotSome) {
   }
   g_print("CrispyCheckMail: %d messages, %ld bytes\n", pop.msg_count, pop.mailbox_size);
 
+  /* Get UIDL list for LMOS tracking */
+  Pop3MsgInfo *msgList = NULL;
+  int listCount = crispy_pop3_list(&pop, &msgList);
+  g_print("CrispyCheckMail: list returned %d messages\n", listCount);
+
+  /* Load saved UIDLs for this personality */
+  char lmosPath[PATH_MAX];
+  snprintf(lmosPath, sizeof(lmosPath), "%s/lmos_%s@%s.txt",
+           Root.path, popUser, popHost);
+
+  /* Read saved UIDLs into a hash set (simple: array of strings) */
+  char **savedUidls = NULL;
+  int savedCount = 0;
+  {
+    FILE *f = fopen(lmosPath, "r");
+    if (f) {
+      char line[256];
+      /* Count lines */
+      while (fgets(line, sizeof(line), f)) savedCount++;
+      rewind(f);
+      savedUidls = calloc(savedCount + 1, sizeof(char *));
+      int si = 0;
+      while (fgets(line, sizeof(line), f) && si < savedCount) {
+        /* Strip newline */
+        size_t len = strlen(line);
+        while (len > 0 && (line[len-1] == '\n' || line[len-1] == '\r'))
+          line[--len] = '\0';
+        if (line[0]) savedUidls[si++] = strdup(line);
+      }
+      savedCount = si;
+      fclose(f);
+    }
+  }
+  g_print("CrispyCheckMail: loaded %d saved UIDLs from %s\n", savedCount, lmosPath);
+
   /* Get inbox TOC (In.temp when threaded, In when not) */
   TOCType *tocH = GetInTOC();
   if (!tocH) {
     g_print("CrispyCheckMail: GetInTOC failed\n");
+    free(msgList);
+    for (int i = 0; i < savedCount; i++) free(savedUidls[i]);
+    free(savedUidls);
     crispy_pop3_close(&pop);
     return -1;
   }
 
   /* Open inbox mailbox file */
-  int refN = BoxFOpen(tocH);
-  if (refN < 0) {
+  int err2 = BoxFOpen(tocH);
+  if (err2) {
     g_print("CrispyCheckMail: BoxFOpen failed\n");
+    free(msgList);
+    for (int i = 0; i < savedCount; i++) free(savedUidls[i]);
+    free(savedUidls);
     crispy_pop3_close(&pop);
     return -1;
   }
@@ -1546,15 +1652,41 @@ static short CrispyCheckMail(short *gotSome) {
   if (lseek(tocH->refN, eof, SEEK_SET) < 0) {
     g_print("CrispyCheckMail: seek failed\n");
     BoxFClose(tocH, false);
+    free(msgList);
+    for (int i = 0; i < savedCount; i++) free(savedUidls[i]);
+    free(savedUidls);
     crispy_pop3_close(&pop);
     return -1;
   }
 
   int fetched = 0;
-  bool deleteFetched = lmos; /* from per-personality or global LMOS setting */
+  bool deleteFetched = lmos;
+
+  /* Open LMOS file for appending new UIDLs */
+  FILE *lmosFile = fopen(lmosPath, "a");
 
   for (int i = 1; i <= pop.msg_count; i++) {
-    g_print("CrispyCheckMail: fetching message %d/%d\n", i, pop.msg_count);
+    /* Check UIDL against saved list — skip if already fetched */
+    const char *uidl = NULL;
+    if (msgList && i - 1 < listCount)
+      uidl = msgList[i - 1].uidl;
+
+    if (uidl && uidl[0]) {
+      bool already = false;
+      for (int s = 0; s < savedCount; s++) {
+        if (savedUidls[s] && strcmp(savedUidls[s], uidl) == 0) {
+          already = true;
+          break;
+        }
+      }
+      if (already) {
+        g_print("CrispyCheckMail: skip msg %d (UIDL %s already fetched)\n", i, uidl);
+        continue;
+      }
+    }
+
+    g_print("CrispyCheckMail: fetching message %d/%d%s%s\n",
+            i, pop.msg_count, uidl ? " UIDL=" : "", uidl ? uidl : "");
 
     char *raw = NULL;
     long rawLen = crispy_pop3_retr(&pop, i, &raw);
@@ -1562,6 +1694,24 @@ static short CrispyCheckMail(short *gotSome) {
       g_print("CrispyCheckMail: RETR %d failed (%s)\n", i, pop.last_reply);
       free(raw);
       continue;
+    }
+
+    /* Save UIDL to file after successful fetch */
+    if (uidl && uidl[0] && lmosFile) {
+      fprintf(lmosFile, "%s\n", uidl);
+      fflush(lmosFile);
+    }
+
+    /* Extract MIME attachments and save to disk via crispy */
+    CrispyMsgParsed parsed;
+    if (crispy_msg_parse(raw, rawLen, &parsed) == 0) {
+      char attDir[PATH_MAX];
+      snprintf(attDir, sizeof(attDir), "%s/Attachments", Root.path);
+      g_mkdir_with_parents(attDir, 0755);
+      int nSaved = crispy_msg_save_attachments(&parsed, attDir);
+      if (nSaved > 0)
+        g_print("CrispyCheckMail: saved %d attachment(s) to %s\n", nSaved, attDir);
+      crispy_msg_parsed_free(&parsed);
     }
 
     /* Write mbox "From " separator line */
@@ -1652,6 +1802,12 @@ static short CrispyCheckMail(short *gotSome) {
       g_print("CrispyCheckMail: RenameInTemp done, NeedToFilterIn=%d\n", NeedToFilterIn);
     }
   }
+
+  /* Cleanup */
+  if (lmosFile) fclose(lmosFile);
+  free(msgList);
+  for (int i = 0; i < savedCount; i++) free(savedUidls[i]);
+  free(savedUidls);
 
   crispy_pop3_close(&pop);
   return 0;

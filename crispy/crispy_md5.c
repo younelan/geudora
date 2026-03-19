@@ -5,6 +5,7 @@
 #include "crispy_md5.h"
 #include <openssl/evp.h>
 #include <openssl/hmac.h>
+#include <openssl/kdf.h>
 #include <stdio.h>
 #include <string.h>
 
@@ -54,4 +55,31 @@ char *crispy_hmac_md5_hex(const void *key, size_t keyLen,
   }
   buf[32] = '\0';
   return buf;
+}
+
+/* --- SHA-256 --- */
+
+void crispy_sha256(const void *data, size_t len, unsigned char digest[32]) {
+  EVP_MD_CTX *ctx = EVP_MD_CTX_new();
+  if (!ctx) { memset(digest, 0, 32); return; }
+  EVP_DigestInit_ex(ctx, EVP_sha256(), NULL);
+  EVP_DigestUpdate(ctx, data, len);
+  unsigned int md_len = 32;
+  EVP_DigestFinal_ex(ctx, digest, &md_len);
+  EVP_MD_CTX_free(ctx);
+}
+
+void crispy_hmac_sha256(const void *key, size_t keyLen,
+                        const void *data, size_t dataLen,
+                        unsigned char digest[32]) {
+  unsigned int md_len = 32;
+  HMAC(EVP_sha256(), key, (int)keyLen, (const unsigned char *)data,
+       dataLen, digest, &md_len);
+}
+
+void crispy_pbkdf2_sha256(const char *password, size_t passLen,
+                          const unsigned char *salt, size_t saltLen,
+                          int iterations, unsigned char *out, size_t outLen) {
+  PKCS5_PBKDF2_HMAC(password, (int)passLen, salt, (int)saltLen,
+                     iterations, EVP_sha256(), (int)outLen, out);
 }

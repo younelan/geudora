@@ -23,6 +23,8 @@
 #include <openssl/err.h>
 #include <openssl/pem.h>
 #include <openssl/x509.h>
+#include <openssl/x509v3.h>
+#include <openssl/bn.h>
 
 typedef struct {
   int sockfd;
@@ -67,81 +69,69 @@ static char *get_peer_cert_pem(SSL *ssl) {
 /* --- SSL setup with certificate verification + callback --- */
 
 static int setup_ssl(PosixCtx *c) {
+  /* Step 1: Connect WITHOUT verification to get the server cert */
   c->ssl_ctx = SSL_CTX_new(TLS_client_method());
   if (!c->ssl_ctx) return -1;
-
-  /* Minimum TLS 1.2 */
   SSL_CTX_set_min_proto_version(c->ssl_ctx, TLS1_2_VERSION);
-
-  /* Load system CA certificates */
-  SSL_CTX_set_default_verify_paths(c->ssl_ctx);
-
-  /* If we have a pre-trusted cert for this host, load it */
-  if (c->trusted_pem) {
-    BIO *bio = BIO_new_mem_buf(c->trusted_pem, -1);
-    if (bio) {
-      X509 *trusted = PEM_read_bio_X509(bio, NULL, NULL, NULL);
-      if (trusted) {
-        X509_STORE *store = SSL_CTX_get_cert_store(c->ssl_ctx);
-        X509_STORE_add_cert(store, trusted);
-        X509_free(trusted);
-      }
-      BIO_free(bio);
-    }
-  }
-
-  /* Enable verification */
-  SSL_CTX_set_verify(c->ssl_ctx, SSL_VERIFY_PEER, NULL);
 
   c->ssl = SSL_new(c->ssl_ctx);
   if (!c->ssl) return -1;
-
   SSL_set_fd(c->ssl, c->sockfd);
   SSL_set_tlsext_host_name(c->ssl, c->hostname);
-  SSL_set1_host(c->ssl, c->hostname);
 
   if (SSL_connect(c->ssl) <= 0) {
     unsigned long err = ERR_peek_last_error();
-    const char *reason = ERR_reason_error_string(err);
-
-    /* Handshake failed — try the callback if we have one */
-    if (c->cert_cb) {
-      char *pem = get_peer_cert_pem(c->ssl);
-      bool accepted = c->cert_cb(c->hostname,
-                                  reason ? reason : "handshake failed",
-                                  pem, c->cert_userdata);
-      free(pem);
-      if (accepted) {
-        /* User accepted — reconnect without strict verification */
-        SSL_free(c->ssl);
-        SSL_CTX_free(c->ssl_ctx);
-        c->ssl = NULL;
-        c->ssl_ctx = SSL_CTX_new(TLS_client_method());
-        SSL_CTX_set_min_proto_version(c->ssl_ctx, TLS1_2_VERSION);
-        c->ssl = SSL_new(c->ssl_ctx);
-        SSL_set_fd(c->ssl, c->sockfd);
-        SSL_set_tlsext_host_name(c->ssl, c->hostname);
-        if (SSL_connect(c->ssl) <= 0) return -1;
-        return 0;
-      }
-    }
-    fprintf(stderr, "SSL: %s\n", reason ? reason : "handshake failed");
+    fprintf(stderr, "SSL handshake failed: %s\n",
+            ERR_reason_error_string(err));
     return -1;
   }
 
-  /* Verify cert post-handshake */
-  long verify_result = SSL_get_verify_result(c->ssl);
-  if (verify_result != X509_V_OK) {
-    const char *errStr = X509_verify_cert_error_string(verify_result);
+  /* Step 2: Get the server cert */
+  char *pem = get_peer_cert_pem(c->ssl);
 
-    if (c->cert_cb) {
-      char *pem = get_peer_cert_pem(c->ssl);
-      bool accepted = c->cert_cb(c->hostname, errStr, pem, c->cert_userdata);
-      free(pem);
-      if (accepted) return 0; /* user accepted */
+  /* Step 3: Verify the cert */
+  /* Check against system CA store + trusted store */
+  X509 *cert = SSL_get_peer_certificate(c->ssl);
+  bool verified = false;
+
+  if (cert) {
+    /* Build a verification context with system CAs + trusted cert */
+    X509_STORE *store = X509_STORE_new();
+    X509_STORE_set_default_paths(store);
+
+    if (c->trusted_pem) {
+      BIO *tbio = BIO_new_mem_buf(c->trusted_pem, -1);
+      if (tbio) {
+        X509 *tcert = PEM_read_bio_X509(tbio, NULL, NULL, NULL);
+        if (tcert) { X509_STORE_add_cert(store, tcert); X509_free(tcert); }
+        BIO_free(tbio);
+      }
     }
 
-    fprintf(stderr, "SSL cert: %s\n", errStr);
+    X509_STORE_CTX *vctx = X509_STORE_CTX_new();
+    X509_STORE_CTX_init(vctx, store, cert, NULL);
+    verified = (X509_verify_cert(vctx) == 1);
+    const char *errStr = verified ? NULL :
+        X509_verify_cert_error_string(X509_STORE_CTX_get_error(vctx));
+
+    X509_STORE_CTX_free(vctx);
+    X509_STORE_free(store);
+    X509_free(cert);
+
+    /* Step 4: If not verified, prompt the user */
+    if (!verified && c->cert_cb && pem) {
+      verified = c->cert_cb(c->hostname,
+                             errStr ? errStr : "certificate verify failed",
+                             pem, c->cert_userdata);
+    }
+  }
+
+  free(pem);
+
+  if (!verified) {
+    SSL_shutdown(c->ssl);
+    SSL_free(c->ssl); c->ssl = NULL;
+    SSL_CTX_free(c->ssl_ctx); c->ssl_ctx = NULL;
     return -1;
   }
 
@@ -388,6 +378,30 @@ char **crispy_cert_store_list(const char *certDir, int *count) {
   return list;
 }
 
+/* Helper: extract readable name fields from X509_NAME */
+static int format_x509_name(X509_NAME *name, char *buf, size_t bufSize) {
+  int pos = 0;
+  struct { int nid; const char *label; } fields[] = {
+    { NID_commonName, "CN" },
+    { NID_organizationName, "O" },
+    { NID_organizationalUnitName, "OU" },
+    { NID_localityName, "L" },
+    { NID_stateOrProvinceName, "ST" },
+    { NID_countryName, "C" },
+    { 0, NULL }
+  };
+
+  for (int i = 0; fields[i].label; i++) {
+    char val[256] = "";
+    int idx = X509_NAME_get_text_by_NID(name, fields[i].nid, val, sizeof(val));
+    if (idx >= 0 && val[0]) {
+      if (pos > 0) pos += snprintf(buf + pos, bufSize - pos, "\n");
+      pos += snprintf(buf + pos, bufSize - pos, "  %-4s %s", fields[i].label, val);
+    }
+  }
+  return pos;
+}
+
 char *crispy_cert_info(const char *cert_pem) {
   if (!cert_pem) return NULL;
 
@@ -398,45 +412,88 @@ char *crispy_cert_info(const char *cert_pem) {
   BIO_free(bio);
   if (!cert) return strdup("(invalid certificate)");
 
-  /* Extract info */
-  char *info = (char *)malloc(2048);
+  char *info = (char *)malloc(4096);
   if (!info) { X509_free(cert); return NULL; }
   int pos = 0;
+  int sz = 4096;
 
   /* Subject */
-  char subj[256] = "";
-  X509_NAME_oneline(X509_get_subject_name(cert), subj, sizeof(subj));
-  pos += snprintf(info + pos, 2048 - pos, "Subject: %s\n", subj);
+  pos += snprintf(info + pos, sz - pos, "Subject:\n");
+  pos += format_x509_name(X509_get_subject_name(cert), info + pos, sz - pos);
+  pos += snprintf(info + pos, sz - pos, "\n\n");
 
   /* Issuer */
-  char issuer[256] = "";
-  X509_NAME_oneline(X509_get_issuer_name(cert), issuer, sizeof(issuer));
-  pos += snprintf(info + pos, 2048 - pos, "Issuer:  %s\n", issuer);
+  pos += snprintf(info + pos, sz - pos, "Issuer:\n");
+  pos += format_x509_name(X509_get_issuer_name(cert), info + pos, sz - pos);
+  pos += snprintf(info + pos, sz - pos, "\n\n");
+
+  /* Subject Alternative Names */
+  GENERAL_NAMES *sans = X509_get_ext_d2i(cert, NID_subject_alt_name, NULL, NULL);
+  if (sans) {
+    pos += snprintf(info + pos, sz - pos, "Alt Names:\n");
+    for (int i = 0; i < sk_GENERAL_NAME_num(sans); i++) {
+      GENERAL_NAME *gen = sk_GENERAL_NAME_value(sans, i);
+      if (gen->type == GEN_DNS) {
+        unsigned char *dns = NULL;
+        ASN1_STRING_to_UTF8(&dns, gen->d.dNSName);
+        if (dns) {
+          pos += snprintf(info + pos, sz - pos, "  DNS  %s\n", dns);
+          OPENSSL_free(dns);
+        }
+      } else if (gen->type == GEN_IPADD) {
+        /* IP address */
+        ASN1_OCTET_STRING *ip = gen->d.iPAddress;
+        if (ip->length == 4) {
+          pos += snprintf(info + pos, sz - pos, "  IP   %d.%d.%d.%d\n",
+                          ip->data[0], ip->data[1], ip->data[2], ip->data[3]);
+        }
+      }
+    }
+    GENERAL_NAMES_free(sans);
+    pos += snprintf(info + pos, sz - pos, "\n");
+  }
 
   /* Validity */
   BIO *tbio = BIO_new(BIO_s_mem());
   if (tbio) {
-    ASN1_TIME_print(tbio, X509_get0_notBefore(cert));
     char timebuf[64] = "";
+    ASN1_TIME_print(tbio, X509_get0_notBefore(cert));
     BIO_read(tbio, timebuf, sizeof(timebuf) - 1);
-    pos += snprintf(info + pos, 2048 - pos, "Valid from: %s\n", timebuf);
+    pos += snprintf(info + pos, sz - pos, "Valid From:  %s\n", timebuf);
 
     BIO_reset(tbio);
-    ASN1_TIME_print(tbio, X509_get0_notAfter(cert));
     memset(timebuf, 0, sizeof(timebuf));
+    ASN1_TIME_print(tbio, X509_get0_notAfter(cert));
     BIO_read(tbio, timebuf, sizeof(timebuf) - 1);
-    pos += snprintf(info + pos, 2048 - pos, "Valid to:   %s\n", timebuf);
+    pos += snprintf(info + pos, sz - pos, "Valid Until: %s\n\n", timebuf);
     BIO_free(tbio);
   }
 
-  /* SHA-256 fingerprint */
+  /* Serial number */
+  ASN1_INTEGER *serial = X509_get_serialNumber(cert);
+  if (serial) {
+    BIGNUM *bn = ASN1_INTEGER_to_BN(serial, NULL);
+    if (bn) {
+      char *hex = BN_bn2hex(bn);
+      if (hex) {
+        pos += snprintf(info + pos, sz - pos, "Serial:  %s\n", hex);
+        OPENSSL_free(hex);
+      }
+      BN_free(bn);
+    }
+  }
+
+  /* SHA-256 fingerprint — wrapped at 24 bytes per line */
   unsigned char fp[32];
   unsigned int fpLen = sizeof(fp);
   X509_digest(cert, EVP_sha256(), fp, &fpLen);
-  pos += snprintf(info + pos, 2048 - pos, "SHA-256:    ");
-  for (unsigned int i = 0; i < fpLen; i++)
-    pos += snprintf(info + pos, 2048 - pos, "%s%02X", i ? ":" : "", fp[i]);
-  pos += snprintf(info + pos, 2048 - pos, "\n");
+  pos += snprintf(info + pos, sz - pos, "\nSHA-256 Fingerprint:\n  ");
+  for (unsigned int i = 0; i < fpLen; i++) {
+    pos += snprintf(info + pos, sz - pos, "%s%02X", i ? ":" : "", fp[i]);
+    if (i == 15) /* wrap after 16 bytes */
+      pos += snprintf(info + pos, sz - pos, "\n  ");
+  }
+  pos += snprintf(info + pos, sz - pos, "\n");
 
   X509_free(cert);
   return info;

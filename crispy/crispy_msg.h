@@ -95,8 +95,29 @@ typedef struct CrispyMsgParsed {
 } CrispyMsgParsed;
 
 /* Parse a raw RFC 5322 message into structured parts.
+ * Handles: multipart/mixed, multipart/alternative, multipart/related,
+ *          multipart/digest, message/rfc822 (nested messages),
+ *          text/enriched, text/richtext (converted to plain text),
+ *          base64, quoted-printable, charset conversion to UTF-8.
  * Returns 0 on success. */
 int crispy_msg_parse(const char *raw, long rawLen, CrispyMsgParsed *out);
+
+/* Save all attachments from a parsed message to a directory.
+ * Creates dir if needed. Returns number of attachments saved. */
+int crispy_msg_save_attachments(const CrispyMsgParsed *parsed,
+                                const char *dir);
+
+/* Build a reply message from a parsed original.
+ * replyAll: include Cc recipients. Returns malloc'd raw message. */
+char *crispy_msg_build_reply(const CrispyMsgParsed *orig,
+                             const char *my_from, bool replyAll,
+                             const char *body, long *outLen);
+
+/* Build a forward message from a parsed original.
+ * Returns malloc'd raw message. */
+char *crispy_msg_build_forward(const CrispyMsgParsed *orig,
+                               const char *my_from, const char *to,
+                               const char *body, long *outLen);
 
 /* Free a parsed message. */
 void crispy_msg_parsed_free(CrispyMsgParsed *parsed);
