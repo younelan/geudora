@@ -5,7 +5,7 @@ CFLAGS = -Wall -I. $(OPENSSL_CFLAGS) -pthread
 BUILD_DIR = build
 
 LIB_SRC = crispy_smtp.c crispy_pop3.c crispy_msg.c crispy_headparse.c \
-          crispy_base64.c crispy_transport.c crispy_conf.c
+          crispy_base64.c crispy_encode.c crispy_transport.c crispy_conf.c
 LIB_OBJ = $(patsubst %.c,$(BUILD_DIR)/%.o,$(LIB_SRC))
 
 all: $(BUILD_DIR) libcrispy.a crispy_demo

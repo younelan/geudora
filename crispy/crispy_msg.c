@@ -5,6 +5,7 @@
 #include "crispy_msg.h"
 #include "crispy_smtp.h"      /* for crispy_base64_encode, crispy_smtp_format_date */
 #include "crispy_headparse.h"
+#include "crispy_encode.h"
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -253,8 +254,14 @@ char *crispy_msg_build(const CrispyMsg *msg, long *outLen) {
     buf_fmt(&b, "Cc: %s\r\n", msg->cc);
   /* BCC not written to headers (envelope only) */
 
-  /* Subject */
-  buf_fmt(&b, "Subject: %s\r\n", msg->subject ? msg->subject : "");
+  /* Subject — encode if non-ASCII */
+  if (msg->subject) {
+    char *encSubj = crispy_encode_header(msg->subject);
+    buf_fmt(&b, "Subject: %s\r\n", encSubj ? encSubj : msg->subject);
+    free(encSubj);
+  } else {
+    buf_str(&b, "Subject: \r\n");
+  }
 
   /* Message-ID */
   char msgid[128];
@@ -436,61 +443,318 @@ char **crispy_msg_recipients(const CrispyMsg *msg, int *count) {
   return list;
 }
 
+/* --- MIME part header helpers --- */
+
+/* Extract a header value from a MIME part header block */
+static char *part_header_value(const char *headers, long headLen,
+                               const char *name) {
+  MailHeadSpec hs;
+  /* Temporarily null-terminate */
+  char *tmp = (char *)malloc(headLen + 1);
+  if (!tmp) return NULL;
+  memcpy(tmp, headers, headLen);
+  tmp[headLen] = '\0';
+
+  char *val = NULL;
+  if (crispy_headparse_find(tmp, name, &hs))
+    crispy_headparse_get_value(tmp, &hs, &val);
+  free(tmp);
+  return val;
+}
+
+/* Extract a parameter from a header value, e.g. boundary from
+ * "multipart/mixed; boundary=\"abc\"" */
+static char *extract_param(const char *value, const char *param) {
+  if (!value || !param) return NULL;
+  size_t plen = strlen(param);
+  const char *p = value;
+
+  while ((p = strcasestr(p, param)) != NULL) {
+    p += plen;
+    while (*p == ' ' || *p == '\t') p++;
+    if (*p != '=') continue;
+    p++;
+    while (*p == ' ' || *p == '\t') p++;
+
+    char *result;
+    if (*p == '"') {
+      p++;
+      const char *end = strchr(p, '"');
+      if (!end) return NULL;
+      result = (char *)malloc(end - p + 1);
+      memcpy(result, p, end - p);
+      result[end - p] = '\0';
+    } else {
+      const char *end = p;
+      while (*end && *end != ';' && *end != ' ' && *end != '\t' &&
+             *end != '\r' && *end != '\n')
+        end++;
+      result = (char *)malloc(end - p + 1);
+      memcpy(result, p, end - p);
+      result[end - p] = '\0';
+    }
+    return result;
+  }
+  return NULL;
+}
+
+/* Find body start (after \r\n\r\n or \n\n) within a region */
+static const char *find_body(const char *data, const char *end) {
+  const char *p = data;
+  while (p < end - 1) {
+    if (p[0] == '\r' && p[1] == '\n' && p + 3 < end &&
+        p[2] == '\r' && p[3] == '\n')
+      return p + 4;
+    if (p[0] == '\n' && p[1] == '\n')
+      return p + 2;
+    p++;
+  }
+  return NULL;
+}
+
+/* Parse a single MIME part (headers + body) into a CrispyMsgPart */
+static int parse_one_part(const char *partStart, long partLen,
+                          CrispyMsgPart *out) {
+  memset(out, 0, sizeof(*out));
+  const char *partEnd = partStart + partLen;
+
+  const char *body = find_body(partStart, partEnd);
+  long headLen = body ? (long)(body - partStart) : partLen;
+  if (!body) body = partStart; /* no headers, all body */
+
+  long bodyLen = (long)(partEnd - body);
+
+  /* Parse Content-Type */
+  char *ct = part_header_value(partStart, headLen, "Content-Type: ");
+  if (ct) {
+    /* Extract just the type, e.g. "text/plain" from "text/plain; charset=UTF-8" */
+    char *semi = strchr(ct, ';');
+    if (semi) *semi = '\0';
+    /* Trim whitespace */
+    char *e = ct + strlen(ct) - 1;
+    while (e > ct && (*e == ' ' || *e == '\r' || *e == '\n')) *e-- = '\0';
+    out->mime_type = strdup(ct);
+
+    /* Extract charset */
+    if (semi) *semi = ';'; /* restore for param extraction */
+    out->charset = extract_param(ct, "charset");
+    char *name = extract_param(ct, "name");
+    if (name) { out->filename = name; out->is_attachment = true; }
+    free(ct);
+  } else {
+    out->mime_type = strdup("text/plain");
+  }
+
+  /* Parse Content-Transfer-Encoding */
+  char *cte = part_header_value(partStart, headLen,
+                                "Content-Transfer-Encoding: ");
+
+  /* Parse Content-Disposition */
+  char *cd = part_header_value(partStart, headLen,
+                               "Content-Disposition: ");
+  if (cd) {
+    if (strncasecmp(cd, "attachment", 10) == 0) {
+      out->is_attachment = true;
+      if (!out->filename)
+        out->filename = extract_param(cd, "filename");
+    }
+    free(cd);
+  }
+
+  /* Parse Content-ID */
+  char *cid = part_header_value(partStart, headLen, "Content-ID: ");
+  if (cid) {
+    /* Strip angle brackets */
+    if (cid[0] == '<') {
+      char *gt = strchr(cid, '>');
+      if (gt) *gt = '\0';
+      out->content_id = strdup(cid + 1);
+      free(cid);
+    } else {
+      out->content_id = cid;
+    }
+  }
+
+  /* Decode body */
+  if (cte && strcasecmp(cte, "base64") == 0) {
+    out->data = crispy_base64_decode(body, bodyLen, &out->data_len);
+  } else if (cte && strcasecmp(cte, "quoted-printable") == 0) {
+    out->data = crispy_qp_decode(body, bodyLen, &out->data_len);
+  } else {
+    /* 7bit, 8bit, binary — copy as-is */
+    out->data = (char *)malloc(bodyLen + 1);
+    if (out->data) {
+      memcpy(out->data, body, bodyLen);
+      out->data[bodyLen] = '\0';
+      out->data_len = bodyLen;
+    }
+  }
+
+  /* Convert charset to UTF-8 for text parts */
+  if (out->data && out->charset && out->mime_type &&
+      strncasecmp(out->mime_type, "text/", 5) == 0 &&
+      strcasecmp(out->charset, "UTF-8") != 0 &&
+      strcasecmp(out->charset, "US-ASCII") != 0) {
+    char *utf8 = crispy_charset_to_utf8(out->data, out->data_len, out->charset);
+    if (utf8) {
+      free(out->data);
+      out->data = utf8;
+      out->data_len = (long)strlen(utf8);
+      free(out->charset);
+      out->charset = strdup("UTF-8");
+    }
+  }
+
+  free(cte);
+  return 0;
+}
+
+/* Recursively parse multipart MIME, appending parts to a growing array */
+static int parse_multipart(const char *body, long bodyLen,
+                           const char *boundary,
+                           CrispyMsgPart **parts, int *count, int *cap) {
+  size_t blen = strlen(boundary);
+  const char *end = body + bodyLen;
+  const char *p = body;
+
+  /* Find first boundary */
+  while (p < end) {
+    if (p[0] == '-' && p[1] == '-' && strncmp(p + 2, boundary, blen) == 0) {
+      p += 2 + blen;
+      /* Skip to end of line */
+      while (p < end && *p != '\n') p++;
+      if (p < end) p++;
+      break;
+    }
+    while (p < end && *p != '\n') p++;
+    if (p < end) p++;
+  }
+
+  /* Parse each part between boundaries */
+  while (p < end) {
+    /* Find next boundary */
+    const char *partStart = p;
+    const char *partEnd = NULL;
+
+    while (p < end) {
+      if (p[0] == '-' && p[1] == '-' && strncmp(p + 2, boundary, blen) == 0) {
+        partEnd = p;
+        /* Check for closing boundary (--boundary--) */
+        p += 2 + blen;
+        /* Skip to end of line */
+        while (p < end && *p != '\n') p++;
+        if (p < end) p++;
+        break;
+      }
+      while (p < end && *p != '\n') p++;
+      if (p < end) p++;
+    }
+    if (!partEnd) partEnd = end;
+
+    /* Strip trailing \r\n before boundary */
+    while (partEnd > partStart &&
+           (partEnd[-1] == '\r' || partEnd[-1] == '\n'))
+      partEnd--;
+
+    long partLen = (long)(partEnd - partStart);
+    if (partLen <= 0) continue;
+
+    /* Check if this part is itself multipart */
+    char *subCt = part_header_value(partStart, partLen, "Content-Type: ");
+    if (subCt && strncasecmp(subCt, "multipart/", 10) == 0) {
+      char *subBoundary = extract_param(subCt, "boundary");
+      if (subBoundary) {
+        const char *subBody = find_body(partStart, partEnd);
+        if (subBody) {
+          parse_multipart(subBody, (long)(partEnd - subBody),
+                          subBoundary, parts, count, cap);
+        }
+        free(subBoundary);
+      }
+      free(subCt);
+      continue;
+    }
+    free(subCt);
+
+    /* Parse this part */
+    if (*count >= *cap) {
+      *cap = *cap ? *cap * 2 : 8;
+      *parts = (CrispyMsgPart *)realloc(*parts, *cap * sizeof(CrispyMsgPart));
+    }
+    parse_one_part(partStart, partLen, &(*parts)[*count]);
+    (*count)++;
+  }
+
+  return 0;
+}
+
 /* --- Parse received message --- */
 
 int crispy_msg_parse(const char *raw, long rawLen, CrispyMsgParsed *out) {
   if (!raw || !out) return -1;
   memset(out, 0, sizeof(*out));
 
-  /* Find header/body boundary */
-  const char *bodyStart = NULL;
-  const char *p = raw;
   const char *end = raw + rawLen;
-  while (p < end - 1) {
-    if (p[0] == '\r' && p[1] == '\n') {
-      if (p + 2 < end && p[2] == '\r' && p[3] == '\n') {
-        bodyStart = p + 4;
-        break;
-      }
+
+  /* Find header/body boundary */
+  const char *bodyStart = find_body(raw, end);
+
+  /* Parse standard headers with RFC 2047 decoding */
+  MailHeadSpec hs;
+  char *rawval;
+
+  #define PARSE_HEADER_DECODED(name, field) \
+    if (crispy_headparse_find(raw, name, &hs) && \
+        crispy_headparse_get_value(raw, &hs, &rawval) == 0) { \
+      out->field = crispy_decode_header(rawval); \
+      free(rawval); \
     }
-    if (p[0] == '\n' && p[1] == '\n') {
-      bodyStart = p + 2;
-      break;
+
+  PARSE_HEADER_DECODED("From: ", from)
+  PARSE_HEADER_DECODED("To: ", to)
+  PARSE_HEADER_DECODED("Cc: ", cc)
+  PARSE_HEADER_DECODED("Subject: ", subject)
+  PARSE_HEADER_DECODED("Date: ", date)
+  PARSE_HEADER_DECODED("Message-Id: ", message_id)
+  PARSE_HEADER_DECODED("In-Reply-To: ", in_reply_to)
+
+  #undef PARSE_HEADER_DECODED
+
+  /* Check if this is multipart */
+  char *ct = NULL;
+  if (crispy_headparse_find(raw, "Content-Type: ", &hs))
+    crispy_headparse_get_value(raw, &hs, &ct);
+
+  if (ct && strncasecmp(ct, "multipart/", 10) == 0) {
+    /* Multipart message — extract boundary and parse parts */
+    char *boundary = extract_param(ct, "boundary");
+    if (boundary && bodyStart) {
+      int cap = 0;
+      parse_multipart(bodyStart, (long)(end - bodyStart), boundary,
+                      &out->parts, &out->part_count, &cap);
+      free(boundary);
     }
-    p++;
+  } else if (bodyStart && bodyStart < end) {
+    /* Single-part message — decode based on Content-Transfer-Encoding */
+    out->parts = (CrispyMsgPart *)calloc(1, sizeof(CrispyMsgPart));
+    parse_one_part(raw, rawLen, &out->parts[0]);
+    out->part_count = 1;
   }
 
-  /* Parse standard headers */
-  MailHeadSpec hs;
-  if (crispy_headparse_find(raw, "From: ", &hs))
-    crispy_headparse_get_value(raw, &hs, &out->from);
-  if (crispy_headparse_find(raw, "To: ", &hs))
-    crispy_headparse_get_value(raw, &hs, &out->to);
-  if (crispy_headparse_find(raw, "Cc: ", &hs))
-    crispy_headparse_get_value(raw, &hs, &out->cc);
-  if (crispy_headparse_find(raw, "Subject: ", &hs))
-    crispy_headparse_get_value(raw, &hs, &out->subject);
-  if (crispy_headparse_find(raw, "Date: ", &hs))
-    crispy_headparse_get_value(raw, &hs, &out->date);
-  if (crispy_headparse_find(raw, "Message-Id: ", &hs))
-    crispy_headparse_get_value(raw, &hs, &out->message_id);
-  if (crispy_headparse_find(raw, "In-Reply-To: ", &hs))
-    crispy_headparse_get_value(raw, &hs, &out->in_reply_to);
+  free(ct);
 
-  /* For now: single body part (TODO: full MIME multipart parsing) */
-  if (bodyStart && bodyStart < end) {
-    long bodyLen = (long)(end - bodyStart);
-    CrispyMsgPart *part = (CrispyMsgPart *)calloc(1, sizeof(CrispyMsgPart));
-    part->mime_type = strdup("text/plain");
-    part->data = (char *)malloc(bodyLen + 1);
-    memcpy(part->data, bodyStart, bodyLen);
-    part->data[bodyLen] = '\0';
-    part->data_len = bodyLen;
-
-    out->parts = part;
-    out->part_count = 1;
-    out->body_plain = part->data;
-    out->body_plain_len = part->data_len;
+  /* Set convenience pointers to first text/plain and text/html parts */
+  for (int i = 0; i < out->part_count; i++) {
+    if (!out->parts[i].is_attachment && out->parts[i].mime_type) {
+      if (!out->body_plain && strcasecmp(out->parts[i].mime_type, "text/plain") == 0) {
+        out->body_plain = out->parts[i].data;
+        out->body_plain_len = out->parts[i].data_len;
+      }
+      if (!out->body_html && strcasecmp(out->parts[i].mime_type, "text/html") == 0) {
+        out->body_html = out->parts[i].data;
+        out->body_html_len = out->parts[i].data_len;
+      }
+    }
   }
 
   return 0;

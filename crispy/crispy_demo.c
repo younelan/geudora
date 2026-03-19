@@ -217,7 +217,22 @@ static int do_recv(const CrispyConf *conf, int fetchNum) {
       if (parsed.message_id) printf("Message-ID: %s\n", parsed.message_id);
       printf("Size: %ld bytes, %d part(s)\n", len, parsed.part_count);
 
-      /* Show first 20 lines of body */
+      /* Show all parts */
+      for (int i = 0; i < parsed.part_count; i++) {
+        CrispyMsgPart *part = &parsed.parts[i];
+        if (part->is_attachment) {
+          printf("  Part %d: %s [%s] %ld bytes\n", i + 1,
+                 part->filename ? part->filename : "(unnamed)",
+                 part->mime_type ? part->mime_type : "?",
+                 part->data_len);
+        } else {
+          printf("  Part %d: %s %ld bytes\n", i + 1,
+                 part->mime_type ? part->mime_type : "?",
+                 part->data_len);
+        }
+      }
+
+      /* Show body text */
       if (parsed.body_plain && parsed.body_plain_len > 0) {
         printf("\n");
         int lines = 0;
@@ -226,6 +241,8 @@ static int do_recv(const CrispyConf *conf, int fetchNum) {
           if (parsed.body_plain[i] == '\n') lines++;
         }
         if (lines >= 20) printf("...\n");
+      } else if (parsed.body_html && parsed.body_html_len > 0) {
+        printf("\n[HTML body, %ld bytes]\n", parsed.body_html_len);
       }
       crispy_msg_parsed_free(&parsed);
       free(raw);
