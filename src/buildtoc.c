@@ -631,14 +631,14 @@ static short MatchSenderHeader(const char *headerName) {
  ************************************************************************/
 int ReadSum(MSumPtr sum, bool isOut, LineIOP lip, bool lookEnvelope) {
   static int type;
-  unsigned char line[1024];
-  static unsigned char *oldLineData = NULL;
+  char line[1024];
+  static char *oldLineData = NULL;
   static long oldLineLen = 0;
   enum { BEGIN, IN_BODY, IN_HEADER, ERROR } state;
-  unsigned char duck[256];
+  char duck[256];
   char headerName[64];
   short headerIndex;
-  unsigned char *spot;
+  char *spot;
   long secs;
   long origZone;
   short senderHead = 32767; /* REAL_BIG */
@@ -768,7 +768,7 @@ int ReadSum(MSumPtr sum, bool isOut, LineIOP lip, bool lookEnvelope) {
             /* Check for "R", "RO" (read), or "Q" (queued) */
             {
               char val[64];
-              CopyHeaderLine((unsigned char *)val, sizeof(val), line);
+              CopyHeaderLine(val, sizeof(val), line);
               if (strchr(val, 'Q'))
                 sum->state = QUEUED;
               else if (strchr(val, 'R'))
@@ -827,7 +827,7 @@ int ReadSum(MSumPtr sum, bool isOut, LineIOP lip, bool lookEnvelope) {
             /* Check if this is a From/Sender/Reply-To header */
             if (!isOut && headerName[0]) {
               short sIdx = MatchSenderHeader(headerName);
-              if (sIdx && !(sum->opts && OPT_BULK) && IsBulk(line))
+              if (sIdx && !(sum->opts & OPT_BULK) && IsBulk(line))
                 sum->opts |= OPT_BULK;
               if (sIdx && sIdx <= senderHead) {
                 CopyHeaderLine(duck, sizeof(duck), line);
@@ -1011,7 +1011,7 @@ TOCType * BuildTOC(const char *path) {
   toc->reallyDirty = true;
 
   /* Check if this is an IMAP mailbox */
-  IsIMAPMailboxFileLo(&toc->mailbox.spec, &toc->imapMBH);
+  IsIMAPMailboxFileLo(toc->mailbox.spec, &toc->imapMBH);
 
   return toc;
 
@@ -1122,7 +1122,7 @@ bool HasUnicode(void) { return true; }
 
 /* GoodUTF8Len - find longest valid UTF-8 prefix of bufLen bytes. */
 ByteCount GoodUTF8Len(BytePtr utf8, ByteCount bufLen) {
-  unsigned char b;
+  char b;
   ByteCount newLen = 0, tempLen;
 
   while (bufLen) {

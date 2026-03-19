@@ -3688,14 +3688,36 @@ if (which == CANCEL_ITEM || which == WANNA_SAVE_CANCEL)
     }
   }
   if (!messH) {
-    MyWindowPtr winResult;
+    /* Create a headless messH for background sending.
+     * Read raw message from mailbox file so CompHead* can parse
+     * headers without GTK widgets. */
+    messH = (MessHandle)g_malloc0(sizeof(MessType));
+    if (!messH) return NULL;
+    messH->tocH = tocH;
+    messH->sumNum = sumNum;
 
-    MyThreadBeginCritical(); // Make sure OpenComp doesn't switch threads
-    winResult = OpenComp(tocH, sumNum, NULL, NULL, false, false);
-    MyThreadEndCritical();
-    if (!winResult)
-      return (NULL);
-    messH = (MessHandle)tocH->sums[sumNum].messH;
+    /* Read raw message text from the mailbox file */
+    long offset = tocH->sums[sumNum].offset;
+    long bufSize = tocH->sums[sumNum].length;
+    int refN = BoxFOpen(tocH);
+    if (refN >= 0) {
+      char *rawText = g_malloc0(bufSize + 1);
+      if (rawText) {
+        if (lseek(refN, offset, SEEK_SET) >= 0) {
+          long count = bufSize;
+          if (file_read(refN, &count, rawText) == 0)
+            rawText[count] = '\0';
+        }
+        tocH->sums[sumNum].cache = rawText;
+      }
+      BoxFClose(tocH, false);
+    }
+
+    /* Create minimal window struct (no GTK widgets) */
+    MyWindowPtr win = (MyWindowPtr)g_malloc0(sizeof(MyWindow));
+    messH->win = win;
+
+    tocH->sums[sumNum].messH = messH;
   }
   return (messH);
 }

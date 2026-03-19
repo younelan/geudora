@@ -53,6 +53,14 @@ ADVISED OF THE POSSIBILITY OF SUCH DAMAGE. */
 #include "util.h"
 #include <assert.h>
 #include <stdio.h>
+#include <fcntl.h>
+
+/* Crispy mail library */
+#include "crispy_smtp.h"
+#include "crispy_pop3.h"
+#include "crispy_transport.h"
+#include "crispy_headparse.h"
+#include "crispy_msg.h"
 
 #define FILE_NUM 52
 
@@ -1148,6 +1156,105 @@ int SpecialXfer(struct XferFlags *flags) {
  **********************************************************************/
 
 /************************************************************************
+ * CrispySendOneMessage - read message from spool, send via crispy
+ * Returns 0 on success, SMTP error code on failure.
+ ************************************************************************/
+static int CrispySendOneMessage(SmtpSession *smtp, TOCType *tocH, int sumNum) {
+  /* Read raw message from mailbox file */
+  long offset = tocH->sums[sumNum].offset;
+  long length = tocH->sums[sumNum].length;
+  if (length <= 0) return -1;
+
+  int refN = BoxFOpen(tocH);
+  if (refN < 0) return -1;
+
+  char *raw = g_malloc0(length + 1);
+  if (!raw) { BoxFClose(tocH, false); return -1; }
+
+  if (lseek(refN, offset, SEEK_SET) < 0) {
+    g_free(raw); BoxFClose(tocH, false); return -1;
+  }
+
+  long count = length;
+  if (file_read(refN, &count, raw) != 0) {
+    g_free(raw); BoxFClose(tocH, false); return -1;
+  }
+  raw[count] = '\0';
+  BoxFClose(tocH, false);
+
+  /* Skip the "From " mbox envelope line if present */
+  char *msg = raw;
+  if (strncmp(msg, "From ", 5) == 0) {
+    char *nl = strchr(msg, '\n');
+    if (nl) msg = nl + 1;
+  }
+  long msgLen = count - (long)(msg - raw);
+
+  /* Extract sender from the message headers */
+  MailHeadSpec hs;
+  char *fromAddr = NULL;
+  if (crispy_headparse_find(msg, "From: ", &hs))
+    crispy_headparse_get_value(msg, &hs, &fromAddr);
+
+  /* Extract recipients from To, Cc, Bcc */
+  CrispyMsg cmsg = { .to = NULL, .cc = NULL, .bcc = NULL };
+  char *toVal = NULL, *ccVal = NULL, *bccVal = NULL;
+  if (crispy_headparse_find(msg, "To: ", &hs))
+    crispy_headparse_get_value(msg, &hs, &toVal);
+  if (crispy_headparse_find(msg, "Cc: ", &hs))
+    crispy_headparse_get_value(msg, &hs, &ccVal);
+  if (crispy_headparse_find(msg, "Bcc: ", &hs))
+    crispy_headparse_get_value(msg, &hs, &bccVal);
+
+  cmsg.to = toVal;
+  cmsg.cc = ccVal;
+  cmsg.bcc = bccVal;
+
+  int rcptCount = 0;
+  char **rcpts = crispy_msg_recipients(&cmsg, &rcptCount);
+
+  /* Extract bare from address */
+  char fromBare[256] = "";
+  if (fromAddr) {
+    /* Strip "Name <addr>" to just "addr" */
+    char *lt = strchr(fromAddr, '<');
+    if (lt) {
+      char *gt = strchr(lt, '>');
+      if (gt) {
+        size_t len = (size_t)(gt - lt - 1);
+        if (len >= sizeof(fromBare)) len = sizeof(fromBare) - 1;
+        memcpy(fromBare, lt + 1, len);
+        fromBare[len] = '\0';
+      }
+    }
+    if (!fromBare[0])
+      g_strlcpy(fromBare, fromAddr, sizeof(fromBare));
+  }
+
+  g_print("CrispySend: from='%s' rcpts=%d len=%ld\n", fromBare, rcptCount, msgLen);
+
+  int err = 0;
+  if (rcptCount > 0) {
+    err = crispy_smtp_send(smtp, fromBare, (const char **)rcpts, msg, msgLen);
+    if (err)
+      g_print("CrispySend: SMTP error %d: %s\n", err, smtp->last_reply);
+  } else {
+    g_print("CrispySend: no recipients found!\n");
+    err = -1;
+  }
+
+  /* Cleanup */
+  g_free(raw);
+  free(fromAddr);
+  free(toVal); free(ccVal); free(bccVal);
+  if (rcpts) {
+    for (int i = 0; i < rcptCount; i++) free(rcpts[i]);
+    free(rcpts);
+  }
+  return err;
+}
+
+/************************************************************************
  * SendTheQueue - send queued messages, assuming cnxn is setup
  ************************************************************************/
 short SendTheQueue(TransStream stream, XferFlags flags) {
@@ -1220,9 +1327,27 @@ short SendTheQueue(TransStream stream, XferFlags flags) {
   if (!UUPCOut && !UUPCIn && PrefIsSet(PREF_POP_SEND)) {
     /* POP-before-SMTP auth path removed (was ESSL-only) */
   }
-  g_print("SendTheQueue: [E] calling StartSMTP\n");
-  err = StartSMTP(stream, server, port);
-  g_print("SendTheQueue: [F] StartSMTP returned err=%d\n", err);
+  /* --- Connect via crispy SMTP --- */
+  SmtpTransport crispyTp = crispy_transport_new();
+  SmtpSession crispySmtp;
+  crispy_smtp_init(&crispySmtp, crispyTp, "localhost");
+
+  SmtpSecurity crispySec = SMTP_PLAIN;
+  /* TODO: read SSL setting from personality */
+
+  g_print("SendTheQueue: [E] crispy connecting to %s:%ld\n", server, port);
+  err = crispy_smtp_connect(&crispySmtp, server, (int)port, crispySec);
+  g_print("SendTheQueue: [F] crispy connect returned err=%d\n", err);
+
+  /* Authenticate if server supports it */
+  if (!err && crispySmtp.caps.has_auth && *CurPers->password) {
+    char *user = CurPers->name; /* TODO: get SMTP username from personality */
+    char *pass = CurPers->password;
+    g_print("SendTheQueue: authenticating as %s\n", user);
+    err = crispy_smtp_auth_plain(&crispySmtp, user, pass);
+    if (err) err = crispy_smtp_auth_login(&crispySmtp, user, pass);
+    if (err) g_print("SendTheQueue: auth failed: %s\n", crispySmtp.last_reply);
+  }
 
   // if using a relay personality, kill it now
   if (relayPers) {
@@ -1250,7 +1375,11 @@ short SendTheQueue(TransStream stream, XferFlags flags) {
   if (inThread || (openedFilters = !RegenerateFilters()))
     for (sumNum = 0; sumNum < tocH->count && code < 600 && !CommandPeriod &&
                      !EjectBuckaroo;
-         sumNum++)
+         sumNum++) {
+      g_print("SendTheQueue: sum[%d] messH=%p queued=%d persId=%u curPersId=%u secs=%lu gmtSecs=%lu\n",
+              sumNum, (void*)tocH->sums[sumNum].messH, IsQueued(tocH, sumNum),
+              tocH->sums[sumNum].persId, CurPers->persId,
+              tocH->sums[sumNum].seconds, gmtSecs);
       if (!tocH->sums[sumNum].messH && IsQueued(tocH, sumNum) &&
           tocH->sums[sumNum].persId == CurPers->persId &&
           tocH->sums[sumNum].seconds <= gmtSecs) {
@@ -1286,7 +1415,7 @@ short SendTheQueue(TransStream stream, XferFlags flags) {
          */
         if (!(code =
                   (UUPCOut ? UUPCSendMessage(tocH, sumNum, fccList)
-                           : MySendMessage(stream, tocH, sumNum, fccList)))) {
+                           : CrispySendOneMessage(&crispySmtp, tocH, sumNum)))) {
       // OutTypeEnum	outType;  // Unused
             RegisterSuccess(1); // note success in registration
           numSent++;
@@ -1374,6 +1503,7 @@ short SendTheQueue(TransStream stream, XferFlags flags) {
           }
         }
       }
+    } /* for sumNum */
 done:
   if (relayPers)
     PopPers();
@@ -1396,7 +1526,7 @@ done:
   if (!UUPCOut && !UUPCIn && PrefIsSet(PREF_POP_SEND)) {
     (void)EndPOP(stream);
   } else
-    (void)EndSMTP(stream);
+    crispy_smtp_close(&crispySmtp);
   // if (tocH && tocH->win && sumNum>=0)
   // 	BoxSelectAfter(tocH->win,sumNum);
 

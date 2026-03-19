@@ -1716,7 +1716,7 @@ int WriteComp(MessHandle messH, short refN, long offset) {
       "Cc: %s\r\n"
       "Bcc: %s\r\n"
       "\r\n"
-      "%s",
+      "%s\r\n",
       from[0] ? from : "user", dateStr,
       to, from, subject, cc, bcc,
       body ? body : "");
@@ -2083,6 +2083,9 @@ bool CompSend(MessHandle messH) {
   g_print("CompSend: queued sum %d, persId=%u, tocH=%p count=%d\n",
           sumNum, tocH->sums[sumNum].persId, (void*)tocH, tocH->count);
 
+  /* Detach messH from summary so send thread can pick it up */
+  tocH->sums[sumNum].messH = NULL;
+
   /* Close the compose window */
   if (win->window)
     gtk_window_close(GTK_WINDOW(win->window));
@@ -2133,6 +2136,31 @@ bool CompSave(MessHandle messH) {
     /* Update the mailbox list to reflect the saved message */
     extern void InvalSum(TOCType *tocH, short sumNum);
     InvalSum(tocH, sumNum);
+
+    /* Also refresh the Out mailbox TreeView if it's open */
+    if (tocH->win && tocH->win->window) {
+      GtkWidget *tree = g_object_get_data(G_OBJECT(tocH->win->window), "mbox-tree");
+      if (tree && GTK_IS_TREE_VIEW(tree)) {
+        GtkListStore *store = GTK_LIST_STORE(gtk_tree_view_get_model(GTK_TREE_VIEW(tree)));
+        if (store) {
+          /* Check if this sumNum already has a row */
+          GtkTreeIter iter;
+          gboolean found = FALSE;
+          gboolean valid = gtk_tree_model_get_iter_first(GTK_TREE_MODEL(store), &iter);
+          while (valid) {
+            int idx = -1;
+            gtk_tree_model_get(GTK_TREE_MODEL(store), &iter, 0, &idx, -1);
+            if (idx == sumNum) { found = TRUE; break; }
+            valid = gtk_tree_model_iter_next(GTK_TREE_MODEL(store), &iter);
+          }
+          if (!found) {
+            /* New message — append a row */
+            gtk_list_store_append(store, &iter);
+          }
+          /* InvalSum idle callback will fill in the columns */
+        }
+      }
+    }
 
     return true;
   }

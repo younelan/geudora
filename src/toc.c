@@ -247,17 +247,8 @@ static void disk_to_sum(const MSumDisk *d, MSumType *s) {
   s->origZone = d->origZone;
   s->sigId = d->sigId;
 
-  /* void *potential legacy Pascal strings from disk */
-  unsigned char fromLen = (unsigned char)d->from[0];
-  if (fromLen > 0 && fromLen < sizeof(d->from)) {
-    /* If the first byte looks like a length and we find a null or end of buffer
-       shortly after, it's likely a Pascal string. In the GTK port, we want C strings. */
-    memmove(s->from, d->from + 1, fromLen);
-    s->from[fromLen] = '\0';
-  } else {
-    memcpy(s->from, d->from, sizeof(s->from));
-    s->from[sizeof(s->from) - 1] = '\0';
-  }
+  /* Copy from/subj as C strings — no Pascal conversion needed */
+  g_strlcpy(s->from, d->from, sizeof(s->from));
 
   s->popPersId = d->popPersId;
   s->persId = d->persId;
@@ -265,14 +256,7 @@ static void disk_to_sum(const MSumDisk *d, MSumType *s) {
   s->subjId = d->subjId;
   s->spareShort = d->spareShort;
 
-  unsigned char subjLen = (unsigned char)d->subj[0];
-  if (subjLen > 0 && subjLen < sizeof(d->subj)) {
-    memmove(s->subj, d->subj + 1, subjLen);
-    s->subj[subjLen] = '\0';
-  } else {
-    memcpy(s->subj, d->subj, sizeof(s->subj));
-    s->subj[sizeof(s->subj) - 1] = '\0';
-  }
+  g_strlcpy(s->subj, d->subj, sizeof(s->subj));
 
   s->opts = d->opts;
   s->uidHash = d->uidHash;
