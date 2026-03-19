@@ -110,6 +110,9 @@ int crispy_smtp_auth_login(SmtpSession *s, const char *user, const char *pass);
 int crispy_smtp_send(SmtpSession *s, const char *from,
               const char *rcpts[], const char *message, long msgLen);
 
+/* Authenticate with CRAM-MD5 (challenge-response, password not sent in clear). */
+int crispy_smtp_auth_cram_md5(SmtpSession *s, const char *user, const char *pass);
+
 /* Close connection gracefully (QUIT). */
 void crispy_smtp_close(SmtpSession *s);
 

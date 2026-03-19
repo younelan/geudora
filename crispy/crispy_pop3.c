@@ -3,6 +3,7 @@
  */
 
 #include "crispy_pop3.h"
+#include "crispy_md5.h"
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -132,7 +133,7 @@ int crispy_pop3_auth_apop(Pop3Session *s, const char *user, const char *pass) {
   char *end = start ? strchr(start, '>') : NULL;
   if (!start || !end) return -1;
 
-  /* Build "timestamp + password" string and compute MD5 */
+  /* APOP: MD5(timestamp + password) */
   size_t tsLen = (size_t)(end - start + 1);
   size_t pLen = strlen(pass);
   char *concat = (char *)malloc(tsLen + pLen + 1);
@@ -141,11 +142,15 @@ int crispy_pop3_auth_apop(Pop3Session *s, const char *user, const char *pass) {
   memcpy(concat + tsLen, pass, pLen);
   concat[tsLen + pLen] = '\0';
 
-  /* MD5 would go here — for now, APOP is rarely used.
-   * A real implementation would compute md5(concat) and send:
-   * APOP user md5hex */
+  char hex[33];
+  crispy_md5_hex(concat, tsLen + pLen, hex);
   free(concat);
-  return -1; /* TODO: implement MD5 */
+
+  char cmd[512];
+  snprintf(cmd, sizeof(cmd), "APOP %s %s", user, hex);
+  int err = crispy_pop3_command(s, cmd);
+  if (!err) s->authenticated = true;
+  return err;
 }
 
 /* --- Message operations --- */

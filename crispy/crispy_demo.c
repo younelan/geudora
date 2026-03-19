@@ -17,6 +17,7 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+#include <sys/stat.h>
 #include <time.h>
 
 static SmtpSecurity parse_smtp_security(const char *s) {
@@ -38,7 +39,65 @@ static Pop3Security parse_pop3_security(const char *s) {
   return POP3_PLAIN;
 }
 
-/* included above: crispy_msg.h via crispy_demo includes */
+/* --- Certificate directory (next to config or ~/.crispy/certs/) --- */
+static const char *g_cert_dir = "certs";
+
+static void ensure_cert_dir(void) {
+#ifndef _WIN32
+  mkdir(g_cert_dir, 0700);
+#endif
+}
+
+/* Interactive cert callback — prompts on stdin */
+static bool cert_prompt(const char *host, const char *error,
+                        const char *cert_pem, void *userdata) {
+  (void)userdata;
+
+  fprintf(stderr, "\n*** Certificate verification failed for %s ***\n", host);
+  fprintf(stderr, "Error: %s\n\n", error);
+
+  if (cert_pem) {
+    char *info = crispy_cert_info(cert_pem);
+    if (info) {
+      fprintf(stderr, "%s\n", info);
+      free(info);
+    }
+  }
+
+  fprintf(stderr, "Options:\n");
+  fprintf(stderr, "  [a] Accept once (this session only)\n");
+  fprintf(stderr, "  [t] Trust and store (accept permanently)\n");
+  fprintf(stderr, "  [d] Deny (abort connection)\n");
+  fprintf(stderr, "Choice [a/t/d]: ");
+  fflush(stderr);
+
+  char choice[16] = "";
+  if (!fgets(choice, sizeof(choice), stdin))
+    return false;
+
+  if (choice[0] == 't' || choice[0] == 'T') {
+    ensure_cert_dir();
+    if (crispy_cert_store_save(g_cert_dir, host, cert_pem) == 0)
+      fprintf(stderr, "Certificate stored for %s\n", host);
+    else
+      fprintf(stderr, "Warning: could not store certificate\n");
+    return true;
+  }
+  if (choice[0] == 'a' || choice[0] == 'A')
+    return true;
+
+  return false; /* deny */
+}
+
+/* Set up a transport with cert callback + load stored cert */
+static void setup_transport_certs(SmtpTransport *tp, const char *host) {
+  crispy_transport_set_cert_callback(tp, cert_prompt, NULL);
+
+  /* Load previously trusted cert if any */
+  char *trusted = crispy_cert_store_load(g_cert_dir, host);
+  if (trusted)
+    crispy_transport_load_trusted(tp, trusted); /* takes ownership */
+}
 
 static int do_send(const CrispyConf *conf, const char **files, int fileCount) {
   const char *host = crispy_conf_get(conf, "smtp_host", NULL);
@@ -58,6 +117,7 @@ static int do_send(const CrispyConf *conf, const char **files, int fileCount) {
   printf("Connecting to %s:%d ...\n", host, port);
 
   SmtpTransport tp = crispy_transport_new();
+  setup_transport_certs(&tp, host);
   SmtpSession s;
   crispy_smtp_init(&s, tp, "localhost");
   s.debug = debug_print;
@@ -162,6 +222,7 @@ static int pop3_open(const CrispyConf *conf, Pop3Session *p) {
   printf("Connecting to %s:%d ...\n", host, port);
 
   Pop3Transport tp = crispy_transport_new();
+  setup_transport_certs(&tp, host);
   crispy_pop3_init(p, tp);
   p->debug = debug_print;
 
@@ -374,6 +435,81 @@ static int do_rset(const CrispyConf *conf) {
   return err ? 1 : 0;
 }
 
+static int do_certs(int argc, char *argv[]) {
+  ensure_cert_dir();
+
+  const char *subcmd = (argc >= 3) ? argv[2] : "list";
+
+  if (strcmp(subcmd, "list") == 0) {
+    int count = 0;
+    char **hosts = crispy_cert_store_list(g_cert_dir, &count);
+    if (count == 0) {
+      printf("No trusted certificates stored.\n");
+    } else {
+      printf("Trusted certificates (%d):\n\n", count);
+      for (int i = 0; i < count; i++) {
+        printf("  %s\n", hosts[i]);
+        /* Show cert info */
+        char *pem = crispy_cert_store_load(g_cert_dir, hosts[i]);
+        if (pem) {
+          char *info = crispy_cert_info(pem);
+          if (info) {
+            /* Indent each line */
+            char *line = strtok(info, "\n");
+            while (line) {
+              printf("    %s\n", line);
+              line = strtok(NULL, "\n");
+            }
+            free(info);
+          }
+          free(pem);
+        }
+        printf("\n");
+        free(hosts[i]);
+      }
+    }
+    free(hosts);
+    return 0;
+  }
+
+  if (strcmp(subcmd, "delete") == 0 || strcmp(subcmd, "rm") == 0) {
+    if (argc < 4) {
+      fprintf(stderr, "Usage: crispy_demo certs delete <host>\n");
+      return 1;
+    }
+    const char *host = argv[3];
+    if (crispy_cert_store_delete(g_cert_dir, host) == 0)
+      printf("Deleted trusted certificate for %s\n", host);
+    else
+      fprintf(stderr, "No trusted certificate found for %s\n", host);
+    return 0;
+  }
+
+  if (strcmp(subcmd, "show") == 0) {
+    if (argc < 4) {
+      fprintf(stderr, "Usage: crispy_demo certs show <host>\n");
+      return 1;
+    }
+    const char *host = argv[3];
+    char *pem = crispy_cert_store_load(g_cert_dir, host);
+    if (!pem) {
+      fprintf(stderr, "No trusted certificate found for %s\n", host);
+      return 1;
+    }
+    char *info = crispy_cert_info(pem);
+    if (info) { printf("%s\n", info); free(info); }
+    printf("%s", pem); /* print raw PEM too */
+    free(pem);
+    return 0;
+  }
+
+  fprintf(stderr, "Usage:\n");
+  fprintf(stderr, "  crispy_demo certs              List trusted certs\n");
+  fprintf(stderr, "  crispy_demo certs show <host>  Show cert details + PEM\n");
+  fprintf(stderr, "  crispy_demo certs delete <host> Remove trusted cert\n");
+  return 1;
+}
+
 static void usage(void) {
   fprintf(stderr,
     "Usage:\n"
@@ -382,6 +518,9 @@ static void usage(void) {
     "  crispy_demo recv N [config]            Fetch full message N\n"
     "  crispy_demo top N [lines] [conf]       Headers + N lines (leave on server)\n"
     "  crispy_demo dele N [config]            Delete message N\n"
+    "  crispy_demo certs                      List trusted certificates\n"
+    "  crispy_demo certs show <host>          Show cert details\n"
+    "  crispy_demo certs delete <host>        Remove trusted cert\n"
     "\n"
     "Default config: crispy_demo.conf\n");
 }
@@ -405,6 +544,9 @@ int main(int argc, char *argv[]) {
   if (argc < 2) { usage(); return 1; }
 
   const char *cmd = argv[1];
+
+  if (strcmp(cmd, "certs") == 0)
+    return do_certs(argc, argv);
 
   if (strcmp(cmd, "send") == 0) {
     /* send [file1 file2 ...] [config]

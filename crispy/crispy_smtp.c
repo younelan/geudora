@@ -3,6 +3,7 @@
  */
 
 #include "crispy_smtp.h"
+#include "crispy_md5.h"
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -331,6 +332,41 @@ int crispy_smtp_auth_cancel(SmtpSession *s) {
   int err = send_line(s, "*");
   if (err) return -1;
   return crispy_smtp_read_reply(s);
+}
+
+int crispy_smtp_auth_cram_md5(SmtpSession *s, const char *user, const char *pass) {
+  /* Step 1: send AUTH CRAM-MD5, get 334 + base64 challenge */
+  int err = send_line(s, "AUTH CRAM-MD5");
+  if (err) return -1;
+
+  int code = crispy_smtp_read_reply(s);
+  if (code != 334) return code > 0 ? code : -1;
+
+  /* Step 2: decode the base64 challenge from last_reply */
+  long chalLen;
+  char *challenge = crispy_base64_decode(s->last_reply, (long)strlen(s->last_reply), &chalLen);
+  if (!challenge) return -1;
+
+  /* Step 3: HMAC-MD5(password, challenge) */
+  char hex[33];
+  crispy_hmac_md5_hex(pass, strlen(pass), challenge, chalLen, hex);
+  free(challenge);
+
+  /* Step 4: build "user hex" and base64-encode it */
+  char response[512];
+  snprintf(response, sizeof(response), "%s %s", user, hex);
+
+  long b64Len;
+  char *b64 = crispy_base64_encode(response, (long)strlen(response), &b64Len);
+  if (!b64) return -1;
+
+  err = send_line(s, b64);
+  free(b64);
+  if (err) return -1;
+
+  code = crispy_smtp_read_reply(s);
+  if (code == 235) s->authenticated = true;
+  return SMTP_IS_OK(code) ? 0 : code;
 }
 
 /* --- Sending --- */

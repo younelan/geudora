@@ -6,12 +6,19 @@
 #include "crispy_smtp.h"      /* for crispy_base64_encode, crispy_smtp_format_date */
 #include "crispy_headparse.h"
 #include "crispy_encode.h"
+#include "crispy_md5.h"
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
 #include <ctype.h>
 #include <stdarg.h>
 #include <time.h>
+#ifdef _WIN32
+#include <process.h>
+#define getpid _getpid
+#else
+#include <unistd.h>
+#endif
 
 /* --- Growing buffer --- */
 typedef struct {
@@ -109,8 +116,13 @@ char *crispy_mime_boundary(char *buf, size_t bufSize) {
 
 char *crispy_msg_gen_id(char *buf, size_t bufSize, const char *domain) {
   if (!domain) domain = "crispy.local";
-  snprintf(buf, bufSize, "<%lx.%x@%s>",
-           (unsigned long)time(NULL), (unsigned)rand(), domain);
+  /* Hash time + random for a unique ID */
+  char seed[64];
+  snprintf(seed, sizeof(seed), "%lx.%x.%d",
+           (unsigned long)time(NULL), (unsigned)rand(), (int)getpid());
+  char hex[33];
+  crispy_md5_hex(seed, strlen(seed), hex);
+  snprintf(buf, bufSize, "<%s@%s>", hex, domain);
   return buf;
 }
 
