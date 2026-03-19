@@ -1076,7 +1076,7 @@ MyWindowPtr OpenComp(TOCType * tocH, int sumNum, GtkWidget *winWP,
       gchar *default_name = prefs_get_string(PREFS_GROUP_SENDING_MAIL,
                                               "real_name", "");
 
-      /* Add default personality first */
+      /* Dominant personality always from global prefs */
       if (default_email && default_email[0]) {
         gchar *from_str;
         if (default_name && default_name[0])
@@ -1087,15 +1087,13 @@ MyWindowPtr OpenComp(TOCType * tocH, int sumNum, GtkWidget *winWP,
         g_free(from_str);
       }
 
-      /* Add additional accounts as personalities */
+      /* Additional personalities (all loaded accounts are non-dominant) */
       for (int a = 0; a < num_accounts; a++) {
         if (!accounts[a].enabled || !accounts[a].email[0]) continue;
-        /* Skip if same as default */
-        if (default_email && g_ascii_strcasecmp(accounts[a].email, default_email) == 0)
-          continue;
+        const char *name = accounts[a].real_name[0] ? accounts[a].real_name : accounts[a].name;
         gchar *from_str;
-        if (accounts[a].name[0])
-          from_str = g_strdup_printf("%s <%s>", accounts[a].name, accounts[a].email);
+        if (name && name[0])
+          from_str = g_strdup_printf("%s <%s>", name, accounts[a].email);
         else
           from_str = g_strdup(accounts[a].email);
         gtk_string_list_append(from_model, from_str);
@@ -2072,6 +2070,25 @@ bool CompSend(MessHandle messH) {
 
   TOCType *tocH = messH->tocH;
   int sumNum = messH->sumNum;
+
+  /* Set persId from the From dropdown selection */
+  {
+    GtkWidget *fromDD = messH->headerWidgets[FROM_HEAD];
+    if (fromDD && GTK_IS_DROP_DOWN(fromDD)) {
+      guint sel = gtk_drop_down_get_selected(GTK_DROP_DOWN(fromDD));
+      if (sel == 0) {
+        /* Dominant personality */
+        tocH->sums[sumNum].persId = 0;
+      } else {
+        /* Non-dominant: find matching personality by index */
+        PrefsAccount accounts[16];
+        int n = prefs_load_accounts(accounts, 16);
+        if (sel - 1 < (guint)n) {
+          tocH->sums[sumNum].persId = Hash(accounts[sel - 1].name);
+        }
+      }
+    }
+  }
 
   /* Mark as queued for sending */
   tocH->sums[sumNum].state = QUEUED;

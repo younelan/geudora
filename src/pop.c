@@ -591,11 +591,17 @@ TOCType * RenameInTemp(TOCType * tocH) {
 
   if (!tocH || !tocH->count)
     return tocH;
-  if ((err = SubFolderSpec(DELIVERY_FOLDER, deliverFolder))) {
-    g_print("RenameInTemp: SubFolderSpec(DELIVERY_FOLDER) failed err=%d\n", err);
-    Aprintf(OK_ALRT, Note, THREAD_SUBFOLDER_ERR, DELIVERY_FOLDER, err);
+  /* Delivery folder lives under the eudora data directory, not mailboxes */
+  g_print("RenameInTemp: Root.path='%s' MailRoot.path='%s'\n", Root.path, MailRoot.path);
+  if (SubFolderSpec(DELIVERY_FOLDER, deliverFolder)) {
+    g_print("RenameInTemp: SubFolderSpec failed\n");
     return tocH;
   }
+  /* Strip trailing slash */
+  { size_t dlen = strlen(deliverFolder);
+    if (dlen > 1 && deliverFolder[dlen-1] == '/') deliverFolder[dlen-1] = '\0';
+  }
+  g_mkdir_with_parents(deliverFolder, 0755);
   g_print("RenameInTemp: delivery folder='%s'\n", deliverFolder);
 
   // make sure the toc is written

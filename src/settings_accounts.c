@@ -61,21 +61,44 @@ static void open_account_dialog(GtkWindow *parent, GtkWidget *page, int idx) {
     gtk_widget_set_margin_top(box, 16); gtk_widget_set_margin_bottom(box, 16);
     gtk_window_set_child(GTK_WINDOW(dlg), box);
 
-    GtkWidget *grp = group_box("Account Details");
+    /* Identity */
+    GtkWidget *grp = group_box("Identity");
     GtkWidget *n = gtk_entry_new(); if (acct) gtk_editable_set_text(GTK_EDITABLE(n), acct->name);
-    group_add(grp, form_row("Name", n));
+    group_add(grp, form_row("Account Name", n));
+    GtkWidget *rn = gtk_entry_new(); if (acct) gtk_editable_set_text(GTK_EDITABLE(rn), acct->real_name);
+    group_add(grp, form_row("Real Name", rn));
     GtkWidget *e = gtk_entry_new(); if (acct) gtk_editable_set_text(GTK_EDITABLE(e), acct->email);
-    group_add(grp, form_row("Email", e));
+    group_add(grp, form_row("Email Address", e));
+    gtk_box_append(GTK_BOX(box), grp);
+
+    /* Servers */
+    grp = group_box("Servers");
     const char *types[] = {"IMAP", "POP", NULL};
     GtkWidget *t = gtk_drop_down_new_from_strings(types);
     if (acct && g_strcmp0(acct->type, "POP") == 0) gtk_drop_down_set_selected(GTK_DROP_DOWN(t), 1);
     group_add(grp, form_row("Type", t));
     GtkWidget *sv = gtk_entry_new(); if (acct) gtk_editable_set_text(GTK_EDITABLE(sv), acct->server);
-    group_add(grp, form_row("Mail Server", sv));
+    group_add(grp, form_row("Incoming Server", sv));
     GtkWidget *sm = gtk_entry_new(); if (acct) gtk_editable_set_text(GTK_EDITABLE(sm), acct->smtp_server);
     group_add(grp, form_row("SMTP Server", sm));
     GtkWidget *u = gtk_entry_new(); if (acct) gtk_editable_set_text(GTK_EDITABLE(u), acct->username);
     group_add(grp, form_row("Username", u));
+    gtk_box_append(GTK_BOX(box), grp);
+
+    /* Options */
+    grp = group_box("Options");
+    GtkWidget *chk_spin = gtk_spin_button_new_with_range(0, 999, 1);
+    gtk_spin_button_set_value(GTK_SPIN_BUTTON(chk_spin), acct ? acct->check_interval : 5);
+    group_add(grp, form_row("Check every (min)", chk_spin));
+
+    const char *ssl_modes[] = {"Off", "Required (STARTTLS)", "Required (Alt Port)", NULL};
+    GtkWidget *ssl = gtk_drop_down_new_from_strings(ssl_modes);
+    if (acct) gtk_drop_down_set_selected(GTK_DROP_DOWN(ssl), acct->ssl_mode);
+    group_add(grp, form_row("SSL", ssl));
+
+    GtkWidget *lmos = gtk_check_button_new_with_label("Leave mail on server");
+    if (acct) gtk_check_button_set_active(GTK_CHECK_BUTTON(lmos), acct->leave_on_server);
+    group_add(grp, lmos);
     gtk_box_append(GTK_BOX(box), grp);
 
     GtkWidget *bbar = gtk_box_new(GTK_ORIENTATION_HORIZONTAL, 8);
@@ -89,11 +112,15 @@ static void open_account_dialog(GtkWindow *parent, GtkWidget *page, int idx) {
     gtk_box_append(GTK_BOX(box), bbar);
 
     g_object_set_data(G_OBJECT(dlg), "name-entry", n);
+    g_object_set_data(G_OBJECT(dlg), "realname-entry", rn);
     g_object_set_data(G_OBJECT(dlg), "email-entry", e);
     g_object_set_data(G_OBJECT(dlg), "type-combo", t);
     g_object_set_data(G_OBJECT(dlg), "server-entry", sv);
     g_object_set_data(G_OBJECT(dlg), "smtp-entry", sm);
     g_object_set_data(G_OBJECT(dlg), "user-entry", u);
+    g_object_set_data(G_OBJECT(dlg), "check-spin", chk_spin);
+    g_object_set_data(G_OBJECT(dlg), "ssl-combo", ssl);
+    g_object_set_data(G_OBJECT(dlg), "lmos-check", lmos);
     g_object_set_data(G_OBJECT(dlg), "page", page);
     g_object_set_data(G_OBJECT(dlg), "account-index", GINT_TO_POINTER(idx));
 
@@ -149,13 +176,18 @@ static void on_add_ok(GtkWidget *widget, gpointer user_data) {
     if (*count >= 10) return;
 
     PrefsAccount *a = &accounts[*count];
+    memset(a, 0, sizeof(*a));
     strncpy(a->name, name, sizeof(a->name) - 1);
+    strncpy(a->real_name, gtk_editable_get_text(GTK_EDITABLE(g_object_get_data(G_OBJECT(dlg), "realname-entry"))), sizeof(a->real_name) - 1);
     strncpy(a->email, gtk_editable_get_text(GTK_EDITABLE(g_object_get_data(G_OBJECT(dlg), "email-entry"))), sizeof(a->email) - 1);
     GtkStringObject *to = GTK_STRING_OBJECT(gtk_drop_down_get_selected_item(GTK_DROP_DOWN(g_object_get_data(G_OBJECT(dlg), "type-combo"))));
     strncpy(a->type, to ? gtk_string_object_get_string(to) : "IMAP", sizeof(a->type) - 1);
     strncpy(a->server, gtk_editable_get_text(GTK_EDITABLE(g_object_get_data(G_OBJECT(dlg), "server-entry"))), sizeof(a->server) - 1);
     strncpy(a->smtp_server, gtk_editable_get_text(GTK_EDITABLE(g_object_get_data(G_OBJECT(dlg), "smtp-entry"))), sizeof(a->smtp_server) - 1);
     strncpy(a->username, gtk_editable_get_text(GTK_EDITABLE(g_object_get_data(G_OBJECT(dlg), "user-entry"))), sizeof(a->username) - 1);
+    a->check_interval = gtk_spin_button_get_value_as_int(GTK_SPIN_BUTTON(g_object_get_data(G_OBJECT(dlg), "check-spin")));
+    a->ssl_mode = gtk_drop_down_get_selected(GTK_DROP_DOWN(g_object_get_data(G_OBJECT(dlg), "ssl-combo")));
+    a->leave_on_server = gtk_check_button_get_active(GTK_CHECK_BUTTON(g_object_get_data(G_OBJECT(dlg), "lmos-check")));
     a->enabled = TRUE;
 
     gtk_list_box_append(GTK_LIST_BOX(list), make_account_row(a->name, a->type, a->server));
@@ -176,12 +208,16 @@ static void on_edit_save(GtkWidget *widget, gpointer user_data) {
 
     PrefsAccount *a = &accounts[idx];
     strncpy(a->name, name, sizeof(a->name) - 1);
+    strncpy(a->real_name, gtk_editable_get_text(GTK_EDITABLE(g_object_get_data(G_OBJECT(dlg), "realname-entry"))), sizeof(a->real_name) - 1);
     strncpy(a->email, gtk_editable_get_text(GTK_EDITABLE(g_object_get_data(G_OBJECT(dlg), "email-entry"))), sizeof(a->email) - 1);
     GtkStringObject *to = GTK_STRING_OBJECT(gtk_drop_down_get_selected_item(GTK_DROP_DOWN(g_object_get_data(G_OBJECT(dlg), "type-combo"))));
     strncpy(a->type, to ? gtk_string_object_get_string(to) : "IMAP", sizeof(a->type) - 1);
     strncpy(a->server, gtk_editable_get_text(GTK_EDITABLE(g_object_get_data(G_OBJECT(dlg), "server-entry"))), sizeof(a->server) - 1);
     strncpy(a->smtp_server, gtk_editable_get_text(GTK_EDITABLE(g_object_get_data(G_OBJECT(dlg), "smtp-entry"))), sizeof(a->smtp_server) - 1);
     strncpy(a->username, gtk_editable_get_text(GTK_EDITABLE(g_object_get_data(G_OBJECT(dlg), "user-entry"))), sizeof(a->username) - 1);
+    a->check_interval = gtk_spin_button_get_value_as_int(GTK_SPIN_BUTTON(g_object_get_data(G_OBJECT(dlg), "check-spin")));
+    a->ssl_mode = gtk_drop_down_get_selected(GTK_DROP_DOWN(g_object_get_data(G_OBJECT(dlg), "ssl-combo")));
+    a->leave_on_server = gtk_check_button_get_active(GTK_CHECK_BUTTON(g_object_get_data(G_OBJECT(dlg), "lmos-check")));
 
     /* Refresh the row in the list */
     GtkListBoxRow *row = gtk_list_box_get_row_at_index(GTK_LIST_BOX(list), idx);

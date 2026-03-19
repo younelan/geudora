@@ -1016,76 +1016,12 @@ static void action_personalities(GSimpleAction *action, GVariant *parameter,
                                  gpointer user_data) {
   (void)action; (void)parameter; (void)user_data;
 
-  GtkWidget *win = gtk_window_new();
-  gtk_window_set_title(GTK_WINDOW(win), "Personalities");
-  gtk_window_set_default_size(GTK_WINDOW(win), 600, 400);
-  gtk_window_set_transient_for(GTK_WINDOW(win),
-                               GTK_WINDOW(app_state.window));
-
-  GtkWidget *vbox = gtk_box_new(GTK_ORIENTATION_VERTICAL, 4);
-  gtk_widget_set_margin_start(vbox, 8);
-  gtk_widget_set_margin_end(vbox, 8);
-  gtk_widget_set_margin_top(vbox, 8);
-  gtk_widget_set_margin_bottom(vbox, 8);
-
-  /* Toolbar */
-  GtkWidget *toolbar = gtk_box_new(GTK_ORIENTATION_HORIZONTAL, 4);
-  gtk_box_append(GTK_BOX(toolbar), gtk_button_new_with_label("New"));
-  gtk_box_append(GTK_BOX(toolbar), gtk_button_new_with_label("Delete"));
-  gtk_box_append(GTK_BOX(vbox), toolbar);
-
-  /* HPaned: personality list on left, settings on right */
-  GtkWidget *hpaned = gtk_paned_new(GTK_ORIENTATION_HORIZONTAL);
-  gtk_paned_set_position(GTK_PANED(hpaned), 180);
-
-  GtkWidget *list_scroll = gtk_scrolled_window_new();
-  GtkWidget *list_box = gtk_list_box_new();
-  gtk_list_box_append(GTK_LIST_BOX(list_box),
-                      gtk_label_new("Dominant"));
-  gtk_scrolled_window_set_child(GTK_SCROLLED_WINDOW(list_scroll), list_box);
-  gtk_paned_set_start_child(GTK_PANED(hpaned), list_scroll);
-
-  /* Right: personality settings */
-  GtkWidget *detail_box = gtk_box_new(GTK_ORIENTATION_VERTICAL, 4);
-
-  const char *labels[] = {"Real Name:", "Email:", "POP Server:",
-                           "SMTP Server:", "Login:", NULL};
-  for (int i = 0; labels[i]; i++) {
-    GtkWidget *row = gtk_box_new(GTK_ORIENTATION_HORIZONTAL, 4);
-    GtkWidget *lbl = gtk_label_new(labels[i]);
-    gtk_widget_set_size_request(lbl, 100, -1);
-    gtk_label_set_xalign(GTK_LABEL(lbl), 1.0);
-    GtkWidget *entry = gtk_entry_new();
-    gtk_widget_set_hexpand(entry, TRUE);
-    gtk_box_append(GTK_BOX(row), lbl);
-    gtk_box_append(GTK_BOX(row), entry);
-    gtk_box_append(GTK_BOX(detail_box), row);
-  }
-
-  /* Check interval */
-  GtkWidget *check_row = gtk_box_new(GTK_ORIENTATION_HORIZONTAL, 4);
-  GtkWidget *check_lbl = gtk_label_new("Check every:");
-  gtk_widget_set_size_request(check_lbl, 100, -1);
-  gtk_label_set_xalign(GTK_LABEL(check_lbl), 1.0);
-  GtkWidget *spin = gtk_spin_button_new_with_range(0, 999, 1);
-  gtk_spin_button_set_value(GTK_SPIN_BUTTON(spin), 5);
-  gtk_box_append(GTK_BOX(check_row), check_lbl);
-  gtk_box_append(GTK_BOX(check_row), spin);
-  gtk_box_append(GTK_BOX(check_row), gtk_label_new("minutes"));
-  gtk_box_append(GTK_BOX(detail_box), check_row);
-
-  /* Leave on server checkbox */
-  gtk_box_append(GTK_BOX(detail_box),
-                 gtk_check_button_new_with_label("Leave mail on server"));
-  gtk_box_append(GTK_BOX(detail_box),
-                 gtk_check_button_new_with_label("Use SSL"));
-
-  gtk_paned_set_end_child(GTK_PANED(hpaned), detail_box);
-  gtk_widget_set_vexpand(hpaned, TRUE);
-  gtk_box_append(GTK_BOX(vbox), hpaned);
-
-  gtk_window_set_child(GTK_WINDOW(win), vbox);
-  gtk_window_present(GTK_WINDOW(win));
+  /* Open Settings dialog on the Accounts page */
+  SettingsDialog *sd =
+      create_settings_dialog(GTK_WINDOW(app_state.window), app_state.settings);
+  show_settings_section(sd, SETTINGS_ACCOUNTS);
+  GtkWidget *dialog = get_settings_dialog_widget(sd);
+  gtk_window_present(GTK_WINDOW(dialog));
 }
 
 static void action_signatures(GSimpleAction *action, GVariant *parameter,
@@ -2373,8 +2309,7 @@ static void activate(GtkApplication *app, gpointer user_data) {
   /* Initialize threading — must happen early so InAThread() works */
   MyInitThreads();
 
-  /* Initialize personalities (mail accounts) from prefs */
-  InitPersonalities();
+  /* Personalities initialized after prefs_load below */
 
   /* Initialize TCP transport vector so RecvLine/SendTrans etc. work.
      Use intermediate variable — direct assignment to _Thread_local member
@@ -2388,12 +2323,17 @@ static void activate(GtkApplication *app, gpointer user_data) {
     memcpy(&ThreadGlobals.tCurTrans, &tcp, sizeof(TransVector));
   }
 
-  /* Initialize Root and MailRoot paths from prefs/defaults */
+  /* Initialize Root (eudora data dir) and MailRoot (mailboxes dir) */
   {
-    const char *mail_dir = get_eudora_mail_dir();
-    g_strlcpy(Root.path, mail_dir, sizeof(Root.path));
+    const char *mail_dir = get_eudora_mail_dir(); /* .../mailboxes */
     extern VDId MailRoot;
     g_strlcpy(MailRoot.path, mail_dir, sizeof(MailRoot.path));
+
+    /* Root = parent of mailboxes dir (the eudora data dir) */
+    g_strlcpy(Root.path, mail_dir, sizeof(Root.path));
+    char *last_slash = strrchr(Root.path, '/');
+    if (last_slash && last_slash != Root.path)
+      *last_slash = '\0'; /* .../geudora */
   }
 
   /* Load settings from disk */
@@ -2402,6 +2342,9 @@ static void activate(GtkApplication *app, gpointer user_data) {
     /* Create default settings if load failed */
     app_state.settings = g_new0(AppSettings, 1);
   }
+
+  /* Initialize personalities AFTER prefs are loaded */
+  InitPersonalities();
 
   /* Initialize theme system (loads saved theme from prefs) */
   theme_init(app_state.window);

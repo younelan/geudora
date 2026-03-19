@@ -318,25 +318,30 @@ void InitPersonalities(void)
 	 */
 	/* GTK port: additional personalities come from the INI file (account_N
 	 * sections), not Mac resource fork. Load them and add to PersList. */
-	if (HasFeature (featureMultiplePersonalities)) {
+	{
+		/* Load additional personalities from INI accounts */
 		PrefsAccount accounts[16];
 		int nAccounts = prefs_load_accounts(accounts, 16);
-		for (int ai = 1; ai < nAccounts; ai++) {
+		g_print("PersInit: loaded %d accounts from INI\n", nAccounts);
+		for (int ai = 0; ai < nAccounts; ai++) {
+			g_print("PersInit: account[%d] name='%s' email='%s' enabled=%d\n",
+			        ai, accounts[ai].name, accounts[ai].email, accounts[ai].enabled);
 			if (!accounts[ai].enabled || !accounts[ai].name[0]) continue;
 			pers = PersNew();
-			if (!pers) break;
-			spec_set_name(pers, accounts[ai].name);
+			if (!pers) { g_print("PersInit: PersNew failed\n"); break; }
+			/* PersNew already added pers to PersList via LL_Queue —
+			 * just update the fields, don't add again */
+			g_strlcpy(pers->name, accounts[ai].name, sizeof(pers->name));
 			pers->persId = Hash(pers->name);
-			pers->dirty = false;
-			pers->checkTicks = 0;
-			pers->proxy = nil;
-			pers->mailboxTree = 0;
-			pers->imapRefresh = 0;
-			LL_Queue(PersList, pers, (PersHandle));
+			g_print("PersInit: added personality '%s' persId=%u\n", pers->name, pers->persId);
 		}
-		if (nAccounts > 1)
+		g_print("PersInit: about to UseFeature, nAccounts=%d\n", nAccounts);
+		if (nAccounts > 0)
 			UseFeature(featureMultiplePersonalities);
-		UpdatePersList();
+		g_print("PersInit: UseFeature done, counting...\n");
+		/* Count personalities — with safety limit to prevent hang */
+		{ int pc = 0; for (PersHandle p = PersList; p && pc < 100; p = p->next) pc++;
+		  g_print("PersInit: total personalities in list: %d\n", pc); }
 	}
 
 	CurPers = PersList;	// let's make sure, shall we?
@@ -719,23 +724,24 @@ static void UpdatePersList(void)
 	count = PersCount();
 	if (count <= 2)
 		;	//	Not enough items to sort
-	else if (hPersList=calloc(1,(count+2)*sizeof(PersHandle)))
-	{
-		PersHandle	*pPersList;
-		short				idx;
-		
-		pPersList=hPersList;
-		for (pers=PersList;pers;pers=pers->next)
-			*pPersList++ = pers;
-		*pPersList = nil;	//	Used later for rebuilding linked list
-		/* Sort personalities 1..count-1 (index 0 = dominant, stays first) */
-		qsort((PersHandle*)*hPersList + 1, count - 1, sizeof(PersHandle),
-			(int(*)(const void*, const void*))PersCompare);
-		
-		//	Rebuild personalities list
-		pPersList=*hPersList;
-		for(idx=0;idx<count;idx++)
-			pPersList[idx]->next = pPersList[idx+1];
+	else {
+		PersHandle *sortList = calloc(count + 1, sizeof(PersHandle));
+		if (sortList) {
+			int idx = 0;
+			for (pers = PersList; pers; pers = pers->next)
+				sortList[idx++] = pers;
+			sortList[idx] = NULL;
+
+			/* Sort personalities 1..count-1 (index 0 = dominant, stays first) */
+			qsort(sortList + 1, count - 1, sizeof(PersHandle),
+				(int(*)(const void*, const void*))PersCompare);
+
+			/* Rebuild linked list */
+			PersList = sortList[0];
+			for (idx = 0; idx < count; idx++)
+				sortList[idx]->next = sortList[idx + 1];
+			free(sortList);
+		}
 	}
 	BuildPersMenu();
 }

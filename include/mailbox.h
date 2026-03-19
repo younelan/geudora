@@ -461,7 +461,7 @@ typedef void *FileParam;
 /* Pascal string utilities - moved to StringUtil.h / fileutil.h / modernized */
 void PLCat(char *dst, long n);
 short FSpOpenResFile(char * spec, int8_t permission);
-void AddResource(void *h, uint32_t type, short id, ConstStr255Param name);
+void AddResource(void *h, uint32_t type, short id, const char *name);
 short ResError(void);
 short FlushVol(unsigned char *name, short vRefNum);
 

@@ -342,7 +342,8 @@ static void on_cancel_clicked(GtkWidget *widget, gpointer user_data)
 SettingsDialog* create_settings_dialog(GtkWindow *parent, AppSettings *settings)
 {
     SettingsDialog *dialog = g_new0(SettingsDialog, 1);
-    dialog->settings = settings ? g_memdup2(settings, sizeof(AppSettings)) : g_new0(AppSettings, 1);
+    /* Use live settings directly — changes take effect immediately */
+    dialog->settings = settings ? settings : g_new0(AppSettings, 1);
 
     dialog->dialog = gtk_window_new();
     theme_setup_headerbar(dialog->dialog, "gEudora Settings");

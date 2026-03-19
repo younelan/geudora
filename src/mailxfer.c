@@ -56,6 +56,9 @@ ADVISED OF THE POSSIBILITY OF SUCH DAMAGE. */
 #include <fcntl.h>
 
 /* Crispy mail library */
+#include "buildtoc.h"
+#include "lineio.h"
+#include "pop.h"
 #include "crispy_smtp.h"
 #include "crispy_pop3.h"
 #include "crispy_transport.h"
@@ -73,18 +76,11 @@ extern int DoIMAPFilterProgress(void);
 
 /* Mail transfer functions */
 extern int GetUUPCMail(bool a, short *b);
-extern int GetMyMail(TransStream stream, bool a, short *b, XferFlags *flags);
 extern int NewTransStream(TransStream *stream);
 extern long ReportStreamAudit(TransStream stream);
 extern void StartStreamAudit(TransStream theStream, StreamAuditTypeEnum what);
-extern int StartSMTP(TransStream stream, char *server, long port);
-extern int StartPOP(TransStream stream, char *server, long port);
-extern int EndPOP(TransStream stream);
-extern void POPIntroductions(TransStream stream, char *s, void *p);
-extern int POPrror(void);
-extern int MySendMessage(TransStream stream, TOCType *toc, int sum,
-                         CSpecHandle list);
 extern short EffectiveTID(short id);
+extern bool SaveMessageSum(void *vsum, TOCType **tocH);
 extern short TransOutTablID(void);
 extern char *GetFlatten(void);
 
@@ -199,6 +195,15 @@ long GetSMTPPort(void) {
 }
 
 int GetSMTPInfoLo(char *server, long *port) {
+  /* Try per-personality account first */
+  PrefsAccount acct;
+  extern bool GetCurPersAccount(PrefsAccount *acct);
+  if (GetCurPersAccount(&acct) && acct.smtp_server[0]) {
+    if (server) { strncpy(server, acct.smtp_server, 255); server[255] = '\0'; }
+    return 0;
+  }
+
+  /* Fallback to global */
   gchar *smtp = prefs_get_string(PREFS_GROUP_SENDING_MAIL, "smtp_server", "");
   if (server) {
     strncpy(server, smtp, 255);
@@ -1159,28 +1164,202 @@ int SpecialXfer(struct XferFlags *flags) {
  * CrispySendOneMessage - read message from spool, send via crispy
  * Returns 0 on success, SMTP error code on failure.
  ************************************************************************/
+/* Cert storage dir under eudora data root */
+static const char *crispy_cert_dir(void) {
+  static char dir[1024];
+  if (!dir[0])
+    snprintf(dir, sizeof(dir), "%s/Certificates", Root.path);
+  g_mkdir_with_parents(dir, 0700);
+  return dir;
+}
+
+/* Cert callback data — passed from background thread to main thread */
+typedef struct {
+  char host[256];
+  char error[256];
+  char *cert_pem;
+  char *cert_info;
+  int result;  /* 0=pending, 1=accept once, 2=trust+store, -1=deny */
+  GMutex mutex;
+  GCond cond;
+} CertPromptData;
+
+static void cert_btn_clicked(GtkWidget *btn, gpointer win_ptr) {
+  GtkWidget *win = GTK_WIDGET(win_ptr);
+  CertPromptData *pd = g_object_get_data(G_OBJECT(win), "prompt-data");
+  GMainLoop *lp = g_object_get_data(G_OBJECT(win), "loop");
+  pd->result = GPOINTER_TO_INT(g_object_get_data(G_OBJECT(btn), "result"));
+  gtk_window_close(GTK_WINDOW(win));
+  g_main_loop_quit(lp);
+}
+
+static gboolean cert_win_close(GtkWidget *win, gpointer unused) {
+  (void)unused;
+  CertPromptData *pd = g_object_get_data(G_OBJECT(win), "prompt-data");
+  GMainLoop *lp = g_object_get_data(G_OBJECT(win), "loop");
+  if (pd->result == 0) pd->result = -1;
+  g_main_loop_quit(lp);
+  return FALSE;
+}
+
+/* Runs on main thread via g_idle_add */
+static gboolean cert_dialog_idle(gpointer user_data) {
+  CertPromptData *d = (CertPromptData *)user_data;
+
+  GMainLoop *loop = g_main_loop_new(NULL, FALSE);
+
+  /* Build certificate dialog window */
+  GtkWidget *win = gtk_window_new();
+  gtk_window_set_title(GTK_WINDOW(win), "Certificate Verification");
+  gtk_window_set_modal(GTK_WINDOW(win), TRUE);
+  gtk_window_set_default_size(GTK_WINDOW(win), 500, 400);
+
+  GtkWidget *vbox = gtk_box_new(GTK_ORIENTATION_VERTICAL, 12);
+  gtk_widget_set_margin_start(vbox, 20);
+  gtk_widget_set_margin_end(vbox, 20);
+  gtk_widget_set_margin_top(vbox, 20);
+  gtk_widget_set_margin_bottom(vbox, 20);
+  gtk_window_set_child(GTK_WINDOW(win), vbox);
+
+  /* Warning icon + title */
+  GtkWidget *title = gtk_label_new(NULL);
+  gtk_label_set_markup(GTK_LABEL(title),
+      "<span size='large' weight='bold'>Certificate Verification Failed</span>");
+  gtk_box_append(GTK_BOX(vbox), title);
+
+  /* Host and error */
+  char *markup = g_markup_printf_escaped(
+      "<b>Host:</b> %s\n<b>Error:</b> %s", d->host, d->error);
+  GtkWidget *info_label = gtk_label_new(NULL);
+  gtk_label_set_markup(GTK_LABEL(info_label), markup);
+  gtk_label_set_wrap(GTK_LABEL(info_label), TRUE);
+  gtk_label_set_xalign(GTK_LABEL(info_label), 0);
+  g_free(markup);
+  gtk_box_append(GTK_BOX(vbox), info_label);
+
+  /* Certificate details in a scrolled text view */
+  GtkWidget *scroll = gtk_scrolled_window_new();
+  gtk_scrolled_window_set_min_content_height(GTK_SCROLLED_WINDOW(scroll), 150);
+  gtk_widget_set_vexpand(scroll, TRUE);
+
+  GtkWidget *text = gtk_text_view_new();
+  gtk_text_view_set_editable(GTK_TEXT_VIEW(text), FALSE);
+  gtk_text_view_set_monospace(GTK_TEXT_VIEW(text), TRUE);
+  GtkTextBuffer *buf = gtk_text_view_get_buffer(GTK_TEXT_VIEW(text));
+  gtk_text_buffer_set_text(buf, d->cert_info ? d->cert_info : "(no details)", -1);
+  gtk_scrolled_window_set_child(GTK_SCROLLED_WINDOW(scroll), text);
+  gtk_box_append(GTK_BOX(vbox), scroll);
+
+  /* Buttons */
+  GtkWidget *btnbox = gtk_box_new(GTK_ORIENTATION_HORIZONTAL, 8);
+  gtk_widget_set_halign(btnbox, GTK_ALIGN_END);
+
+  GtkWidget *deny_btn = gtk_button_new_with_label("Deny");
+  GtkWidget *accept_btn = gtk_button_new_with_label("Accept Once");
+  GtkWidget *trust_btn = gtk_button_new_with_label("Trust Permanently");
+  gtk_widget_add_css_class(trust_btn, "suggested-action");
+
+  gtk_box_append(GTK_BOX(btnbox), deny_btn);
+  gtk_box_append(GTK_BOX(btnbox), accept_btn);
+  gtk_box_append(GTK_BOX(btnbox), trust_btn);
+  gtk_box_append(GTK_BOX(vbox), btnbox);
+
+  /* Button callbacks — set result and quit the loop */
+  g_object_set_data(G_OBJECT(deny_btn), "result", GINT_TO_POINTER(-1));
+  g_object_set_data(G_OBJECT(accept_btn), "result", GINT_TO_POINTER(1));
+  g_object_set_data(G_OBJECT(trust_btn), "result", GINT_TO_POINTER(2));
+  g_object_set_data(G_OBJECT(win), "prompt-data", d);
+  g_object_set_data(G_OBJECT(win), "loop", loop);
+
+  g_signal_connect(deny_btn, "clicked", G_CALLBACK(cert_btn_clicked), win);
+  g_signal_connect(accept_btn, "clicked", G_CALLBACK(cert_btn_clicked), win);
+  g_signal_connect(trust_btn, "clicked", G_CALLBACK(cert_btn_clicked), win);
+  g_signal_connect(win, "close-request", G_CALLBACK(cert_win_close), NULL);
+
+  gtk_window_present(GTK_WINDOW(win));
+  g_main_loop_run(loop);
+  g_main_loop_unref(loop);
+
+  /* Signal the background thread */
+  g_mutex_lock(&d->mutex);
+  g_cond_signal(&d->cond);
+  g_mutex_unlock(&d->mutex);
+
+  return G_SOURCE_REMOVE;
+}
+
+/* Cert callback — runs on background thread, posts GTK dialog to main thread */
+static bool eudora_cert_callback(const char *host, const char *error,
+                                  const char *cert_pem, void *userdata) {
+  (void)userdata;
+
+  CertPromptData d;
+  memset(&d, 0, sizeof(d));
+  g_strlcpy(d.host, host, sizeof(d.host));
+  g_strlcpy(d.error, error, sizeof(d.error));
+  d.cert_pem = cert_pem ? strdup(cert_pem) : NULL;
+  d.cert_info = cert_pem ? crispy_cert_info(cert_pem) : NULL;
+  d.result = 0;
+  g_mutex_init(&d.mutex);
+  g_cond_init(&d.cond);
+
+  /* Post to main thread and wait */
+  g_mutex_lock(&d.mutex);
+  g_idle_add(cert_dialog_idle, &d);
+  while (d.result == 0)
+    g_cond_wait(&d.cond, &d.mutex);
+  g_mutex_unlock(&d.mutex);
+
+  bool accepted = (d.result > 0);
+
+  if (d.result == 2 && d.cert_pem) {
+    crispy_cert_store_save(crispy_cert_dir(), host, d.cert_pem);
+    g_print("Certificate stored for %s\n", host);
+  }
+
+  free(d.cert_pem);
+  free(d.cert_info);
+  g_mutex_clear(&d.mutex);
+  g_cond_clear(&d.cond);
+
+  return accepted;
+}
+
+/* Set up transport with cert callback + load stored cert */
+static void setup_crispy_certs(SmtpTransport *tp, const char *host) {
+  crispy_transport_set_cert_callback(tp, eudora_cert_callback, NULL);
+  char *trusted = crispy_cert_store_load(crispy_cert_dir(), host);
+  if (trusted)
+    crispy_transport_load_trusted(tp, trusted);
+}
+
 static int CrispySendOneMessage(SmtpSession *smtp, TOCType *tocH, int sumNum) {
   /* Read raw message from mailbox file */
   long offset = tocH->sums[sumNum].offset;
   long length = tocH->sums[sumNum].length;
-  if (length <= 0) return -1;
+  g_print("CrispySendOne: sumNum=%d offset=%ld length=%ld\n", sumNum, offset, length);
+  if (length <= 0) { g_print("CrispySendOne: length<=0, skip\n"); return -1; }
 
-  int refN = BoxFOpen(tocH);
-  if (refN < 0) return -1;
+  int err2 = BoxFOpen(tocH);
+  g_print("CrispySendOne: BoxFOpen err=%d refN=%d\n", err2, tocH->refN);
+  if (err2) return -1;
 
   char *raw = g_malloc0(length + 1);
   if (!raw) { BoxFClose(tocH, false); return -1; }
 
-  if (lseek(refN, offset, SEEK_SET) < 0) {
+  if (lseek(tocH->refN, offset, SEEK_SET) < 0) {
+    g_print("CrispySendOne: lseek failed\n");
     g_free(raw); BoxFClose(tocH, false); return -1;
   }
 
   long count = length;
-  if (file_read(refN, &count, raw) != 0) {
+  if (file_read(tocH->refN, &count, raw) != 0) {
+    g_print("CrispySendOne: file_read failed\n");
     g_free(raw); BoxFClose(tocH, false); return -1;
   }
   raw[count] = '\0';
   BoxFClose(tocH, false);
+  g_print("CrispySendOne: read %ld bytes, first 80: %.80s\n", count, raw);
 
   /* Skip the "From " mbox envelope line if present */
   char *msg = raw;
@@ -1189,6 +1368,25 @@ static int CrispySendOneMessage(SmtpSession *smtp, TOCType *tocH, int sumNum) {
     if (nl) msg = nl + 1;
   }
   long msgLen = count - (long)(msg - raw);
+
+  /* Append signature if one is loaded and message doesn't already have one */
+  char *msgWithSig = NULL;
+  if (eSignature && *eSignature) {
+    /* Build: message + \r\n-- \r\n + signature */
+    long sigLen = (long)strlen((char *)eSignature);
+    long totalLen = msgLen + 6 + sigLen + 2; /* \r\n-- \r\n + sig + \r\n */
+    msgWithSig = g_malloc(totalLen + 1);
+    if (msgWithSig) {
+      memcpy(msgWithSig, msg, msgLen);
+      long pos = msgLen;
+      memcpy(msgWithSig + pos, "\r\n-- \r\n", 7); pos += 7;
+      memcpy(msgWithSig + pos, eSignature, sigLen); pos += sigLen;
+      memcpy(msgWithSig + pos, "\r\n", 2); pos += 2;
+      msgWithSig[pos] = '\0';
+      msg = msgWithSig;
+      msgLen = pos;
+    }
+  }
 
   /* Extract sender from the message headers */
   MailHeadSpec hs;
@@ -1231,19 +1429,28 @@ static int CrispySendOneMessage(SmtpSession *smtp, TOCType *tocH, int sumNum) {
       g_strlcpy(fromBare, fromAddr, sizeof(fromBare));
   }
 
-  g_print("CrispySend: from='%s' rcpts=%d len=%ld\n", fromBare, rcptCount, msgLen);
+  g_print("CrispySend: from='%s' rcpts=%d len=%ld sig=%s\n",
+          fromBare, rcptCount, msgLen,
+          (eSignature && *eSignature) ? "yes" : "no");
+
+  /* Report progress */
+  ProgressMessage(kpMessage, fromBare);
+  ByteProgress(NULL, 0, msgLen);
 
   int err = 0;
   if (rcptCount > 0) {
     err = crispy_smtp_send(smtp, fromBare, (const char **)rcpts, msg, msgLen);
     if (err)
       g_print("CrispySend: SMTP error %d: %s\n", err, smtp->last_reply);
+    else
+      ByteProgress(NULL, -msgLen, 0);
   } else {
     g_print("CrispySend: no recipients found!\n");
     err = -1;
   }
 
   /* Cleanup */
+  g_free(msgWithSig);
   g_free(raw);
   free(fromAddr);
   free(toVal); free(ccVal); free(bccVal);
@@ -1252,6 +1459,202 @@ static int CrispySendOneMessage(SmtpSession *smtp, TOCType *tocH, int sumNum) {
     free(rcpts);
   }
   return err;
+}
+
+/************************************************************************
+ * CrispyCheckMail - fetch mail via crispy POP3, write to inbox
+ * Replaces GetMyMail for the POP3 path.
+ ************************************************************************/
+static short CrispyCheckMail(short *gotSome) {
+  char popUser[256], popHost[256];
+  long port;
+  short err = 0;
+
+  *gotSome = 0;
+  GetPOPInfoLo(popUser, popHost, &port);
+
+  g_print("CrispyCheckMail: host='%s' port=%ld user='%s'\n", popHost, port, popUser);
+
+  /* Connect via crispy */
+  Pop3Transport tp = crispy_transport_new();
+  setup_crispy_certs(&tp, popHost);
+  Pop3Session pop;
+  crispy_pop3_init(&pop, tp);
+
+  /* Read SSL setting — per-personality if available, else global */
+  Pop3Security sec = POP3_PLAIN;
+  bool lmos = !PrefIsSet(PREF_LMOS); /* default: delete after fetch */
+  {
+    extern bool GetCurPersAccount(PrefsAccount *acct);
+    PrefsAccount persAcct;
+    if (GetCurPersAccount(&persAcct)) {
+      if (persAcct.ssl_mode == 2) sec = POP3_SSL;
+      else if (persAcct.ssl_mode == 1) sec = POP3_STLS;
+      lmos = !persAcct.leave_on_server;
+    } else {
+#ifdef ESSL
+      long sslPref = GetPrefLong(PREF_SSL_POP_SETTING);
+      if (sslPref & esslUseAltPort) sec = POP3_SSL;
+      else if (sslPref) sec = POP3_STLS;
+#endif
+    }
+  }
+  g_print("CrispyCheckMail: sec=%d (PLAIN=0 STLS=1 SSL=2) lmos=%d\n", sec, !lmos);
+
+  err = crispy_pop3_connect(&pop, popHost, (int)port, sec);
+  if (err) {
+    g_print("CrispyCheckMail: connect failed (%s)\n", pop.last_reply);
+    crispy_pop3_close(&pop);
+    return -1;
+  }
+
+  err = crispy_pop3_auth(&pop, popUser, CurPers->password);
+  if (err) {
+    g_print("CrispyCheckMail: auth failed (%s)\n", pop.last_reply);
+    /* Clear password so user gets re-prompted next time */
+    CurPers->password[0] = '\0';
+    crispy_pop3_close(&pop);
+    return -1;
+  }
+
+  err = crispy_pop3_stat(&pop);
+  if (err || pop.msg_count == 0) {
+    g_print("CrispyCheckMail: %d messages\n", pop.msg_count);
+    crispy_pop3_close(&pop);
+    return 0;
+  }
+  g_print("CrispyCheckMail: %d messages, %ld bytes\n", pop.msg_count, pop.mailbox_size);
+
+  /* Get inbox TOC (In.temp when threaded, In when not) */
+  TOCType *tocH = GetInTOC();
+  if (!tocH) {
+    g_print("CrispyCheckMail: GetInTOC failed\n");
+    crispy_pop3_close(&pop);
+    return -1;
+  }
+
+  /* Open inbox mailbox file */
+  int refN = BoxFOpen(tocH);
+  if (refN < 0) {
+    g_print("CrispyCheckMail: BoxFOpen failed\n");
+    crispy_pop3_close(&pop);
+    return -1;
+  }
+
+  /* Seek to end of mailbox */
+  long eof = FindTOCSpot(tocH, pop.mailbox_size);
+  if (lseek(tocH->refN, eof, SEEK_SET) < 0) {
+    g_print("CrispyCheckMail: seek failed\n");
+    BoxFClose(tocH, false);
+    crispy_pop3_close(&pop);
+    return -1;
+  }
+
+  int fetched = 0;
+  bool deleteFetched = lmos; /* from per-personality or global LMOS setting */
+
+  for (int i = 1; i <= pop.msg_count; i++) {
+    g_print("CrispyCheckMail: fetching message %d/%d\n", i, pop.msg_count);
+
+    char *raw = NULL;
+    long rawLen = crispy_pop3_retr(&pop, i, &raw);
+    if (rawLen < 0 || !raw) {
+      g_print("CrispyCheckMail: RETR %d failed (%s)\n", i, pop.last_reply);
+      free(raw);
+      continue;
+    }
+
+    /* Write mbox "From " separator line */
+    char fromLine[256];
+    time_t now = time(NULL);
+    struct tm *tm = localtime(&now);
+    char timebuf[64];
+    strftime(timebuf, sizeof(timebuf), "%a %b %d %H:%M:%S %Y", tm);
+
+    /* Extract sender for the From_ line */
+    MailHeadSpec hs;
+    char sender[256] = "unknown";
+    char *fromVal = NULL;
+    if (crispy_headparse_find(raw, "From: ", &hs) &&
+        crispy_headparse_get_value(raw, &hs, &fromVal) == 0 && fromVal) {
+      /* Extract bare address */
+      char *lt = strchr(fromVal, '<');
+      if (lt) {
+        char *gt = strchr(lt, '>');
+        if (gt) { *gt = '\0'; g_strlcpy(sender, lt + 1, sizeof(sender)); }
+      } else {
+        g_strlcpy(sender, fromVal, sizeof(sender));
+      }
+      free(fromVal);
+    }
+
+    int n = snprintf(fromLine, sizeof(fromLine), "From %s %s\r\n", sender, timebuf);
+    long writeLen = n;
+    file_write(tocH->refN, &writeLen, fromLine);
+
+    /* Write the message body */
+    writeLen = rawLen;
+    file_write(tocH->refN, &writeLen, raw);
+
+    /* Ensure trailing newline */
+    if (rawLen > 0 && raw[rawLen - 1] != '\n') {
+      writeLen = 2;
+      file_write(tocH->refN, &writeLen, "\r\n");
+    }
+
+    free(raw);
+    fetched++;
+    *gotSome = 1;
+
+    /* Delete from server if not leaving on server */
+    if (deleteFetched) {
+      crispy_pop3_dele(&pop, i);
+    }
+  }
+
+  g_print("CrispyCheckMail: fetched %d messages\n", fetched);
+
+  BoxFClose(tocH, true);
+
+  /* Rebuild TOC to pick up the new messages */
+  if (fetched > 0) {
+    char spec[PATH_MAX];
+    GetMailboxSpec(tocH, -1, spec);
+    g_print("CrispyCheckMail: rebuilding TOC from %s at offset %ld\n", spec, eof);
+    LineIOD lid;
+    int lineErr = OpenLine(spec, O_RDONLY, &lid);
+    g_print("CrispyCheckMail: OpenLine returned %d\n", lineErr);
+    if (lineErr == 0) {
+      if (SeekLine(eof, &lid) == 0) {
+        MSumType sum;
+        int sumCount = 0;
+        ReadSum(NULL, false, &lid, true); /* init */
+        while (ReadSum(&sum, false, &lid, true) == 0) {
+          sum.persId = CurPers->persId;
+          sum.popPersId = CurPers->persId;
+          SaveMessageSum(&sum, &tocH);
+          sumCount++;
+          g_print("CrispyCheckMail: ReadSum OK #%d from='%s' subj='%s'\n",
+                  sumCount, sum.from, sum.subj);
+        }
+        g_print("CrispyCheckMail: ReadSum done, added %d summaries\n", sumCount);
+      }
+      CloseLine(&lid);
+    }
+    TOCSetDirty(tocH, true);
+    WriteTOC(tocH);
+    g_print("CrispyCheckMail: TOC written, count=%d\n", tocH->count);
+
+    /* Hand off to delivery system */
+    if (InAThread()) {
+      g_print("CrispyCheckMail: calling RenameInTemp\n");
+      tocH = RenameInTemp(tocH);
+      g_print("CrispyCheckMail: RenameInTemp done, NeedToFilterIn=%d\n", NeedToFilterIn);
+    }
+  }
+
+  crispy_pop3_close(&pop);
+  return 0;
 }
 
 /************************************************************************
@@ -1329,24 +1732,48 @@ short SendTheQueue(TransStream stream, XferFlags flags) {
   }
   /* --- Connect via crispy SMTP --- */
   SmtpTransport crispyTp = crispy_transport_new();
+  setup_crispy_certs(&crispyTp, server);
   SmtpSession crispySmtp;
   crispy_smtp_init(&crispySmtp, crispyTp, "localhost");
 
+  /* Read SSL setting — per-personality if available, else global */
   SmtpSecurity crispySec = SMTP_PLAIN;
-  /* TODO: read SSL setting from personality */
+  {
+    extern bool GetCurPersAccount(PrefsAccount *acct);
+    PrefsAccount persAcct;
+    if (GetCurPersAccount(&persAcct) && persAcct.ssl_mode) {
+      if (persAcct.ssl_mode == 2) crispySec = SMTP_SSL;
+      else if (persAcct.ssl_mode == 1) crispySec = SMTP_STARTTLS;
+    } else {
+#ifdef ESSL
+      long sslPref = GetPrefLong(PREF_SSL_SMTP_SETTING);
+      if (sslPref & esslUseAltPort) crispySec = SMTP_SSL;
+      else if (sslPref) crispySec = SMTP_STARTTLS;
+#endif
+    }
+  }
 
-  g_print("SendTheQueue: [E] crispy connecting to %s:%ld\n", server, port);
+  g_print("SendTheQueue: [E] crispy connecting to %s:%ld sec=%d\n", server, port, crispySec);
   err = crispy_smtp_connect(&crispySmtp, server, (int)port, crispySec);
   g_print("SendTheQueue: [F] crispy connect returned err=%d\n", err);
 
   /* Authenticate if server supports it */
   if (!err && crispySmtp.caps.has_auth && *CurPers->password) {
-    char *user = CurPers->name; /* TODO: get SMTP username from personality */
+    /* SMTP auth user = POP username (same account), password from personality */
+    char smtpUser[256];
+    GetPOPInfo(smtpUser, NULL);
     char *pass = CurPers->password;
-    g_print("SendTheQueue: authenticating as %s\n", user);
-    err = crispy_smtp_auth_plain(&crispySmtp, user, pass);
-    if (err) err = crispy_smtp_auth_login(&crispySmtp, user, pass);
-    if (err) g_print("SendTheQueue: auth failed: %s\n", crispySmtp.last_reply);
+    g_print("SendTheQueue: authenticating as %s\n", smtpUser);
+
+    /* Try auth methods: CRAM-MD5 first (password not sent in clear),
+     * then PLAIN, then LOGIN */
+    err = crispy_smtp_auth_cram_md5(&crispySmtp, smtpUser, pass);
+    if (err) err = crispy_smtp_auth_plain(&crispySmtp, smtpUser, pass);
+    if (err) err = crispy_smtp_auth_login(&crispySmtp, smtpUser, pass);
+    if (err) {
+      g_print("SendTheQueue: auth failed: %s\n", crispySmtp.last_reply);
+      CurPers->password[0] = '\0';
+    }
   }
 
   // if using a relay personality, kill it now
@@ -1413,6 +1840,8 @@ short SendTheQueue(TransStream stream, XferFlags flags) {
         /*
          * actually send the message
          */
+        g_print("SendTheQueue: about to CrispySend sum[%d] offset=%ld len=%ld\n",
+                sumNum, tocH->sums[sumNum].offset, tocH->sums[sumNum].length);
         if (!(code =
                   (UUPCOut ? UUPCSendMessage(tocH, sumNum, fccList)
                            : CrispySendOneMessage(&crispySmtp, tocH, sumNum)))) {
@@ -1647,7 +2076,7 @@ short CheckForMail(TransStream stream, short *gotSome, XferFlags *flags) {
    * check mail
    */
   err = UUPCIn ? GetUUPCMail(true, gotSome)
-               : GetMyMail(stream, true, gotSome, flags);
+               : CrispyCheckMail(gotSome);
 
   if (*gotSome)
     RegisterSuccess(2);

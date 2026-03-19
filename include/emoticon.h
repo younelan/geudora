@@ -22,9 +22,7 @@ DAMAGE. */
 #include <gtk/gtk.h>
 #include <stdbool.h>
 
-/* Forward declarations */
-struct MyWindow;
-/* WindowPtr typedef removed — use GtkWidget * directly */
+#include "mailbox.h"
 
 /*
  * EmoInit - initialize the emoticon system.

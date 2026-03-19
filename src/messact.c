@@ -474,7 +474,7 @@ bool TransferMenuChoice(short menu, short item, TOCType *tocH, short sumNum,
 /* ============================================================
  * SetSubject - set the subject in a message summary
  * ============================================================ */
-void SetSubject(TOCType *tocH, short sumNum, unsigned char *sub) {
+void SetSubject(TOCType *tocH, short sumNum, char *sub) {
   unsigned char oldSubj[64];
   unsigned char title[256];
   MessHandle messH = tocH->sums[sumNum].messH;
@@ -510,7 +510,7 @@ void SetSubject(TOCType *tocH, short sumNum, unsigned char *sub) {
 /* ============================================================
  * SetSender - set the sender in a message summary
  * ============================================================ */
-void SetSender(TOCType *tocH, short sumNum, unsigned char *sender) {
+void SetSender(TOCType *tocH, short sumNum, char *sender) {
   unsigned char oldSender[64];
   unsigned char title[256];
   MessHandle messH = tocH->sums[sumNum].messH;
@@ -681,7 +681,7 @@ static int OpenAttLine(GtkWidget *pte, unsigned char *line, bool finderSelect,
 /* ============================================================
  * AttLine2Spec - get an FSSpec from an attachment line
  * ============================================================ */
-int AttLine2Spec(unsigned char *line, char * spec, bool wantToOpen) {
+int AttLine2Spec(char *line, char * spec, bool wantToOpen) {
   long fid = 0;
   int lineLen = line[0];
 
@@ -709,8 +709,8 @@ int AttLine2Spec(unsigned char *line, char * spec, bool wantToOpen) {
   }
 
   /* Find path separators (: for Mac, / for Unix) */
-  unsigned char *sep1 = NULL, *sep2 = NULL;
-  for (unsigned char *p = line + 1; p < line + lineLen; p++) {
+  char *sep1 = NULL, *sep2 = NULL;
+  for (char *p = line + 1; p < line + lineLen; p++) {
     if (*p == ':' || *p == '/') {
       if (!sep1) sep1 = p;
       else if (!sep2) { sep2 = p; break; }
@@ -757,7 +757,7 @@ int AttLine2Spec(unsigned char *line, char * spec, bool wantToOpen) {
 /* ============================================================
  * RelLine2Spec - get an FSSpec from a "related" line
  * ============================================================ */
-int RelLine2Spec(unsigned char *line, char * spec, uLong *cid,
+int RelLine2Spec(char *line, char * spec, uLong *cid,
                  uLong *relURL, uLong *absURL) {
   char cLine[256];
   int len = line[0];
@@ -1341,7 +1341,7 @@ static short SaveAsToOpenFileLo(short refN, MessHandle messH) {
 #define UW_ShortLine    ((uwPref & 16) == 0)
 #define UW_BlankLine    ((uwPref & 32) == 0)
 
-int UnwrapSave(unsigned char *text, long length, long offset, short refN) {
+int UnwrapSave(char *text, long length, long offset, short refN) {
   struct LI { int length, indent, quote, needReturn; };
   struct LI lines[2], *cur, *prev;
   int flip, c, begin, spaces;

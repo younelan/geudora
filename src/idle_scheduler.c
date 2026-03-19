@@ -51,8 +51,11 @@ static TOCType *GetNextDeliveryTOC(void) {
   TOCType *tocH = NULL;
   char bestName[64] = {0};
 
-  if (SubFolderSpec(DELIVERY_FOLDER, &deliverFolder))
+  if (SubFolderSpec(DELIVERY_FOLDER, &deliverFolder)) {
+    g_print("GetNextDeliveryTOC: SubFolderSpec failed\n");
     return NULL;
+  }
+  g_print("GetNextDeliveryTOC: folder='%s'\n", deliverFolder);
 
   dp = opendir(deliverFolder);
   if (!dp)
@@ -217,8 +220,11 @@ static void check_orphaned_deliveries(void) {
   struct dirent *entry;
   int count = 0;
 
-  if (SubFolderSpec(DELIVERY_FOLDER, &deliverFolder))
+  if (SubFolderSpec(DELIVERY_FOLDER, &deliverFolder)) {
+    g_print("IdleScheduler: check_orphaned SubFolderSpec failed\n");
     return;
+  }
+  g_print("IdleScheduler: check_orphaned folder='%s'\n", deliverFolder);
 
   dp = opendir(deliverFolder);
   if (!dp)

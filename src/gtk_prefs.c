@@ -685,39 +685,48 @@ int prefs_load_accounts(PrefsAccount *accounts, int max_accounts)
         return 0;
     }
     
-    for (int i = 0; i < max_accounts; i++) {
+    /* Personalities start at account_1 in INI (account_0 is ignored —
+     * dominant uses global prefs). Load into accounts[0], accounts[1], etc. */
+    for (int i = 1; i <= max_accounts; i++) {
         gchar *group = g_strdup_printf("account_%d", i);
-        
+
         if (!g_key_file_has_group(prefs_state.keyfile, group)) {
             g_free(group);
             break;
         }
-        
+
         gchar *val = prefs_get_string(group, "name", "");
-        strncpy(accounts[i].name, val, sizeof(accounts[i].name) - 1);
+        strncpy(accounts[count].name, val, sizeof(accounts[count].name) - 1);
         g_free(val);
-        
+
         val = prefs_get_string(group, "email", "");
-        strncpy(accounts[i].email, val, sizeof(accounts[i].email) - 1);
+        strncpy(accounts[count].email, val, sizeof(accounts[count].email) - 1);
         g_free(val);
-        
+
         val = prefs_get_string(group, "type", "IMAP");
-        strncpy(accounts[i].type, val, sizeof(accounts[i].type) - 1);
+        strncpy(accounts[count].type, val, sizeof(accounts[count].type) - 1);
         g_free(val);
-        
+
         val = prefs_get_string(group, "server", "");
-        strncpy(accounts[i].server, val, sizeof(accounts[i].server) - 1);
+        strncpy(accounts[count].server, val, sizeof(accounts[count].server) - 1);
         g_free(val);
-        
+
         val = prefs_get_string(group, "smtp_server", "");
-        strncpy(accounts[i].smtp_server, val, sizeof(accounts[i].smtp_server) - 1);
+        strncpy(accounts[count].smtp_server, val, sizeof(accounts[count].smtp_server) - 1);
         g_free(val);
-        
+
         val = prefs_get_string(group, "username", "");
-        strncpy(accounts[i].username, val, sizeof(accounts[i].username) - 1);
+        strncpy(accounts[count].username, val, sizeof(accounts[count].username) - 1);
         g_free(val);
-        
-        accounts[i].enabled = prefs_get_bool(group, "enabled", TRUE);
+
+        val = prefs_get_string(group, "real_name", "");
+        strncpy(accounts[count].real_name, val, sizeof(accounts[count].real_name) - 1);
+        g_free(val);
+
+        accounts[count].check_interval = prefs_get_int(group, "check_interval", 5);
+        accounts[count].ssl_mode = prefs_get_int(group, "ssl_mode", 0);
+        accounts[count].leave_on_server = prefs_get_bool(group, "leave_on_server", FALSE);
+        accounts[count].enabled = prefs_get_bool(group, "enabled", TRUE);
         
         count++;
         g_free(group);
@@ -742,16 +751,20 @@ void prefs_save_accounts(PrefsAccount *accounts, int num_accounts)
         g_free(group);
     }
     
-    /* Save new accounts */
+    /* Save new accounts — start at account_1 (account_0 reserved) */
     for (int i = 0; i < num_accounts; i++) {
-        gchar *group = g_strdup_printf("account_%d", i);
+        gchar *group = g_strdup_printf("account_%d", i + 1);
         
         prefs_set_string(group, "name", accounts[i].name);
+        prefs_set_string(group, "real_name", accounts[i].real_name);
         prefs_set_string(group, "email", accounts[i].email);
         prefs_set_string(group, "type", accounts[i].type);
         prefs_set_string(group, "server", accounts[i].server);
         prefs_set_string(group, "smtp_server", accounts[i].smtp_server);
         prefs_set_string(group, "username", accounts[i].username);
+        g_key_file_set_integer(prefs_state.keyfile, group, "check_interval", accounts[i].check_interval);
+        g_key_file_set_integer(prefs_state.keyfile, group, "ssl_mode", accounts[i].ssl_mode);
+        prefs_set_bool(group, "leave_on_server", accounts[i].leave_on_server);
         prefs_set_bool(group, "enabled", accounts[i].enabled);
         
         g_free(group);

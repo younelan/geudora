@@ -389,20 +389,19 @@ bool PasswordFilter(void *dgPtr, void *event, short *item) { return false; }
  * Ported from Mac: reads from INI prefs, fills C strings
  ************************************************************************/
 void GetPassStuff(char *persName, char *uName, char *hName) {
-  if (uName) {
-    gchar *u = prefs_get_string(PREFS_GROUP_CHECKING_MAIL, "pop_username", "");
-    strncpy((char *)uName, u, 127);
-    ((char *)uName)[127] = '\0';
-    g_free(u);
-  }
-  if (hName) {
-    gchar *h = prefs_get_string(PREFS_GROUP_CHECKING_MAIL, "pop_server", "");
-    strncpy((char *)hName, h, 127);
-    ((char *)hName)[127] = '\0';
-    g_free(h);
-  }
+  /* Use per-personality account settings via GetPOPInfo (which reads
+   * from the current personality's account) */
+  char user[256] = "", host[256] = "";
+  extern void GetPOPInfo(void *u, void *h);
+  GetPOPInfo(user, host);
+
+  if (uName) { strncpy((char *)uName, user, 127); ((char *)uName)[127] = '\0'; }
+  if (hName) { strncpy((char *)hName, host, 127); ((char *)hName)[127] = '\0'; }
   if (persName) {
-    strncpy((char *)persName, "Dominant", 63);
+    if (CurPers && CurPers->name[0])
+      strncpy((char *)persName, CurPers->name, 63);
+    else
+      strncpy((char *)persName, "Dominant", 63);
     ((char *)persName)[63] = '\0';
   }
 }
@@ -851,6 +850,8 @@ char *GetRString(char *theString, short theIndex) {
       if (theIndex == start->id && start->persId == curPersId) {
         g_strlcpy((char *)theString, (const char *)start->string, 256);
         start->used = ticks;
+        if (theIndex == 11311 || theIndex == 7120)
+          g_print("GetRString CACHE HIT: id=%d value='%s' persId=%lu\n", theIndex, theString, curPersId);
         return (theString);
       } else if (oldest) {
         if (!start->id) {
@@ -869,7 +870,12 @@ char *GetRString(char *theString, short theIndex) {
   /*
    * not in the cache.  Grab it.
    */
+  if (theIndex == 11311 || theIndex == 7120)
+    g_print("GetRString CACHE MISS: id=%d dontRead=%d dontWrite=%d NoDominant=%d StringCache=%p\n",
+            theIndex, dontReadCache, dontWriteCache, NoDominant, (void*)StringCache);
   GetRStringLo(theString, theIndex, CurPers);
+  if (theIndex == 11311 || theIndex == 7120)
+    g_print("GetRString AFTER LOOKUP: id=%d value='%s'\n", theIndex, theString);
 
   /*
    * create cache
@@ -886,7 +892,7 @@ char *GetRString(char *theString, short theIndex) {
    * cache string
    */
   if (StringCache && !dontWriteCache &&
-      replaceOld)
+      replaceOld && theString[0])  /* don't cache empty results */
   {
     g_strlcpy((char *)StringCache[oldSpot].string, (const char *)theString, 256);
     StringCache[oldSpot].id = theIndex;
@@ -918,14 +924,15 @@ void SCClear(short theId) {
  * return a string from an STR# resource
  **********************************************************************/
 char *GetRStringLo(char *theString, int theIndex, PersHandle forPers) {
-  /* GTK Port: look up from compiled-in string table - now returns C string */
+  /* GTK Port: look up from compiled-in string table */
+  (void)forPers;
   theString[0] = '\0';
-  if (!NoDominant || CurPers == PersList) {
-    const char *s = string_table_lookup((uint16_t)theIndex);
-    if (s) {
-      g_strlcpy((char *)theString, s, 256);
-    }
+  const char *s = string_table_lookup((uint16_t)theIndex);
+  if (s) {
+    g_strlcpy((char *)theString, s, 256);
   }
+  if (theIndex == 11311 || theIndex == 7120)
+    g_print("GetRStringLo: id=%d result='%s' ptr=%p\n", theIndex, theString, s);
   return (theString);
 }
 

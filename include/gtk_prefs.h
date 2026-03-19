@@ -80,12 +80,16 @@ const char* prefs_get_mailboxes_path(void);
 
 /* Account management */
 typedef struct {
-    char name[256];
-    char email[256];
-    char type[256];
-    char server[256];
-    char smtp_server[256];
-    char username[256];
+    char name[256];        /* personality/account name */
+    char real_name[256];   /* sender display name */
+    char email[256];       /* return address */
+    char type[256];        /* "POP" or "IMAP" */
+    char server[256];      /* POP/IMAP server */
+    char smtp_server[256]; /* SMTP server */
+    char username[256];    /* login username */
+    int check_interval;    /* minutes, 0=manual only */
+    int ssl_mode;          /* 0=off, 1=required, 2=alt port */
+    gboolean leave_on_server;
     gboolean enabled;
 } PrefsAccount;
 

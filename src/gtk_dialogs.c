@@ -155,13 +155,28 @@ long GetPrefLong(short prefId) {
     case PREF_INTERVAL:
       return (long)prefs_get_int(PREFS_GROUP_CHECKING_MAIL, "check_interval", 5);
     case PREF_POP_MODE:
-      /* Default to UIDL mode (3) — modern POP3 servers all support UIDL.
-         The old LAST/STATUS modes mark already-accessed messages as read,
-         which prevents fetching on servers where another client accessed them. */
       {
         long val = g_key_file_get_integer(prefs_keyfile, "preferences", "pref_69", NULL);
         return val ? val : 3; /* popRUIDL = 3 */
       }
+    case PREF_SSL_POP_SETTING: {
+      int mode = prefs_get_int(PREFS_GROUP_SSL, "ssl_pop_mode", 0);
+      if (mode == 2) return 0x04;  /* esslUseAltPort */
+      if (mode == 1) return 0x02;  /* esslUseTLS */
+      return 0;
+    }
+    case PREF_SSL_SMTP_SETTING: {
+      int mode = prefs_get_int(PREFS_GROUP_SSL, "ssl_smtp_mode", 0);
+      if (mode == 2) return 0x04;
+      if (mode == 1) return 0x02;
+      return 0;
+    }
+    case PREF_SSL_IMAP_SETTING: {
+      int mode = prefs_get_int(PREFS_GROUP_SSL, "ssl_imap_mode", 0);
+      if (mode == 2) return 0x04;
+      if (mode == 1) return 0x02;
+      return 0;
+    }
     default:
       break;
   }
@@ -297,12 +312,25 @@ bool PrefIsSet(short prefId) {
       return (bool)prefs_get_bool(PREFS_GROUP_GETTING_ATTENTION, "show_task_progress", TRUE);
     case PREF_AUTO_EMPTY:
       return (bool)prefs_get_bool(PREFS_GROUP_MISCELLANEOUS, "empty_trash_on_quit", FALSE);
-    case PREF_SSL_POP_SETTING:
-      return (bool)prefs_get_bool(PREFS_GROUP_SSL, "use_ssl", FALSE);
-    case PREF_SSL_SMTP_SETTING:
-      return (bool)prefs_get_bool(PREFS_GROUP_SSL, "use_ssl", FALSE);
-    case PREF_SSL_IMAP_SETTING:
-      return (bool)prefs_get_bool(PREFS_GROUP_SSL, "use_ssl", FALSE);
+    case PREF_SSL_POP_SETTING: {
+      /* 0=off, 1=STLS/STARTTLS, 2=alt port (implicit SSL) */
+      int mode = prefs_get_int(PREFS_GROUP_SSL, "ssl_pop_mode", 0);
+      if (mode == 2) return 0x04;  /* esslUseAltPort */
+      if (mode == 1) return 0x02;  /* esslUseTLS */
+      return 0;
+    }
+    case PREF_SSL_SMTP_SETTING: {
+      int mode = prefs_get_int(PREFS_GROUP_SSL, "ssl_smtp_mode", 0);
+      if (mode == 2) return 0x04;
+      if (mode == 1) return 0x02;
+      return 0;
+    }
+    case PREF_SSL_IMAP_SETTING: {
+      int mode = prefs_get_int(PREFS_GROUP_SSL, "ssl_imap_mode", 0);
+      if (mode == 2) return 0x04;
+      if (mode == 1) return 0x02;
+      return 0;
+    }
     default:
       break;
   }

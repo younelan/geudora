@@ -138,13 +138,7 @@ int ReallyDoAnAlert(int templ, int which);
 #define fInited 0x0100 // Mac Finder flag: file has been initialized
 #endif
 
-// Mac void *lock/unlock stubs - no-ops in standard C
-#ifndef LDRef
-#define h (*(h))
-#endif
-#ifndef UL
-#define  ((void)0)
-#endif
+/* LDRef/UL (Mac Handle lock/unlock) — removed, not used */
 /* GetHandleSize_ REMOVED */
 
 #define FILL(pb, name, vRef, dirId)
@@ -516,12 +510,7 @@ short FlushVol(unsigned char *name, short vRefNum) {
    same prototype as declared in the headers. */
 short PBCreateFileIDRefSync(HParmBlkPtr pb) { (void)pb; return 0; }
 short PBResolveFileIDRefSync(HParmBlkPtr pb) { (void)pb; return 0; }
-char *FileUtilGetRString(char *name, short id) {
-  if (name)
-    *name = 0;
-  return name;
-}
-#define GetRString FileUtilGetRString
+/* FileUtilGetRString stub removed — use real GetRString from util.c */
 
 /* Extra CtoPCpy removed */
 /* Error handling stubs - actual implementations in error_handlers.c or
@@ -2699,27 +2688,33 @@ int SubFolderSpec(short nameId, char *spec) {
     return 0;
   }
 
-  // search for folder in cache
+  // search for folder in cache — skip empty entries
   if (specStack)
     for (i = 0; i < specStack->elCount; i++) {
       StackItem(&cSpec, i, specStack);
-      if (cSpec.count == nameId) {
+      if (cSpec.count == nameId && cSpec.spec[0]) {
         g_strlcpy(spec, cSpec.spec, PATH_MAX);
         return 0;
       }
     }
 
   // not in cache.  Go look for it
-  err = spec_for(Root.path, (const char *)GetRString(string, nameId), spec);
+  GetRString(string, nameId);
+  g_print("SubFolderSpec: nameId=%d string='%s' Root.path='%s'\n", nameId, string, Root.path);
+  if (!string[0]) {
+    spec[0] = '\0';
+    return ENOENT;
+  }
+  err = spec_for(Root.path, (const char *)string, spec);
   if (err == ENOENT) {
     /* Directory doesn't exist — create it */
     g_mkdir_with_parents(spec, 0755);
-    err = spec_for(Root.path, (const char *)GetRString(string, nameId), spec);
+    err = spec_for(Root.path, (const char *)string, spec);
   }
   if (!err) {
     IsAlias(spec, spec);
 
-    /* clear filename */ { char *_sn = strrchr(spec, '/'); if (_sn) _sn[1] = '\0'; else spec[0] = '\0'; }
+    /* spec is the directory path — no filename to strip */
 
     /* cache it */
     if (specStack || !StackInit(sizeof(CSpec), &specStack)) {
@@ -2946,14 +2941,9 @@ int SpecMove(char *moveMe, char *moveTo) {
  * SpecMoveAndRename - move a file from one place to another, and rename
  ************************************************************************/
 int SpecMoveAndRename(char *moveMe, char *moveTo) {
-  int err;
-
-  if ((err = SpecMove(moveMe, moveTo)))
-    return err;
-
-  err = MyFSpRename(moveMe, pbasename(moveTo));
-
-  return err;
+  /* On POSIX, g_rename in SpecMove handles both move and rename atomically.
+   * The old Mac two-step (CatMove + FSpRename) is not needed. */
+  return SpecMove(moveMe, moveTo);
 }
 
 /************************************************************************

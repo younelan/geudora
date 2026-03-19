@@ -18,7 +18,36 @@ DAMAGE. */
 
 #include "acap.h"
 #include "gtk_prefs.h"
+#include "schizo.h"
+#include "Globals.h"
 #include <string.h>
+#include <stdio.h>
+
+/************************************************************************
+ * GetCurPersAccount - find the PrefsAccount for the current personality.
+ * Returns true if found, fills acct. For dominant (persId=0), returns
+ * account_0. For others, matches by name.
+ ************************************************************************/
+bool GetCurPersAccount(PrefsAccount *acct) {
+  if (!acct) return false;
+
+  /* Dominant personality uses global prefs, not account_N */
+  if (!CurPers || CurPers->persId == 0 || CurPers == PersList)
+    return false;
+
+  /* Non-dominant: find matching account by name */
+  PrefsAccount accounts[16];
+  int n = prefs_load_accounts(accounts, 16);
+
+  for (int i = 0; i < n; i++) {
+    if (strcmp(accounts[i].name, CurPers->name) == 0) {
+      *acct = accounts[i];
+      return true;
+    }
+  }
+
+  return false; /* not found — caller uses global prefs */
+}
 
 /************************************************************************
  * ACAP STUB IMPLEMENTATION
@@ -66,6 +95,15 @@ void GetPOPInfo(void *user, void *host) {
     char *u = (char *)user;
     char *h = (char *)host;
 
+    /* Try per-personality account first */
+    PrefsAccount acct;
+    if (GetCurPersAccount(&acct) && acct.server[0]) {
+      if (u) { strncpy(u, acct.username, 255); u[255] = '\0'; }
+      if (h) { strncpy(h, acct.server, 255); h[255] = '\0'; }
+      return;
+    }
+
+    /* Fallback to global prefs */
     gchar *username = prefs_get_string(PREFS_GROUP_CHECKING_MAIL, "pop_username", "");
     gchar *server = prefs_get_string(PREFS_GROUP_CHECKING_MAIL, "pop_server", "");
 
@@ -90,6 +128,14 @@ void GetPOPInfo(void *user, void *host) {
 char *GetPOPPref(char *dest) {
     if (!dest) return dest;
 
+    /* Try per-personality account */
+    PrefsAccount acct;
+    if (GetCurPersAccount(&acct) && acct.username[0] && acct.server[0]) {
+      snprintf(dest, 256, "%s@%s", acct.username, acct.server);
+      return dest;
+    }
+
+    /* Fallback to global */
     gchar *username = prefs_get_string(PREFS_GROUP_CHECKING_MAIL, "pop_username", "");
     gchar *server = prefs_get_string(PREFS_GROUP_CHECKING_MAIL, "pop_server", "");
 
