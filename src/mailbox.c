@@ -65,7 +65,7 @@ extern void MBOpenFolder(void *hStringList, bool isIMAP);
 #include "boxact.h"
 #include "imapmailboxes.h" /* For IsIMAPCacheFolder */
 #include "threading.h"
-int AddMesgError(TOCType * tocH, short sum, unsigned char *errorStr,
+int AddMesgError(TOCType * tocH, short sum, char *errorStr,
                  int errorCode);
 #include "message.h"  /* For MyWindow struct */
 #include "prefdefs.h" /* For PREF_THREADING_OFF */
@@ -127,7 +127,7 @@ typedef struct MenuAndScore *MenuAndScoreHandle;
 /* BoxCenterSelection declared in boxact.h */
 
 int BoxMatchMenuItems(unsigned char *name, MenuAndScoreHandle *mashPtr,
-                      int score());
+                      int score(), int *outCount);
 int BoxMatchMenuItemsInMenu(MenuHandle mh, AccuPtr a, unsigned char *name,
                             int score());
 int BoxMatchMenuItemsIn1Menu(MenuHandle mh, AccuPtr a, unsigned char *name,
@@ -288,7 +288,7 @@ int BoxMatchMenuItemsIn1Menu(MenuHandle mh, AccuPtr a, unsigned char *name,
                              int score());
 int CompareMAS(MenuAndScorePtr mas1, MenuAndScorePtr mas2);
 void SwapMAS(MenuAndScorePtr mas1, MenuAndScorePtr mas2);
-static void ProcessIMAPChanges(void *sumList, TOCType * toc,
+static void ProcessIMAPChanges(void *sumList, int sumCount, TOCType * toc,
                                IMAPUpdateType message);
 static int IMAPRecvLine(TransStream stream, unsigned char * buffer, long *size);
 void DeleteIMAPSum(TOCType * tocH, int sumNum);
@@ -376,7 +376,7 @@ int DeleteMesgError(TOCType * tocH, short sum) {
  * AddMesgError
  ************************************************************************/
 
-int AddMesgError(TOCType * tocH, short sum, unsigned char *errorStr,
+int AddMesgError(TOCType * tocH, short sum, char *errorStr,
                  int errorCode) {
   int err = 0;
   (void)err; /* Error ignored according to legacy comment below */
@@ -3033,7 +3033,7 @@ void AddBoxCountItem(short item, short vRef, long dirId) {
  **********************************************************************/
 bool IsMailboxChoice(short menu, short item) {
   MenuHandle mh;
-  short levels = (BoxMap ? malloc_size(BoxMap) / sizeof(*(BoxMap)) : 0);
+  short levels = (BoxMap ? BoxMapSize / sizeof(*(BoxMap)) : 0);
 
   if (menu == TRANSFER_MENU || menu == MAILBOX_MENU ||
       (g16bitSubMenuIDs
@@ -3208,8 +3208,9 @@ int AppendXferSelection(PETEHandle pte, MenuHandle contextMenu) {
     if (*CollapseLWSP(PeteSelectedString(s, pte)))
       if (strlen((char *)s) < 31)
         if (IsEnabled(TRANSFER_MENU, 0))
-          if (!BoxMatchMenuItems(s, &mash, BoxMatchScore)) {
-            short n = (mash ? malloc_size(mash) / sizeof(*(mash)) : 0);
+          { int mashCount = 0;
+          if (!BoxMatchMenuItems(s, &mash, BoxMatchScore, &mashCount)) {
+            short n = mashCount;
             short i = GetRLong(MAX_CONTEXT_FILE_CHOICES);
 
             n = MIN(n, i);
@@ -3255,6 +3256,7 @@ int AppendXferSelection(PETEHandle pte, MenuHandle contextMenu) {
               mash = NULL;
             }
           }
+          } /* mashCount scope */
 
   return err;
 }
@@ -3324,12 +3326,13 @@ int BoxSpecByName(char * spec, char *name) {
  * BoxMatchMenuItems - Find a list of mailboxes that more or less match a name
  ************************************************************************/
 int BoxMatchMenuItems(unsigned char *name, MenuAndScoreHandle *mashPtr,
-                      int score()) {
+                      int score(), int *outCount) {
   MenuHandle mh = GetMHandle(MAILBOX_MENU);
   Accumulator a;
   int err;
 
   Zero(a);
+  if (outCount) *outCount = 0;
 
   err = BoxMatchMenuItemsInMenu(mh, &a, name, score);
 
@@ -3338,8 +3341,10 @@ int BoxMatchMenuItems(unsigned char *name, MenuAndScoreHandle *mashPtr,
   } else if (a.offset) {
     AccuTrim(&a);
     *mashPtr = (MenuAndScoreHandle)a.data;
+    int count = a.offset / sizeof(MenuAndScore);
+    if (outCount) *outCount = count;
     QuickSort((unsigned char *)(*(a.data)), sizeof(MenuAndScore), 0,
-              a.offset / sizeof(MenuAndScore) - 1, CompareMAS, SwapMAS);
+              count - 1, CompareMAS, SwapMAS);
     // a.data is char* (Accumulator field), not a Handle — UL() removed
   }
 
@@ -3660,9 +3665,9 @@ bool IsMailbox(char * spec) {
   /*
    * is it an envelope?
    */
-  count = malloc_size(data) - 1;
-  for (spot = (unsigned char *)(*data);
-       *spot != '\015' & spot < (unsigned char *)(*data) + count; spot++)
+  count = strlen((char *)data);
+  for (spot = (unsigned char *)data;
+       *spot != '\015' && spot < (unsigned char *)data + count; spot++)
     ;
   spot[1] = 0;
   from = IsFromLine(*data);
@@ -3960,7 +3965,7 @@ error:
 /**********************************************************************
  * ProcessIMAPChanges - process IMAP adds, deletes, or updates
  **********************************************************************/
-static void ProcessIMAPChanges(void *sumList, TOCType * toc,
+static void ProcessIMAPChanges(void *sumList, int sumCount, TOCType * toc,
                                IMAPUpdateType message) {
   short count;
   MSumPtr pSum;
@@ -3989,15 +3994,13 @@ static void ProcessIMAPChanges(void *sumList, TOCType * toc,
   // As this deals with local cached message only, a best shot approach should
   // suffice
   if (message == kDoCopy) {
-    count = malloc_size(sumList) / sizeof(UIDCopyStruct);
+    count = sumCount;
     for (pCopy = (UIDCopyPtr)sumList; count--; pCopy++) {
       toTocH = TOCBySpec(&(pCopy->toSpec));
 
       if (toTocH && pCopy->hOldSums && pCopy->hNewUIDs) {
-        numMessages = malloc_size(pCopy->hOldSums) /
-                sizeof(MSumType);
-        numUidResponses = malloc_size(pCopy->hNewUIDs) /
-              sizeof(long);
+        numMessages = pCopy->hOldSumsCount;
+        numUidResponses = pCopy->hNewUIDsCount;
 
         for (j = 0; j < numUidResponses; j++) {
           newUid = ((long *)(pCopy->hNewUIDs))[j];
@@ -4021,7 +4024,7 @@ static void ProcessIMAPChanges(void *sumList, TOCType * toc,
     goto done;
   }
 
-  count = malloc_size(sumList) / sizeof(MSumType);
+  count = sumCount;
   for (pSum = (MSumPtr)sumList; count--; pSum++) {
     bool found;
 
@@ -4231,12 +4234,14 @@ int UpdateIMAPMailbox(TOCType * toc) {
   //	Check for changes to TOC summaries
   //
 
-  if (IMAPDelivery(toc, &toAdd, &toUpdate, &toDelete, &toCopy, &filter,
-                   &results, &mbox, &checkAttachments)) {
+  { int addCount = 0, updateCount = 0, deleteCount = 0, copyCount = 0;
+  if (IMAPDelivery(toc, &toAdd, &addCount, &toUpdate, &updateCount,
+                   &toDelete, &deleteCount, &toCopy, &copyCount,
+                   &filter, &results, &mbox, &checkAttachments)) {
     //	Install IMAP summary changes
 
     // process copies first.  Deletes could step on them later.
-    ProcessIMAPChanges(toCopy, toc, kDoCopy);
+    ProcessIMAPChanges(toCopy, copyCount, toc, kDoCopy);
 
     if (toDelete == MSUM_DELETE_ALL) {
       //	delete everything
@@ -4244,12 +4249,12 @@ int UpdateIMAPMailbox(TOCType * toc) {
         DeleteIMAPSum(toc, sumNum);
     } else {
       if (checkAttachments)
-        ProcessIMAPChanges(toDelete, toc, kDoDeleteAttachments);
-      ProcessIMAPChanges(toDelete, toc, kDoDelete);
+        ProcessIMAPChanges(toDelete, deleteCount, toc, kDoDeleteAttachments);
+      ProcessIMAPChanges(toDelete, deleteCount, toc, kDoDelete);
     }
 
-    ProcessIMAPChanges(toAdd, toc, kDoAdd);
-    ProcessIMAPChanges(toUpdate, toc, kDoUpdate);
+    ProcessIMAPChanges(toAdd, addCount, toc, kDoAdd);
+    ProcessIMAPChanges(toUpdate, updateCount, toc, kDoUpdate);
 
     // if we succeeded ...
     if (mbox) {
@@ -4275,6 +4280,7 @@ int UpdateIMAPMailbox(TOCType * toc) {
       }
     }
   }
+  } /* count scope */
 
   //
   //	move downloaded messages from their spool file to the mailbox

@@ -667,13 +667,12 @@ void CompUnattach(MyWindowPtr win)
  *
  * Original: compact.c:502-515
  ************************************************************************/
-bool InTranslator(TransInfoHandle translators, long id)
+bool InTranslator(TransInfoHandle translators, int transCount, long id)
 {
 	if (!translators)
 		return false;
 
-	long size = malloc_size(translators);
-	short count = size / sizeof(TransInfo);
+	short count = transCount;
 	for (short i = 0; i < count; i++) {
 		if (translators[i].id == id)
 			return true;
@@ -695,10 +694,7 @@ int AddMessTranslator(MessHandle messH, long which, void *properties)
 	if (which == -1)
 		return -1;
 
-	if (messH->hTranslators)
-		n = malloc_size(messH->hTranslators) / sizeof(TransInfo);
-	else
-		n = 0;
+	n = messH->hTranslatorsCount;
 
 	if (!n) {
 		TransInfoHandle localHandle = (TransInfoHandle)malloc(sizeof(TransInfo));
@@ -729,10 +725,7 @@ int RemoveMessTranslator(MessHandle messH, long which)
 	short n, i;
 	long id = ETLIconToID(which);
 
-	if (messH->hTranslators)
-		n = malloc_size(messH->hTranslators) / sizeof(TransInfo);
-	else
-		n = 0;
+	n = messH->hTranslatorsCount;
 
 	for (i = 0; i < n; i++) {
 		if (messH->hTranslators[i].id == id) {

@@ -119,6 +119,7 @@ long gManualFilteringUnderway = false;
 // global list of changes needed to be made to
 // POP mailboxes
 IMAPAppendHandle gSpoolData = nil;
+int gSpoolDataCount = 0;
 void *bgIMAPDownloadNode = nil;
 #ifndef kFakeAppType
 #ifndef kFakeAppType
@@ -1882,24 +1883,16 @@ int SaveMinimalHeader(MAILSTREAM *stream) {
 
       // stick the summary into the sum list
       dState = 0 /* HGetState removed */;
-      if (delivery->ta) {
-        // Calculate current size using
-        // InlineGetHandleSize
-        offset = malloc_size(delivery->ta);
-        void *newData = realloc(delivery->ta, offset + sizeof(MSumType));
+      offset = delivery->taCount * sizeof(MSumType);
+      { void *newData = realloc(delivery->ta, offset + sizeof(MSumType));
         if (!newData) {
-          err = ENOMEM;
-          WarnUser(MEM_ERR, err);
+          WarnUser(MEM_ERR, ENOMEM);
           goto done;
         }
-      } else {
-        delivery->ta = malloc(sizeof(MSumType));
-        if (!delivery->ta) {
-          WarnUser(MEM_ERR, 0);
-          goto done;
-        }
+        delivery->ta = newData;
       }
       memmove((char *)delivery->ta + offset, &sum, sizeof(MSumType));
+      delivery->taCount++;
     }
   }
 
@@ -2233,8 +2226,11 @@ void *UIDNodeList2Handle(UIDNodeHandle *uidList) {
  *MailboxNodeHandle of the mailbox we updated
  *when finished.
  ************************************************************************/
-bool IMAPDelivery(TOCType * inToc, void **toAdd, void **toUpdate,
-                  void **toDelete, void **toCopy, bool *filter,
+bool IMAPDelivery(TOCType * inToc, void **toAdd, int *toAddCount,
+                  void **toUpdate, int *toUpdateCount,
+                  void **toDelete, int *toDeleteCount,
+                  void **toCopy, int *toCopyCount,
+                  bool *filter,
                   IMAPSResultHandle *results, MailboxNodeHandle *mbox,
                   bool *checkAttachments) {
   bool messagesWaiting = false;
@@ -2250,13 +2246,13 @@ bool IMAPDelivery(TOCType * inToc, void **toAdd, void **toUpdate,
   // loop through list of deliveries
   while (node) {
     dState = 0 /* HGetState removed */;
-    if ((node->aborted == false) & (SameTOC(inToc, node->toc))) {
+    if ((node->aborted == false) && (SameTOC(inToc, node->toc))) {
       // grab the lists of summaries built so
       // far
-      *toAdd = node->ta;
-      *toUpdate = node->tu;
-      *toDelete = node->td;
-      *toCopy = node->tc;
+      *toAdd = node->ta;      if (toAddCount) *toAddCount = node->taCount;
+      *toUpdate = node->tu;  if (toUpdateCount) *toUpdateCount = node->tuCount;
+      *toDelete = node->td;  if (toDeleteCount) *toDeleteCount = node->tdCount;
+      *toCopy = node->tc;    if (toCopyCount) *toCopyCount = node->tcCount;
       *results = node->results;
       if (checkAttachments)
         *checkAttachments = node->cleanupAttachments;
@@ -3851,7 +3847,7 @@ int IMAPTransferMessagesFromSearchWindow(TOCType * fromTocH, TOCType * toTocH,
 
         // make a handle containing the
         // messages to transfer
-        numIds = malloc_size(ids) / sizeof(long);
+        numIds = curT->ids.offset / sizeof(short);
         numToFetch = 0;
 
         for (i = 0; i < numIds; i++) {
@@ -4922,7 +4918,7 @@ int DoTransferMessagesToServer(TOCType * toTocH, IMAPAppendHandle spoolData,
   MailboxNodeHandle toBox = nil;
   IMAPStreamPtr imapStream = nil;
   char toUser[256], toHost[256];
-  short numMessages = malloc_size(spoolData) / sizeof(IMAPAppendStruct);
+  short numMessages = gSpoolDataCount;
   short count;
   char progressMessage[256];
   // unused vars removed
@@ -5082,7 +5078,7 @@ done:
  ************************************************************************/
 void UpdatePOPMailboxes(void) {
   short numMessages =
-      gSpoolData ? malloc_size(gSpoolData) / sizeof(IMAPAppendStruct) : 0;
+      gSpoolDataCount;
   short delSum;
   TOCType * tocH;
 
@@ -5237,17 +5233,11 @@ bool CopyMessages(IMAPStreamPtr imapStream, MailboxNodeHandle mbox, GArray *uids
           if (node) {
             // Allocate a new UIDPLUS response
             // item in the delivery node
-            if (node->tc == NULL)
-              node->tc = calloc(1,sizeof(UIDCopyStruct));
-            else {
-              // some copies are already
-              // pending
-              numCopies = malloc_size(node->tc);
-              SetHandleBig_(node->tc,
-                            (numCopies + 1) * sizeof(UIDCopyStruct));
+            numCopies = node->tcCount;
+            { void *_p = realloc(node->tc, (numCopies + 1) * sizeof(UIDCopyStruct));
+              if (_p) { node->tc = _p; memset((char *)_p + numCopies * sizeof(UIDCopyStruct), 0, sizeof(UIDCopyStruct)); }
             }
-            if (0 != 0)
-              free(node->tc);
+            node->tcCount = numCopies + 1;
 
             // Store the interesting bits about
             // this copy
@@ -5513,14 +5503,14 @@ void SwapUID(unsigned long *uid1, unsigned long *uid2) {
  ************************************************************************/
 void SortUIDListHandle(void *toSort) {
   short count = 0;
-  size_t toSort_sz = malloc_size(toSort);
+  size_t toSort_sz = count * sizeof(unsigned long);
   unsigned long realBig = REAL_BIG;
 
-  count = malloc_size(toSort) / sizeof(unsigned long);
+  /* count already set */;
   toSort = buf_append(toSort, &toSort_sz, &realBig, sizeof(unsigned long));
   QuickSort((void *)toSort, sizeof(unsigned long), 0, count - 1,
             (void *)UIDListCompare, (void *)SwapUID);
-  SetHandleBig_(toSort, count * sizeof(unsigned long));
+  { void *_p = realloc(toSort, count * sizeof(unsigned long)); if (_p) toSort = _p; }
 }
 
 /************************************************************************
@@ -5550,6 +5540,7 @@ int UpdateLocalSummaries(TOCType * fromTocH, GArray *uids, bool undelete,
       if (expunge) {
         state = 0 /* HGetState removed */;
         node->td = malloc(numUids * sizeof(MSumType));
+        node->tdCount = numUids;
         if (node->td) {
           Zero(sum);
 
@@ -5574,6 +5565,7 @@ int UpdateLocalSummaries(TOCType * fromTocH, GArray *uids, bool undelete,
       else {
         state = 0 /* HGetState removed */;
         node->tu = malloc(numUids * sizeof(MSumType));
+        node->tuCount = numUids;
         if (node->tu) {
           Zero(sum);
 
@@ -7152,7 +7144,7 @@ unsigned long DoDownloadIMAPAttachments(FSSpecHandle attachments,
   // iterate through the list of stubs to
   // download
   for (attachCount = 0;
-       (attachCount < (malloc_size(attachments) / sizeof(FSSpec))) &&
+       (attachCount < (malloc_size(attachments) / PATH_MAX)) &&
        !CommandPeriod;
        attachCount++) {
     g_strlcpy(stubSpec, ((char *)attachments) + attachCount * sizeof(FSSpec), sizeof(stubSpec));
@@ -8139,7 +8131,7 @@ bool RedoIMAPAttachmentIcons(MyWindowPtr win, PETEHandle previewPte,
   if (!attachSpecs)
     return (false);
 
-  attachCount = malloc_size(attachSpecs) / sizeof(FSSpec);
+  attachCount = malloc_size(attachSpecs) / PATH_MAX;
   if (!attachCount)
     return (false);
 
@@ -9248,9 +9240,8 @@ void BuildSearchResults(DeliveryNodeHandle delivery, UIDNodeHandle results) {
         numResults++;
       state = 0 /* HGetState removed */;
       if (delivery->results) {
-        offset = malloc_size(delivery->results);
-        SetHandleBig_(delivery->results,
-                      offset + (numResults * sizeof(IMAPSResultStruct)));
+        offset = delivery->resultsSize;
+        { void *_p = realloc(delivery->results, offset + (numResults * sizeof(IMAPSResultStruct))); if (_p) delivery->results = _p; }
         if ((err = 0)) {
           WarnUser(MEM_ERR, err);
           return;
@@ -10510,7 +10501,7 @@ int QueueMessFlagChange(TOCType * tocH, short sumNum, StateEnum state,
         short numChanges = 0;
         LocalFlagChangePtr curFlags;
 
-        queuedFlagsSize = malloc_size(mb->queuedFlags);
+        queuedFlagsSize = mb->queuedFlagsCount * sizeof(LocalFlagChangeStruct);
         numChanges = queuedFlagsSize / sizeof(LocalFlagChangeStruct);
 
         while (numChanges > 0) {
@@ -10530,10 +10521,10 @@ int QueueMessFlagChange(TOCType * tocH, short sumNum, StateEnum state,
         // grow the queued flag handle
         if (mb->queuedFlags == nil) {
           queuedFlagsSize = sizeof(LocalFlagChangeStruct);
-          mb->queuedFlags = NewZH(LocalFlagChangeStruct);
+          mb->queuedFlags = calloc(1, sizeof(LocalFlagChangeStruct));
           err = 0;
         } else {
-          oldFlagSize = malloc_size(mb->queuedFlags);
+          oldFlagSize = mb->queuedFlagsCount * sizeof(LocalFlagChangeStruct);
           queuedFlagsSize = oldFlagSize + sizeof(LocalFlagChangeStruct);
           mb->queuedFlags = realloc(mb->queuedFlags, queuedFlagsSize);
           err = 0;
@@ -10743,7 +10734,7 @@ int UpdateMessFlags(IMAPStreamPtr imapStream, MailboxNodeHandle mailbox,
     // processed them while we were waiting for
     // the lock.
     if ((mailbox->queuedFlags != nil) &&
-        ((queuedFlagsSize = malloc_size(mailbox->queuedFlags)) !=
+        ((queuedFlagsSize = mailbox->queuedFlagsCount * sizeof(LocalFlagChangeStruct)) !=
          0)) {
       // now update the flags
 
@@ -11027,7 +11018,7 @@ bool PendingMessFlagChange(unsigned long uid, MailboxNodeHandle mailbox) {
     return (false);
 
   if (mailbox->queuedFlags) {
-    queuedFlagsSize = malloc_size(mailbox->queuedFlags);
+    queuedFlagsSize = mailbox->queuedFlagsCount * sizeof(LocalFlagChangeStruct);
     if (queuedFlagsSize > 0) {
       numChanges = queuedFlagsSize / sizeof(LocalFlagChangeStruct);
       while (numChanges & !result) {

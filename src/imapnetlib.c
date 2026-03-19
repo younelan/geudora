@@ -35,18 +35,25 @@ ADVISED OF THE POSSIBILITY OF SUCH DAMAGE. */
  **********************************************************************/
 #include "imapnetlib.h"
 #include "imapdownload.h"
+#include "fileutil.h"
 #include "util.h"
 #include "threading.h"
 #include <stdlib.h>
 #include <string.h>
+#ifndef _WIN32
 #include <unistd.h>
+#endif
 #define WarnUser(c,e)
 #define MEM_ERR 0
+#ifndef nil
 #define nil 0
+#endif
 /* MyFSClose is implemented in fileutil.c */
 #define IMAP_PORT 0
 #define GetPOPInfoLo(u,h,p)
+#ifndef Zero
 #define Zero(x)
+#endif
 #define IMAP_INBOX_NAME 0
 /* PtoCcpy: use the global definition (strcpy) */
 #define PrepareToExpunge(s)
@@ -57,18 +64,18 @@ long LogLevel = 0;
 #define IMAPError(a,b,c)
 #define kIMAPSearching 0
 #define kIMAPNotConnectedErr -1
-#define NewZH(t) 0
-#define LDRef(h)
-#define UL(h)
-#define ZapHandle(h)
-#define NuHandle(s) 0
-#define file_write_nc(a,b,c)
+/* Mac Handle macros removed — use calloc/free/realloc directly */
+/* file_write_nc declared in fileutil.h — raw write without CR conversion */
 uint32_t TickCount(void);
 void ByteProgress(const char *message, int onLine, int totLines);
 
 /* FlagsString declared in imapdownload.h */
+#ifndef ASSERT
 #define ASSERT(x)
+#endif
+#ifndef LL_Last
 #define LL_Last(...) 0
+#endif
 #define UID_LL_OrderedInsert(l,n,b)
 
 
@@ -348,9 +355,8 @@ bool IMAPOpenMailbox(IMAPStreamPtr imapStream, const char *MailboxName,
     return (false);
 
   // Copy pMailboxname.
-  if (imapStream->mailboxName)
-    memset(imapStream->mailboxName, 0, sizeof(imapStream->mailboxName));
-  strcpy(imapStream->mailboxName, MailboxName);
+  memset(imapStream->mailboxName, 0, sizeof(imapStream->mailboxName));
+  g_strlcpy(imapStream->mailboxName, MailboxName, sizeof(imapStream->mailboxName));
 
   // Now call above method.
   return IMAPOpenMailboxSpecifiedInStream(imapStream, readOnly);
@@ -940,7 +946,7 @@ bool UIDFetchMessage(IMAPStreamPtr imapStream, unsigned long uid, bool Peek) {
     flags |= FT_PEEK;
 
   SetMailGets(imapStream->mailStream, oldMailGets, file_gets);
-  result = (mail_fetch_message(imapStream->mailStream, uid, flags) != NULL);
+  result = (mail_fetch_message(imapStream->mailStream, uid, flags) != 0);
   ResetMailGets(imapStream->mailStream, oldMailGets);
 
   UnlockStream(imapStream->mailStream);
@@ -1197,7 +1203,7 @@ bool UIDFetchBodyText(IMAPStreamPtr imapStream, unsigned long uid,
 
   SetMailGets(imapStream->mailStream, oldMailGets, file_gets);
   results =
-      (mail_fetch_body(imapStream->mailStream, uid, sequence, flags) != NULL);
+      (mail_fetch_body(imapStream->mailStream, uid, sequence, flags) != 0);
   ResetMailGets(imapStream->mailStream, oldMailGets);
 
   UnlockStream(imapStream->mailStream);
@@ -1392,7 +1398,7 @@ bool IMAPAppendMessage(IMAPStreamPtr imapStream, const char *Flags,
     return false;
 
   // Must also have a mailbox name.
-  if (!imapStream->mailboxName)
+  if (!imapStream->mailboxName[0])
     return false;
 
   // Must be SELECTed
@@ -1513,7 +1519,7 @@ unsigned long GetRfc822Size(IMAPStreamPtr stream, IMAPUID uid) {
  *	UIDVALIDITY -  return UIDVALIDITY of selected mailbox
  **********************************************************************/
 UIDVALIDITY UIDValidity(IMAPStreamPtr stream) {
-  if (stream && stream->mailStream && stream->mailboxName)
+  if (stream && stream->mailStream && stream->mailboxName[0])
     return (stream->uidvalidity);
   else
     return 0;

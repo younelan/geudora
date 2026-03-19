@@ -268,7 +268,7 @@ void EndHexBin(void)
 void BeginHexBin(HeaderDHandle hdh)
 {
 	unsigned char intro[64];
-	HBG = NewH(HexBinGlobals);
+	HBG = calloc(1, sizeof(HexBinGlobals));
 	if (HBG)
 	{
 		memset(HBG, 0, sizeof(HexBinGlobals));

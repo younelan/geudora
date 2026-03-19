@@ -79,10 +79,11 @@ ADVISED OF THE POSSIBILITY OF SUCH DAMAGE. */
 typedef struct AssocArray {
   short keySize;  /* length of keys */
   short dataSize; /* length of data blocks */
+  size_t allocSize; /* tracked allocation size (replaces malloc_size) */
 } AssocArray, *AAPtr, *AAHandle;
 AAHandle AANew(short keySize, short dataSize);
-int AAAddItem(AAHandle aa, bool replace, char *key, char *data);
-int AAAddResItem(AAHandle aa, bool replace, short keyId, char *data);
+int AAAddItem(AAHandle *aap, bool replace, char *key, char *data);
+int AAAddResItem(AAHandle *aap, bool replace, short keyId, char *data);
 int AADeleteKey(AAHandle aa, char *key);
 int AAFetchData(AAHandle aa, char *key, char *data);
 int AAFetchResData(AAHandle aa, short keyId, char *data);

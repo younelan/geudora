@@ -665,7 +665,7 @@ static void FindOpen(void)
 /************************************************************************
  * InitFind - get the find stuff ready to go
  *
- * Original: FG = NewZH(FindVars) — allocated a zeroed Mac Handle.
+ * Original: FG = calloc(1, sizeof(FindVars)) — allocated a zeroed Mac Handle.
  * GTK4: calloc a flat struct.
  ************************************************************************/
 static short InitFind(void)

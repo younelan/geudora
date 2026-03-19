@@ -141,6 +141,7 @@ typedef struct {
   CSpecHandle mailbox;
   CSpecHandle message;
   short *sounds;
+  int soundsCount;
   short notify;
   char to[16];
   char cc[16];

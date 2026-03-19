@@ -110,7 +110,8 @@ extern long ____RandomFailThresh;
 #define kSend 0x01
 extern TOCType *TOCList;
 
-extern struct AliasDStruct **Aliases;
+extern struct AliasDStruct *Aliases;
+extern int gAliasCount;
 
 extern char *eSignature;
 extern char *RichSignature;
@@ -166,7 +167,9 @@ extern short HelpResFile;
 extern void *Filters;              /* Handle — filter rules */
 extern short FiltersRefCount;
 extern void *PreFilters;
+extern int PreFiltersCount;
 extern void *PostFilters;
+extern int PostFiltersCount;
 extern void *WordServices;         /* void ** */
 extern short OriginalHelpCount;
 extern short EndHelpCount;

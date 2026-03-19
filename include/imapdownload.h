@@ -138,11 +138,16 @@ struct DeliveryNode {
 
   MailboxNodeHandle mailbox; // handle to the IMAP mailbox we're updating
   void *ta;                 // stores list of summaries to be (a)dded
+  int taCount;              // number of elements in ta
   void *td;                 // stores list of summaries to be (d)eleted
+  int tdCount;              // number of elements in td
   void *tu;                 // stores list of summaries to be (u)pdated
+  int tuCount;              // number of elements in tu
   void *tc;                 // stores list of summaries to be (c)opied
+  int tcCount;              // number of elements in tc
 
   IMAPSResultHandle results; // stores list of IMAP search results
+  int resultsSize;           // byte size of results buffer
   short threadCount;         // number of threads adding results to this node
 
   bool filter; // set this flag if this mailbox needs to have filters run on it
@@ -186,8 +191,10 @@ struct IMAPAppendStruct {
 typedef struct UIDCopyStruct UIDCopyStruct, *UIDCopyPtr;
 struct UIDCopyStruct {
   char toSpec[PATH_MAX];   // destination mailbox
-  void *hOldSums; // a copy of the summaries transferred.
-  void *hNewUIDs; // list of new UIDs from UIDPLUS response.
+  void *hOldSums;  // array of MSumType — summaries transferred
+  int hOldSumsCount;
+  void *hNewUIDs;  // array of unsigned long — new UIDs from UIDPLUS
+  int hNewUIDsCount;
   bool copy;       // true if this was a copy
 };
 
@@ -225,8 +232,11 @@ MailboxNodeHandle FetchNewMessages(TOCType * tocH, bool fetchFlags,
                                    bool isAutoCheck);
 MailboxNodeHandle DoFetchNewMessages(char * mailboxSpec, bool fetchFlags,
                                      bool isAutoCheck);
-bool IMAPDelivery(TOCType * inToc, void **toAdd, void **toUpdate,
-                  void **toDelete, void **toCopy, bool *filter,
+bool IMAPDelivery(TOCType * inToc, void **toAdd, int *toAddCount,
+                  void **toUpdate, int *toUpdateCount,
+                  void **toDelete, int *toDeleteCount,
+                  void **toCopy, int *toCopyCount,
+                  bool *filter,
                   IMAPSResultHandle *results, MailboxNodeHandle *mbox,
                   bool *checkAttachments);
 void IMAPAbortResync(TOCType * toc);

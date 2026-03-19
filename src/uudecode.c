@@ -288,7 +288,7 @@ bool BeginAbomination( char *name, HeaderDHandle hdh)
 {
 	if (UUG==NULL)
 	{
-		if ((UUG=NewZH(UUGlobals))==NULL) return( false );
+		if ((UUG=calloc(1, sizeof(UUGlobals)))==NULL) return( false );
 		ClearAbomination();
 		Hdh = hdh;
 		// watch out for long filenames here!
@@ -945,7 +945,7 @@ short AbOpen(void)
 			Buffer = buffer;
 		else
 			return(WarnUser(BINHEX_MEM,err=0));
-	BSize = malloc_size(Buffer);
+	BSize = OPTIMAL_BUFFER;
 	if (State == AbResFork) {
 		refN = -1; // No resource fork
 		err = 0;

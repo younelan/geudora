@@ -67,6 +67,9 @@ typedef struct TLMaster {
   void **suite;
 } TLMaster, *TLMPtr, *TLMHandle;
 
+/* Count of translators in a TLMHandle array — replaces malloc_size */
+int TLMCount(TLMHandle tlh);
+
 typedef emsMIMEtype *emsMIMEHandle;
 typedef emsMIMEparam *emsMIMEParamHandle;
 typedef void *FlatTLMIMEHandle;

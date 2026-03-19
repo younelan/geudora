@@ -844,7 +844,7 @@ char *GetRString(char *theString, short theIndex) {
    * find it in the cache
    */
   if (!dontReadCache) {
-    n = (StringCache ? malloc_size(StringCache) / sizeof(*(StringCache)) : 0);
+    n = StringCacheCount;
     start = StringCache;
     end = start + n;
     for (; start < end; start++) {
@@ -877,7 +877,8 @@ char *GetRString(char *theString, short theIndex) {
   if (!StringCache && !dontWriteCache) {
     GetRStringLo(sizeStr, STRING_CACHE, NULL);
     StringToNum(sizeStr, &n);
-    StringCache = (SCHandle)calloc(1,n * sizeof(StringCacheEntry));
+    StringCache = (SCHandle)calloc(n, sizeof(StringCacheEntry));
+    StringCacheCount = n;
     oldSpot = 0;
   }
 
@@ -904,7 +905,7 @@ void SCClear(short theId) {
   short n;
 
   if (StringCache) {
-    n = (StringCache ? malloc_size(StringCache) / sizeof(*(StringCache)) : 0);
+    n = StringCacheCount;
     for (i = 0; i < n; i++)
       if (theId == -1 || StringCache[i].id == theId) {
         StringCache[i].id = 0;
@@ -1062,8 +1063,8 @@ long RemoveChar(unsigned char c, char * text, long size) {
 /************************************************************************
  * RemoveCharHandle - remove a character from a handle
  ************************************************************************/
-long RemoveCharHandle(unsigned char c, unsigned char * text) {
-  long len = malloc_size(text);
+long RemoveCharHandle(unsigned char c, unsigned char *text) {
+  long len = strlen((char *)text);
   long newLen = RemoveChar(c, text, len);
 
   if (newLen < len)
@@ -1340,10 +1341,11 @@ short StackStringFind(char * find, StackHandle stack) {
  * AANew - create an associative array
  ************************************************************************/
 AAHandle AANew(short keySize, short dataSize) {
-  AAHandle aa = NewZHTB(AssocArray);
+  AAHandle aa = (AAHandle)calloc(1, sizeof(AssocArray));
   if (aa) {
     aa->keySize = keySize;
     aa->dataSize = dataSize;
+    aa->allocSize = sizeof(AssocArray);
   }
   return (aa);
 }
@@ -1351,10 +1353,11 @@ AAHandle AANew(short keySize, short dataSize) {
 /************************************************************************
  * AAAddItem - add an item to an associative array
  ************************************************************************/
-int AAAddItem(AAHandle aa, bool replace, char *key, char * data) {
+int AAAddItem(AAHandle *aap, bool replace, char *key, char *data) {
+  AAHandle aa = *aap;
   short count = AACountItems(aa);
   short spot = AAFindKey(aa, key);
-  unsigned char lwrKey[256];
+  char lwrKey[256];
 
   if (spot > 0) {
     /* already exists */
@@ -1362,14 +1365,19 @@ int AAAddItem(AAHandle aa, bool replace, char *key, char * data) {
       return (1);
   } else {
     spot *= -1; /* spot now is the index of the item just after us */
-    SetHandleBig_(aa, malloc_size(aa) + AAElemSize(aa));
-    /* MemError removed */
-    if (spot & spot <= count) /* move old data */
+    { size_t newSize = aa->allocSize + AAElemSize(aa);
+      void *_tmp = realloc(aa, newSize);
+      if (!_tmp) return -1;
+      aa = (AAHandle)_tmp;
+      aa->allocSize = newSize;
+      *aap = aa; /* update caller's pointer */
+    }
+    if (spot && spot <= count) /* move old data */
       memmove(AAKeySpot(aa, spot) + AAElemSize(aa), AAKeySpot(aa, spot),
           AAElemSize(aa) * (count - spot + 1));
   }
   memmove(AADataSpot(aa, spot), data, aa->dataSize);
-  g_strlcpy((char *)(lwrKey), (char *)(key), sizeof(lwrKey));
+  g_strlcpy(lwrKey, key, sizeof(lwrKey));
   MyLowerStr(lwrKey);
   memmove(AAKeySpot(aa, spot), lwrKey, aa->keySize);
   return (0);
@@ -1379,11 +1387,11 @@ int AAAddItem(AAHandle aa, bool replace, char *key, char * data) {
  * AAAddResItem - add an item to an associative array, using a resource for
  *a key
  ************************************************************************/
-int AAAddResItem(AAHandle aa, bool replace, short keyId, char * data) {
-  unsigned char key[256];
+int AAAddResItem(AAHandle *aap, bool replace, short keyId, char *data) {
+  char key[256];
 
   GetRString(key, keyId);
-  return (AAAddItem(aa, replace, key, data));
+  return (AAAddItem(aap, replace, key, data));
 }
 
 /************************************************************************
@@ -1396,7 +1404,10 @@ int AADeleteKey(AAHandle aa, char *key) {
     if (spot < count)
       memmove(AAKeySpot(aa, spot), AAKeySpot(aa, spot + 1),
           AAElemSize(aa) * (count - spot));
-    SetHandleBig_(aa, malloc_size(aa) - AAElemSize(aa));
+    { size_t newSize = aa->allocSize - AAElemSize(aa);
+      void *_tmp = realloc(aa, newSize);
+      if (_tmp) { aa = (AAHandle)_tmp; aa->allocSize = newSize; }
+    }
     return (0);
   } else
     return (1); /* not found */
@@ -1480,7 +1491,7 @@ short AAFindKey(AAHandle aa, char *key) {
 short AACountItems(AAHandle aa) {
   if (!aa)
     return (-1);
-  return ((malloc_size(aa) - sizeof(AssocArray)) /
+  return ((aa->allocSize - sizeof(AssocArray)) /
           (aa->keySize + aa->dataSize));
 }
 
@@ -1711,14 +1722,13 @@ int AccuAddHandle(AccuPtr a, void *data) {
   int err;
   long len;
 
-  if (!a->data & (err = AccuInit(a)))
+  if (!a->data && (err = AccuInit(a)))
     return (err);
 
-  ASSERT(data);
   if (!data)
     return 0;
 
-  len = malloc_size(data);
+  len = strlen((char *)data);
 
   if (a->offset + len > a->size) {
     char *_tmp;
@@ -1739,11 +1749,11 @@ int AccuAddHandle(AccuPtr a, void *data) {
 int AccuAddFromHandle(AccuPtr a, void *data, long offset, long len) {
   int err;
 
-  if (!a->data & (err = AccuInit(a)))
+  if (!a->data && (err = AccuInit(a)))
     return (err);
 
   if (len < 0)
-    len = malloc_size(data);
+    len = strlen((char *)data) - offset;
 
   if (len < 0)
     return len;
@@ -2022,11 +2032,9 @@ void *TempNewHandleGlue(long size, int *err) {
 /**********************************************************************
  * ZeroHandle - clear the contents of a handle
  **********************************************************************/
+/* ZeroHandle: legacy Mac API — callers should use memset directly with known size */
 void *ZeroHandle(void *hand) {
-  if (hand) {
-    long len = malloc_size(hand);
-    if (len > 0) memset(hand, 0, len);
-  }
+  (void)hand;
   return hand;
 }
 

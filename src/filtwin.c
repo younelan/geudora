@@ -57,8 +57,10 @@ extern short PrintClosedMessage(TOCType *tocH, short sumNum, bool now);
 /* Global Filters handle — the in-memory filter database */
 void *Filters = NULL;
 short FiltersRefCount = 0;
-void *PreFilters = NULL;   /* filter rules generated externally (plugins) */
-void *PostFilters = NULL;  /* filter rules generated externally (plugins) */
+void *PreFilters = NULL;
+int PreFiltersCount = 0;
+void *PostFilters = NULL;
+int PostFiltersCount = 0;
 
 /* Safe string copy into fixed-size buffer */
 static void sstrncpy(char *dst, const char *src, size_t dstsize) {

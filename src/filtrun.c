@@ -141,10 +141,7 @@ static int gCurNFilters = 0;
 static FilterRecord *HandleToFilterArray(void *h) {
 	return (FilterRecord *)h;
 }
-static int HandleToFilterCount(void *h) {
-	if (!h) return 0;
-	return (int)(malloc_size(h) / sizeof(FilterRecord));
-}
+/* HandleToFilterCount removed — use PreFiltersCount/PostFiltersCount directly */
 
 /* Safe string copy */
 static void sstrncpy(char *dst, const char *src, size_t dstsize) {
@@ -318,7 +315,7 @@ void FilterPostprocess(FilterKeywordEnum fType, FilterPBPtr fpb)
 	/* and sounds */
 	if (fpb->sounds)
 	{
-		n = (fpb->sounds ? malloc_size(fpb->sounds) / sizeof(*(fpb->sounds)) : 0);
+		n = fpb->soundsCount;
 		while (n--)
 			PlaySoundId(fpb->sounds[n]);
 	}
@@ -970,11 +967,11 @@ int FilterMessageLo(FilterKeywordEnum fType, TOCType *tocH, short sumNum, Filter
 		short filterIdx;
 
 		passArrays[0] = HandleToFilterArray(PreFilters);
-		passCounts[0] = HandleToFilterCount(PreFilters);
+		passCounts[0] = PreFiltersCount;
 		passArrays[1] = gFilterArray;
 		passCounts[1] = gNFilters;
 		passArrays[2] = HandleToFilterArray(PostFilters);
-		passCounts[2] = HandleToFilterCount(PostFilters);
+		passCounts[2] = PostFiltersCount;
 
 		InitFPB(fpb, true, false);
 		fpb->tocH = tocH;
@@ -1590,8 +1587,8 @@ bool HaveManualFilters(void)
 static bool AnyFilters(FilterKeywordEnum fType)
 {
 	return AnyFiltersLo(fType, gFilterArray, gNFilters)
-		|| AnyFiltersLo(fType, HandleToFilterArray(PreFilters), HandleToFilterCount(PreFilters))
-		|| AnyFiltersLo(fType, HandleToFilterArray(PostFilters), HandleToFilterCount(PostFilters));
+		|| AnyFiltersLo(fType, HandleToFilterArray(PreFilters), PreFiltersCount)
+		|| AnyFiltersLo(fType, HandleToFilterArray(PostFilters), PostFiltersCount);
 }
 
 /************************************************************************

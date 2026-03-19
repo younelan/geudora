@@ -405,7 +405,7 @@ int SASLGSSAPI(char * service,short rounds,long *state,AccuPtr chalAcc,AccuPtr r
 	if (rounds==0)
 	{
 		// initialize our context
-		contextH = NewZH(SASLGSSAPIContext);
+		contextH = calloc(1, sizeof(SASLGSSAPIContext));
 		*state = (long)contextH;
 		if (!contextH) return 501;
 		

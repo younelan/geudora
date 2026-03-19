@@ -104,22 +104,24 @@ typedef enum {
 } AddressBookType;
 
 #define IsEudoraAddressBook(aShort)                                            \
-  ((*Aliases)[aShort].type == eudoraAddressBook)
+  (Aliases[aShort].type == eudoraAddressBook)
 #define IsRegularAddressBook(aShort)                                           \
-  ((*Aliases)[aShort].type == regularAddressBook)
+  (Aliases[aShort].type == regularAddressBook)
 #define IsPluginAddressBook(aShort)                                            \
-  ((*Aliases)[aShort].type == pluginAddressBook)
+  (Aliases[aShort].type == pluginAddressBook)
 #define IsHistoryAddressBook(aShort)                                           \
-  ((*Aliases)[aShort].type == historyAddressBook)
+  (Aliases[aShort].type == historyAddressBook)
 #define IsPersonalAddressBook(aShort)                                          \
-  ((*Aliases)[aShort].type == personalAddressBook)
+  (Aliases[aShort].type == personalAddressBook)
 
 typedef struct AliasDStruct {
   char spec[PATH_MAX];
   NickStructHandle theData;
-  void **hNames;    //	ALB 7/16/96, handle to nicknames
-  short **sortData; // Contains nickname ID's -- 0 based -- of the sorted data
-                    // for this address book
+  int theDataCount;  /* number of NickStruct entries in theData */
+  char *hNames;      // concatenated nickname name strings
+  size_t hNamesSize; // byte size of hNames buffer
+  short *sortData;   // nickname ID's (0-based) sorted for this address book
+  int sortDataCount; // number of entries in sortData
   AddressBookType type;
   bool collapsed;
   bool ro;
@@ -138,8 +140,10 @@ typedef struct {
   void *nicknameTags; // Concatenation of char *'s representing mapped nickname tags
 } NicknameTagMapRec, *NicknameTagMapRecPtr, *NicknameTagMapRecHandle;
 
-#define NAliases (Aliases ? malloc_size(Aliases) / sizeof(AliasDesc) : 0)
-#define NNicknames (This.theData ? malloc_size(This.theData) / sizeof(NickStruct) : 0)
+/* NAliases/NNicknames: use explicit counts instead of malloc_size */
+extern int gAliasCount;
+#define NAliases (gAliasCount)
+#define NNicknames (This.theDataCount)
 #define issep(c) (IsSpace(c) || (c) == ',')
 
 #define NICK_TOC_TYPE 'NToc'
@@ -232,10 +236,10 @@ short AddNickToTOCfromName(short which, char *name, void *addresses);
 short AddNickToTOCfromNotes(short which, char *name, void *notes);
 static short AddNickToTOC(short which, char *name, void *hData,
                           bool fFromAddress);
-long NickMatchFound(NickStructHandle theNicknames, long hashName,
+long NickMatchFound(NickStructHandle theNicknames, int nickCount, long hashName,
                     char *theName, short which);
-long NickAddressMatchFound(NickStructHandle theNicknames, long hashAddress,
-                           char *theAddress, short which);
+long NickAddressMatchFound(NickStructHandle theNicknames, int nickCount,
+                           long hashAddress, char *theAddress, short which);
 void MakeMessNick(MyWindowPtr win, short modifiers);
 #ifdef VCARD
 void MakeCompNick(MyWindowPtr win, char *vcardSpec);

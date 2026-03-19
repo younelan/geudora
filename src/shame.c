@@ -173,7 +173,7 @@ int MyHandToHand(void **inHandle)
 {
 	if (!inHandle || !*inHandle)
 		return -108;
-	long len = malloc_size(*inHandle);
+	long len = strlen((char *)*inHandle);
 	void *result = malloc(len);
 	if (!result)
 		return -108;

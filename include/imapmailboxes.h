@@ -114,6 +114,7 @@ struct MailboxNode {
 
   LocalFlagChangeHandle
       queuedFlags; // list of pending flag changes for this mailbox
+  int queuedFlagsCount; // number of entries in queuedFlags
   bool flagLock;   // lock the list of flags when processing them
 
   MailboxNeedsEnum mailboxneeds; // pending IMAP operations

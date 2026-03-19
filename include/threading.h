@@ -67,7 +67,9 @@ struct decoderGlobals_ {
   bool NoAttachments;             /* don't recognize attachments file */
   FSSpecHandle SingleSpec;        /* an appledouble attachment */
   MIMEMapHandle MMIn;             /* incoming MIME map */
+  int MMInCount;
   MIMEMapHandle MMOut;            /* outgoing MIME map */
+  int MMOutCount;
   GrowBuf AttachedFiles;          /* list of attachments saved */
   PGPRecvContextPtr PGPRContext;  /* PGP globals */
   UUGlobalsHandle UUG;            /* uudecoder globals */
@@ -98,6 +100,7 @@ struct threadGlobals_ {
   MyWindowPtr tProgWindow;
   short tCommandPeriod;
   SCHandle tStringCache; /* cache for settings */
+  int tStringCacheCount;  /* number of entries in tStringCache */
   short tSettingsRefN;   /* refNum of settings file */
   StackHandle tPersStack;
   PersHandle tPersList;
@@ -131,6 +134,7 @@ extern threadGlobalsRec ThreadGlobals; // Main thread globals
 #define CommandPeriod (CurThreadGlobals->tCommandPeriod)
 #define EudoraCommandPeriod CommandPeriod
 #define StringCache (CurThreadGlobals->tStringCache)
+#define StringCacheCount (CurThreadGlobals->tStringCacheCount)
 #define SettingsRefN (CurThreadGlobals->tSettingsRefN)
 #define PersStack (CurThreadGlobals->tPersStack)
 #define PersList (CurThreadGlobals->tPersList)
@@ -158,7 +162,9 @@ extern threadGlobalsRec ThreadGlobals; // Main thread globals
 #define NoAttachments (CurThreadGlobals->decoderG.NoAttachments)
 #define SingleSpec (CurThreadGlobals->decoderG.SingleSpec)
 #define MMIn (CurThreadGlobals->decoderG.MMIn)
+#define MMInCount (CurThreadGlobals->decoderG.MMInCount)
 #define MMOut (CurThreadGlobals->decoderG.MMOut)
+#define MMOutCount (CurThreadGlobals->decoderG.MMOutCount)
 #define AttachedFiles (CurThreadGlobals->decoderG.AttachedFiles)
 #define PGPRContext (CurThreadGlobals->decoderG.PGPRContext)
 #define UUG (CurThreadGlobals->decoderG.UUG)

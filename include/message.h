@@ -176,6 +176,7 @@ struct mstruct {
   Accumulator aSourceMID;
   uint32_t ezOpenSerialNum;
   TransInfoHandle hTranslators;
+  int hTranslatorsCount;
   short nTransIcons;
   short sound;
   void *etlFiles;        /* buffer of attachment paths */

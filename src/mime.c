@@ -674,7 +674,7 @@ MIMESHandle NewMIMES(TransStream stream,HeaderDHandle hdh,bool forceMIME,short c
 		g_strlcpy((char *)(hdh->contentSubType), (char *)(scratch), sizeof(hdh->contentSubType));
 	}
 		
-	msh = NewZHTB(MIMEState);
+	msh = calloc(1, sizeof(MIMEState));
 	if (!msh) {WarnUser(MEM_ERR,0); return(NULL);}
 	msh->hdh = hdh;
 	msh->context = context;
@@ -1029,7 +1029,7 @@ int UUEncoder(CallType callType,DecoderPBPtr pb)
 		switch (callType)
 		{
 			case kDecodeInit:
-				pb->refCon = (long)NewZH(UUState);
+				pb->refCon = (long)calloc(1, sizeof(UUState));
 				break;
 			
 			case kDecodeDone:
@@ -1526,7 +1526,7 @@ BoundaryType ReadMulti(TransStream stream,short refN,MIMESHandle mimeSList,char 
 				}
 				struct stat st_1530;
 				if (!(stat(tmpLastAtt, &st_1530) == 0 && S_ISDIR(st_1530.st_mode))) {
-					if (!SingleSpec) SingleSpec = NewH(FSSpec);
+					if (!SingleSpec) SingleSpec = calloc(1, sizeof(FSSpec));
 					if (SingleSpec) g_strlcpy((char *)SingleSpec, tmpLastAtt, PATH_MAX);
 				} else {
 					SingleSpec = NULL;
@@ -1638,7 +1638,7 @@ void MHTMLStuff(HeaderDHandle outerHDH, HeaderDHandle doubleHDH, HeaderDHandle h
 	AAFetchResData(doubleHDH->funFields,InterestHeadStrn+hContentLocation,val);
 	if (AAFetchResData(doubleHDH->funFields,InterestHeadStrn+hContentBase,val2) &&
 			!AAFetchResData(outerHDH->funFields,InterestHeadStrn+hContentBase,val2))
-		AAAddResItem(hdh->funFields,true,InterestHeadStrn+hContentBase,val2);
+		AAAddResItem(&hdh->funFields,true,InterestHeadStrn+hContentBase,val2);
 	
 	TrimWhite(val); TrimInitialWhite(val);
 	TrimWhite(val2); TrimInitialWhite(val2);
@@ -2709,7 +2709,7 @@ bool FindMIMEMapPtr(char * type, char * subType,char * name,MIMEMapPtr mmp)
 		/*
 		 * where does the array end?
 		 */
-		end = MMIn+(MMIn ? malloc_size(MMIn) / sizeof(*(MMIn)) : 0);
+		end = MMIn+(MMInCount);
 
 		/*
 		 * fetch the suffix, if any
@@ -3251,7 +3251,7 @@ int RecordTL(char * spec,void **tl)
 	int err=0;
 	short i;
 
-	for(i = (tlh ? malloc_size(tlh) / sizeof(*(tlh)) : 0);i--;)
+	for(i = (tlh ? malloc_size(tlh) / sizeof(*(tlh)) : 0); i--;)
 		if (tlh[i].result==EMSR_NOT_NOW || tlh[i].result==EMSR_NOW) break;
 	
 	if (i<0) return ENOENT;
@@ -3304,7 +3304,7 @@ void FigureMIMEFromApple(uint32_t creator, uint32_t type,char * name,char * mime
 		/*
 		 * where does the array end?
 		 */
-		end = MMOut+(MMOut ? malloc_size(MMOut) / sizeof(*(MMOut)) : 0);
+		end = MMOut+(MMOutCount);
 
 		/*
 		 * search for a match

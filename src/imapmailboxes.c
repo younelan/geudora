@@ -68,7 +68,7 @@ void *Get1Resource(uint32_t t, short i) { (void)t; (void)i; return NULL; }
 void *DupHandle(void *h) {
   void **hh = (void **)h;
   if (!hh || !*hh) return NULL;
-  size_t sz = malloc_size(*hh);
+  size_t sz = strlen((char *)*hh);
   void **newH = (void **)malloc(sizeof(void *));
   if (!newH) return NULL;
   *newH = malloc(sz);
@@ -993,7 +993,7 @@ int WriteIMAPMailboxInfo(char * spec, MailboxNodeHandle node) {
     }
 
     // add the flag info to the resource
-    if (node->queuedFlags && malloc_size(node->queuedFlags)) {
+    if (node->queuedFlags) {
 
       resource = DupHandle((void *)(node->queuedFlags));
       if (resource) {
@@ -3862,10 +3862,10 @@ MailboxNodeHandle GetRealIMAPSpec(const char *orig, char * spec) {
       // The real IMAP cache folder has the same name as the enclosing folder
       // determine the name of the enclosing folder
       Zero(pb);
-      pb.dirInfo.ioNamePtr = spec_name(spec);
-      pb.dirInfo.ioVRefNum = 0;
-      pb.dirInfo.ioDrDirID = 0;
-      pb.dirInfo.ioFDirIndex = -1; /* use ioDirID */
+      pb.hFileInfo.ioNamePtr = spec_name(spec);
+      pb.hFileInfo.ioDirID = 0;
+      pb.hFileInfo.ioDirID = 0;
+      pb.hFileInfo.ioFDirIndex = -1; /* use ioDirID */
       err = PBGetCatInfoSync(&pb);
       if (!err) {
         // is this an IMAP mailbox file?

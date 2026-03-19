@@ -128,7 +128,7 @@ int ReadHeaderLo(TransStream stream, HeaderDHandle hdh, long estSize, short refN
 	AAFetchResData(hdh->funFields,InterestHeadStrn+hContentBase,GlobalTemp);
 	free(hdh->funFields);
 	hdh->funFields = (void*)grumble;
-	if (*GlobalTemp) AAAddResItem(hdh->funFields,true,InterestHeadStrn+hContentBase,GlobalTemp);
+	if (*GlobalTemp) AAAddResItem(&hdh->funFields,true,InterestHeadStrn+hContentBase,GlobalTemp);
 	
 	/*
 	 * make a copy of the full header accumulator
@@ -682,7 +682,7 @@ void TextPlain(HeaderDHandle hdh)
  ************************************************************************/
 HeaderDHandle NewHeaderDesc(HeaderDHandle parentHDH)
 {
-	HeaderDHandle hdh = NewZHTB(HeaderDesc);
+	HeaderDHandle hdh = calloc(1, sizeof(HeaderDesc));
 	void* aah;
 	Accumulator accu;
 #ifdef ETL
@@ -796,7 +796,7 @@ int AddHeaderAttribute(HeaderDHandle hdh, char *value, bool etl)
 	short dataSize = hdh->contentAttributes->dataSize;
 
 	g_strlcpy(truncated,value,dataSize < (short)sizeof(truncated) ? dataSize : (short)sizeof(truncated));
-	err = AAAddItem(hdh->contentAttributes,true,(void*)hdh->attributeName,(void*)truncated);
+	err = AAAddItem(&hdh->contentAttributes,true,(char*)hdh->attributeName,(char*)truncated);
 
 	if (err) {return(WarnUser(MEM_ERR,0));}
 
@@ -826,7 +826,7 @@ int AddFunField(HeaderDHandle hdh, char *value, short funFieldsID)
 	if (hdh->hFound)
 	{
 		GetRString(fName,funFieldsID+hdh->hFound);
-		err = AAAddItem(hdh->funFields,true,fName,value);
+		err = AAAddItem(&hdh->funFields,true,fName,value);
 		if (err) return(WarnUser(MEM_ERR,0));
 	}
 		

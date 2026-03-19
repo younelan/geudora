@@ -1317,9 +1317,7 @@ static long ViewListCallBack(ViewListPtr pView, VLCallbackMessage message,
   case kLVSendDragData:
     pSendData = (SendDragDataInfo *)data;
     hUrl = GetLinkURL(pSendData->info);
-    err = 0; /* SetDragItemFlavorData(pSendData->drag, pSendData->itemRef,
-                                pSendData->flavor, *hUrl,
-                                malloc_size(hUrl), 0L); */
+    err = 0; /* SetDragItemFlavorData removed — Mac drag & drop */
     break;
   }
   return err;

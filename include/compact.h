@@ -69,7 +69,7 @@ void SetAttachmentType(TOCType *tocH, short sumNum, short type);
 /* Translators */
 int AddMessTranslator(MessHandle messH, long which, void *properties);
 int RemoveMessTranslator(MessHandle messH, long which);
-bool InTranslator(TransInfoHandle hTranslators, long id);
+bool InTranslator(TransInfoHandle hTranslators, int transCount, long id);
 
 /* Stationery */
 uLong ApproxMessageSize(MessHandle messH);

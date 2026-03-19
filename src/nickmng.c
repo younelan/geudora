@@ -318,7 +318,7 @@ char * StripQualifiersAndHonorifics(char * name, char * strippedName);
 int AddHandleToAddressHashes(TextAddrHandle sourceHandle, AccuPtr a);
 int SortAddrNameCompare(char * *s1, char * *s2);
 
-#define This (*Aliases)[which]
+#define This Aliases[which]
 
 short TotalNumOfNicks;
 
@@ -355,7 +355,10 @@ int ReadNicknames(short which) {
   bool doingAlias, doingNote;
   int theMemErr = 0;
   long nameOffset = 0;
-  Accumulator nameAcc, dataAcc, lineAcc;
+  Accumulator nameAcc, lineAcc;
+  /* Binary NickStruct array — grown directly, not via Accumulator */
+  NickStructHandle dataArr = This.theData;
+  int dataCount = This.theDataCount;
   char lookingFor;
   long firstOffset;
   long lineOffset;
@@ -368,15 +371,11 @@ int ReadNicknames(short which) {
    * Setup section
    */
   Zero(nameAcc);
-  Zero(dataAcc);
   Zero(lineAcc);
-  // put existing handles into accumulators
+  // put existing name buffer into accumulator for growing
   nameAcc.data = This.hNames;
   if (nameAcc.data)
-    nameAcc.size = nameAcc.offset = malloc_size(nameAcc.data);
-  dataAcc.data = (void *)This.theData;
-  if (dataAcc.data)
-    dataAcc.size = dataAcc.offset = malloc_size(dataAcc.data);
+    nameAcc.size = nameAcc.offset = This.hNamesSize;
 
   // Find the file, open it for reading, get the command names
   g_strlcpy(spec, This.spec, sizeof(spec));
@@ -488,7 +487,7 @@ int ReadNicknames(short which) {
             *tempName) // We have a valid command and a valid nickname
         {
           // Add to toc if necessary
-          if ((currNickIndex = NickMatchFoundLo(This.theData, dataAcc.offset,
+          if ((currNickIndex = NickMatchFoundLo(dataArr, dataCount * sizeof(NickStruct),
                                                 hashName, tempName, which)) <
               0) // Scan list for nickname
           {
@@ -543,11 +542,14 @@ int ReadNicknames(short which) {
                 nickInfo.addressOffset = -1;
               }
 
-              //	Add nickname info to array handle
-              if (theMemErr = AccuAddPtr(&dataAcc, (void *)&nickInfo,
-                                         sizeof(NickStruct)))
-                goto hitMemError;
-              currNickIndex = dataAcc.offset / sizeof(NickStruct) - 1;
+              //	Add nickname to array
+              { NickStructHandle _p = realloc(dataArr, (dataCount + 1) * sizeof(NickStruct));
+                if (!_p) { theMemErr = ENOMEM; goto hitMemError; }
+                dataArr = _p;
+                dataArr[dataCount] = nickInfo;
+                dataCount++;
+              }
+              currNickIndex = dataCount - 1;
             }
           }
 
@@ -599,7 +601,7 @@ int ReadNicknames(short which) {
 
   // report any errors
   if (type || err) {
-    free(dataAcc.data); dataAcc.data = NULL; dataAcc.offset = dataAcc.size = 0;
+    free(dataArr); dataArr = NULL; dataCount = 0;
     free(nameAcc.data); nameAcc.data = NULL; nameAcc.offset = nameAcc.size = 0;
     return (err ? WarnUser(ALLO_ALIAS, err)
                 : FileSystemError(READ_ALIAS, spec_name(spec), type));
@@ -607,10 +609,11 @@ int ReadNicknames(short which) {
 
   // Success!! install the toc and names handles
   if (firstRead) {
-    AccuTrim(&dataAcc);
     AccuTrim(&nameAcc);
     This.hNames = nameAcc.data;
-    This.theData = (void *)dataAcc.data;
+    This.hNamesSize = nameAcc.offset;
+    This.theData = dataArr;
+    This.theDataCount = dataCount;
     CheckForNicknameBogosity(which);
   }
 
@@ -622,7 +625,7 @@ hitMemError:
   free(lineAcc.data); lineAcc.data = NULL; lineAcc.offset = lineAcc.size = 0;
   // kill these only on first read; on reread leave existing handles alone!
   if (firstRead) {
-    free(dataAcc.data); dataAcc.data = NULL; dataAcc.offset = dataAcc.size = 0;
+    free(dataArr); dataArr = NULL; dataCount = 0;
     free(nameAcc.data); nameAcc.data = NULL; nameAcc.offset = nameAcc.size = 0;
   }
 
@@ -638,7 +641,7 @@ void CheckForNicknameBogosity(short which)
 
   bogus = false;
   count =
-      This.theData ? (malloc_size(This.theData) / sizeof(NickStruct)) : 0;
+      This.theDataCount;
   for (index = 0; !bogus && index < count; ++index) {
     BeautifyFrom(GetNicknameNamePStr(which, index, beautifulName));
     if (!This.theData[index].deleted &&
@@ -653,9 +656,9 @@ void CheckForNicknameBogosity(short which)
  * i.e. a nickname file
  * //SD - I rearranged things a bit for efficiency
  ************************************************************************/
-long NickMatchFound(NickStructHandle theNicknames, long hashName, char * theName,
-                    short which) {
-  return (NickMatchFoundLo(theNicknames, malloc_size(theNicknames), hashName,
+long NickMatchFound(NickStructHandle theNicknames, int nickCount, long hashName,
+                    char *theName, short which) {
+  return (NickMatchFoundLo(theNicknames, nickCount * sizeof(NickStruct), hashName,
                            theName, which));
 }
 
@@ -712,9 +715,8 @@ long NickMatchFoundLo(NickStructHandle theNicknames, long theNicknamesLen,
  * NickAddressMatchFound - find a given address in a nickname structure,
  * i.e. a nickname file
  ************************************************************************/
-long NickAddressMatchFound(NickStructHandle theNicknames, long hashAddress,
-                           char * theAddress, short which)
-
+long NickAddressMatchFound(NickStructHandle theNicknames, int nickCount,
+                           long hashAddress, char *theAddress, short which)
 {
   char **addresses;
   NickStruct *theStruct, *endStruct;
@@ -728,7 +730,7 @@ long NickAddressMatchFound(NickStructHandle theNicknames, long hashAddress,
 
   matched = -1;
   needStringMatch = false;
-  stop = malloc_size(theNicknames) / sizeof(NickStruct);
+  stop = nickCount;
   endStruct = theNicknames + stop;
 
   for (theStruct = theNicknames; theStruct < endStruct; theStruct++)
@@ -751,7 +753,7 @@ long NickAddressMatchFound(NickStructHandle theNicknames, long hashAddress,
       if (theAddresses = GetNicknameData(which, i, true, true)) {
         addresses = nil;
         SuckPtrAddresses(&addresses, (char *)theAddresses,
-                         malloc_size(theAddresses), false, false, false, nil);
+                         strlen(theAddresses), false, false, false, nil);
         if (addresses && addresses[0]) {
           g_strlcpy((char *)tempStr + 1, addresses[0], sizeof(tempStr) - 1);
           tempStr[0] = strlen((char *)tempStr + 1);
@@ -835,13 +837,13 @@ bool SplitNicknames(short ab)
   notesChanged = false;
 
   totalNicks =
-      Aliases[ab]->theData
-          ? (malloc_size(Aliases[ab]->theData) / sizeof(NickStruct))
+      Aliases[ab].theData
+          ? (Aliases[ab].theDataCount)
           : 0;
   for (nick = 0; nick < totalNicks; ++nick) {
     if (notes = GetNicknameData(ab, nick, false, true)) {
       /* HGetState removed */
-      if (MaybeApplySplittingAlgorithm(notes) && !Aliases[ab]->ro) {
+      if (MaybeApplySplittingAlgorithm(notes) && !Aliases[ab].ro) {
         ReplaceNicknameNotes(ab, GetNicknameNamePStr(ab, nick, name), notes);
         notesChanged = true;
       }
@@ -1191,7 +1193,10 @@ int RegenerateAllAliases(bool rebuild) {
         n = NAliases;
         for (i = which; i < n - 1; i++)
           Aliases[i] = Aliases[i + 1];
-        SetHandleBig((void *)Aliases, (n - 1) * sizeof(**Aliases));
+        { void *_p = realloc(Aliases, (n - 1) * sizeof(AliasDesc));
+          if (_p) Aliases = _p;
+          gAliasCount = n - 1;
+        }
         break;
       } else
         DieWithError(NO_MAIN_NICK, err);
@@ -1253,7 +1258,8 @@ void ZapPluginAliases(void) {
   //	All of the plugin aliases should be at the end of the list
   while (which-- && IsPluginAddressBook(which))
     ZapAliasFile(which);
-  SetHandleBig_(Aliases, (which + 1) * sizeof(AliasDesc));
+  { void *_p = realloc(Aliases, (which + 1) * sizeof(AliasDesc)); if (_p) Aliases = _p; }
+  gAliasCount = which + 1;
 }
 
 /************************************************************************
@@ -1309,7 +1315,7 @@ long NickHashRawAddresses(void *addresses, bool *group)
     // As a last check... see if the address is already present in a nickname
     // file
     if (!SuckPtrAddresses(&shortAddress, (char *)addresses,
-                          malloc_size(addresses), false, false, false, nil))
+                          strlen(addresses), false, false, false, nil))
       hashValue = NickHashString(shortAddress[0]);
     *group = ContainsMultipleAddresses(shortAddress);
     g_strfreev(shortAddress); shortAddress = NULL;
@@ -1362,8 +1368,8 @@ int PrepAddressBookForSync(short ab)
   GetRString(idTag, ABHiddenTagsStrn + abTagUniqueID);
   GetRString(changeBitsTag, ABHiddenTagsStrn + abTagChangeBits);
   totalNicks =
-      Aliases[ab]->theData
-          ? (malloc_size(Aliases[ab]->theData) / sizeof(NickStruct))
+      Aliases[ab].theData
+          ? (Aliases[ab].theDataCount)
           : 0;
   for (nick = 0; !theError && nick < totalNicks; ++nick)
     theError = PrepNicknameForSync(ab, nick, idTag, changeBitsTag);
@@ -1434,8 +1440,8 @@ int ClearAddressBookChangeBits(short ab, long mask)
 
   theError = 0;
   totalNicks =
-      Aliases[ab]->theData
-          ? (malloc_size(Aliases[ab]->theData) / sizeof(NickStruct))
+      Aliases[ab].theData
+          ? (Aliases[ab].theDataCount)
           : 0;
   for (nick = 0; !theError && nick < totalNicks; ++nick)
     theError = ClearNicknameChangeBits(ab, nick, mask);
@@ -1500,7 +1506,7 @@ int ReadNickTOC(short which) {
   short oldResF = 0;
   short oldId;
 
-  theData = Aliases[which]->theData;
+  theData = Aliases[which].theData;
 
   IsAlias(&This.spec, &lSpec);
   This.collapsed = FindSTRNIndex(NickFileCollapseStrn, spec_name(This.spec)) > 0;
@@ -1637,7 +1643,7 @@ int WriteNickTOC(short which) {
   bool fSaved = false;
   short oldResF = 0;
 
-  theData = Aliases[which]->theData;
+  theData = Aliases[which].theData;
   IsAlias(&spec, &spec);
   KillNickTOC(&spec);
   // FSpCreateResFile is no-op on POSIX
@@ -1780,7 +1786,6 @@ static short AddNickToTOC(short which, char * name, void *hData,
   currNickCount = NNicknames; // Get nickname count
   if (currNickCount > 0) {
     { void *_r = realloc(aliases, (currNickCount + 1) * sizeof(NickStruct));
-  size_t This_hNames_sz = malloc_size(This.hNames);
       if (_r) aliases = _r; }
     if (err = 0)
       return (WarnUser(ALIAS_NEW_NICK_ERR, err));
@@ -1795,10 +1800,10 @@ static short AddNickToTOC(short which, char * name, void *hData,
       This.theData = aliases; // (jp) 7/31/99 The newly created data handle
   }
 
-  nameOffset = strlen((char *)This.hNames);
-  { size_t _hnsz = malloc_size(This.hNames);
-  if (!buf_append(This.hNames, &_hnsz, name, strlen((const char *)name) + 1))
-    return (WarnUser(ALIAS_NEW_NICK_ERR, ENOMEM));
+  nameOffset = This.hNamesSize;
+  { void *_p = buf_append(This.hNames, &This.hNamesSize, name, strlen(name) + 1);
+    if (!_p) return (WarnUser(ALIAS_NEW_NICK_ERR, ENOMEM));
+    This.hNames = _p;
   }
 
   // Fill in the basic data
@@ -1874,13 +1879,13 @@ void RemoveNamedNickname(short which, char * name) {
   NickStructHandle aliases = This.theData;
   long hashName = NickHash(name);
   long index =
-      NickMatchFound(aliases, hashName, name, which); // returns index of match
+      NickMatchFound(aliases, Aliases[which].theDataCount, hashName, name, which); // returns index of match
 
   if (index >= 0) // the nickname exists
   {
-    Aliases[which]->theData[index].addressesDirty = true;
-    Aliases[which]->theData[index].notesDirty = true;
-    Aliases[which]->theData[index].deleted = true;
+    Aliases[which].theData[index].addressesDirty = true;
+    Aliases[which].theData[index].notesDirty = true;
+    Aliases[which].theData[index].deleted = true;
   }
 }
 
@@ -1935,7 +1940,7 @@ int NickUniq(TextAddrHandle addresses, char * sep, bool wantErrors) {
 
   if (!err) {
     size = cmntNew_sz;
-    SetHandleBig_(addresses, size);
+    { void *_p = realloc(addresses, size); if (_p) addresses = _p; }
     if (!(err = 0))
       memmove(addresses, cmntNew, size);
   }
@@ -1969,7 +1974,7 @@ static short ReplaceNicknameInfo(short which, char * theName, TextAddrHandle tex
   bool group;
 
   if (theName && *theName && aliases) {
-    index = NickMatchFound(aliases, hashName, theName, which);
+    index = NickMatchFound(aliases, Aliases[which].theDataCount, hashName, theName, which);
     if (index < 0)
       //	Not found, add nickname
       if (fAddresses)
@@ -1998,7 +2003,7 @@ static short ReplaceNicknameInfo(short which, char * theName, TextAddrHandle tex
 
       // Don't let the user put crap in here; bug 4519
       if (hTemp)
-        TransLitRes(hTemp, malloc_size(hTemp), ktFlatten);
+        TransLitRes(hTemp, strlen(hTemp), ktFlatten);
 
       tempNick.theAddresses = hTemp;
       tempNick.hashAddress =
@@ -2046,7 +2051,7 @@ short ChangeNameOfNick(short which, char * oldName, char * newName) {
   long index = -1;
 
   if (oldName && *oldName)
-    index = NickMatchFound(aliases, hashName, oldName, which);
+    index = NickMatchFound(aliases, Aliases[which].theDataCount, hashName, oldName, which);
   if (index < 0)
     return (-1);
 
@@ -2065,11 +2070,11 @@ void SetNickname(short ab, short nick, char * name)
 
   GetNicknameNamePStr(ab, nick, oldName);
 
-  if (aliases = Aliases[ab]->theData) {
+  if (aliases = Aliases[ab].theData) {
     oldOffset = aliases[nick].nameTOCOffset;
 
     //	Replace the name
-    Munger(Aliases[ab]->hNames, oldOffset, nil, strlen((const char *)oldName) + 1, name,
+    Munger(Aliases[ab].hNames, oldOffset, nil, strlen((const char *)oldName) + 1, name,
            strlen((const char *)name) + 1);
 
     //	New hash value
@@ -2079,7 +2084,7 @@ void SetNickname(short ab, short nick, char * name)
     //	Only need to adjust those that are past the one we changed
     if (adjustment = (long)strlen((const char *)name) - (long)strlen((const char *)oldName)) {
 
-      nickCount = malloc_size(aliases) / sizeof(NickStruct);
+      nickCount = Aliases[ab].theDataCount;
       for (i = 0, pNick = aliases; i < nickCount; i++, pNick++)
         if (pNick->nameTOCOffset > oldOffset)
           pNick->nameTOCOffset += adjustment;
@@ -2266,10 +2271,10 @@ void *GetNicknameData(short which, short index, bool wantAddresses,
     if (lookingFor == '"')
       count++;
     memmove(dataPtr, dataPtr + count + 1, len - count - 1);
-    SetHandleBig_(dataHandle, len - count - 1);
+    { void *_p = realloc(dataHandle, len - count - 1); if (_p) dataHandle = _p; }
     len = len - count - 1;
     while (len && dataPtr[len - 1] == '\015')
-      SetHandleBig_(dataHandle, --len);
+      { void *_p = realloc(dataHandle, --len); if (_p) dataHandle = _p; }
 
     if (wantAddresses) {
       aliases[index].theAddresses = dataHandle;
@@ -2571,7 +2576,7 @@ void MakeCboxNick(MyWindowPtr win) {
   }
 
   if (!err && !CommandPeriod) {
-    if (addresses && malloc_size(addresses) > 0)
+    if (addresses && strlen(addresses) > 0)
       NewNick(addresses, 0);
     else
       WarnUser(NO_ADDRESSES, 0);
@@ -2600,7 +2605,7 @@ void FlattenListWith(void *h, unsigned char c) {
   }
   if (to > (char *)h)
     to--;
-  SetHandleBig_(h, to - (char *)h);
+  { void *_p = realloc(h, to - (char *)h); if (_p) h = _p; }
 }
 
 /************************************************************************
@@ -2625,7 +2630,7 @@ void CommaList(void *h) {
   }
   if (to > (char *)h)
     to -= 2;
-  SetHandleBig_(h, to - (char *)h);
+  { void *_p = realloc(h, to - (char *)h); if (_p) h = _p; }
 }
 
 /************************************************************************
@@ -2939,7 +2944,7 @@ bool SaveFileFast(short which, bool saveChangeBits) {
 
   dummyValue.offset = -1000;
   dummyValue.nickIndex = numOfNicks + 1000;
-  theSize = malloc_size(addressOffsetHandle) - sizeof(NickOffSetSortType);
+  theSize = numOfNicks * sizeof(NickOffSetSortType);
   memmove(addressOffsetHandle + (theSize / sizeof(NickOffSetSortType)), &dummyValue, sizeof(NickOffSetSortType));
   memmove(notesOffsetHandle + (theSize / sizeof(NickOffSetSortType)), &dummyValue, sizeof(NickOffSetSortType));
 
@@ -3047,8 +3052,8 @@ bool SaveFileFast(short which, bool saveChangeBits) {
              cleanStopIndex < numOfNicks);
 
     if (cleanStopIndex >= numOfNicks &&
-        !Aliases[which]->theData[addressOffsetHandle[numOfNicks - 1].nickIndex].addressesDirty &&
-        !Aliases[which]->theData[addressOffsetHandle[numOfNicks - 1].nickIndex].deleted) {
+        !Aliases[which].theData[addressOffsetHandle[numOfNicks - 1].nickIndex].addressesDirty &&
+        !Aliases[which].theData[addressOffsetHandle[numOfNicks - 1].nickIndex].deleted) {
       if (firstNoteStart >= 0)
         cleanStopOffset = firstNoteStart;
       else
@@ -3071,7 +3076,7 @@ bool SaveFileFast(short which, bool saveChangeBits) {
     if (cleanStartOffset >= 0 & bytes > 0) {
       long readBytes;
 
-      SetHandleBig_(tempHandle, bytes);
+      { void *_p = realloc(tempHandle, bytes); if (_p) tempHandle = _p; }
       if (err = 0)
         goto done;
       readBytes = bytes;
@@ -3190,9 +3195,9 @@ bool SaveFileFast(short which, bool saveChangeBits) {
              cleanStopIndex < numOfNicks);
 
     if (cleanStopIndex >= numOfNicks &&
-        !Aliases[which]->theData[notesOffsetHandle[numOfNicks - 1].nickIndex]
+        !Aliases[which].theData[notesOffsetHandle[numOfNicks - 1].nickIndex]
              .addressesDirty &&
-        !Aliases[which]->theData[notesOffsetHandle[numOfNicks - 1].nickIndex]
+        !Aliases[which].theData[notesOffsetHandle[numOfNicks - 1].nickIndex]
              .deleted) {
       file_size(nickRefN, &cleanStopOffset);
       cleanStopIndex = numOfNicks;
@@ -3210,7 +3215,7 @@ bool SaveFileFast(short which, bool saveChangeBits) {
       if (cleanStartOffset >= 0 & bytes >= 0) {
         long readBytes;
 
-        SetHandleBig_(tempHandle, bytes);
+        { void *_p = realloc(tempHandle, bytes); if (_p) tempHandle = _p; }
         if (err = 0)
           goto done;
         readBytes = bytes;
@@ -3351,8 +3356,8 @@ void SaveDirtyPictures(short ab)
   GetRString(pictureTag, ABReservedTagsStrn + abTagPicture);
 
   theError = 0;
-  if (theData = Aliases[ab]->theData) {
-    numNicks = malloc_size(theData) / sizeof(NickStruct);
+  if (theData = Aliases[ab].theData) {
+    numNicks = Aliases[ab].theDataCount;
     for (nick = 0, pData = theData; nick < numNicks; nick++, pData++)
       // Does this nickname have a dirty picture?
       if (!pData->deleted)
@@ -3497,10 +3502,10 @@ int AddTextToNick(short which, char * name, void *text, bool append) {
   NickStructHandle aliases = This.theData;
   int err = 0;
   void *tempHandle;
-  size_t text_sz = text ? malloc_size(text) : 0;
+  size_t text_sz = text_sz;
 
   //	AliasWinGonnaSave();
-  index = NickMatchFound(aliases, hashName, name, which);
+  index = NickMatchFound(aliases, Aliases[which].theDataCount, hashName, name, which);
 
   if (append) {
     tempHandle = GetNicknameData(which, index, true, true);
@@ -3508,7 +3513,7 @@ int AddTextToNick(short which, char * name, void *text, bool append) {
       err = ENOMEM;
     } else {
       void *tempData = GetNicknameData(which, index, true, true);
-      if (!buf_append(text, &text_sz, (unsigned char *)tempData, malloc_size(tempData))) {
+      if (!buf_append(text, &text_sz, (unsigned char *)tempData, strlen(tempData))) {
         err = ENOMEM;
       }
     }
@@ -3551,9 +3556,12 @@ void ReadNickFileList(char *pSpec, AddressBookType type, bool reread) {
       spec_make(pSpec, name, &ad.spec);
       if (!CanWrite(&ad.spec, &ad.ro)) {
         ad.ro = !ad.ro; /* opposite sense! */
-        { size_t _asz = malloc_size(Aliases);
-        if (!buf_append(Aliases, &_asz, (unsigned char *)&ad, sizeof(ad)))
+        { size_t _asz = gAliasCount * sizeof(AliasDesc);
+        void *_newA = buf_append(Aliases, &_asz, (unsigned char *)&ad, sizeof(ad));
+        if (!_newA)
           DieWithError(MEM_ERR, 0);
+        Aliases = _newA;
+        gAliasCount++;
         }
         if (type == pluginAddressBook && reread)
           FSpKillRFork(&ad.spec);
@@ -3572,7 +3580,7 @@ void ReadNickFileList(char *pSpec, AddressBookType type, bool reread) {
  ************************************************************************/
 int BuildAddressHashes(short which) {
   Accumulator a;
-  NickStructHandle nicks = Aliases[which]->theData;
+  NickStructHandle nicks = Aliases[which].theData;
   short n = NNicknames;
   TextAddrHandle tempHandle = nil;
   char s[32];
@@ -3609,7 +3617,7 @@ int BuildAddressHashes(short which) {
   // Did we win?
   if (!err) {
     AccuTrim(&a);
-    Aliases[which]->addressHashes = a;
+    Aliases[which].addressHashes = a;
   } else {
     free(a.data); a.data = NULL; a.offset = a.size = 0;
   }
@@ -3913,11 +3921,11 @@ void MakeUniqueNickname(short ab, char nickname[32])
 
   if (!*nickname)
     GetRString(nickname, UNTITLED_NICKNAME);
-  if (aliases = Aliases[ab]->theData) {
+  if (aliases = Aliases[ab].theData) {
     hashName = NickHash(nickname);
     suffix = 2;
     g_strlcpy(saveName, (char *)nickname, sizeof(saveName));
-    while (NickMatchFound(aliases, hashName, nickname, ab) >= 0) {
+    while (NickMatchFound(aliases, Aliases[ab].theDataCount, hashName, nickname, ab) >= 0) {
       g_strlcpy((char *)nickname, saveName, 32);
       snprintf((char *)s, sizeof(s), " %d", suffix++);
       if (strlen((char *)nickname) + strlen((char *)s) < 32 - 1)
@@ -4097,7 +4105,7 @@ short FindAddressBookType(AddressBookType type)
 
   addressBooks = NAliases;
   for (ab = 0; ab < addressBooks; ++ab)
-    if (Aliases[ab]->type == type)
+    if (Aliases[ab].type == type)
       return (ab);
   return (-1);
 }
@@ -4112,10 +4120,10 @@ bool AnyPersonalNicknames(void)
   anyNicks = false;
   ab = FindAddressBookType(personalAddressBook);
   if (ValidAddressBook(ab))
-    if (Aliases[ab]->theData) {
-      nick = malloc_size(Aliases[ab]->theData) / sizeof(NickStruct);
+    if (Aliases[ab].theData) {
+      nick = Aliases[ab].theDataCount;
       while (!anyNicks & nick--)
-        if (!Aliases[ab]->theData[nick].deleted)
+        if (!Aliases[ab].theData[nick].deleted)
           anyNicks = true;
     }
   return (anyNicks);
@@ -4196,7 +4204,7 @@ int WhiteListAddr(TextAddrHandle addr) {
   // find which book
   if (*GetRString(scratch, WHITELIST_ADDRBOOK)) {
     for (which = NAliases - 1; which > 0; which--) {
-      g_strlcpy((char *)abName, (char *)spec_name(Aliases[which]->spec), sizeof(abName));
+      g_strlcpy((char *)abName, (char *)spec_name(Aliases[which].spec), sizeof(abName));
       if (StringSame(abName, scratch))
         break;
     }

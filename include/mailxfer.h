@@ -65,14 +65,20 @@ typedef struct IMAPTransferRec_ {
   TOCType * sourceToc;
   bool copy;
   void *attachments;
+  int attachmentsCount;
   char targetBox[PATH_MAX];
   void *boxesToSearch;
+  int boxesToSearchCount;
   void *toSearch;
+  int toSearchCount;
   void *searchC;
+  int searchCCount;
   bool matchAll;
   long firstUID;
   void *toResync;
+  int toResyncCount;
   void *appendData;
+  int appendDataCount;
 } IMAPTransferRec, *IMAPTransferPtr;
 #endif
 

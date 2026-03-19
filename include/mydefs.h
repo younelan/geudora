@@ -41,16 +41,21 @@ ADVISED OF THE POSSIBILITY OF SUCH DAMAGE. */
 #include <stdint.h>
 #include <limits.h>
 
-/* Portable malloc_size: query usable size of a heap allocation */
+/* Portable malloc_size: query usable size of a heap allocation.
+ * WARNING: this returns the OS allocator's usable block size, not the
+ * logical data size. Code should prefer explicit size tracking. This
+ * shim exists only for legacy code not yet migrated. */
 #if defined(__APPLE__)
 #include <malloc/malloc.h>
 /* malloc_size() already available */
+#elif defined(_WIN32)
+#include <malloc.h>
+#define malloc_size(p) _msize(p)
 #elif defined(__linux__)
 #include <malloc.h>
 #define malloc_size(p) malloc_usable_size(p)
 #else
-/* Fallback: no way to query — return 0 */
-#define malloc_size(p) ((size_t)0)
+#define malloc_size(p) malloc_usable_size(p)
 #endif
 
 #ifndef PATH_MAX
@@ -174,15 +179,12 @@ typedef AppleEvent *AppleEventPtr;
 /**********************************************************************
  * make dealing with handles a little less unpleasant
  **********************************************************************/
-/* Flat pointer model: Handle = void*, no double-indirection */
-#define LDRef(aHandle) (aHandle)
-#define UL(aHandle) ((void)0)
-#define New(aType) ((aType *)NuPtr(sizeof(aType)))
-#define NewH(aType) ((aType *)NuHTempOK(sizeof(aType)))
-#define NewZH(aType) ((aType *)calloc(1, sizeof(aType)))
-#define NewHTB(aType) ((aType *)NuHTempBetter(sizeof(aType)))
-#define NewZHTB(aType) ((aType *)calloc(1, sizeof(aType)))
-/* ZapHandle removed — use free() directly */
+/* Mac Handle API removed — use standard C memory:
+ *   calloc(1, sizeof(Type))  instead of NewZH/NewZHTB/NewH
+ *   realloc(ptr, size)       instead of SetHandleBig_
+ *   free(ptr); ptr = NULL    instead of ZapHandle/DisposeHandle
+ *   (ptr)                    instead of LDRef (was Handle lock — no-op)
+ */
 #ifndef DisposePtr
 #define DisposePtr(p) free(p)
 #endif
@@ -230,12 +232,9 @@ typedef AppleEvent *AppleEventPtr;
 #define GetNewControlSmall_(i, w) GetNewControlSmall(i, w)
 #define ReleaseResource_(r) ReleaseResource((void *)r)
 /* buf_append/buf_concat: no macros needed — use functions directly */
-/* SetHandleBig_: resize a malloc'd buffer in-place via realloc.
-   h must be an lvalue (pointer variable). */
-#define SetHandleBig_(h, s) do { \
-  void *_tmp = realloc((void *)(h), (size_t)(s)); \
-  if (_tmp) (h) = _tmp; \
-} while(0)
+/* SetHandleBig_ REMOVED — use realloc() directly:
+ *   void *p = realloc(ptr, newSize); if (p) ptr = p;
+ */
 #define SetWTitle_(w, t) SetWTitle(w, t)
 #define FindWindow_(p, w) FindWindow(p, w)
 #define GetDItem_(d, i, t, h, r) GetDialogItem(d, i, t, (void *)h, r)

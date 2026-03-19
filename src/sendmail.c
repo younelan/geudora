@@ -466,7 +466,7 @@ int SMTPError(TransStream stream) { return (sErr); }
 int DoIntroductions(TransStream stream) {
   char buffer[256];
 
-  Ehlo = NewZH(EhloStuff);
+  Ehlo = calloc(1, sizeof(EhloStuff));
 
   /*
    * get banner from the remote end
@@ -1761,14 +1761,14 @@ int TransmitMessageBodyHeaders(TransmitPBPtr pb, bool withSignature,
     PETEGetRawText(PETE, TheBody, &text);
     sig = withSignature ? eSignature : NULL;
     { long _tlen = PETEGetTextLen(PETE, TheBody);
-      long _slen = sig ? (long)malloc_size(sig) : 0;
+      long _slen = sig ? (long)strlen((char *)sig) : 0;
       err = SendContentType(pb->stream, text, _tlen, BodyOffset(text),
                             sig ? (char *)sig : NULL, _slen, 0,
                             SumOf(messH)->tableId, &pb->flags, &pb->opts, NULL,
                             topLevel ? pb->tlMIME : NULL, NULL); }
   } else {
     sig = withSignature ? eSignature : NULL;
-    { long _slen = sig ? (long)malloc_size(sig) : 0;
+    { long _slen = sig ? (long)strlen((char *)sig) : 0;
       err = SendContentType(pb->stream, pb->enriched.data, pb->enriched.offset, 0,
                             sig ? (char *)sig : NULL, _slen, 0,
                             SumOf(messH)->tableId, &pb->flags, &pb->opts, NULL,
@@ -1926,7 +1926,7 @@ int TransmitMessageSigBody(TransmitPBPtr pb, bool withHeaders) {
 
   // copy the sig into a flat buffer
   if (sigSrc) {
-    sigLen = (long)malloc_size(sigSrc);
+    sigLen = (long)strlen((char *)sigSrc);
     sigBuf = malloc(sigLen);
     if (!sigBuf) { sErr = ENOMEM; goto done; }
     memcpy(sigBuf, sigSrc, sigLen);
@@ -3546,7 +3546,7 @@ short SendPlain(TransStream stream, char *spec, long flags, short tableId,
     flags &=
         ~FLAG_ENCBOD; /* we may not need to encode this; we'll find out later */
     Snarf(spec, &taste, GetRLong(TEXT_QP_TASTE));
-    { long _tlen = taste ? (long)malloc_size(taste) : 0;
+    { long _tlen = taste ? (long)strlen((char *)taste) : 0;
       if ((err = SendContentType(stream, taste ? (char *)taste : NULL, _tlen, 0,
                                 NULL, 0, 0, tableId, &flags, NULL,
                                 ATT_MAP_NAME(amp), NULL, amp->mm.subtype)))

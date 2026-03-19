@@ -58,7 +58,7 @@ void DisposeTLMIMEParam(emsMIMEParamHandle param);
  **********************************************************************/
 int NewTLMIME(emsMIMEHandle *tlMIME)
 {
-	if ((*tlMIME = NewZH(emsMIMEtype)))
+	if ((*tlMIME = calloc(1, sizeof(emsMIMEtype))))
 		(*(tlMIME))->size = sizeof(emsMIMEtype);
 	return(0);
 }
@@ -127,7 +127,7 @@ int AddTLMIME(emsMIMEHandle tlMIME, short what, char * name, char * value)
 				{
 					if (value && valueLen > 0)
 					{
-						size_t _vsz = malloc_size(scan->value);
+						size_t _vsz = strlen(scan->value);
 						buf_append((void *)scan->value, &_vsz, value, (long)valueLen);
 						/* MemError removed */
 					}
@@ -136,7 +136,7 @@ int AddTLMIME(emsMIMEHandle tlMIME, short what, char * name, char * value)
 			}
 
 			/* not in the list — make a new one */
-			h3 = NewZH(emsMIMEparam);
+			h3 = calloc(1, sizeof(emsMIMEparam));
 			h2 = value ? malloc((long)valueLen) : nil;
 			if (h3 && (!value || h2))
 			{
@@ -213,7 +213,7 @@ int FlattenTLMIME(emsMIMEHandle tlMIME, FlatTLMIMEHandle *flat)
 					if (!(err=AccuAddPtr(&a, &nameLen, 1)))
 					if (!(err=AccuAddPtr(&a, localParam.name, nameLen)))
 					{
-						len = (short)malloc_size(p->value);
+						len = (short)strlen(p->value);
 						if (!(err=AccuAddPtr(&a, (void*)&len, 2)))
 							err = AccuAddHandle(&a, (unsigned char *)p->value);
 					}
@@ -246,7 +246,7 @@ int UnflattenTLMIME(FlatTLMIMEHandle flat, emsMIMEHandle *tlMIME)
 
 	if ((err = NewTLMIME(tlMIME))) return(err);
 
-	len = malloc_size(flat);
+	len = strlen(flat);
 
 	/* type */
 	if (!err && offset<len)

@@ -490,6 +490,13 @@ short file_write(short refNum, long *count, char *buffer) {
   return 0;
 }
 short file_write_nc(short refNum, long *count, char *buffer) {
+  /* Write raw bytes without line-ending conversion */
+  ssize_t bytes = write(refNum, buffer, *count);
+  if (bytes < 0) {
+    *count = 0;
+    return EIO;
+  }
+  *count = (long)bytes;
   return 0;
 }
 /* Write a C string to a file descriptor. */

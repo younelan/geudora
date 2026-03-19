@@ -17,7 +17,8 @@ void AdjustSpecialMenuItem() {}
 /* DisposeHandle - needed by CrispinIMAP, just free */
 void DisposeHandle(void *h) { free(h); }
 short AliasRefCount = 0;
-struct AliasDStruct **Aliases = NULL;
+struct AliasDStruct *Aliases = NULL;
+int gAliasCount = 0;
 long AnyTOCDirty = 0;
 void AppendMenu() {}
 /* AttFolderSpec — defined in globals.c */

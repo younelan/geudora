@@ -682,7 +682,7 @@ int LoadStats(void) {
   if (gStatData)
     return 0; //	Already got it
 
-  gStatData = NewZH(StatData);
+  gStatData = calloc(1, sizeof(StatData));
   if (!gStatData)
     return 0;
 

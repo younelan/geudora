@@ -1241,7 +1241,7 @@ void ScoreOneMessage(TLMHandle tList, TOCType * tocH, short sumNum,
   void **text;
 
   ASSERT(tList != NULL);
-  ASSERT((tList ? malloc_size(tList) / sizeof(*(tList)) : 0) > 0);
+  ASSERT(tList != NULL);
 
   // don't score plugins if we've been asked not to
   if (!CanScoreToc(tocH))

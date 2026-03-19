@@ -138,8 +138,9 @@ typedef struct {
 
 /* Structure to keep track of an infividual history file */
 typedef struct HistoryDStruct {
-  FSSpec spec;                 /* the history file */
+  char spec[PATH_MAX];         /* the history file */
   HistoryStructHandle theData; /* the toc */
+  int theDataCount;            /* number of entries in theData */
   bool ro;                     /* read only */
   bool dirty;                  /* is the history file dirty? */
 } HistoryDesc, *HistoryDPtr, *HistoryDHandle;
@@ -236,8 +237,9 @@ void MakeLinkName(char host[256], char query[256], URLNameStr urlName);
 
 /* Sorting */
 int BuildListOfHistoriesForWindow(ShortHistoryStructHandle *histories,
+                                  int *outCount,
                                   bool needsSort, LinkSortTypeEnum sortType);
-void SortShortHistoryHandle(ShortHistoryStructHandle toSort, int (*compare)());
+void SortShortHistoryHandle(ShortHistoryStructHandle toSort, int sortCount, int (*compare)());
 int HistTypeCompare(ShortHistoryStructPtr hist1, ShortHistoryStructPtr hist2);
 int HistNameCompare(ShortHistoryStructPtr hist1, ShortHistoryStructPtr hist2);
 int HistDateCompare(ShortHistoryStructPtr hist1, ShortHistoryStructPtr hist2);
@@ -1026,7 +1028,7 @@ int ReadHistTOC(short which) {
           gHistories[which].theData = theToc;
 
           // iterate through the toc and reset garbage fields
-          count = malloc_size(theToc) / sizeof(HistoryStruct);
+          count = gHistories[which].theDataCount;
           for (i = 0; i < count; i++)
             theToc[i].hUrl = nil;
         } else {
@@ -1067,7 +1069,7 @@ bool CorrectVersion(HistoryStructHandle theToc) {
   bool result = false;
 
   if (theToc) {
-    if (malloc_size(theToc) > 0) {
+    if (theToc) { /* has data */
       if (theToc->version == LINK_HISTORY_VERSION)
         result = true;
     }
@@ -1085,7 +1087,7 @@ long HistMatchFound(long hashName, void *theUrl, short which) {
   size_t hUrl_sz = 0;
   URLNameStr tempStr, tempName;
   HistoryStructHandle theHistories = gHistories[which].theData;
-  long stop = (malloc_size(theHistories) / sizeof(HistoryStruct));
+  long stop = gHistories[which].theDataCount;
   bool needStringMatch = false;
   long matched = -1;
   HistoryStruct *theStruct, *endStruct;
@@ -1193,8 +1195,7 @@ int CompactHistTOC(short which) {
  ************************************************************************/
 short HistoryCount(short which) {
   if (gHistories[which].theData)
-    return (
-        (malloc_size(gHistories[which].theData) / sizeof(HistoryStruct)));
+    return gHistories[which].theDataCount;
   else
     return (0);
 }
@@ -1211,9 +1212,10 @@ void AddAllHistoryItems(ViewListPtr pView, bool needsSort,
   bool reverseSort = (sortType & kLinkReverseSort) != 0;
 
   // get a sorted list of all history entries to add
-  err = BuildListOfHistoriesForWindow(&histories, needsSort, sortType);
+  { int historiesCount = 0;
+  err = BuildListOfHistoriesForWindow(&histories, &historiesCount, needsSort, sortType);
   if ((err == 0) && histories) {
-    count = malloc_size(histories) / sizeof(ShortHistoryStruct);
+    count = historiesCount;
     for (i = 0; i < count; i++) {
       cur = reverseSort ? (count - 1 - i) : i;
 
@@ -1228,6 +1230,7 @@ void AddAllHistoryItems(ViewListPtr pView, bool needsSort,
     // cleanup, don't need this anymore.
     free(histories);
   }
+  } /* historiesCount scope */
 }
 
 /************************************************************************
@@ -1235,6 +1238,7 @@ void AddAllHistoryItems(ViewListPtr pView, bool needsSort,
  *	contain just enough information to add to the history window.
  ************************************************************************/
 int BuildListOfHistoriesForWindow(ShortHistoryStructHandle *histories,
+                                    int *outCount,
                                     bool needsSort, LinkSortTypeEnum sortType) {
   int err = 0;
   short which, i;
@@ -1297,11 +1301,13 @@ int BuildListOfHistoriesForWindow(ShortHistoryStructHandle *histories,
       }
 
       if (compare)
-        SortShortHistoryHandle(*histories, compare);
+        SortShortHistoryHandle(*histories, count, compare);
     }
+    if (outCount) *outCount = count;
   } else {
     WarnUser(MEM_ERR, err);
     *histories = nil;
+    if (outCount) *outCount = 0;
   }
 
   return (err);
@@ -1611,13 +1617,10 @@ void LinkUpdateCacheDate(short which, short index) {
 /************************************************************************
  * SortShortHistoryHandle - sort the monster link history handle
  ************************************************************************/
-void SortShortHistoryHandle(ShortHistoryStructHandle toSort, int (*compare)()) {
-  short count = 0;
-
-  if (compare) {
-    count = malloc_size(toSort) / sizeof(ShortHistoryStruct);
+void SortShortHistoryHandle(ShortHistoryStructHandle toSort, int sortCount, int (*compare)()) {
+  if (compare && sortCount > 1) {
     /* GTK port: QuickSort is Mac-specific; use stdlib qsort */
-    qsort(toSort, count, sizeof(ShortHistoryStruct),
+    qsort(toSort, sortCount, sizeof(ShortHistoryStruct),
           (int (*)(const void *, const void *))compare);
   }
 }
