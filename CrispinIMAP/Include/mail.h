@@ -1224,7 +1224,7 @@ char *sm_read(void **sdb);
 #endif
 
 // JDB
-OSErr mail_new_stream(MAILSTREAM **stream, unsigned char *host,
+OSErr mail_new_stream(MAILSTREAM **stream, char *host,
                       unsigned long *port, const char *user);
 void mail_free_stream(MAILSTREAM **stream);
 DRIVER *imapmail_valid_net(MAILSTREAM *stream, DRIVER *drv, char *host);

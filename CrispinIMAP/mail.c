@@ -3949,7 +3949,7 @@ char *net_host(TransStream stream) {
  * NOTE: host cannot be NULL; port and user can!!
  */
 
-OSErr mail_new_stream(MAILSTREAM **stream, unsigned char *host,
+OSErr mail_new_stream(MAILSTREAM **stream, char *host,
                       unsigned long *port, const char *user) {
   // Must have a host.
   if (!host)
