@@ -24,6 +24,8 @@ OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE OF THIS SOFTWARE, EVEN IF
 ADVISED OF THE POSSIBILITY OF SUCH DAMAGE. */
 
 #include "nickmng.h"
+#include "comp.h"
+#include "sendmail.h"
 #include "Globals.h"
 #include "StringDefs.h"
 #include "StringUtil.h"
@@ -98,8 +100,6 @@ int HandAndHand(void **h1, void **h2) {
     return -1;
   return (buf_append(*h2, NULL, *h1, strlen((char *)*h1)) != NULL) ? 0 : -1;
 }
-int CompHeadFind(void *messH, int headId, void *hs) { return 0; /* stub */ }
-int CompHeadGetText(void *body, void *hs, void **text) { return -1; /* stub */ }
 bool IsVCardAvailable(void) { return false; }
 /* FindAnAttachment declared in message.h (7 params) */
 bool IsVCardFile(char *spec) { return false; }
@@ -130,12 +130,6 @@ void ReleaseResource(void **h) { /* stub */ }
 bool ValidAddressBook(short which) { return true; /* stub */ }
 /* EnsureFromHash is implemented in message.c */
 bool ValidHash(unsigned long h) { return h != 0; /* stub */ }
-int HandleHeadFindStr(void **h, unsigned char *str, struct HeadSpec *hs) {
-  return -1; /* stub */
-}
-int HandleHeadGetText(void **h, struct HeadSpec *hs, void **text) {
-  return -1; /* stub */
-}
 /* JunkSetScore is implemented in junk.c */
 bool AppearsInAliasFile(unsigned char *addr, short which) {
   return false; /* stub */
@@ -182,12 +176,6 @@ unsigned char *MakeFileURL(unsigned char *url, char *spec, int unused) {
 #define MAILBOX_TYPE 'TOC '
 #define readErr (-19) // Mac file read error
 
-// HeadSpec forward declaration - actual definition in sendmail.h
-struct HeadSpec {
-  long offset;
-  long size;
-  int stop;
-};
 
 // Note: buf_append is already defined in fileutil.c and returns Handle (void
 // **) The macro buf_append wraps it. No need to redefine here.

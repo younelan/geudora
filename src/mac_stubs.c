@@ -66,24 +66,6 @@ void ClearPrefBit() {}
 /* CompDelAttachment — real implementation in compact.c */
 /* CompGatherRecipientAddresses — real implementation in compact.c */
 void CompGetMID() {}
-int CompHeadAppendPtr(void* pte, void* hSpec, char *text, long size) {
-  return 0;
-}
-void* CompHeadFindStr(void* messH, char *name, void* hSpec) {
-  return NULL;
-}
-int CompHeadGetStrLo(void* messH, short index, char *string, short size) {
-  return 0;
-}
-int CompHeadPrependPtr(void* pte, void* hSpec, char *text, long size) {
-  return 0;
-}
-int CompHeadSet(void* pte, void* hSpec, char *text) {
-  return 0;
-}
-int CompHeadSetPtr(void* pte, void* hSpec, char *text, long size) {
-  return 0;
-}
 int ConConMess(void* messH, void* pte, void *profile, void *a, void *b) {
   return 0;
 }
@@ -197,10 +179,6 @@ void HRename() {}
 void HTMLPostamble() {}
 void HTMLPreamble() {}
 /* HTMLSignature — defined in globals.c */
-int HandleHeadGetIdText(char *textIn, short id, char **text) {
-  return 0;
-}
-void HandleHeadGetPStr() {}
 void HashAppearsInAliasFile() {}
 void HideControl(void* ctl) {
 }
@@ -481,64 +459,6 @@ bool ExpandAliasesLow(void **h1, void *h2, int i, bool b1, void *p1, int i2) { r
 /* --- Link stubs for unported functions --- */
 
 /* Compose window header field management — needs real GTK impl */
-void CompHeadActivate(void *pte) {}
-short CompHeadCurrent(void *win) { return 0; }
-void CompSwitchFields(void *win, bool forward) {}
-void CompGatherRecipientAddresses(void *messH, bool cache) {}
-
-/* Compose window UI — needs real GTK impl */
-void InvalTopMargin(void *win) {}
-void RefreshSigButton(void *win) {}
-void RemoveInlineSig(void *messH) {}
-void EnableTxtFmtBarIfOK(void *win) {}
-
-/* Translator/plugin system — all in trans.c */
-
-/* Content analysis (moodwatch) — not needed in GTK port */
-bool AnalWarning(void *messH) { return false; }
-bool AnalDelayOutgoing(void) { return false; }
-
-/* Mac dialup/PPP — not needed */
-void CheckSLIP(void) {}
-
-/* Mac menu manager — needs GTK menu port */
-void AdjustSpecialMenuSelection(void *tocH, short sum) {}
-
-/* Mac key event — replace with GDK */
-short UnadornKey(short key, short modifiers) { return key; }
-
-/* GetWindowList: real implementation in mywindow.c */
-bool IsKnownWindowMyWindow(void *win) { return false; }
-
-/* Mac graphics — not needed */
-void DisplayGetGraphics(void *pte) {}
-
-/* Mac ListView — needs GTK TreeView port */
-void LVSelect(void *lv, short row, bool extend) {}
-
-/* Mail filter creation — needs real port */
-void DoMakeFilter(void *tocH, short sumNum) {}
-
-/* Receipt generation — needs real port */
-void GenerateReceipt(void *messH, short type, short action) {}
-
-/* Nickname caching — needs real port */
-void NicknameCachingScan(void *messH, unsigned char *text, long len) {}
-
-/* Open text window — needs GTK impl */
-void *OpenText(void *spec, void *win, void *p, bool b) { return NULL; }
-
-/* Mailbox folder navigation — needs GTK menu port */
-short MBFindInCollapsed(short vRef, long dirId) { return 0; }
-short MBGetFolderMenuID(short vRef, long dirId) { return 0; }
-
-/* Attachment/parts folder paths — real GLib implementation */
-int GetAttFolderPath(short vRef, long dirId, char *path, int pathSize) {
-  const char *home = g_get_home_dir();
-  g_snprintf(path, pathSize, "%s/.eudora/Attachments", home);
-  g_mkdir_with_parents(path, 0755);
-  return 0;
-}
 
 int GetIMAPAttachFolderPath(short vRef, long dirId, char *path, int pathSize) {
   const char *home = g_get_home_dir();
@@ -562,4 +482,51 @@ bool FSpIsItAFolder(void *spec) {
 /* AttachOptNumber — already a macro in compact.h, but some code calls it as function */
 short AttachOptNumber_func(long flags) {
   return (short)(((flags & (0x40|0x80)) >> 6) & 0x3);
+}
+
+/* Compose window UI stubs — need real GTK impl */
+void CompGatherRecipientAddresses(void *messH, bool cache) {}
+void InvalTopMargin(void *win) {}
+void RefreshSigButton(void *win) {}
+void RemoveInlineSig(void *messH) {}
+void EnableTxtFmtBarIfOK(void *win) {}
+
+/* Content analysis stubs — not needed in GTK port */
+bool AnalWarning(void *messH) { return false; }
+bool AnalDelayOutgoing(void) { return false; }
+
+/* Mac dialup stub */
+void CheckSLIP(void) {}
+
+/* Mac menu stubs */
+void AdjustSpecialMenuSelection(void *tocH, short sum) {}
+
+/* Key event stub */
+bool IsKnownWindowMyWindow(void *win) { return false; }
+
+/* ListView stub */
+void LVSelect(void *lv, short row, bool extend) {}
+
+/* Filter creation stub */
+void DoMakeFilter(void *tocH, short sumNum) {}
+
+/* Receipt generation stub */
+void GenerateReceipt(void *messH, short type, short action) {}
+
+/* Nickname caching stub */
+void NicknameCachingScan(void *messH, unsigned char *text, long len) {}
+
+/* Open text window stub */
+void *OpenText(void *spec, void *win, void *p, bool b) { return NULL; }
+
+/* Mailbox folder navigation stubs */
+short MBFindInCollapsed(short vRef, long dirId) { return 0; }
+short MBGetFolderMenuID(short vRef, long dirId) { return 0; }
+
+/* Attachment folder path — real GLib implementation */
+int GetAttFolderPath(short vRef, long dirId, char *path, int pathSize) {
+  const char *home = g_get_home_dir();
+  g_snprintf(path, pathSize, "%s/.eudora/Attachments", home);
+  g_mkdir_with_parents(path, 0755);
+  return 0;
 }

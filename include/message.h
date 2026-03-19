@@ -165,6 +165,9 @@ struct mstruct {
   ControlHandle analControl;
   GtkWidget *bodyPTE;       /* internal editor widget (gTextviewCtrl) */
   GtkWidget *subPTE;        /* internal editor widget (gTextviewCtrl) */
+  /* Compose header widgets — NULL for read-only messages */
+  GtkWidget *headerWidgets[16]; /* indexed by TO_HEAD..PERSONA_HEAD */
+  GtkWidget *headerGrid;        /* the grid containing all headers */
   TOCType * openedFromTocH; /* toc from which we were requested (links) */
   long openedFromSerialNum; // serial # of message from which we were requested
                             // (links)

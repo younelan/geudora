@@ -24,6 +24,9 @@ OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE OF THIS SOFTWARE, EVEN IF
 ADVISED OF THE POSSIBILITY OF SUCH DAMAGE. */
 
 #include "fileutil.h"
+#include "comp.h"
+#include "sendmail.h"
+#include "MyRes.h"
 #define SEND_ITEM 100
 #define SAVE_ITEM 101
 #ifndef PREF_188
@@ -95,7 +98,7 @@ void SepStyle(void *pip, void *tsp, void **graphic, int pgt);
 int CompGetDragContents(GtkWidget *pte, char **theText, void **theStyles,
                         void **theParas, void *drag, long dropLocation);
 void CompBeautifyFrom(char *name);
-unsigned char *CompCurAddr(MyWindowPtr win, unsigned char *addr);
+char *CompCurAddr(MyWindowPtr win, char *addr);
 
 /* Forward declarations for window management functions */
 bool CompClose(MyWindowPtr win);
@@ -1138,6 +1141,15 @@ MyWindowPtr OpenComp(TOCType * tocH, int sumNum, GtkWidget *winWP,
     }
   }
 
+  /* Store header widgets in messH for CompHead* API access */
+  memset(messH->headerWidgets, 0, sizeof(messH->headerWidgets));
+  messH->headerWidgets[TO_HEAD] = header_entries[0];   /* To: */
+  messH->headerWidgets[FROM_HEAD] = header_entries[1];  /* From: (GtkDropDown) */
+  messH->headerWidgets[SUBJ_HEAD] = header_entries[2];  /* Subject: */
+  messH->headerWidgets[CC_HEAD] = header_entries[3];    /* Cc: */
+  messH->headerWidgets[BCC_HEAD] = header_entries[4];   /* Bcc: */
+  messH->headerGrid = header_grid;
+
   /* Attachments row: label + FlowBox with add button */
   GtkWidget *attach_lbl = gtk_label_new("Attachments:");
   gtk_widget_set_halign(attach_lbl, GTK_ALIGN_END);
@@ -1328,7 +1340,7 @@ MyWindowPtr DoComposeNew(int type) {
  * CompCurAddr - return the address most closely associated with this message
  * Ported to use standard C strings instead of Pascal strings
  **********************************************************************/
-unsigned char *CompCurAddr(MyWindowPtr win, unsigned char *addr) {
+char *CompCurAddr(MyWindowPtr win, char *addr) {
   char *addrList =
       g_malloc(1024); // Replace BinAddrHandle with standard allocation
   *addr = 0;
@@ -2178,3 +2190,401 @@ int CreateMessageBody(char *buffer, unsigned long *uidHash) {
 /**********************************************************************
  * GatherCompAddresses - implemented in nickmng.c
  **********************************************************************/
+/**********************************************************************
+ * CompHead* — GTK4 compose header field management
+ *
+ * On Mac these manipulated text ranges in a single PETE editor.
+ * On GTK each header is a separate GtkEntry widget stored in
+ * messH->headerWidgets[TO_HEAD..BCC_HEAD], plus the body in bodyPTE.
+ **********************************************************************/
+
+/* Helper: get the GtkEntry text for a header index */
+static const char *comp_header_get(MessHandle messH, short index) {
+  if (!messH || index < 1 || index > 15) return "";
+  GtkWidget *w = messH->headerWidgets[index];
+  if (!w) return "";
+  if (GTK_IS_EDITABLE(w))
+    return gtk_editable_get_text(GTK_EDITABLE(w));
+  if (GTK_IS_DROP_DOWN(w)) {
+    GtkStringList *model = GTK_STRING_LIST(gtk_drop_down_get_model(GTK_DROP_DOWN(w)));
+    guint sel = gtk_drop_down_get_selected(GTK_DROP_DOWN(w));
+    return gtk_string_list_get_string(model, sel);
+  }
+  return "";
+}
+
+/* Helper: set the GtkEntry text for a header index */
+static void comp_header_set(MessHandle messH, short index, const char *text) {
+  if (!messH || index < 1 || index > 15 || !text) return;
+  GtkWidget *w = messH->headerWidgets[index];
+  if (!w) return;
+  if (GTK_IS_EDITABLE(w))
+    gtk_editable_set_text(GTK_EDITABLE(w), text);
+  /* Can't set text on GtkDropDown directly */
+}
+
+/**********************************************************************
+ * CompHeadFind — find a header by index in a compose message
+ **********************************************************************/
+HSPtr CompHeadFind(MessHandle messH, short index, HSPtr hSpec) {
+  if (!messH || !hSpec) return NULL;
+  memset(hSpec, 0, sizeof(HeadSpec));
+  if (index < 0 || index > 15) return NULL;
+  /* For GTK, HeadSpec offset/length refer to the widget content */
+  hSpec->index = index;
+  if (index == BODY_HEAD || index == 0) {
+    /* Body — return info about the body PTE */
+    if (messH->bodyPTE) {
+      long len = gedit_document_get_length(
+          geditctrl_get_document(messH->bodyPTE));
+      hSpec->value = 0;
+      hSpec->stop = len;
+      hSpec->length = len;
+    }
+  } else {
+    const char *txt = comp_header_get(messH, index);
+    hSpec->value = 0;
+    hSpec->length = txt ? strlen(txt) : 0;
+    hSpec->stop = hSpec->length;
+  }
+  return hSpec;
+}
+
+/**********************************************************************
+ * CompHeadFindStr — find a header by name string
+ **********************************************************************/
+HSPtr CompHeadFindStr(MessHandle messH, char *name, HSPtr hSpec) {
+  if (!messH || !name || !hSpec) return NULL;
+  /* Map name to index */
+  static const struct { const char *n; short idx; } map[] = {
+    {"To:", TO_HEAD}, {"From:", FROM_HEAD}, {"Subject:", SUBJ_HEAD},
+    {"Cc:", CC_HEAD}, {"Bcc:", BCC_HEAD}, {"Attachments:", ATTACH_HEAD},
+    {NULL, 0}
+  };
+  for (int i = 0; map[i].n; i++) {
+    if (g_ascii_strncasecmp(name, map[i].n, strlen(map[i].n)) == 0)
+      return CompHeadFind(messH, map[i].idx, hSpec);
+  }
+  return NULL;
+}
+
+/**********************************************************************
+ * CompHeadGetText — get the text of a header field (allocates)
+ **********************************************************************/
+int CompHeadGetText(GtkWidget *pte, HSPtr hSpec, char **text) {
+  if (!text) return -1;
+  *text = NULL;
+  if (!pte || !hSpec) return -1;
+  /* Find the messH from the pte widget's window */
+  GtkWidget *toplevel = gtk_widget_get_ancestor(pte, GTK_TYPE_WINDOW);
+  if (!toplevel) return -1;
+  /* Get messH from window private data */
+  MyWindowPtr win = (MyWindowPtr)g_object_get_data(G_OBJECT(toplevel), "mywindow");
+  if (!win) return -1;
+  MessHandle messH = (MessHandle)GetMyWindowPrivateData(win);
+  if (!messH) return -1;
+
+  if (hSpec->index == BODY_HEAD || hSpec->index == 0) {
+    /* Body text from gEditCtrl */
+    if (messH->bodyPTE) {
+      GtkTextBuffer *buf = geditctrl_get_document(messH->bodyPTE)
+          ? gtk_text_view_get_buffer(GTK_TEXT_VIEW(messH->bodyPTE))
+          : NULL;
+      if (buf) {
+        GtkTextIter start, end;
+        gtk_text_buffer_get_bounds(buf, &start, &end);
+        *text = gtk_text_buffer_get_text(buf, &start, &end, FALSE);
+        return 0;
+      }
+    }
+    return -1;
+  }
+
+  const char *val = comp_header_get(messH, hSpec->index);
+  if (val) {
+    *text = g_strdup(val);
+    return 0;
+  }
+  return -1;
+}
+
+/**********************************************************************
+ * CompHeadGetStrLo — get header text into a fixed buffer
+ **********************************************************************/
+int CompHeadGetStrLo(MessHandle messH, short index, char *string, short size) {
+  if (!messH || !string || size <= 0) return -1;
+  string[0] = '\0';
+  const char *val = comp_header_get(messH, index);
+  if (val) {
+    g_strlcpy(string, val, size);
+    return 0;
+  }
+  return -1;
+}
+
+/**********************************************************************
+ * CompHeadSet — set the text of a header field
+ **********************************************************************/
+int CompHeadSet(GtkWidget *pte, HSPtr hSpec, char *text) {
+  if (!pte || !hSpec || !text) return -1;
+  GtkWidget *toplevel = gtk_widget_get_ancestor(pte, GTK_TYPE_WINDOW);
+  if (!toplevel) return -1;
+  MyWindowPtr win = (MyWindowPtr)g_object_get_data(G_OBJECT(toplevel), "mywindow");
+  if (!win) return -1;
+  MessHandle messH = (MessHandle)GetMyWindowPrivateData(win);
+  if (!messH) return -1;
+
+  if (hSpec->index == BODY_HEAD || hSpec->index == 0) {
+    if (messH->bodyPTE) {
+      GtkTextBuffer *buf = gtk_text_view_get_buffer(GTK_TEXT_VIEW(messH->bodyPTE));
+      if (buf) {
+        gtk_text_buffer_set_text(buf, text, -1);
+        return 0;
+      }
+    }
+    return -1;
+  }
+  comp_header_set(messH, hSpec->index, text);
+  return 0;
+}
+
+/**********************************************************************
+ * CompHeadSetPtr — set header from ptr + size
+ **********************************************************************/
+int CompHeadSetPtr(GtkWidget *pte, HSPtr hSpec, char *text, long size) {
+  if (!text || size < 0) return -1;
+  char *tmp = g_strndup(text, size);
+  int err = CompHeadSet(pte, hSpec, tmp);
+  g_free(tmp);
+  return err;
+}
+
+/**********************************************************************
+ * CompHeadAppendPtr — append text to a header field
+ **********************************************************************/
+int CompHeadAppendPtr(GtkWidget *pte, HSPtr hSpec, char *text, long size) {
+  if (!pte || !hSpec || !text) return -1;
+  GtkWidget *toplevel = gtk_widget_get_ancestor(pte, GTK_TYPE_WINDOW);
+  if (!toplevel) return -1;
+  MyWindowPtr win = (MyWindowPtr)g_object_get_data(G_OBJECT(toplevel), "mywindow");
+  if (!win) return -1;
+  MessHandle messH = (MessHandle)GetMyWindowPrivateData(win);
+  if (!messH) return -1;
+
+  char *append = g_strndup(text, size);
+
+  if (hSpec->index == BODY_HEAD || hSpec->index == 0) {
+    if (messH->bodyPTE) {
+      GtkTextBuffer *buf = gtk_text_view_get_buffer(GTK_TEXT_VIEW(messH->bodyPTE));
+      if (buf) {
+        GtkTextIter end;
+        gtk_text_buffer_get_end_iter(buf, &end);
+        gtk_text_buffer_insert(buf, &end, append, -1);
+        g_free(append);
+        return 0;
+      }
+    }
+    g_free(append);
+    return -1;
+  }
+
+  const char *existing = comp_header_get(messH, hSpec->index);
+  char *combined = g_strconcat(existing ? existing : "", append, NULL);
+  comp_header_set(messH, hSpec->index, combined);
+  g_free(combined);
+  g_free(append);
+  return 0;
+}
+
+/**********************************************************************
+ * CompHeadPrependPtr — prepend text to a header field
+ **********************************************************************/
+int CompHeadPrependPtr(GtkWidget *pte, HSPtr hSpec, char *text, long size) {
+  if (!pte || !hSpec || !text) return -1;
+  GtkWidget *toplevel = gtk_widget_get_ancestor(pte, GTK_TYPE_WINDOW);
+  if (!toplevel) return -1;
+  MyWindowPtr win = (MyWindowPtr)g_object_get_data(G_OBJECT(toplevel), "mywindow");
+  if (!win) return -1;
+  MessHandle messH = (MessHandle)GetMyWindowPrivateData(win);
+  if (!messH) return -1;
+
+  char *prepend = g_strndup(text, size);
+  const char *existing = comp_header_get(messH, hSpec->index);
+  char *combined = g_strconcat(prepend, existing ? existing : "", NULL);
+  comp_header_set(messH, hSpec->index, combined);
+  g_free(combined);
+  g_free(prepend);
+  return 0;
+}
+
+/**********************************************************************
+ * CompHeadActivate — focus a header field
+ **********************************************************************/
+int CompHeadActivate(GtkWidget *pte, HSPtr hSpec) {
+  if (!pte || !hSpec) return -1;
+  GtkWidget *toplevel = gtk_widget_get_ancestor(pte, GTK_TYPE_WINDOW);
+  if (!toplevel) return -1;
+  MyWindowPtr win = (MyWindowPtr)g_object_get_data(G_OBJECT(toplevel), "mywindow");
+  if (!win) return -1;
+  MessHandle messH = (MessHandle)GetMyWindowPrivateData(win);
+  if (!messH) return -1;
+
+  GtkWidget *w = messH->headerWidgets[hSpec->index];
+  if (w && gtk_widget_get_visible(w))
+    gtk_widget_grab_focus(w);
+  return 0;
+}
+
+/**********************************************************************
+ * CompHeadCurrent — return which header field is currently focused
+ **********************************************************************/
+short CompHeadCurrent(GtkWidget *pte) {
+  if (!pte) return -1;
+  GtkWidget *toplevel = gtk_widget_get_ancestor(pte, GTK_TYPE_WINDOW);
+  if (!toplevel) return -1;
+  MyWindowPtr win = (MyWindowPtr)g_object_get_data(G_OBJECT(toplevel), "mywindow");
+  if (!win) return -1;
+  MessHandle messH = (MessHandle)GetMyWindowPrivateData(win);
+  if (!messH) return -1;
+
+  GtkWidget *focused = gtk_window_get_focus(GTK_WINDOW(toplevel));
+  for (int i = 1; i <= 15; i++) {
+    if (messH->headerWidgets[i] == focused)
+      return i;
+  }
+  if (focused == messH->bodyPTE)
+    return BODY_HEAD;
+  return -1;
+}
+
+/**********************************************************************
+ * CompSwitchFields — tab between header fields and body
+ **********************************************************************/
+void CompSwitchFields(MyWindowPtr win, bool forward) {
+  if (!win) return;
+  MessHandle messH = (MessHandle)GetMyWindowPrivateData(win);
+  if (!messH) return;
+
+  short cur = CompHeadCurrent(messH->bodyPTE);
+  /* Build ordered list of focusable widgets */
+  short order[] = { TO_HEAD, FROM_HEAD, SUBJ_HEAD, CC_HEAD, BCC_HEAD, BODY_HEAD };
+  int nfields = 6;
+  int curIdx = -1;
+  for (int i = 0; i < nfields; i++) {
+    if (order[i] == cur) { curIdx = i; break; }
+  }
+  if (curIdx < 0) curIdx = 0;
+
+  int nextIdx = forward ? (curIdx + 1) % nfields : (curIdx - 1 + nfields) % nfields;
+  short nextHead = order[nextIdx];
+
+  if (nextHead == BODY_HEAD) {
+    if (messH->bodyPTE) gtk_widget_grab_focus(messH->bodyPTE);
+  } else {
+    GtkWidget *w = messH->headerWidgets[nextHead];
+    if (w) gtk_widget_grab_focus(w);
+  }
+}
+
+/**********************************************************************
+ * HandleHeadFindStr — find a header by name in raw message text
+ * Searches for "name: value\r\n" pattern in text
+ **********************************************************************/
+HSPtr HandleHeadFindStr(char *text, char *name, HSPtr hSpec) {
+  if (!text || !name || !hSpec) return NULL;
+  memset(hSpec, 0, sizeof(HeadSpec));
+
+  size_t nameLen = strlen(name);
+  char *p = text;
+
+  while (*p) {
+    /* Match header name at start of line (case-insensitive) */
+    if (g_ascii_strncasecmp(p, name, nameLen) == 0) {
+      char *valStart = p + nameLen;
+      /* Skip optional whitespace after colon */
+      while (*valStart == ' ' || *valStart == '\t') valStart++;
+
+      /* Find end of header value (handles continuation lines) */
+      char *valEnd = valStart;
+      while (*valEnd) {
+        if (*valEnd == '\r' || *valEnd == '\n') {
+          char *next = valEnd;
+          if (*next == '\r') next++;
+          if (*next == '\n') next++;
+          /* Continuation line? (starts with space/tab) */
+          if (*next == ' ' || *next == '\t') {
+            valEnd = next;
+            continue;
+          }
+          break;
+        }
+        valEnd++;
+      }
+
+      hSpec->start = hSpec->offset = p - text;
+      hSpec->value = valStart - text;
+      hSpec->stop = valEnd - text;
+      hSpec->length = valEnd - p;
+      return hSpec;
+    }
+
+    /* Skip to next line */
+    while (*p && *p != '\n') p++;
+    if (*p == '\n') p++;
+    /* Empty line = end of headers */
+    if (*p == '\r' || *p == '\n' || *p == '\0') break;
+  }
+  return NULL;
+}
+
+/**********************************************************************
+ * HandleHeadGetText — extract header value text (allocates copy)
+ **********************************************************************/
+int HandleHeadGetText(char *textIn, HSPtr hSpec, char **text) {
+  if (!textIn || !hSpec || !text) return -1;
+  *text = NULL;
+
+  long valLen = hSpec->stop - hSpec->value;
+  if (valLen <= 0) return -1;
+
+  *text = g_strndup(textIn + hSpec->value, valLen);
+  return *text ? 0 : -1;
+}
+
+/**********************************************************************
+ * HandleHeadGetIdText — find header by resource ID, extract value
+ **********************************************************************/
+int HandleHeadGetIdText(char *textIn, short id, char **text) {
+  HeadSpec hs;
+  char headerName[64];
+
+  if (!textIn || !text) return -1;
+  *text = NULL;
+
+  GetRString(headerName, HEADER_STRN + id);
+  if (!HandleHeadFindStr(textIn, headerName, &hs))
+    return -1;
+
+  return HandleHeadGetText(textIn, &hs, text);
+}
+
+/**********************************************************************
+ * HandleHeadGetPStr — find header by ID, copy value into buffer
+ **********************************************************************/
+char *HandleHeadGetPStr(char *text, short head, char *val) {
+  HeadSpec hs;
+  char headerName[64];
+
+  if (!text || !val) return val;
+  val[0] = '\0';
+
+  GetRString(headerName, HEADER_STRN + head);
+  if (HandleHeadFindStr(text, headerName, &hs)) {
+    long len = hs.stop - hs.value;
+    if (len > 254) len = 254;
+    if (len > 0)
+      memcpy(val, text + hs.value, len);
+    val[len] = '\0';
+  }
+  return val;
+}
