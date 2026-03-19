@@ -407,6 +407,16 @@ int crispy_smtp_rset(SmtpSession *s) {
   return crispy_smtp_command(s, "RSET");
 }
 
+int crispy_smtp_noop(SmtpSession *s) {
+  return crispy_smtp_command(s, "NOOP");
+}
+
+int crispy_smtp_vrfy(SmtpSession *s, const char *addr) {
+  char cmd[512];
+  snprintf(cmd, sizeof(cmd), "VRFY %s", addr);
+  return crispy_smtp_command(s, cmd);
+}
+
 /* High-level send: MAIL FROM, RCPT TO for each, DATA, message body */
 int crispy_smtp_send(SmtpSession *s, const char *from,
               const char *rcpts[], const char *message, long msgLen) {

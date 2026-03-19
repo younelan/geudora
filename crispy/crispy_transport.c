@@ -265,6 +265,11 @@ static void posix_destroy(void *vctx) {
   free(c);
 }
 
+static int posix_get_fd(void *vctx) {
+  PosixCtx *c = (PosixCtx *)vctx;
+  return c ? c->sockfd : -1;
+}
+
 /* --- Public --- */
 
 SmtpTransport crispy_transport_new(void) {
@@ -277,6 +282,7 @@ SmtpTransport crispy_transport_new(void) {
     .start_tls = posix_start_tls,
     .close     = posix_close,
     .destroy   = posix_destroy,
+    .get_fd    = posix_get_fd,
   };
   return tp;
 }

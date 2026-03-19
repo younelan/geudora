@@ -57,6 +57,7 @@ typedef struct SmtpTransport {
   int (*start_tls)(void *ctx);
   void (*close)(void *ctx);
   void (*destroy)(void *ctx);  /* free the ctx */
+  int (*get_fd)(void *ctx);    /* underlying socket fd (for poll/select) */
 } SmtpTransport;
 
 /* --- EHLO capabilities (parsed from server response) --- */
@@ -124,6 +125,12 @@ int crispy_smtp_auth_digest_md5(SmtpSession *s, const char *user, const char *pa
 
 /* Close connection gracefully (QUIT). */
 void crispy_smtp_close(SmtpSession *s);
+
+/* NOOP — keep-alive, test connection. Returns reply code. */
+int crispy_smtp_noop(SmtpSession *s);
+
+/* VRFY — verify address. Returns reply code. */
+int crispy_smtp_vrfy(SmtpSession *s, const char *addr);
 
 /* --- Low-level API (for custom flows) --- */
 
