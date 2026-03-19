@@ -38,7 +38,7 @@ typedef enum {
   SMTP_CMD_COUNT
 } SmtpCmd;
 
-const char *smtp_cmd_str(SmtpCmd cmd);
+const char *crispy_smtp_cmd_str(SmtpCmd cmd);
 
 /* --- SMTP reply codes --- */
 #define SMTP_REPLY_CLASS(code)  ((code) / 100)
@@ -70,6 +70,12 @@ typedef struct SmtpCaps {
 } SmtpCaps;
 
 /* --- Session --- */
+/* Debug callback — shared between SMTP and POP3 */
+#ifndef CRISPY_DEBUG_FN_DEFINED
+#define CRISPY_DEBUG_FN_DEFINED
+typedef void (*CrispyDebugFn)(const char *line, void *userdata);
+#endif
+
 typedef struct SmtpSession {
   SmtpTransport tp;
   SmtpCaps caps;
@@ -78,20 +84,22 @@ typedef struct SmtpSession {
   char local_hostname[256];
   bool connected;
   bool authenticated;
+  CrispyDebugFn debug;
+  void *debug_userdata;
 } SmtpSession;
 
 /* --- High-level API --- */
 
 /* Create a session. Does not connect yet. */
-void smtp_init(SmtpSession *s, SmtpTransport tp, const char *local_hostname);
+void crispy_smtp_init(SmtpSession *s, SmtpTransport tp, const char *local_hostname);
 
 /* Connect to server, do EHLO, optionally STARTTLS. Returns 0 on success. */
-int smtp_connect(SmtpSession *s, const char *host, int port,
+int crispy_smtp_connect(SmtpSession *s, const char *host, int port,
                  SmtpSecurity security);
 
 /* Authenticate (PLAIN, LOGIN, or CRAM-MD5). Returns 0 on success. */
-int smtp_auth_plain(SmtpSession *s, const char *user, const char *pass);
-int smtp_auth_login(SmtpSession *s, const char *user, const char *pass);
+int crispy_smtp_auth_plain(SmtpSession *s, const char *user, const char *pass);
+int crispy_smtp_auth_login(SmtpSession *s, const char *user, const char *pass);
 
 /* Send a complete message.
  * from: envelope sender (e.g. "user@example.com")
@@ -99,46 +107,46 @@ int smtp_auth_login(SmtpSession *s, const char *user, const char *pass);
  * message: raw RFC 5322 message (headers + body)
  * msgLen: length of message, or -1 for strlen
  * Returns 0 on success. */
-int smtp_send(SmtpSession *s, const char *from,
+int crispy_smtp_send(SmtpSession *s, const char *from,
               const char *rcpts[], const char *message, long msgLen);
 
 /* Close connection gracefully (QUIT). */
-void smtp_close(SmtpSession *s);
+void crispy_smtp_close(SmtpSession *s);
 
 /* --- Low-level API (for custom flows) --- */
 
-int smtp_ehlo(SmtpSession *s);
-int smtp_starttls(SmtpSession *s);
-int smtp_mail_from(SmtpSession *s, const char *addr);
-int smtp_rcpt_to(SmtpSession *s, const char *addr);
-int smtp_data_begin(SmtpSession *s);
-int smtp_data_send(SmtpSession *s, const char *data, long len);
-int smtp_data_end(SmtpSession *s);
-int smtp_rset(SmtpSession *s);
-int smtp_quit(SmtpSession *s);
+int crispy_smtp_ehlo(SmtpSession *s);
+int crispy_smtp_starttls(SmtpSession *s);
+int crispy_smtp_mail_from(SmtpSession *s, const char *addr);
+int crispy_smtp_rcpt_to(SmtpSession *s, const char *addr);
+int crispy_smtp_data_begin(SmtpSession *s);
+int crispy_smtp_data_send(SmtpSession *s, const char *data, long len);
+int crispy_smtp_data_end(SmtpSession *s);
+int crispy_smtp_rset(SmtpSession *s);
+int crispy_smtp_quit(SmtpSession *s);
 
 /* Send raw command, read reply. Returns reply code. */
-int smtp_command(SmtpSession *s, const char *cmd_line);
+int crispy_smtp_command(SmtpSession *s, const char *cmd_line);
 
 /* Read one reply from server. Returns reply code. */
-int smtp_read_reply(SmtpSession *s);
+int crispy_smtp_read_reply(SmtpSession *s);
 
 /* --- Utilities --- */
 
 /* Dot-stuff text for DATA transmission. out must be >= 2*inLen.
  * Returns bytes written. nlState tracks newline position across calls. */
-long smtp_dot_stuff(const char *in, long inLen, char *out,
+long crispy_smtp_dot_stuff(const char *in, long inLen, char *out,
                     const char *newline, int *nlState);
 
 /* Format RFC 5322 date. buf >= 64 bytes. */
-char *smtp_format_date(char *buf, size_t bufSize, long utc_seconds,
+char *crispy_smtp_format_date(char *buf, size_t bufSize, long utc_seconds,
                        long tz_offset_seconds);
 
 /* Format timezone, e.g. "+0200". buf >= 8 bytes. */
-char *smtp_format_zone(char *buf, long tz_offset_seconds);
+char *crispy_smtp_format_zone(char *buf, long tz_offset_seconds);
 
 /* Base64 encode/decode (for SASL). Caller frees output. */
-char *smtp_base64_encode(const char *in, long inLen, long *outLen);
-char *smtp_base64_decode(const char *in, long inLen, long *outLen);
+char *crispy_base64_encode(const char *in, long inLen, long *outLen);
+char *crispy_base64_decode(const char *in, long inLen, long *outLen);
 
 #endif /* CRISPY_SMTP_H */

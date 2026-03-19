@@ -7,6 +7,18 @@
 #include <stdlib.h>
 #include <string.h>
 #include <ctype.h>
+#include <stdarg.h>
+
+/* --- Debug helper --- */
+static void dbg(Pop3Session *s, const char *fmt, ...) {
+  if (!s->debug) return;
+  char buf[1024];
+  va_list ap;
+  va_start(ap, fmt);
+  vsnprintf(buf, sizeof(buf), fmt, ap);
+  va_end(ap);
+  s->debug(buf, s->debug_userdata);
+}
 
 /* --- Internal helpers --- */
 
@@ -16,6 +28,7 @@ static int tp_send(Pop3Session *s, const char *data, long len) {
 }
 
 static int send_line(Pop3Session *s, const char *line) {
+  dbg(s, "C: %s", line);
   int err = tp_send(s, line, (long)strlen(line));
   if (!err) err = tp_send(s, "\r\n", 2);
   return err;
@@ -36,6 +49,8 @@ static int read_response(Pop3Session *s) {
           s->last_reply[bytesRead-1] == '\n'))
     s->last_reply[--bytesRead] = '\0';
 
+  dbg(s, "S: %s", s->last_reply);
+
   if (strncmp(s->last_reply, "+OK", 3) == 0) return 0;
   if (strncmp(s->last_reply, "-ERR", 4) == 0) return -1;
   return -1; /* unexpected */
@@ -43,12 +58,12 @@ static int read_response(Pop3Session *s) {
 
 /* --- Session lifecycle --- */
 
-void pop3_init(Pop3Session *s, Pop3Transport tp) {
+void crispy_pop3_init(Pop3Session *s, Pop3Transport tp) {
   memset(s, 0, sizeof(*s));
   s->tp = tp;
 }
 
-int pop3_connect(Pop3Session *s, const char *host, int port,
+int crispy_pop3_connect(Pop3Session *s, const char *host, int port,
                  Pop3Security security) {
   if (!s->tp.connect) return -1;
 
@@ -66,7 +81,7 @@ int pop3_connect(Pop3Session *s, const char *host, int port,
   /* STLS if requested */
   if (security == POP3_STLS) {
     if (!s->tp.start_tls) return -1;
-    err = pop3_command(s, "STLS");
+    err = crispy_pop3_command(s, "STLS");
     if (err) return -1;
     err = s->tp.start_tls(s->tp.ctx);
     if (err) return err;
@@ -75,15 +90,15 @@ int pop3_connect(Pop3Session *s, const char *host, int port,
   return 0;
 }
 
-int pop3_command(Pop3Session *s, const char *cmd) {
+int crispy_pop3_command(Pop3Session *s, const char *cmd) {
   int err = send_line(s, cmd);
   if (err) return -1;
   return read_response(s);
 }
 
-void pop3_close(Pop3Session *s) {
+void crispy_pop3_close(Pop3Session *s) {
   if (s->connected) {
-    pop3_command(s, "QUIT");
+    crispy_pop3_command(s, "QUIT");
     if (s->tp.close)
       s->tp.close(s->tp.ctx);
     s->connected = false;
@@ -96,22 +111,22 @@ void pop3_close(Pop3Session *s) {
 
 /* --- Authentication --- */
 
-int pop3_auth(Pop3Session *s, const char *user, const char *pass) {
+int crispy_pop3_auth(Pop3Session *s, const char *user, const char *pass) {
   char cmd[512];
 
   snprintf(cmd, sizeof(cmd), "USER %s", user);
-  int err = pop3_command(s, cmd);
+  int err = crispy_pop3_command(s, cmd);
   if (err) return -1;
 
   snprintf(cmd, sizeof(cmd), "PASS %s", pass);
-  err = pop3_command(s, cmd);
+  err = crispy_pop3_command(s, cmd);
   if (err) return -1;
 
   s->authenticated = true;
   return 0;
 }
 
-int pop3_auth_apop(Pop3Session *s, const char *user, const char *pass) {
+int crispy_pop3_auth_apop(Pop3Session *s, const char *user, const char *pass) {
   /* Find <timestamp> in greeting */
   char *start = strchr(s->greeting, '<');
   char *end = start ? strchr(start, '>') : NULL;
@@ -135,8 +150,8 @@ int pop3_auth_apop(Pop3Session *s, const char *user, const char *pass) {
 
 /* --- Message operations --- */
 
-int pop3_stat(Pop3Session *s) {
-  int err = pop3_command(s, "STAT");
+int crispy_pop3_stat(Pop3Session *s) {
+  int err = crispy_pop3_command(s, "STAT");
   if (err) return -1;
 
   /* Parse "+OK count size" */
@@ -149,7 +164,7 @@ int pop3_stat(Pop3Session *s) {
   return 0;
 }
 
-long pop3_read_multiline(Pop3Session *s, char **out) {
+long crispy_pop3_read_multiline(Pop3Session *s, char **out) {
   *out = NULL;
   long capacity = 4096;
   long used = 0;
@@ -200,11 +215,11 @@ long pop3_read_multiline(Pop3Session *s, char **out) {
   return used;
 }
 
-int pop3_list(Pop3Session *s, Pop3MsgInfo **msgs) {
+int crispy_pop3_list(Pop3Session *s, Pop3MsgInfo **msgs) {
   *msgs = NULL;
 
   /* Get count first */
-  int err = pop3_stat(s);
+  int err = crispy_pop3_stat(s);
   if (err) return -1;
   if (s->msg_count == 0) return 0;
 
@@ -212,14 +227,15 @@ int pop3_list(Pop3Session *s, Pop3MsgInfo **msgs) {
   if (!list) return -1;
 
   /* LIST */
-  err = pop3_command(s, "LIST");
+  err = crispy_pop3_command(s, "LIST");
   if (err) { free(list); return -1; }
 
   char line[256];
   long bytesRead;
   int idx = 0;
 
-  while (idx < s->msg_count) {
+  /* Read LIST multiline response until dot terminator */
+  for (;;) {
     err = s->tp.recv_line(s->tp.ctx, line, sizeof(line), &bytesRead);
     if (err) break;
 
@@ -228,11 +244,11 @@ int pop3_list(Pop3Session *s, Pop3MsgInfo **msgs) {
       bytesRead--;
     line[bytesRead] = '\0';
 
-    if (line[0] == '.') break;
+    if (bytesRead == 1 && line[0] == '.') break;
 
     int num = 0;
     long sz = 0;
-    if (sscanf(line, "%d %ld", &num, &sz) >= 1) {
+    if (idx < s->msg_count && sscanf(line, "%d %ld", &num, &sz) >= 1) {
       list[idx].number = num;
       list[idx].size = sz;
       idx++;
@@ -240,10 +256,10 @@ int pop3_list(Pop3Session *s, Pop3MsgInfo **msgs) {
   }
 
   /* UIDL (optional — server may not support it) */
-  err = pop3_command(s, "UIDL");
+  err = crispy_pop3_command(s, "UIDL");
   if (!err) {
     idx = 0;
-    while (idx < s->msg_count) {
+    for (;;) {
       err = s->tp.recv_line(s->tp.ctx, line, sizeof(line), &bytesRead);
       if (err) break;
 
@@ -252,7 +268,7 @@ int pop3_list(Pop3Session *s, Pop3MsgInfo **msgs) {
         bytesRead--;
       line[bytesRead] = '\0';
 
-      if (line[0] == '.') break;
+      if (bytesRead == 1 && line[0] == '.') break;
 
       int num = 0;
       char uidl[128] = {0};
@@ -273,32 +289,32 @@ int pop3_list(Pop3Session *s, Pop3MsgInfo **msgs) {
   return s->msg_count;
 }
 
-long pop3_retr(Pop3Session *s, int msgNum, char **out) {
+long crispy_pop3_retr(Pop3Session *s, int msgNum, char **out) {
   char cmd[64];
   snprintf(cmd, sizeof(cmd), "RETR %d", msgNum);
 
-  int err = pop3_command(s, cmd);
+  int err = crispy_pop3_command(s, cmd);
   if (err) return -1;
 
-  return pop3_read_multiline(s, out);
+  return crispy_pop3_read_multiline(s, out);
 }
 
-long pop3_top(Pop3Session *s, int msgNum, int lines, char **out) {
+long crispy_pop3_top(Pop3Session *s, int msgNum, int lines, char **out) {
   char cmd[64];
   snprintf(cmd, sizeof(cmd), "TOP %d %d", msgNum, lines);
 
-  int err = pop3_command(s, cmd);
+  int err = crispy_pop3_command(s, cmd);
   if (err) return -1;
 
-  return pop3_read_multiline(s, out);
+  return crispy_pop3_read_multiline(s, out);
 }
 
-int pop3_dele(Pop3Session *s, int msgNum) {
+int crispy_pop3_dele(Pop3Session *s, int msgNum) {
   char cmd[64];
   snprintf(cmd, sizeof(cmd), "DELE %d", msgNum);
-  return pop3_command(s, cmd);
+  return crispy_pop3_command(s, cmd);
 }
 
-int pop3_rset(Pop3Session *s) {
-  return pop3_command(s, "RSET");
+int crispy_pop3_rset(Pop3Session *s) {
+  return crispy_pop3_command(s, "RSET");
 }

@@ -7,6 +7,7 @@
 #include <stdlib.h>
 #include <string.h>
 #include <ctype.h>
+#include <stdarg.h>
 #include <time.h>
 
 /* SMTP command strings (RFC 5321) */
@@ -27,9 +28,20 @@ static const char *const smtp_cmds[] = {
   [SMTP_CMD_HELP]      = "HELP",
 };
 
-const char *smtp_cmd_str(SmtpCmd cmd) {
+const char *crispy_smtp_cmd_str(SmtpCmd cmd) {
   if (cmd < 0 || cmd >= SMTP_CMD_COUNT) return "";
   return smtp_cmds[cmd];
+}
+
+/* --- Debug helper --- */
+static void dbg(SmtpSession *s, const char *fmt, ...) {
+  if (!s->debug) return;
+  char buf[1024];
+  va_list ap;
+  va_start(ap, fmt);
+  vsnprintf(buf, sizeof(buf), fmt, ap);
+  va_end(ap);
+  s->debug(buf, s->debug_userdata);
 }
 
 /* --- Internal helpers --- */
@@ -45,6 +57,7 @@ static int tp_send_str(SmtpSession *s, const char *str) {
 
 /* Send a line (adds CRLF) */
 static int send_line(SmtpSession *s, const char *line) {
+  dbg(s, "C: %s", line);
   int err = tp_send_str(s, line);
   if (!err) err = tp_send(s, "\r\n", 2);
   return err;
@@ -76,7 +89,7 @@ static int read_reply_line(SmtpSession *s, char *buf, long bufSize,
   return code;
 }
 
-int smtp_read_reply(SmtpSession *s) {
+int crispy_smtp_read_reply(SmtpSession *s) {
   char line[512];
   bool more = true;
   int code = -1;
@@ -86,6 +99,7 @@ int smtp_read_reply(SmtpSession *s) {
   while (more) {
     code = read_reply_line(s, line, sizeof(line), &more);
     if (code < 0) return -1;
+    dbg(s, "S: %s", line);
     /* Keep last line text (after "NNN " or "NNN-") */
     if (strlen(line) > 4)
       snprintf(s->last_reply, sizeof(s->last_reply), "%s", line + 4);
@@ -142,7 +156,7 @@ static int read_ehlo_reply(SmtpSession *s) {
 
 /* --- Session lifecycle --- */
 
-void smtp_init(SmtpSession *s, SmtpTransport tp, const char *local_hostname) {
+void crispy_smtp_init(SmtpSession *s, SmtpTransport tp, const char *local_hostname) {
   memset(s, 0, sizeof(*s));
   s->tp = tp;
   if (local_hostname)
@@ -151,7 +165,7 @@ void smtp_init(SmtpSession *s, SmtpTransport tp, const char *local_hostname) {
     snprintf(s->local_hostname, sizeof(s->local_hostname), "localhost");
 }
 
-int smtp_connect(SmtpSession *s, const char *host, int port,
+int crispy_smtp_connect(SmtpSession *s, const char *host, int port,
                  SmtpSecurity security) {
   if (!s->tp.connect) return -1;
 
@@ -160,26 +174,26 @@ int smtp_connect(SmtpSession *s, const char *host, int port,
   s->connected = true;
 
   /* Read greeting */
-  int code = smtp_read_reply(s);
+  int code = crispy_smtp_read_reply(s);
   if (code < 0 || !SMTP_IS_OK(code)) return code > 0 ? code : -1;
 
   /* EHLO (fall back to HELO) */
-  code = smtp_ehlo(s);
+  code = crispy_smtp_ehlo(s);
   if (code < 0) return -1;
 
   /* STARTTLS if requested */
   if (security == SMTP_STARTTLS && s->caps.starttls) {
-    err = smtp_starttls(s);
+    err = crispy_smtp_starttls(s);
     if (err) return err;
     /* Re-EHLO after TLS */
-    code = smtp_ehlo(s);
+    code = crispy_smtp_ehlo(s);
     if (code < 0) return -1;
   }
 
   return SMTP_IS_OK(code) ? 0 : code;
 }
 
-int smtp_ehlo(SmtpSession *s) {
+int crispy_smtp_ehlo(SmtpSession *s) {
   char cmd[300];
   snprintf(cmd, sizeof(cmd), "EHLO %s", s->local_hostname);
   int err = send_line(s, cmd);
@@ -192,33 +206,33 @@ int smtp_ehlo(SmtpSession *s) {
     snprintf(cmd, sizeof(cmd), "HELO %s", s->local_hostname);
     err = send_line(s, cmd);
     if (err) return -1;
-    code = smtp_read_reply(s);
+    code = crispy_smtp_read_reply(s);
   }
 
   return code;
 }
 
-int smtp_starttls(SmtpSession *s) {
+int crispy_smtp_starttls(SmtpSession *s) {
   if (!s->tp.start_tls) return -1;
 
   int err = send_line(s, "STARTTLS");
   if (err) return -1;
 
-  int code = smtp_read_reply(s);
+  int code = crispy_smtp_read_reply(s);
   if (!SMTP_IS_OK(code)) return code > 0 ? code : -1;
 
   return s->tp.start_tls(s->tp.ctx);
 }
 
-int smtp_quit(SmtpSession *s) {
+int crispy_smtp_quit(SmtpSession *s) {
   send_line(s, "QUIT");
-  int code = smtp_read_reply(s);
+  int code = crispy_smtp_read_reply(s);
   return code;
 }
 
-void smtp_close(SmtpSession *s) {
+void crispy_smtp_close(SmtpSession *s) {
   if (s->connected) {
-    smtp_quit(s);
+    crispy_smtp_quit(s);
     if (s->tp.close)
       s->tp.close(s->tp.ctx);
     s->connected = false;
@@ -232,10 +246,10 @@ void smtp_close(SmtpSession *s) {
 /* --- Authentication --- */
 
 /* Declared in smtp.h — implemented externally or here */
-extern char *smtp_base64_encode(const char *in, long inLen, long *outLen);
-extern char *smtp_base64_decode(const char *in, long inLen, long *outLen);
+extern char *crispy_base64_encode(const char *in, long inLen, long *outLen);
+extern char *crispy_base64_decode(const char *in, long inLen, long *outLen);
 
-int smtp_auth_plain(SmtpSession *s, const char *user, const char *pass) {
+int crispy_smtp_auth_plain(SmtpSession *s, const char *user, const char *pass) {
   /* PLAIN: \0user\0pass base64-encoded */
   size_t uLen = strlen(user);
   size_t pLen = strlen(pass);
@@ -249,7 +263,7 @@ int smtp_auth_plain(SmtpSession *s, const char *user, const char *pass) {
   memcpy(raw + 2 + uLen, pass, pLen);
 
   long b64Len;
-  char *b64 = smtp_base64_encode(raw, (long)rawLen, &b64Len);
+  char *b64 = crispy_base64_encode(raw, (long)rawLen, &b64Len);
   free(raw);
   if (!b64) return -1;
 
@@ -260,42 +274,42 @@ int smtp_auth_plain(SmtpSession *s, const char *user, const char *pass) {
   int err = send_line(s, cmd);
   if (err) return -1;
 
-  int code = smtp_read_reply(s);
+  int code = crispy_smtp_read_reply(s);
   if (code == 235) s->authenticated = true;
   return SMTP_IS_OK(code) ? 0 : code;
 }
 
-int smtp_auth_login(SmtpSession *s, const char *user, const char *pass) {
+int crispy_smtp_auth_login(SmtpSession *s, const char *user, const char *pass) {
   int err = send_line(s, "AUTH LOGIN");
   if (err) return -1;
 
-  int code = smtp_read_reply(s);
+  int code = crispy_smtp_read_reply(s);
   if (code != 334) return code > 0 ? code : -1;
 
   /* Send base64-encoded username */
   long b64Len;
-  char *b64 = smtp_base64_encode(user, (long)strlen(user), &b64Len);
+  char *b64 = crispy_base64_encode(user, (long)strlen(user), &b64Len);
   if (!b64) return -1;
   err = send_line(s, b64);
   free(b64);
   if (err) return -1;
 
-  code = smtp_read_reply(s);
+  code = crispy_smtp_read_reply(s);
   if (code != 334) return code > 0 ? code : -1;
 
   /* Send base64-encoded password */
-  b64 = smtp_base64_encode(pass, (long)strlen(pass), &b64Len);
+  b64 = crispy_base64_encode(pass, (long)strlen(pass), &b64Len);
   if (!b64) return -1;
   err = send_line(s, b64);
   free(b64);
   if (err) return -1;
 
-  code = smtp_read_reply(s);
+  code = crispy_smtp_read_reply(s);
   if (code == 235) s->authenticated = true;
   return SMTP_IS_OK(code) ? 0 : code;
 }
 
-int smtp_auth_begin(SmtpSession *s, const char *mech,
+int crispy_smtp_auth_begin(SmtpSession *s, const char *mech,
                     const char *initial_response) {
   char cmd[1024];
   if (initial_response)
@@ -304,80 +318,80 @@ int smtp_auth_begin(SmtpSession *s, const char *mech,
     snprintf(cmd, sizeof(cmd), "AUTH %s", mech);
   int err = send_line(s, cmd);
   if (err) return -1;
-  return smtp_read_reply(s);
+  return crispy_smtp_read_reply(s);
 }
 
-int smtp_auth_respond(SmtpSession *s, const char *response) {
+int crispy_smtp_auth_respond(SmtpSession *s, const char *response) {
   int err = send_line(s, response);
   if (err) return -1;
-  return smtp_read_reply(s);
+  return crispy_smtp_read_reply(s);
 }
 
-int smtp_auth_cancel(SmtpSession *s) {
+int crispy_smtp_auth_cancel(SmtpSession *s) {
   int err = send_line(s, "*");
   if (err) return -1;
-  return smtp_read_reply(s);
+  return crispy_smtp_read_reply(s);
 }
 
 /* --- Sending --- */
 
-int smtp_command(SmtpSession *s, const char *cmd_line) {
+int crispy_smtp_command(SmtpSession *s, const char *cmd_line) {
   int err = send_line(s, cmd_line);
   if (err) return -1;
-  return smtp_read_reply(s);
+  return crispy_smtp_read_reply(s);
 }
 
-int smtp_mail_from(SmtpSession *s, const char *addr) {
+int crispy_smtp_mail_from(SmtpSession *s, const char *addr) {
   char cmd[512];
   snprintf(cmd, sizeof(cmd), "MAIL FROM:<%s>", addr);
-  return smtp_command(s, cmd);
+  return crispy_smtp_command(s, cmd);
 }
 
-int smtp_rcpt_to(SmtpSession *s, const char *addr) {
+int crispy_smtp_rcpt_to(SmtpSession *s, const char *addr) {
   char cmd[512];
   snprintf(cmd, sizeof(cmd), "RCPT TO:<%s>", addr);
-  return smtp_command(s, cmd);
+  return crispy_smtp_command(s, cmd);
 }
 
-int smtp_data_begin(SmtpSession *s) {
-  return smtp_command(s, "DATA");
+int crispy_smtp_data_begin(SmtpSession *s) {
+  return crispy_smtp_command(s, "DATA");
 }
 
-int smtp_data_send(SmtpSession *s, const char *data, long len) {
+int crispy_smtp_data_send(SmtpSession *s, const char *data, long len) {
   return tp_send(s, data, len);
 }
 
-int smtp_data_end(SmtpSession *s) {
+int crispy_smtp_data_end(SmtpSession *s) {
   int err = tp_send(s, "\r\n.\r\n", 5);
   if (err) return -1;
-  return smtp_read_reply(s);
+  return crispy_smtp_read_reply(s);
 }
 
-int smtp_rset(SmtpSession *s) {
-  return smtp_command(s, "RSET");
+int crispy_smtp_rset(SmtpSession *s) {
+  return crispy_smtp_command(s, "RSET");
 }
 
 /* High-level send: MAIL FROM, RCPT TO for each, DATA, message body */
-int smtp_send(SmtpSession *s, const char *from,
+int crispy_smtp_send(SmtpSession *s, const char *from,
               const char *rcpts[], const char *message, long msgLen) {
   if (msgLen < 0) msgLen = (long)strlen(message);
 
   /* RSET first to clear any previous state */
-  int code = smtp_rset(s);
+  int code = crispy_smtp_rset(s);
   if (!SMTP_IS_OK(code) && code != -1) return code;
 
   /* MAIL FROM */
-  code = smtp_mail_from(s, from);
+  code = crispy_smtp_mail_from(s, from);
   if (!SMTP_IS_OK(code)) return code;
 
   /* RCPT TO for each recipient */
   for (int i = 0; rcpts[i]; i++) {
-    code = smtp_rcpt_to(s, rcpts[i]);
+    code = crispy_smtp_rcpt_to(s, rcpts[i]);
     if (!SMTP_IS_OK(code)) return code;
   }
 
   /* DATA */
-  code = smtp_data_begin(s);
+  code = crispy_smtp_data_begin(s);
   if (code != 354 && !SMTP_IS_OK(code)) return code;
 
   /* Send message body with dot-stuffing */
@@ -386,19 +400,19 @@ int smtp_send(SmtpSession *s, const char *from,
   char *stuffed = (char *)malloc(outBufSize);
   if (!stuffed) return -1;
 
-  long stuffedLen = smtp_dot_stuff(message, msgLen, stuffed, "\r\n", &nlState);
-  int err = smtp_data_send(s, stuffed, stuffedLen);
+  long stuffedLen = crispy_smtp_dot_stuff(message, msgLen, stuffed, "\r\n", &nlState);
+  int err = crispy_smtp_data_send(s, stuffed, stuffedLen);
   free(stuffed);
   if (err) return -1;
 
   /* End DATA */
-  code = smtp_data_end(s);
+  code = crispy_smtp_data_end(s);
   return SMTP_IS_OK(code) ? 0 : code;
 }
 
 /* --- Utilities --- */
 
-long smtp_dot_stuff(const char *in, long inLen, char *out,
+long crispy_smtp_dot_stuff(const char *in, long inLen, char *out,
                     const char *newline, int *nlState) {
   int state = *nlState;
   const char *end = in + inLen;
@@ -432,7 +446,7 @@ static const char *month_names[] = {
   "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"
 };
 
-char *smtp_format_date(char *buf, size_t bufSize, long utc_seconds,
+char *crispy_smtp_format_date(char *buf, size_t bufSize, long utc_seconds,
                        long tz_offset_seconds) {
   time_t t = (time_t)utc_seconds;
   struct tm tm;
@@ -461,7 +475,7 @@ char *smtp_format_date(char *buf, size_t bufSize, long utc_seconds,
   return buf;
 }
 
-char *smtp_format_zone(char *buf, long tz_offset_seconds) {
+char *crispy_smtp_format_zone(char *buf, long tz_offset_seconds) {
   long tz_min = tz_offset_seconds / 60;
   bool neg = tz_min < 0;
   if (neg) tz_min = -tz_min;

@@ -8,8 +8,8 @@
 #include "crispy_smtp.h" /* for SmtpTransport */
 
 /* Create a POSIX/OpenSSL transport.
- * The returned SmtpTransport can be used with smtp_init() or pop3_init().
+ * The returned SmtpTransport can be used with crispy_smtp_init() or crispy_pop3_init().
  * Call the transport's destroy() when done. */
-SmtpTransport maillib_transport_posix_new(void);
+SmtpTransport crispy_transport_new(void);
 
 #endif /* CRISPY_TRANSPORT_H */

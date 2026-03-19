@@ -30,7 +30,7 @@ static const char *const rfc2822_headers[MAIL_HEAD_COUNT] = {
   [MAIL_HEAD_X_PRIORITY]                = "X-Priority: ",
 };
 
-const char *mail_header_name(int id) {
+const char *crispy_header_name(int id) {
   if (id < 0 || id >= MAIL_HEAD_COUNT) return NULL;
   return rfc2822_headers[id];
 }
@@ -46,7 +46,7 @@ static int hp_strncasecmp(const char *a, const char *b, size_t n) {
   return 0;
 }
 
-MailHeadSpec *headparse_find(const char *text, const char *name,
+MailHeadSpec *crispy_headparse_find(const char *text, const char *name,
                              MailHeadSpec *hs) {
   if (!text || !name || !hs) return NULL;
   memset(hs, 0, sizeof(*hs));
@@ -88,7 +88,7 @@ MailHeadSpec *headparse_find(const char *text, const char *name,
   return NULL;
 }
 
-int headparse_get_value(const char *text, const MailHeadSpec *hs, char **out) {
+int crispy_headparse_get_value(const char *text, const MailHeadSpec *hs, char **out) {
   if (!text || !hs || !out) return -1;
   *out = NULL;
 
@@ -102,30 +102,30 @@ int headparse_get_value(const char *text, const MailHeadSpec *hs, char **out) {
   return 0;
 }
 
-int headparse_get_by_id(const char *text, int id, char **out) {
+int crispy_headparse_get_by_id(const char *text, int id, char **out) {
   if (!text || !out) return -1;
   *out = NULL;
 
-  const char *name = mail_header_name(id);
+  const char *name = crispy_header_name(id);
   if (!name) return -1;
 
   MailHeadSpec hs;
-  if (!headparse_find(text, name, &hs))
+  if (!crispy_headparse_find(text, name, &hs))
     return -1;
 
-  return headparse_get_value(text, &hs, out);
+  return crispy_headparse_get_value(text, &hs, out);
 }
 
-char *headparse_get_by_id_buf(const char *text, int id, char *val,
+char *crispy_headparse_get_by_id_buf(const char *text, int id, char *val,
                               size_t valSize) {
   if (!text || !val || !valSize) return val;
   val[0] = '\0';
 
-  const char *name = mail_header_name(id);
+  const char *name = crispy_header_name(id);
   if (!name) return val;
 
   MailHeadSpec hs;
-  if (headparse_find(text, name, &hs)) {
+  if (crispy_headparse_find(text, name, &hs)) {
     long len = hs.stop - hs.value;
     if (len > (long)(valSize - 1)) len = (long)(valSize - 1);
     if (len > 0)

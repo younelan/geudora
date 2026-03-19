@@ -2,7 +2,7 @@
  * Part of maillib: standalone, no external dependencies.
  */
 
-#include "crispy_smtp.h" /* for smtp_base64_encode/decode declarations */
+#include "crispy_smtp.h" /* for crispy_base64_encode/decode declarations */
 #include <stdlib.h>
 #include <string.h>
 
@@ -22,7 +22,7 @@ static const unsigned char b64_decode_table[256] = {
   ['7']=59, ['8']=60, ['9']=61, ['+']=62, ['/']=63,
 };
 
-char *smtp_base64_encode(const char *in, long inLen, long *outLen) {
+char *crispy_base64_encode(const char *in, long inLen, long *outLen) {
   long olen = 4 * ((inLen + 2) / 3);
   char *out = (char *)malloc(olen + 1);
   if (!out) return NULL;
@@ -47,7 +47,7 @@ char *smtp_base64_encode(const char *in, long inLen, long *outLen) {
   return out;
 }
 
-char *smtp_base64_decode(const char *in, long inLen, long *outLen) {
+char *crispy_base64_decode(const char *in, long inLen, long *outLen) {
   if (inLen < 0) inLen = (long)strlen(in);
 
   /* Skip whitespace, count valid chars */

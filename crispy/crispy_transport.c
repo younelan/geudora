@@ -174,7 +174,7 @@ static void posix_destroy(void *vctx) {
 
 /* --- Public --- */
 
-SmtpTransport maillib_transport_posix_new(void) {
+SmtpTransport crispy_transport_new(void) {
   PosixCtx *c = ctx_new();
   SmtpTransport tp = {
     .ctx       = c,

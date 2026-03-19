@@ -32,6 +32,9 @@ typedef struct Pop3MsgInfo {
 } Pop3MsgInfo;
 
 /* --- Session --- */
+/* Debug callback: called with "C: ..." for sent commands, "S: ..." for replies */
+typedef void (*CrispyDebugFn)(const char *line, void *userdata);
+
 typedef struct Pop3Session {
   Pop3Transport tp;
   int last_err;
@@ -41,55 +44,57 @@ typedef struct Pop3Session {
   bool authenticated;
   int msg_count;        /* from STAT */
   long mailbox_size;    /* from STAT */
+  CrispyDebugFn debug;
+  void *debug_userdata;
 } Pop3Session;
 
 /* --- High-level API --- */
 
-void pop3_init(Pop3Session *s, Pop3Transport tp);
+void crispy_pop3_init(Pop3Session *s, Pop3Transport tp);
 
 /* Connect and optionally upgrade to TLS. Returns 0 on success. */
-int pop3_connect(Pop3Session *s, const char *host, int port,
+int crispy_pop3_connect(Pop3Session *s, const char *host, int port,
                  Pop3Security security);
 
 /* Authenticate with USER/PASS. Returns 0 on success. */
-int pop3_auth(Pop3Session *s, const char *user, const char *pass);
+int crispy_pop3_auth(Pop3Session *s, const char *user, const char *pass);
 
 /* Authenticate with APOP (uses greeting timestamp). Returns 0 on success. */
-int pop3_auth_apop(Pop3Session *s, const char *user, const char *pass);
+int crispy_pop3_auth_apop(Pop3Session *s, const char *user, const char *pass);
 
 /* Get message count and mailbox size (STAT). Returns 0 on success.
  * Results stored in s->msg_count and s->mailbox_size. */
-int pop3_stat(Pop3Session *s);
+int crispy_pop3_stat(Pop3Session *s);
 
 /* Get info for all messages (LIST + UIDL).
  * Allocates array into *msgs (caller must free). Returns count, or -1. */
-int pop3_list(Pop3Session *s, Pop3MsgInfo **msgs);
+int crispy_pop3_list(Pop3Session *s, Pop3MsgInfo **msgs);
 
 /* Retrieve message by number (1-based). Allocates into *out.
  * Returns message length, or -1 on error. Caller must free *out. */
-long pop3_retr(Pop3Session *s, int msgNum, char **out);
+long crispy_pop3_retr(Pop3Session *s, int msgNum, char **out);
 
 /* Retrieve just headers + first N lines (TOP). Allocates into *out.
  * Returns length, or -1. Caller must free *out. */
-long pop3_top(Pop3Session *s, int msgNum, int lines, char **out);
+long crispy_pop3_top(Pop3Session *s, int msgNum, int lines, char **out);
 
 /* Mark message for deletion (DELE). Returns 0 on success. */
-int pop3_dele(Pop3Session *s, int msgNum);
+int crispy_pop3_dele(Pop3Session *s, int msgNum);
 
 /* Unmark all deletions (RSET). Returns 0 on success. */
-int pop3_rset(Pop3Session *s);
+int crispy_pop3_rset(Pop3Session *s);
 
 /* Close connection (QUIT — commits deletions). */
-void pop3_close(Pop3Session *s);
+void crispy_pop3_close(Pop3Session *s);
 
 /* --- Low-level API --- */
 
 /* Send a POP3 command and read response.
  * Returns 0 for +OK, -1 for -ERR. */
-int pop3_command(Pop3Session *s, const char *cmd);
+int crispy_pop3_command(Pop3Session *s, const char *cmd);
 
 /* Read a multi-line response (dot-terminated).
  * Allocates into *out. Returns total length, or -1. */
-long pop3_read_multiline(Pop3Session *s, char **out);
+long crispy_pop3_read_multiline(Pop3Session *s, char **out);
 
 #endif /* CRISPY_POP3_H */

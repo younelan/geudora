@@ -34,7 +34,7 @@ enum {
 
 /* Returns the RFC header name string for a given ID, e.g. "Subject: "
  * Returns NULL for invalid IDs. */
-const char *mail_header_name(int id);
+const char *crispy_header_name(int id);
 
 /* Header position descriptor */
 typedef struct MailHeadSpec {
@@ -49,20 +49,20 @@ typedef struct MailHeadSpec {
 /* Find a header by name in raw RFC 822 text.
  * name should include the colon, e.g. "Subject: " or "To:"
  * Returns hs on success, NULL if not found. */
-MailHeadSpec *headparse_find(const char *text, const char *name,
+MailHeadSpec *crispy_headparse_find(const char *text, const char *name,
                              MailHeadSpec *hs);
 
 /* Extract header value text. Allocates into *out (caller must free).
  * Returns 0 on success, -1 on failure. */
-int headparse_get_value(const char *text, const MailHeadSpec *hs, char **out);
+int crispy_headparse_get_value(const char *text, const MailHeadSpec *hs, char **out);
 
 /* Find header by standard ID, extract value.
  * Returns 0 on success, -1 on failure. */
-int headparse_get_by_id(const char *text, int id, char **out);
+int crispy_headparse_get_by_id(const char *text, int id, char **out);
 
 /* Find header by standard ID, copy into buffer.
  * Returns val (always). */
-char *headparse_get_by_id_buf(const char *text, int id, char *val,
+char *crispy_headparse_get_by_id_buf(const char *text, int id, char *val,
                               size_t valSize);
 
 #endif /* CRISPY_HEADPARSE_H */
