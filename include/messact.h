@@ -55,7 +55,7 @@ short NewPrior(short item, short prior);
 int MessGonnaShow(MyWindowPtr win);
 int MessMakeEditable(MyWindowPtr win, bool value);
 void MessDidResize(MyWindowPtr win, Rect *oldContR);
-void MessFocus(MessHandle messH, PETEHandle pte);
+void MessFocus(MessHandle messH, GtkWidget * pte);
 void MessCursor(Point mouse);
 bool MessagePosition(bool save, MyWindowPtr win);
 
@@ -83,7 +83,7 @@ int MessSaveSub(MessHandle messH);
 void AddMessErrNote(MessHandle messH);
 void PlaceMessErrNote(MessHandle messH);
 bool SaveMessHi(MyWindowPtr win, bool closing);
-bool AttIsSelected(MyWindowPtr win, PETEHandle pte, long startWith,
+bool AttIsSelected(MyWindowPtr win, GtkWidget * pte, long startWith,
                    long endWith, short what, long *start, long *stop);
 bool TransferMenuChoice(short menu, short item, TOCType * tocH, short sumNum,
                         long modifiers, bool fcc);
@@ -112,7 +112,7 @@ short MessWi(MyWindowPtr win);
 bool GetMesgErrorsRect(MyWindowPtr win, Rect *r);
 short GetMesgErrorsHeight(MyWindowPtr win);
 #define MESG_ERR_WIDTH 32
-int IncrementQuoteLevel(PETEHandle pte, long startSel, long endSel,
+int IncrementQuoteLevel(GtkWidget * pte, long startSel, long endSel,
                         short increment);
 short SaveAsHook(short item, void *dgPtr, char *userData);
 void PetePaneDraw(void *cntl, short part);

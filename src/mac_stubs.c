@@ -48,8 +48,11 @@ void BoxPreviewProfile() {}
 /* BoxSetSummarySelected — real implementation elsewhere */
 short *BoxWidths = NULL;
 short BugFlags = 0;
-/* BuildEnriched — real implementation elsewhere */
-void BuildHTML() {}
+/* BuildEnriched/BuildHTML — were in rich.c, now replaced by gEditCtrl + crispy_richtext */
+int BuildEnriched(void *a, void *b, void *c, long d, long e, void *f, int g) { (void)a;(void)b;(void)c;(void)d;(void)e;(void)f;(void)g; return -1; }
+int BuildHTML(void *a, void *b, void *c, long d, long e, void *f, void *g, int h, void *i, void *j, void *k) { (void)a;(void)b;(void)c;(void)d;(void)e;(void)f;(void)g;(void)h;(void)i;(void)j;(void)k; return -1; }
+int HTMLPreamble(void *a, void *b, int c, int d) { (void)a;(void)b;(void)c;(void)d; return -1; }
+int HTMLPostamble(void *a, int b) { (void)a;(void)b; return -1; }
 void BuildStationeryList() {
 }
 void CacheRecentNickname(unsigned char *name) {
@@ -176,8 +179,7 @@ void GetWindowPort() {}
 void GlobalToLocal() {}
 bool GrowZoning = false;
 void HRename() {}
-void HTMLPostamble() {}
-void HTMLPreamble() {}
+/* HTMLPostamble/HTMLPreamble stubs moved to line ~54 with proper signatures */
 /* HTMLSignature — defined in globals.c */
 void HashAppearsInAliasFile() {}
 void HideControl(void* ctl) {

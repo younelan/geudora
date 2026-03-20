@@ -76,8 +76,8 @@ typedef void *FlatTLMIMEHandle;
 typedef unsigned char *tlStringHandle;
 typedef void *tlBufferHandle;
 typedef struct mstruct *MessHandle;
-#include "pete_portable.h"
-/* PETEHandle is defined in pete_portable.h */
+/* pete_portable.h removed */
+/* GtkWidget * is defined in pete_portable.h */
 typedef struct HeadSpec *HSPtr;
 typedef struct HeaderDesc *HeaderDPtr, *HeaderDHandle;
 
@@ -150,7 +150,7 @@ int AddTLMIME(emsMIMEHandle emsMIME, short what, char *name,
 int FlattenTLMIME(emsMIMEHandle emsMIME, FlatTLMIMEHandle *flat);
 int UnflattenTLMIME(FlatTLMIMEHandle flat, emsMIMEHandle *tlMIME);
 int TransRecvLine(TransStream stream, unsigned char * line, long *size);
-int ETLDisplayFile(char * spec, PETEHandle pte);
+int ETLDisplayFile(char * spec, GtkWidget * pte);
 int ETLAddIcons(MyWindowPtr win, short startNumber);
 long ETLIconToID(short which);
 int ETLIconToDescriptions(short which, unsigned char *module,
@@ -161,7 +161,7 @@ short ETLSendMessage(TransStream stream, MessHandle messH, bool chatter,
 int ETLCanTransOut(MessHandle messH);
 int ETLTransOut(MessHandle messH, emsMIMEHandle emsMIME, char * from,
                 char * to);
-int ETLTransSelection(PETEHandle pte, HSPtr hs, short item);
+int ETLTransSelection(GtkWidget * pte, HSPtr hs, short item);
 long ETLID(TLMHandle tl, short index);
 int ETLIDToFileIcon(long id, void ***suite);
 int ETLReadTL(char * spec, long *id);

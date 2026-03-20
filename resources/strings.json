@@ -2968,5 +2968,8 @@
   "IDC_US_PERIOD_CB_INIT_3": "潍瑮h",
   "IDC_US_PERIOD_CB_INIT_4": "\\000",
   "IDC_US_PERIOD_CB_INIT_5": "教牡",
-  "IDC_COMBO_SSLOPTIONS_INIT_0": "\\000"
+  "IDC_COMBO_SSLOPTIONS_INIT_0": "\\000",
+  "7120": "Spool Folder",
+  "11311": "Delivery Folder",
+  "11312": "Delivery Folder"
 }

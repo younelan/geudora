@@ -27,7 +27,7 @@ SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE. */
  * searchwin.c - Search window implementation (GTK4 port)
  *
  * Ported from Mac Carbon to GTK4. Original used Mac Carbon UI
- * (ControlHandle, PETEHandle, ViewList, EventRecord, etc.)
+ * (ControlHandle, GtkWidget *, ViewList, EventRecord, etc.)
  * Now uses GtkWindow, GtkEntry, GtkDropDown, GtkTreeView, GRegex.
  */
 

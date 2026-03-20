@@ -39,7 +39,7 @@ ADVISED OF THE POSSIBILITY OF SUCH DAMAGE. */
  * GTK4 architecture:
  *   GtkPrintOperation with begin-print, draw-page, done signals
  *   Cairo + Pango for all rendering (headers, footers, message text)
- *   Text extracted from GtkTextBuffer (PETEHandle = GtkWidget*)
+ *   Text extracted from GtkTextBuffer (GtkWidget * = GtkWidget*)
  ************************************************************************/
 
 #include "Globals.h"
@@ -124,10 +124,10 @@ typedef struct {
 } EudoraPrintData;
 
 /************************************************************************
- * GetTextFromPTE — extract text from a PETEHandle (GtkWidget*)
+ * GetTextFromPTE — extract text from a GtkWidget * (GtkWidget*)
  *
  * Original used PETEGetTextAndSelection / PETEPrintPage to render
- * PETE text directly to the printer port. In GTK4, PETEHandle is a
+ * PETE text directly to the printer port. In GTK4, GtkWidget * is a
  * GtkWidget* (GtkTextView from gEditCtrl). We extract the full text
  * from its GtkTextBuffer and render via Pango.
  ************************************************************************/
@@ -153,7 +153,7 @@ static char *GetTextFromPTE(GtkWidget *pte)
 }
 
 /************************************************************************
- * GetSelectedTextFromPTE — extract selected text from PETEHandle
+ * GetSelectedTextFromPTE — extract selected text from GtkWidget *
  *
  * Original used PETEPrintSelectionSetup to restrict printing to
  * the current selection. We just grab the selection text.
@@ -692,7 +692,7 @@ int PrintOneMessage(MyWindowPtr win, bool select, bool now)
  * header from its window title.
  *
  * Note: TOCHandle → TOCType* (no void *indirection)
- * Note: PETEHandle → GtkWidget* (printMe parameter)
+ * Note: GtkWidget * → GtkWidget* (printMe parameter)
  ************************************************************************/
 int PrintSelectedMessages(TOCType *tocH, bool select, bool now,
                           long beginSel, long endSel, GtkWidget *printMe)

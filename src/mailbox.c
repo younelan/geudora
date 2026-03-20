@@ -3443,7 +3443,7 @@ bool GetTransferParams(short menu, short item, char * spec, bool *xfer) {
  * AppendXferSelection - append the menu item for transfer to selection, if
  *appropriate
  ************************************************************************/
-int AppendXferSelection(PETEHandle pte, MenuHandle contextMenu) {
+int AppendXferSelection(GtkWidget * pte, MenuHandle contextMenu) {
   char s[256];
   MenuAndScoreHandle mash;
   bool divided = false;

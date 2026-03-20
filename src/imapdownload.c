@@ -334,9 +334,7 @@ bool Offline = false;
 #define IN_REPLY_TO_HEAD 5
 #endif
 #define CC_HEAD 6
-#ifndef peLockValid
-#define peLockValid 0
-#endif
+/* peLockValid removed — PETE no longer used */
 #define mcGetGraphics 1
 
 threadDataHandle gThreadData = nil;
@@ -517,7 +515,7 @@ unsigned long DownloadIMAPAttachments(FSSpecHandle attachments,
                                       MailboxNodeHandle mailbox,
                                       bool forceForeground);
 void PrepareDownloadProgress(IMAPStreamPtr imapStream, long totalSize);
-bool RedoIMAPAttachmentIcons(MyWindowPtr win, PETEHandle pte,
+bool RedoIMAPAttachmentIcons(MyWindowPtr win, GtkWidget * pte,
                              FSSpecHandle attachSpecs);
 
 //
@@ -7514,10 +7512,10 @@ int GetStubInfo(char * spec, AttachmentStubPtr stub) {
 }
 
 /************************************************************************
- * PETEHandleToMailboxNode - turn a PETEHandle
+ * PETEHandleToMailboxNode - turn a GtkWidget *
  *into a MailboxNode
  ************************************************************************/
-MailboxNodeHandle PETEHandleToMailboxNode(PETEHandle pte) {
+MailboxNodeHandle PETEHandleToMailboxNode(GtkWidget * pte) {
   MyWindowPtr win = nil;
   TOCType * tocH = nil;
   MailboxNodeHandle node = nil;
@@ -7550,7 +7548,7 @@ MailboxNodeHandle PETEHandleToMailboxNode(PETEHandle pte) {
  *spec paramter to point to the downloaded
  *attachment.
  ************************************************************************/
-int FetchIMAPAttachment(PETEHandle pte, char * spec,
+int FetchIMAPAttachment(GtkWidget * pte, char * spec,
                           bool forceForeground) {
   int err = 0;
   AttachmentStubStruct stub;
@@ -8100,7 +8098,7 @@ void UpdateIMAPWindows(void) {
  * RedoIMAPAttachmentIcons - make new graphics
  *for the specified imap attachments
  ************************************************************************/
-bool RedoIMAPAttachmentIcons(MyWindowPtr win, PETEHandle previewPte,
+bool RedoIMAPAttachmentIcons(MyWindowPtr win, GtkWidget * previewPte,
                              FSSpecHandle attachSpecs) {
   GtkWidget * winWP = nil;
   short attachCount;
@@ -8114,7 +8112,7 @@ bool RedoIMAPAttachmentIcons(MyWindowPtr win, PETEHandle previewPte,
   char spec[PATH_MAX]; char curAtt[PATH_MAX];
   short i;
   long offset;
-  PETEHandle pte = previewPte;
+  GtkWidget * pte = previewPte;
 
   // must have a window or a pte to update
   if (!win && !previewPte)
@@ -8124,7 +8122,7 @@ bool RedoIMAPAttachmentIcons(MyWindowPtr win, PETEHandle previewPte,
   // in
   if (win) {
     winWP = GetMyWindowWindowPtr(win);
-    pte = (PETEHandle)win->pte;
+    pte = (GtkWidget *)win->pte;
   }
 
   // must have some attachments to update

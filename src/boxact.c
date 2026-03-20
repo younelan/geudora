@@ -10,7 +10,7 @@
  * char * → unsigned char * (Pascal strings)
  * EventRecord * → void * (opaque event)
  * int → int
- * PETEHandle → GtkWidget *
+ * GtkWidget * → GtkWidget *
  */
 
 #include "boxact.h"

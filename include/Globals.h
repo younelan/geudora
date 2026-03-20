@@ -24,7 +24,7 @@ DAMAGE. */
 #include <stdint.h>
 #include "mailbox.h"
 #include "message.h"
-#include "pete_portable.h"
+/* pete_portable.h removed — PETE replaced by gEditCtrl */
 #include "threading.h"
 #include "features.h"
 #include "trans.h"
@@ -125,7 +125,7 @@ extern void *HIQ;                   /* HostInfoQHandle */
 extern bool NoPreflight;
 extern bool NoNewMailMe;
 extern short Dragging;
-extern PETEStyleListHandle Pslh;
+/* Pslh removed — was PETE style list, no longer needed */
 extern int SendQueue;
 extern uLong ForceSend;
 extern short *StdSizes;

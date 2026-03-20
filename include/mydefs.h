@@ -33,7 +33,7 @@ ADVISED OF THE POSSIBILITY OF SUCH DAMAGE. */
 #if __profile__
 #include "Profiler.h"
 #endif
-#include "pete_shim.h"
+/* pete_shim.h removed */
 
 /* ensure fixed-width integer and boolean types are available for portable
  * typedefs */
@@ -718,7 +718,7 @@ typedef struct TransStreamStruct *TransStream;
 /* #include "wrappers.h" */ /* TODO: Port wrappers */
 /* #include "util.h" */     /* TODO: Port utilities */
 /* #include "anal.h" */     /* TODO: Port analysis */
-#include "pete_shim.h"
+/* pete_shim.h removed */
 
 /* #include "menusharing.h" */
 /* #include "lex822.h" */

@@ -24,6 +24,7 @@ OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE OF THIS SOFTWARE, EVEN IF
 ADVISED OF THE POSSIBILITY OF SUCH DAMAGE. */
 
 #include "mailxfer.h"
+#include "../gEditCtrl/geditctrl.h"
 #include <glib/gstdio.h>
 #include "compact.h"
 #include "ends.h"
@@ -49,7 +50,6 @@ ADVISED OF THE POSSIBILITY OF SUCH DAMAGE. */
 #include "auditdefs.h"
 #include "fileutil.h"
 #include "Globals.h"
-#include "peteglue.h"
 #include "util.h"
 #include <assert.h>
 #include <stdio.h>
@@ -2619,9 +2619,11 @@ bool AddSigIntro(GtkWidget *pte, void **text) {
 
   /* void *the pte (GtkTextView) */
   if (pte) {
-    long textLen = PETEGetTextLen(NULL, pte);
+    long textLen = geditctrl_get_length(pte);
     if (textLen > 0) {
-      PETEInsertTextPtr(NULL, pte, 0, (char *)(sigIntro + 1), *sigIntro, NULL);
+      gchar *intro = g_strndup((const char *)(sigIntro + 1), *sigIntro);
+      geditctrl_insert_text(pte, 0, intro, -1);
+      g_free(intro);
       didIt = true;
     }
   }
@@ -2655,14 +2657,13 @@ bool RemoveSigIntro(GtkWidget *pte, void **text) {
 
   /* void *the pte */
   if (pte) {
-    void * h = NULL;
-    PeteGetTextAndSelection(pte, &h, NULL, NULL);
+    gchar *h = geditctrl_get_text(pte);
     if (h) {
       len = strlen((char *)h);
       if (len >= *sigIntro) {
         char *ptr = (char *)h;
         if (memcmp(ptr, sigIntro + 1, MIN(*sigIntro, 4)) == 0) {
-          PeteDelete(pte, 0, *sigIntro);
+          geditctrl_delete_range(pte, 0, *sigIntro);
           didIt = true;
         }
       }

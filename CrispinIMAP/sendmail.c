@@ -24,6 +24,7 @@ OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE OF THIS SOFTWARE, EVEN IF
 ADVISED OF THE POSSIBILITY OF SUCH DAMAGE. */
 
 #include "sendmail.h"
+#include "../gEditCtrl/geditctrl.h"
 #include <glib/gstdio.h>
 #include "Globals.h"
 #include "MyRes.h"
@@ -46,7 +47,6 @@ ADVISED OF THE POSSIBILITY OF SUCH DAMAGE. */
 #include "sasl.h"
 #include "util.h"
 #include "uudecode.h"
-#include "peteglue.h"
 #include "threading.h"
 #include <time.h>
 
@@ -83,13 +83,13 @@ extern int HTMLPreamble(void *acc, char *subj, int n, bool b);
 extern int BuildHTML(void *acc, GtkWidget *pte, void *p, long stop, long val,
                        void *p2, void *p3, int n, char *mid,
                        void *parts, char * errSpec);
-extern int PeteLen(GtkWidget *pte);
+/* PeteLen replaced by geditctrl_get_length */
 extern int BuildEnriched(void *acc, GtkWidget *pte, void *p, long stop,
                            long val, void *p2, bool b);
 extern void ConvertExcerpt(GtkWidget *pte, long start, long stop, void *p1,
                            void *p2);
 /* PETEGetTextLen declared in peteglue.h */
-extern void PeteCleanList(GtkWidget *pte);
+/* PeteCleanList replaced by geditctrl_clean */
 extern short Prior2Display(short priority);
 extern int HTMLPostamble(void *acc, bool b);
 extern int MyHandToHand(void **h);
@@ -246,11 +246,11 @@ void Next1342Word(char **startP, char *end,
                   bool *encQuote);
 int SendAnonFTP(TransStream stream, char * spec);
 int SendSpecial(TransStream stream, char * spec, AttMapPtr amp);
-int SendAddressHead(TransStream stream, PETEHandle pte, HSPtr hs,
+int SendAddressHead(TransStream stream, GtkWidget * pte, HSPtr hs,
                       bool allowQP, short tid);
-int SendNormalHead(TransStream stream, PETEHandle pte, HSPtr hs, bool allowQP,
+int SendNormalHead(TransStream stream, GtkWidget * pte, HSPtr hs, bool allowQP,
                      short tid);
-int SendSubjectHead(TransStream stream, PETEHandle pte, HSPtr hs,
+int SendSubjectHead(TransStream stream, GtkWidget * pte, HSPtr hs,
                       bool allowQP, short tid);
 // int SendPipeRCPT(TransStream stream,char * newRecip,AccuPtr pipe,bool
 // chatter);
@@ -1117,7 +1117,7 @@ int TransmitMessageLo(TransStream stream, MessHandle messH, bool chatter,
   CompHeadFind(messH, 0, &pb.hs);
 
   // Add back in the inline sig if removed...
-  pb.hs.stop = PeteLen(TheBody);
+  pb.hs.stop = geditctrl_get_length(TheBody);
 
   /*
    * rich?
@@ -1433,8 +1433,8 @@ int TransmitMessageTextStrip(TransmitPBPtr pb, bool sigToo, bool topLevel) {
     Flatten = GetFlatten(); // force flattening
   ConvertExcerpt(pb->messH->bodyPTE, pb->hs.value, 0x7fffffff, NULL,
                  NULL); // and convert the excerpts
-  pb->hs.stop = PETEGetTextLen(PETE, pb->messH->bodyPTE);
-  PeteCleanList(pb->messH->bodyPTE);
+  pb->hs.stop = geditctrl_get_length(pb->messH->bodyPTE);
+  geditctrl_clean(pb->messH->bodyPTE);
   pb->messH->win->isDirty = false;
 
   // send it
@@ -1758,9 +1758,9 @@ int TransmitMessageBodyHeaders(TransmitPBPtr pb, bool withSignature,
   int err;
 
   if (pb->strip) {
-    PETEGetRawText(PETE, TheBody, &text);
+    text = (void *)geditctrl_get_text(TheBody);
     sig = withSignature ? eSignature : NULL;
-    { long _tlen = PETEGetTextLen(PETE, TheBody);
+    { long _tlen = geditctrl_get_length(TheBody);
       long _slen = sig ? (long)strlen((char *)sig) : 0;
       err = SendContentType(pb->stream, text, _tlen, BodyOffset(text),
                             sig ? (char *)sig : NULL, _slen, 0,
@@ -1788,7 +1788,7 @@ int TransmitMessageBody(TransmitPBPtr pb, bool withClosure) {
 
   if (pb->strip) {
     // send the plain text
-    PETEGetRawText(PETE, pb->messH->bodyPTE, &body);
+    body = (void *)geditctrl_get_text(pb->messH->bodyPTE);
     sErr = SendBodyLines(pb->stream, (char *)body, pb->hs.stop, pb->hs.value, pb->flags,
                          true, NULL, 0, false, pb->encoder);
   } else {
@@ -2105,7 +2105,7 @@ done:
 /************************************************************************
  * SendAddressHead - send an address header
  ************************************************************************/
-int SendAddressHead(TransStream stream, PETEHandle pte, HSPtr hs,
+int SendAddressHead(TransStream stream, GtkWidget * pte, HSPtr hs,
                       bool allowQP, short tid) {
   char *start;
   int lineLimit = GetRLong(WRAP_SPOT) - 2;
@@ -2124,7 +2124,7 @@ int SendAddressHead(TransStream stream, PETEHandle pte, HSPtr hs,
   bool wasGroup = false;
   char dontHide[32];
 
-  PETEGetRawText(PETE, pte, &text);
+  text = (void *)geditctrl_get_text(pte);
   GetRString(dontHide, GROUP_DONT_HIDE);
   { char *tp = text;
 
@@ -2239,7 +2239,7 @@ done:
 /************************************************************************
  * SendNormalHead - send a normal header
  ************************************************************************/
-int SendNormalHead(TransStream stream, PETEHandle pte, HSPtr hs, bool allowQP,
+int SendNormalHead(TransStream stream, GtkWidget * pte, HSPtr hs, bool allowQP,
                      short tid) {
   void *text;
   char kiran[16];
@@ -2247,7 +2247,7 @@ int SendNormalHead(TransStream stream, PETEHandle pte, HSPtr hs, bool allowQP,
   if (hs->index == SUBJ_HEAD && *GetRString(kiran, JUST_FOR_KIRAN))
     return (SendSubjectHead(stream, pte, hs, allowQP, tid));
 
-  PETEGetRawText(PETE, pte, &text);
+  text = (void *)geditctrl_get_text(pte);
 
   sErr = SendPtrHead(stream, text + hs->start, hs->value - hs->start - 1,
                      text + hs->value, hs->stop - hs->value, allowQP, tid);
@@ -2258,7 +2258,7 @@ int SendNormalHead(TransStream stream, PETEHandle pte, HSPtr hs, bool allowQP,
 /************************************************************************
  * SendSubjectHead - send the subject header
  ************************************************************************/
-int SendSubjectHead(TransStream stream, PETEHandle pte, HSPtr hs,
+int SendSubjectHead(TransStream stream, GtkWidget * pte, HSPtr hs,
                       bool allowQP, short tid) {
   void *text;
   char kiran[16];
@@ -2270,7 +2270,7 @@ int SendSubjectHead(TransStream stream, PETEHandle pte, HSPtr hs,
 
   GetRString(kiran, JUST_FOR_KIRAN);
 
-  PETEGetRawText(PETE, pte, &text);
+  text = (void *)geditctrl_get_text(pte);
 
   { char *tp = text;
   len = hs->stop;
@@ -4576,8 +4576,11 @@ int GetIndAttachment(MessHandle messH, short index, char * spec,
   HeadSpec hs;
 
   if (CompHeadFind(messH, ATTACH_HEAD, &hs)) {
-    if (!(err = PETEGetRawText(PETE, TheBody, &text)))
+    text = (void *)geditctrl_get_text(TheBody);
+    if (text)
       err = GetIndAttachmentLo(text, index, spec, where, &hs);
+    else
+      err = -1;
   }
   return (err);
 }

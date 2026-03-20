@@ -29,7 +29,6 @@ ADVISED OF THE POSSIBILITY OF SUCH DAMAGE. */
 #define IMAPDOWNLOAD_H
 
 /* Forward declarations for structures */
-struct PETEInst;
 struct IMAPSC;
 struct LocalFlagChange;
 
@@ -56,9 +55,7 @@ struct LocalFlagChange;
 /* CStr is defined in mydefs.h */
 
 /* BoxCountHandle - handle to list of mailbox specs for search */
-#ifndef PETE_H
-typedef void *PETEInst;
-#endif
+/* PETEInst removed — was void*, unused */
 typedef void *BoxCountHandle;
 
 // resource where we put IMAP index
@@ -274,7 +271,7 @@ void IMAPPollMailboxTree(IMAPStreamPtr imapStream, MailboxNodeHandle tree,
 bool IsIMAPAttachmentStub(char * spec);
 unsigned long DownloadIMAPAttachment(char * spec, MailboxNodeHandle mailbox,
                                      bool forceForeground);
-MailboxNodeHandle PETEHandleToMailboxNode(PETEHandle pte);
+MailboxNodeHandle PETEHandleToMailboxNode(GtkWidget *pte);
 unsigned long DoDownloadIMAPAttachments(FSSpecHandle attachments,
                                         MailboxNodeHandle mailbox);
 bool CanFetchAttachment(char * spec);
@@ -283,7 +280,7 @@ bool FetchAllIMAPAttachments(TOCType * toc, short sumNum, bool forceForeground);
 bool FetchAllIMAPAttachmentsBySpec(char * spec, MailboxNodeHandle mailbox,
                                    bool forceForeground);
 bool HasStubFileAttachment(TOCType * tocH, short sumNum);
-int FetchIMAPAttachment(PETEHandle pte, char * spec, bool forceForeground);
+int FetchIMAPAttachment(GtkWidget * pte, char * spec, bool forceForeground);
 void RedisplayIMAPMessage(MyWindowPtr win);
 
 // functions to determine the state of a given message in an IMAP mailbox

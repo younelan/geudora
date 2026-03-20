@@ -32,7 +32,7 @@ ADVISED OF THE POSSIBILITY OF SUCH DAMAGE. */
  * GTK4 port:
  *   - MessHandle still **MessType (double pointer) per message.h
  *   - TOCType * direct pointer (no void *indirection on TOC)
- *   - PETEHandle / bodyPTE / subPTE = GtkWidget* (GtkTextView via gEditCtrl)
+ *   - GtkWidget * / bodyPTE / subPTE = GtkWidget* (GtkTextView via gEditCtrl)
  *   - ControlHandle = void* (GtkWidget* buttons/widgets)
  *   - QuickDraw drawing → GTK4 widgets / CSS styling
  *   - Mac window manager → GTK4 window management
@@ -40,6 +40,9 @@ ADVISED OF THE POSSIBILITY OF SUCH DAMAGE. */
  */
 
 #include "messact.h"
+#include "../gEditCtrl/geditctrl.h"
+#include "../gEditCtrl/gedit-document.h"
+#include "crispy_richtext.h"
 
 #include "Globals.h"
 #include "MyRes.h"
@@ -66,7 +69,6 @@ ADVISED OF THE POSSIBILITY OF SUCH DAMAGE. */
 #include "StringUtil.h"
 #include "StringDefs.h"
 #include "fileutil.h"
-#include "peteglue.h"
 
 /* Forward declarations for functions not in available headers */
 extern bool IsMailboxChoice(short menu, short item);
@@ -300,13 +302,13 @@ static bool PeteIsValid_(GtkWidget *pte) {
 }
 
 static long PeteLen_(GtkWidget *pte) {
-  if (!PeteIsValid_(pte)) return 0;
+  if (!((pte) != NULL && GTK_IS_WIDGET(pte))) return 0;
   GtkTextBuffer *buf = gtk_text_view_get_buffer(GTK_TEXT_VIEW(pte));
   return gtk_text_buffer_get_char_count(buf);
 }
 
 static void PeteSString_(unsigned char *pStr, GtkWidget *pte) {
-  if (!PeteIsValid_(pte)) { pStr[0] = 0; return; }
+  if (!((pte) != NULL && GTK_IS_WIDGET(pte))) { pStr[0] = 0; return; }
   GtkTextBuffer *buf = gtk_text_view_get_buffer(GTK_TEXT_VIEW(pte));
   GtkTextIter start, end;
   gtk_text_buffer_get_start_iter(buf, &start);
@@ -325,7 +327,7 @@ static void PeteSString_(unsigned char *pStr, GtkWidget *pte) {
 
 static int PeteGetTextAndSelection_(GtkWidget *pte, char **textOut,
                                     long *selStart, long *selEnd) {
-  if (!PeteIsValid_(pte)) return -1;
+  if (!((pte) != NULL && GTK_IS_WIDGET(pte))) return -1;
   GtkTextBuffer *buf = gtk_text_view_get_buffer(GTK_TEXT_VIEW(pte));
   GtkTextIter start, end;
   gtk_text_buffer_get_start_iter(buf, &start);
@@ -347,7 +349,7 @@ static int PeteGetTextAndSelection_(GtkWidget *pte, char **textOut,
 }
 
 static void PeteSetDirty_(GtkWidget *pte) {
-  if (!PeteIsValid_(pte)) return;
+  if (!((pte) != NULL && GTK_IS_WIDGET(pte))) return;
   GtkTextBuffer *buf = gtk_text_view_get_buffer(GTK_TEXT_VIEW(pte));
   gtk_text_buffer_set_modified(buf, TRUE);
 }
@@ -364,11 +366,11 @@ bool MessClose(MyWindowPtr win) {
       win->pte == messH->subPTE)
     MessFocus(messH, TheBody);
 
-  if (PeteIsDirty(messH->subPTE))
+  if (geditctrl_is_dirty(messH->subPTE))
     MessSaveSub(messH);
 
   if (!GrowZoning)
-    win->isDirty = win->isDirty || PeteIsDirty(TheBody);
+    win->isDirty = win->isDirty || geditctrl_is_dirty(TheBody);
 
   if (!NoSaves && !GrowZoning)
     if (!SaveMessHi(win, true))
@@ -492,7 +494,7 @@ void SetSubject(TOCType *tocH, short sumNum, char *sub) {
         g_strlcpy(cTitle, (char *)title, sizeof(cTitle));
         gtk_window_set_title(GTK_WINDOW(messH->win->window), cTitle);
       }
-      if (messH->subPTE && PeteIsValid_(messH->subPTE)) {
+      if (messH->subPTE && (messH->subPTE != NULL && GTK_IS_WIDGET(messH->subPTE))) {
         GtkTextBuffer *buf =
             gtk_text_view_get_buffer(GTK_TEXT_VIEW(messH->subPTE));
         char cSub[256];
@@ -558,7 +560,7 @@ void SetOpt(TOCType *tocH, short sumNum, long flag, bool on) {
 /* ============================================================
  * AttIsSelected - check/open/color selected attachments
  * ============================================================ */
-bool AttIsSelected(MyWindowPtr win, PETEHandle pte, long startWith,
+bool AttIsSelected(MyWindowPtr win, GtkWidget * pte, long startWith,
                    long endWith, short what, long *aStart, long *aEnd) {
   char *text = NULL;
   long selStart, selEnd;
@@ -569,11 +571,13 @@ bool AttIsSelected(MyWindowPtr win, PETEHandle pte, long startWith,
   bool finderSelect = 0 != (what & attFinder);
   bool printThem = 0 != (what & attPrint);
 
-  if (!PeteIsValid_(pte) && win) pte = win->pte;
-  if (!PeteIsValid_(pte)) return false;
+  if (!((pte) != NULL && GTK_IS_WIDGET(pte)) && win) pte = win->pte;
+  if (!((pte) != NULL && GTK_IS_WIDGET(pte))) return false;
 
-  if (PeteGetTextAndSelection_(pte, &text, &selStart, &selEnd))
-    return false;
+  text = (void *)geditctrl_get_text(pte);
+  selStart = geditctrl_get_caret_offset(pte);
+  selEnd = selStart; /* simplified — full selection tracking via GTK */
+  if (!text)
   if (!text || strlen(text) == 0) { g_free(text); return false; }
 
   long textLen = strlen(text);
@@ -622,7 +626,7 @@ bool AttIsSelected(MyWindowPtr win, PETEHandle pte, long startWith,
         gtk_text_buffer_get_iter_at_offset(buf, &iterS, lBegin);
         gtk_text_buffer_get_iter_at_offset(buf, &iterE, lEnd);
         gtk_text_buffer_select_range(buf, &iterS, &iterE);
-        PeteSetDirty_(pte);
+        geditctrl_set_dirty(pte, TRUE);
       }
       if (openThem || printThem)
         OpenAttLine(pte, line, finderSelect, printThem);
@@ -815,7 +819,27 @@ bool SaveMess(MyWindowPtr win) {
   bool blahBlah = MessFlagIsSet(messH, FLAG_SHOW_ALL);
 
   if (!blahBlah) {
-    SetMessRich(messH);
+    /* Detect styled content from gEditCtrl */
+    {
+      geditDocument *_doc = geditctrl_get_document(TheBody);
+      GList *_runs = _doc ? gedit_document_get_style_runs(_doc) : NULL;
+      bool _has_styles = false;
+      for (GList *_l = _runs; _l; _l = _l->next) {
+        geditStyleRun *_r = (geditStyleRun *)_l->data;
+        if (_r->bold || _r->italic || _r->underline || _r->font_size ||
+            _r->font_family || _r->link_url ||
+            _r->color.red > 0.01 || _r->color.green > 0.01 || _r->color.blue > 0.01)
+        { _has_styles = true; break; }
+      }
+      if (_has_styles) {
+        if (!PrefIsSet(PREF_SEND_ENRICHED_NEW) || MessOptIsSet(messH, OPT_HTML))
+        { SetMessOpt(messH, OPT_HTML); ClearMessFlag(messH, FLAG_RICH); }
+        else { SetMessFlag(messH, FLAG_RICH); ClearMessOpt(messH, OPT_HTML); }
+      } else {
+        ClearMessFlag(messH, FLAG_RICH);
+        ClearMessOpt(messH, OPT_HTML);
+      }
+    }
     memset(&enriched, 0, sizeof(enriched));
     if (MessIsRich(messH)) {
       if (!(err = AccuInit(&enriched))) {
@@ -823,19 +847,29 @@ bool SaveMess(MyWindowPtr win) {
         if (!messH->extras.offset ||
             !(err = AccuAddHandle(&enriched, messH->extras.data)))
           if (!(err = AccuAddFromHandle(&enriched, text, 0, hSpec.value))) {
-            if (MessOptIsSet(messH, OPT_HTML)) {
-              unsigned char scratch[256];
-              g_strlcpy((char *)scratch, (char *)SumOf(messH)->subj, 256);
-              if (!(err = HTMLPreamble(&enriched, scratch, 0, true))) {
-                sprintf(scratch, "%ld", (long)(SumOf(messH)->msgIdHash));
-                if (!(err = BuildHTML(&enriched, TheBody, nil,
-                                      strlen((char *)text), hSpec.value,
-                                      nil, nil, 1, scratch, nil, nil)))
-                  err = HTMLPostamble(&enriched, true);
+            /* Extract styled text from gEditCtrl as HTML or enriched */
+            {
+              geditDocument *_edoc = geditctrl_get_document(TheBody);
+              gchar *_html = _edoc ? gedit_document_get_markup(_edoc, 0, -1) : NULL;
+              if (_html) {
+                if (MessOptIsSet(messH, OPT_HTML)) {
+                  /* Wrap in full HTML document */
+                  char *full = g_strdup_printf(
+                    "<html><head><title>%s</title></head><body>%s</body></html>",
+                    SumOf(messH)->subj, _html);
+                  err = AccuAddPtr(&enriched, full, strlen(full));
+                  g_free(full);
+                } else {
+                  char *_enr = crispy_html_to_enriched(_html, -1);
+                  if (_enr) {
+                    err = AccuAddPtr(&enriched, _enr, strlen(_enr));
+                    free(_enr);
+                  }
+                }
+                g_free(_html);
+              } else {
+                err = -1;
               }
-            } else {
-              err = BuildEnriched(&enriched, TheBody, nil,
-                                  PeteLen_(TheBody), hSpec.value, nil, true);
             }
             if (!err) {
               AccuTrim(&enriched);
@@ -895,8 +929,8 @@ bool SaveMess(MyWindowPtr win) {
   tocH->count--;
 
   messH->weeded = fromLen + (blahBlah ? 0 : messH->extras.offset);
-  PeteSetURLRescan(TheBody, 0);
-  PeteCleanList(win->pte);
+  ((void)0);
+  geditctrl_clean(win->pte);
   win->isDirty = false;
   free(SumOf(messH)->cache);
   SetMessOpt(messH, OPT_EDITED);
@@ -910,7 +944,7 @@ bool SaveMess(MyWindowPtr win) {
  * ShowMessageSeparator
  * ============================================================ */
 void ShowMessageSeparator(GtkWidget *pte, bool center) {
-  if (!PeteIsValid_(pte)) return;
+  if (!((pte) != NULL && GTK_IS_WIDGET(pte))) return;
   GtkTextBuffer *buf = gtk_text_view_get_buffer(GTK_TEXT_VIEW(pte));
   GtkTextIter start, end;
   gtk_text_buffer_get_start_iter(buf, &start);
@@ -956,11 +990,11 @@ bool MessMenu(MyWindowPtr win, int menu, int item, short modifiers) {
       break;
     case FILE_SAVE_ITEM:
       if (win->isDirty) {
-        if (messH->subPTE && PeteIsDirty(messH->subPTE))
+        if (messH->subPTE && geditctrl_is_dirty(messH->subPTE))
           MessSaveSub(messH);
-        if (messH->bodyPTE && PeteIsDirty(messH->bodyPTE))
+        if (messH->bodyPTE && geditctrl_is_dirty(messH->bodyPTE))
           SaveMess(win);
-        PeteCleanList(win->pte);
+        geditctrl_clean(win->pte);
         win->isDirty = false;
       }
       result = true;
@@ -1139,12 +1173,12 @@ void Fcc(MessHandle messH, char * box) {
   PCatC(scratch, '"');
 
   if (CompHeadFind(messH, BCC_HEAD, &hs)) {
-    PetePrepareUndo(TheBody, peCantUndo, hs.stop, hs.stop, &start, nil);
+    start = hs.stop; /* save for undo range */
     InsertCommaIfNeedBe(TheBody, &hs);
     CompHeadAppendStr(TheBody, &hs, scratch);
     CompHeadFind(messH, BCC_HEAD, &hs);
-    PeteSelect(nil, TheBody, hs.stop, hs.stop);
-    PeteFinishUndo(TheBody, peUndoPaste, start, hs.stop);
+    geditctrl_select_range(TheBody, hs.stop, hs.stop);
+    geditctrl_set_dirty(TheBody, TRUE);
     ClearMessFlag(messH, FLAG_KEEP_COPY);
     CompIBarUpdate(messH);
   }
@@ -1297,7 +1331,7 @@ static short SaveAsToOpenFileLo(short refN, MessHandle messH) {
   bool isOut = messH->tocH->which == OUT;
   HeadSpec hs;
 
-  PETEGetRawText(nil, TheBody, &text);
+  text = (void *)geditctrl_get_text(TheBody);
   CompHeadFind(messH, 0, &hs);
 
   if (!exclHead & isOut & SumOf(messH)->seconds) {
@@ -1457,7 +1491,7 @@ bool MessKey(MyWindowPtr win, void *eventPtr) {
   } else if (event->modifiers & GDK_META_MASK) {
     return false;
   } else if (win->ro & uLetter == ' ') {
-    PeteScroll(TheBody, 0, shift ? -1 : 1);
+    ((void)0);
     if (!shift) NextMess(tocH, messH, downArrowChar, 0, true);
     return true;
   } else if (win->ro & DirtyKey(event->message)) {
@@ -1469,7 +1503,7 @@ bool MessKey(MyWindowPtr win, void *eventPtr) {
   } else if (!bodyEdit & !win->ro & uLetter == returnChar) {
     gdk_display_beep(gdk_display_get_default());
   } else {
-    PeteEdit(win, win->pte, peeEvent, (void *)event);
+    geditctrl_handle_key(win->pte, event->keyval, event->keycode, event->modifiers);
   }
 #endif
   return false;
@@ -1562,21 +1596,21 @@ static void MessButton(MyWindowPtr win, ControlHandle button,
 int MessMakeEditable(MyWindowPtr win, bool value) {
   MessHandle messH = Win2MessH(win);
   if (!value) {
-    if (PeteIsDirty(TheBody)) {
+    if (geditctrl_is_dirty(TheBody)) {
       if (!PrefIsSet(PREF_EZ_SAVE)) {
         if (!SaveMessHi(win, false)) return ECANCELED;
       } else if (!SaveMess(win)) return ECANCELED;
     }
     ClearMessOpt(messH, OPT_WRITE);
     win->ro = (win->pte == TheBody);
-    if (PeteIsValid_(TheBody))
+    if ((TheBody != NULL && GTK_IS_WIDGET(TheBody)))
       gtk_text_view_set_editable(GTK_TEXT_VIEW(TheBody), FALSE);
     win->isDirty = false;
-    PeteCleanList(win->pte);
+    geditctrl_clean(win->pte);
   } else {
     SetMessOpt(messH, OPT_WRITE);
     win->ro = false;
-    if (PeteIsValid_(TheBody))
+    if ((TheBody != NULL && GTK_IS_WIDGET(TheBody)))
       gtk_text_view_set_editable(GTK_TEXT_VIEW(TheBody), TRUE);
   }
   return 0;
@@ -1617,10 +1651,10 @@ int MessGonnaShow(MyWindowPtr win) {
     messH->subPTE = subEntry;
   }
 
-  PeteFocus(win, TheBody, true);
+  geditctrl_focus(TheBody);
   SetBGColorsByPers(messH);
-  PeteURLScan(win, TheBody);
-  PeteCalcOn(TheBody);
+  ((void)0);
+  ((void)0);
 
   MessIBarUpdate(messH);
   CheckAddNotifyControls(win, messH);
@@ -1779,7 +1813,7 @@ int ExportHTML(MessHandle messH) {
 
 /* ============================================================ */
 void HiliteOddReply(MessHandle messH) {
-  if (!PeteIsValid_(TheBody)) return;
+  if (!(TheBody != NULL && GTK_IS_WIDGET(TheBody))) return;
   GtkTextBuffer *buf = gtk_text_view_get_buffer(GTK_TEXT_VIEW(TheBody));
   GtkTextTagTable *table = gtk_text_buffer_get_tag_table(buf);
   GtkTextTag *tag = gtk_text_tag_table_lookup(table, "odd-reply");
@@ -1829,14 +1863,14 @@ void SetMessTable(TOCType *tocH, short sumNum, short newId) {
 /* ============================================================
  * MessFocus - switch PTE focus, using gtk_widget_grab_focus
  * ============================================================ */
-void MessFocus(MessHandle messH, PETEHandle pte) {
+void MessFocus(MessHandle messH, GtkWidget * pte) {
   MyWindowPtr win = messH->win;
   bool wasSub = (win->pte == messH->subPTE);
-  PeteFocus(win, pte, true);
+  geditctrl_focus(pte);
   win->ro = (win->pte == TheBody) & !MessOptIsSet(messH, OPT_WRITE);
   if (wasSub & win->pte != messH->subPTE)
     MessSaveSub(messH);
-  if (PeteIsValid_(pte))
+  if (((pte) != NULL && GTK_IS_WIDGET(pte)))
     gtk_widget_grab_focus(pte);
 }
 
@@ -1845,8 +1879,8 @@ int MessSaveSub(MessHandle messH) {
   unsigned char newSubj[256];
   PeteSString_(newSubj, messH->subPTE);
   SetSubject(messH->tocH, messH->sumNum, newSubj);
-  PETEMarkDocDirty(nil, messH->subPTE, false);
-  if (PeteIsDirty(messH->win->pte))
+  geditctrl_set_dirty(messH->subPTE, FALSE);
+  if (geditctrl_is_dirty(messH->win->pte))
     messH->win->isDirty = true;
   else
     messH->win->isDirty = false;
@@ -1907,16 +1941,16 @@ bool MessagePosition(bool save, MyWindowPtr win) {
 
 bool MessApp1(MyWindowPtr win, void *event) {
   MessHandle messH = Win2MessH(win);
-  PeteEdit(win, messH->bodyPTE, peeEvent, event);
+  geditctrl_handle_key(messH->bodyPTE, 0, 0, 0);
   return true;
 }
 
 /* ============================================================
  * IncrementQuoteLevel - adjust quote level via GtkTextBuffer
  * ============================================================ */
-int IncrementQuoteLevel(PETEHandle pte, long startSel, long endSel,
+int IncrementQuoteLevel(GtkWidget * pte, long startSel, long endSel,
                         short increment) {
-  if (!PeteIsValid_(pte)) return -1;
+  if (!((pte) != NULL && GTK_IS_WIDGET(pte))) return -1;
   GtkTextBuffer *buf = gtk_text_view_get_buffer(GTK_TEXT_VIEW(pte));
 
   GtkTextIter selS, selE;

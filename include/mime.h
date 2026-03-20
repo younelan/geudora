@@ -27,7 +27,7 @@ ADVISED OF THE POSSIBILITY OF SUCH DAMAGE. */
 #define MIME_H
 
 #include "mydefs.h"
-#include "pete_portable.h"
+/* pete_portable.h removed */
 #include "trans.h"
 #include "header.h"
 #include <stdbool.h>
@@ -138,12 +138,8 @@ DecoderFunc *FindMIMEDecoder(char *encoding, bool *isExtern,
 DecoderFunc QPEncoder, B64Encoder, UUEncoder;
 int FindAttMap(char * spec, AttMapPtr mmp);
 
-typedef struct {
-  long offset;
-  PETETextStyle style;
-  long validBits;
-  short sizeIndex;
-} OffsetAndStyle, *OffsetAndStylePtr, *OffsetAndStyleHandle;
+/* OffsetAndStyle — was used by rich.c PETE style tracking, now dead code */
+typedef void *OffsetAndStyleHandle;
 
 /*
  * for decoders and file savers

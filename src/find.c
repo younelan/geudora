@@ -32,14 +32,14 @@ ADVISED OF THE POSSIBILITY OF SUCH DAMAGE. */
  *
  * Original used:
  *   - Mac ControlHandle for find/word/case buttons → GTK4 GtkWidget buttons
- *   - PETEHandle (Pete editor) for query text → GtkWidget* (gEditCtrl)
+ *   - GtkWidget * (Pete editor) for query text → GtkWidget* (gEditCtrl)
  *   - FindHandle (void *to FindVars) → FindVars* (malloc'd)
  *   - Pascal strings (Str63, Str255, char *) → C strings (char[])
  *   - Mac window manager (FrontWindow_, GetNextWindow, etc.) → GTK4 windows
  *   - Mac controls (NewControlSmall, SetControlValue, etc.) → GtkWidget
  *   - unsigned char * text -> char* text
  *
- * PETEHandle = GtkWidget* (gEditCtrl text view widget)
+ * GtkWidget * = GtkWidget* (gEditCtrl text view widget)
  ************************************************************************/
 
 #include "Globals.h"
@@ -61,7 +61,7 @@ ADVISED OF THE POSSIBILITY OF SUCH DAMAGE. */
  *   bool findDone, finding
  *   short kind — which window kind we're finding in
  *   ControlHandle controls[fcLimit] — Mac controls
- *   PETEHandle queryPTE — Pete editor for query string
+ *   GtkWidget * queryPTE — Pete editor for query string
  *   Rect qRect
  *   char whereStr[256]
  *
@@ -82,7 +82,7 @@ typedef struct {
     bool findDone;                 /* are we done? */
     short kind;                    /* which kind of find? */
     GtkWidget *controls[fcLimit];  /* our controls (was ControlHandle[]) */
-    GtkWidget *queryEntry;         /* text entry for search string (was PETEHandle queryPTE) */
+    GtkWidget *queryEntry;         /* text entry for search string (was GtkWidget * queryPTE) */
     bool finding;                  /* we're actively finding */
     char whereStr[256];            /* description of where we are (was Str255) */
 } FindVars;
@@ -745,7 +745,7 @@ static void DoFindOK(void)
 }
 
 /************************************************************************
- * FindInPTE - find text in a gEditCtrl (PETEHandle = GtkWidget*)
+ * FindInPTE - find text in a gEditCtrl (GtkWidget * = GtkWidget*)
  *
  * Original:
  *   - PeteGetTextAndSelection to get current cursor position (startHere)

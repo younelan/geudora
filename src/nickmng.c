@@ -1,3 +1,4 @@
+#include "../gEditCtrl/geditctrl.h"
 /* Copyright (c) 2017, Computer History Museum
 All rights reserved.
 Redistribution and use in source and binary forms, with or without modification,
@@ -2341,8 +2342,10 @@ void MakeNickFromSelection(MyWindowPtr win) {
   void *textCopy;
   long selStart, selEnd;
 
-  if (PeteGetTextAndSelection(win->pte, &text, &selStart, &selEnd) ||
-      selStart >= selEnd)
+  text = (void *)geditctrl_get_text(win->pte);
+  selStart = geditctrl_get_caret_offset(win->pte);
+  selEnd = selStart;
+  if (!text || selStart >= selEnd)
     NoteUser(NO_ADDRESSES, 0);
   else {
     //	ALB 9/5/96, replaced this with SuckPtrAddresses for bug 602

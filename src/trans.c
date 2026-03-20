@@ -449,7 +449,7 @@ int TransRecvLine(TransStream stream, unsigned char * line, long *size)
 /**********************************************************************
  * ETLDisplayFile - Display a translated file
  **********************************************************************/
-int ETLDisplayFile(char * spec, PETEHandle pte)
+int ETLDisplayFile(char * spec, GtkWidget * pte)
 {
 	return ENOENT;
 }
@@ -545,7 +545,7 @@ int ETLTransOut(MessHandle messH, emsMIMEHandle emsMIME, char * from,
 /**********************************************************************
  * ETLTransSelection - Translate a text selection
  **********************************************************************/
-int ETLTransSelection(PETEHandle pte, HSPtr hs, short item)
+int ETLTransSelection(GtkWidget * pte, HSPtr hs, short item)
 {
 	return ENOENT;
 }

@@ -35,7 +35,8 @@ DAMAGE. */
 #include "toc.h"
 #include "compact.h"
 #include "comp.h"         /* CompHeadFind, CompHeadGetText, CompHeadAppendPtr, HeadSpec (via sendmail.h) */
-#include "peteglue.h"     /* PeteIsDirty, PeteDelete, PeteInsertPtr, PeteSelect, PeteLen */
+#include "../gEditCtrl/geditctrl.h"
+#include "../gEditCtrl/gedit-document.h"
 #include "features.h"
 #include "gtk_dialogs.h"
 #include "prefdefs.h"
@@ -45,7 +46,6 @@ DAMAGE. */
 #include "schizo.h"       /* PushPers, PopPers, FindPersById, SetPers */
 #include "nickmng.h"      /* historyAddressBook enum, FindAddressBookType */
 #include "pop.h"          /* PERS_FORCE, MESS_TO_PERS */
-#include "rich.h"         /* InsertRich */
 #include "trans.h"        /* ETLIconToID */
 #include "mailxfer.h"     /* XferMail */
 #include "MyRes.h"        /* ATTACH_MENU */
@@ -375,7 +375,27 @@ int QueueMessage(TOCType *tocH, short sumNum, SendTypeEnum st, long secs, bool n
 		oldFlags = SumOf(messH)->flags;
 		oldOpts = SumOf(messH)->opts;
 
-		SetMessRich(messH);
+		/* Detect styled content: check if editor has non-trivial style runs */
+		{
+			geditDocument *doc = geditctrl_get_document(TheBody);
+			GList *runs = doc ? gedit_document_get_style_runs(doc) : NULL;
+			bool has_styles = false;
+			for (GList *l = runs; l; l = l->next) {
+				geditStyleRun *r = (geditStyleRun *)l->data;
+				if (r->bold || r->italic || r->underline || r->font_size ||
+				    r->font_family || r->link_url ||
+				    r->color.red > 0.01 || r->color.green > 0.01 || r->color.blue > 0.01)
+				{ has_styles = true; break; }
+			}
+			if (has_styles) {
+				if (!PrefIsSet(PREF_SEND_ENRICHED_NEW) || MessOptIsSet(messH, OPT_HTML))
+				{ SetMessOpt(messH, OPT_HTML); ClearMessFlag(messH, FLAG_RICH); }
+				else { SetMessFlag(messH, FLAG_RICH); ClearMessOpt(messH, OPT_HTML); }
+			} else {
+				ClearMessFlag(messH, FLAG_RICH);
+				ClearMessOpt(messH, OPT_HTML);
+			}
+		}
 		ClearMessOpt(messH, OPT_BLOAT);
 		ClearMessOpt(messH, OPT_STRIP);
 
@@ -657,7 +677,7 @@ void CompUnattach(MyWindowPtr win)
 
 	/* Original: PETEInsertTextPtr(PETE, TheBody, -1, "", 0, nil) — delete selection */
 	GtkWidget *pte = TheBody ? TheBody : win->pte;
-	PETEInsertTextPtr(NULL, pte, -1, "", 0, NULL);
+	geditctrl_insert_text(pte, -1, "", 0);
 	AttachSelect(messH);
 	win->isDirty = true;
 }
@@ -999,15 +1019,18 @@ void ApplyStationeryHandle(MyWindowPtr win, char *text, long textLen, bool dontC
 
 	/* Apply body text */
 	if (spot + bodySpot < end) {
-		long newBodySpot = PeteLen(TheBody);
+		long newBodySpot = gedit_document_get_length(geditctrl_get_document(TheBody));
 		if (oldSum.opts & OPT_HTML) {
-			/* For HTML stationery, use InsertRich to parse markup */
-			/* Need to create a temporary handle for InsertRich */
-			void *bodyH = malloc(textLen - bodySpot);
-			if (bodyH) {
-				memcpy(bodyH, text + bodySpot, textLen - bodySpot);
-				InsertRich((unsigned char *)bodyH, 0, textLen - bodySpot, newBodySpot, false, TheBody, NULL, false);
-				free(bodyH);
+			/* Insert HTML/enriched body via gEditCtrl markup */
+			geditDocument *doc = geditctrl_get_document(TheBody);
+			if (doc) {
+				char *body_copy = malloc(textLen - bodySpot + 1);
+				if (body_copy) {
+					memcpy(body_copy, text + bodySpot, textLen - bodySpot);
+					body_copy[textLen - bodySpot] = '\0';
+					gedit_document_insert_markup(doc, newBodySpot, body_copy);
+					free(body_copy);
+				}
 			}
 			SetMessOpt(messH, OPT_HTML);
 		} else {
@@ -1026,12 +1049,12 @@ void ApplyStationeryHandle(MyWindowPtr win, char *text, long textLen, bool dontC
 			}
 		}
 		/* Label and lock the inserted body text */
-		geditctrl_set_label(TheBody, newBodySpot, PeteLen(TheBody), label);
-		geditctrl_lock_range(TheBody, newBodySpot, PeteLen(TheBody), 0);
+		geditctrl_set_label(TheBody, newBodySpot, geditctrl_get_length(TheBody), label);
+		geditctrl_lock_range(TheBody, newBodySpot, geditctrl_get_length(TheBody), 0);
 	}
 
 	win->isDirty = false;
-	PeteCleanList(win->pte);
+	geditctrl_clean(win->pte);
 
 	if (UseInlineSig)
 		AddInlineSig(messH);
@@ -1077,7 +1100,7 @@ void CompIBarUpdate(MessHandle messH)
  ************************************************************************/
 int CompLeaving(MessHandle messH, short head)
 {
-	short fDirty = PeteIsDirty(TheBody);
+	short fDirty = geditctrl_is_dirty(TheBody);
 	int err = 0;
 	MyWindowPtr win = messH->win;
 
@@ -1095,7 +1118,7 @@ int CompLeaving(MessHandle messH, short head)
 
 		UpdateSum(messH, SumOf(messH)->offset, SumOf(messH)->length);
 
-		fDirty = PeteIsDirty(TheBody);
+		fDirty = geditctrl_is_dirty(TheBody);
 		messH->fieldDirty = fDirty;
 
 		PopPers();
@@ -1145,7 +1168,7 @@ int NickExpandAndCacheHead(MessHandle messH, short head, bool cacheOnly)
 							 * Don't replace text if no changes so selection doesn't change. */
 							long selStart = 0, selEnd = 0;
 							void *fieldTextH = NULL;
-							PeteGetTextAndSelection(pte, &fieldTextH, &selStart, &selEnd);
+							fieldTextH = (void *)geditctrl_get_text(pte); selStart = geditctrl_get_caret_offset(pte); selEnd = selStart;
 
 							long fieldLen = hs.stop - hs.value;
 							bool changed = false;
@@ -1158,16 +1181,13 @@ int NickExpandAndCacheHead(MessHandle messH, short head, bool cacheOnly)
 
 							if (changed) {
 								/* Text has changed — replace field contents */
-								PetePrepareUndo(pte, 0/*peCantUndo*/, hs.value, hs.stop, NULL, NULL);
-								if (PeteDelete(pte, hs.value, hs.stop) == 0) {
-									if (PeteInsertPtr(pte, hs.value, expanded, len) == 0) {
-										/* If previous selection was entire field, reselect entire field */
-										bool selectAll = (selStart == hs.value && selEnd == hs.stop);
-										if (CompHeadCurrent(pte) == head && CompHeadFind(messH, head, &hs))
-											PeteSelect(messH->win, pte, selectAll ? hs.value : hs.stop, hs.stop);
-									}
-								}
-								PeteFinishUndo(pte, 1/*peUndoPaste*/, hs.value, hs.value + len);
+								geditctrl_delete_range(pte, hs.value, hs.stop - hs.value);
+								geditctrl_insert_text(pte, hs.value, expanded, len);
+								/* If previous selection was entire field, reselect entire field */
+								bool selectAll = (selStart == hs.value && selEnd == hs.stop);
+								if (CompHeadCurrent(pte) == head && CompHeadFind(messH, head, &hs))
+									geditctrl_select_range(pte, selectAll ? hs.value : hs.stop, hs.stop);
+								geditctrl_set_dirty(pte, TRUE);
 							}
 						}
 						CompGatherRecipientAddresses(messH, true);
@@ -1306,13 +1326,13 @@ void CompDelAttachment(MessHandle messH, void *hsPtr)
 		return;
 
 	if (hs) {
-		PeteDelete(pte, hs->start, hs->stop);
+		geditctrl_delete_range(pte, hs->start, hs->stop - hs->start);
 		sel = hs->start;
 	} else {
 		/* Delete current selection */
-		PETEInsertTextPtr(NULL, pte, -1, NULL, 0, NULL);
+		((void)0);
 		long selEnd;
-		PeteGetTextAndSelection(pte, NULL, &sel, &selEnd);
+		sel = geditctrl_get_caret_offset(pte); selEnd = sel;
 	}
 
 	/* Clean up double-spaces around the deletion point */
@@ -1327,7 +1347,7 @@ void CompDelAttachment(MessHandle messH, void *hsPtr)
 		if (sel > hSpec.value && sel >= 2 && sel <= len &&
 			textStr[sel - 1] == ' ' && textStr[sel - 2] == ' ')
 		{
-			PeteDelete(pte, sel - 1, sel);
+			geditctrl_delete_range(pte, sel - 1, 1);
 			sel--;
 			hSpec.stop--;
 		}
@@ -1339,7 +1359,7 @@ void CompDelAttachment(MessHandle messH, void *hsPtr)
 			if (sel < hSpec.stop && sel < len && sel > 0 &&
 				textStr[sel] == ' ' && textStr[sel - 1] == ' ')
 			{
-				PeteDelete(pte, sel, sel + 1);
+				geditctrl_delete_range(pte, sel, 1);
 				hSpec.stop--;
 			}
 			g_free(textStr);
@@ -1365,8 +1385,9 @@ void AttachSelect(MessHandle messH)
 	HeadSpec hs;
 	GtkWidget *pte = TheBody ? TheBody : messH->win->pte;
 
-	if (PeteGetTextAndSelection(pte, NULL, &selStart, &selEnd))
-		return;
+	selStart = geditctrl_get_caret_offset(pte);
+	selEnd = selStart;
+	if (selStart < 0) return;
 
 	if (!CompHeadFind(messH, ATTACH_HEAD, &hs))
 		return;

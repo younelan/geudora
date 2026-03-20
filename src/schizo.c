@@ -17,6 +17,7 @@ NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE OF THIS SOFTWARE, EVE
 DAMAGE. */
 
 #include "schizo.h"
+#include "../gEditCtrl/geditctrl.h"
 #include "StringUtil.h"
 #include "MyRes.h"
 #include "StringDefs.h"
@@ -35,7 +36,6 @@ DAMAGE. */
 #include "comp.h"
 #include "sendmail.h"
 #include "pop.h"
-#include "peteglue.h"
 #include "gtk_menus.h"
 #define FILE_NUM 82
 /* Copyright (c) 1996 by QUALCOMM Incorporated */
@@ -482,7 +482,7 @@ int SetPers(TOCType * tocH,short sumNum,PersHandle pers,bool stationery)
 		messWinWP = GetMyWindowWindowPtr(messH->win);
 		PushPers(pers);
 		GetReturnAddr(addr,true);
-		PeteCalcOff(TheBody);
+		geditctrl_begin_update(TheBody);
 		if (redirected)
 			err = RedirectAnnotation(messH);
 		else

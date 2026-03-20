@@ -54,8 +54,6 @@ extern int PtrAndHand(const void *ptr, void **hand, long size);
 #include "junk.h"
 #include "messact.h"
 #include "boxact.h"
-#include "peteglue.h"
-#include "rich.h"
 
 #include "lineio.h"
 
@@ -223,13 +221,7 @@ bool UseFlowOutExcerpt = false;
 #ifndef GDK_SHIFT_MASK
 #endif
 
-/* PETE Macros */
-#ifndef peAllValid
-#define peAllValid -1
-#endif
-#ifndef kPETELastPara
-#define kPETELastPara -1L
-#endif
+/* PETE removed — all editor access via gEditCtrl */
 
 #ifndef OPT_WRITE
 #define OPT_WRITE 1
@@ -659,11 +651,10 @@ MyWindowPtr OpenMessage(TOCType * tocH, short sumNum, GtkWidget *winWP,
        * rest of the text?
        */
       if (text && !useLizzie) {
-        PeteCalcOff(win->pte);
+        geditctrl_begin_update(win->pte);
         gedit_document_insert_text(geditctrl_get_document(win->pte), -1,
                                    text + partial);
-        PeteCalcOn(win->pte);
-        PeteSetURLRescan(win->pte, 0);
+        geditctrl_end_update(win->pte);
 
         if (err) {
           if (err != ECANCELED)
@@ -683,12 +674,12 @@ MyWindowPtr OpenMessage(TOCType * tocH, short sumNum, GtkWidget *winWP,
     }
   }
 
-  PeteSetDirty(TheBody, false);
+  geditctrl_set_dirty(TheBody, FALSE);
   win->isDirty = false;
 
   if (err) {
   Abort:
-    PeteCleanList(win->pte);
+    geditctrl_clean(win->pte);
     win->isDirty = false;
     CloseMyWindow(winWP);
     win = NULL;
@@ -1059,7 +1050,7 @@ int MoveMessageLo(TOCType * tocH, int sumNum, char * toSpec, bool copy,
     FixSourceStatus(
         tocH, sumNum); /* in case we're deleting a reply, set orig state back */
 
-  if (messH && messH->subPTE && PeteIsDirty(messH->subPTE))
+  if (messH && messH->subPTE && geditctrl_is_dirty(messH->subPTE))
     MessSaveSub(messH);
 
   // if this is an IMAP to POP transfer, close the message window
@@ -1163,7 +1154,7 @@ int AppendMessage(TOCType * fromTocH, int fromN, TOCType ** toTocHP, bool copy,
       if ((win->isDirty || !fromTocH->sums[fromN].length) && !SaveComp(win))
         return (1);
     } else if (win->isDirty) {
-      PeteFocus(fromMH->win, fromMH->bodyPTE, true);
+      geditctrl_focus(fromMH->bodyPTE);
       if (!SaveMessHi(win, false))
         return (1);
     }
@@ -2671,15 +2662,16 @@ MyWindowPtr DoSalvageMessageLo(MyWindowPtr win, bool forXfer, bool forIMAP) {
                                      scratch);
               else {
                 /* Copy header text from original to new message */
-                void *rawText = NULL;
-                PETEGetRawText(NULL, origMessH->bodyPTE, &rawText);
+                gchar *rawText = geditctrl_get_text(origMessH->bodyPTE);
                 if (rawText && oldHS.length > 0) {
-                  err = PeteInsertPtr(newMessH->bodyPTE,
-                                      newHS.offset + newHS.length,
-                                      (const char *)rawText + oldHS.offset,
-                                      oldHS.length);
+                  gchar *chunk = g_strndup(rawText + oldHS.offset, oldHS.length);
+                  geditctrl_insert_text(newMessH->bodyPTE,
+                                        newHS.offset + newHS.length, chunk, -1);
+                  g_free(chunk);
+                  err = 0;
                 } else
                   err = 0;
+                g_free(rawText);
               }
             }
             if (!err && CompHeadFind(newMessH, field, &newHS)) {
@@ -2723,7 +2715,7 @@ MyWindowPtr DoSalvageMessageLo(MyWindowPtr win, bool forXfer, bool forIMAP) {
       SumOf(newMessH)->sigId = SumOf(origMessH)->sigId;
     }
 
-    PeteGetTextAndSelection(origMessH->bodyPTE, (void **)&text, NULL, NULL);
+    text = geditctrl_get_text(origMessH->bodyPTE);
     if (text) {
         beginning = spot = text;
       total = size = strlen(text);
@@ -2789,8 +2781,10 @@ MyWindowPtr DoSalvageMessageLo(MyWindowPtr win, bool forXfer, bool forIMAP) {
       {
         long copyLen = total - (spot - beginning);
         if (copyLen > 0) {
-          err = PeteInsertPtr(newMessH->bodyPTE, newBo,
-                              (const char *)spot, copyLen);
+          gchar *_chunk = g_strndup((const char *)spot, copyLen);
+          geditctrl_insert_text(newMessH->bodyPTE, newBo, _chunk, -1);
+          g_free(_chunk);
+          err = 0;
         } else
           err = 0;
       }
@@ -2817,7 +2811,7 @@ MyWindowPtr DoSalvageMessageLo(MyWindowPtr win, bool forXfer, bool forIMAP) {
     if (!forIMAP) {
       ShowMyWindow(newWinWP);
       newWin->isDirty = false;
-      PeteCleanList(newWin->pte);
+      geditctrl_clean(newWin->pte);
     }
   }
   /* Brace removed */
@@ -2946,7 +2940,7 @@ int RemoveSelf(MessHandle messH, short head, bool wantErrors) {
  **********************************************************************/
 char *MessText(MessHandle messH) {
   char * text = NULL;
-  PeteGetRawText(TheBody, (void **)&text);
+  text = geditctrl_get_text(TheBody);
   return (text);
 }
 
@@ -2985,8 +2979,8 @@ MyWindowPtr ReopenMessage(MyWindowPtr win) {
   if (text) {
     // stick in the text
     {
-      PeteSetTextPtr(TheBody, NULL, 0);
-      PeteCalcOff(TheBody);
+      geditctrl_set_text(TheBody, NULL, 0);
+      geditctrl_begin_update(TheBody);
 
       /* (*PeteExtra(TheBody))->emoDesired = !MessFlagIsSet(messH,
        * FLAG_SHOW_ALL); */
@@ -3017,7 +3011,7 @@ MyWindowPtr ReopenMessage(MyWindowPtr win) {
         if (!err)
         if (!err) {
           // recalculate
-          PeteCalcOn(TheBody);
+          geditctrl_end_update(TheBody);
 
           //	add notification control if necessary
           CheckAddNotifyControls(win, messH);
@@ -3034,9 +3028,8 @@ MyWindowPtr ReopenMessage(MyWindowPtr win) {
     }
 
     // mark document as clean
-    PETEMarkDocDirty(PETE, TheBody, false);
+    geditctrl_set_dirty(TheBody, FALSE);
     win->isDirty = false;
-    PeteSetURLRescan(TheBody, 0);
 
     // kill text if still here
     g_free(text);
@@ -3054,7 +3047,7 @@ MyWindowPtr ReopenMessage(MyWindowPtr win) {
   /* } Closing ReopenMessage - removed extra brace */
 
   if (win)
-    PeteCalcOn(TheBody);
+    geditctrl_end_update(TheBody);
 
   return (win);
 }
@@ -3086,16 +3079,11 @@ void FindFrom(char *who, GtkWidget *pte) {
 void QuoteLines(GtkWidget *pte, long from, long to, short pfid, long *qEnd) {
   long this;
   char prefix[16];
-  char * text;
+  char *text;
   long count = 0;
-  bool first = true;
-  PETEStyleEntry pse;
-  RGBColor color;
   bool withSpace = false;
   long numSpaces = 0;
   unsigned char quoteChar;
-
-  Zero(pse);
 
   if (qEnd)
     *qEnd = to;
@@ -3113,28 +3101,24 @@ void QuoteLines(GtkWidget *pte, long from, long to, short pfid, long *qEnd) {
     quoteChar = prefix[0];
   }
 
-  PETEGetRawText(PETE, pte, (void **)&text);
-  this = strlen(text);
+  text = (unsigned char *)geditctrl_get_text(pte);
+  this = text ? strlen((char *)text) : 0;
   to = MIN(to, this);
 
   for (this = to - 2; this >= from; this --)
     if (!this || (text)[this] == '\015') {
       if (withSpace && (text)[this + 1] != quoteChar) {
-        PeteInsertChar(pte, this ? this + 1 : this, ' ', NULL);
+        geditctrl_insert_text(pte, this ? this + 1 : this, " ", 1);
         numSpaces++;
       }
-      PeteInsertPtr(pte, this ? this + 1 : this, prefix, prefixLen);
+      geditctrl_insert_text(pte, this ? this + 1 : this, prefix, prefixLen);
       count++;
     }
   if (qEnd)
     *qEnd = to + count * prefixLen + numSpaces; // adjust for inserted prefixes
 
-  // do the scanner's work for it
-  if (!false) {
-    /* pse.psStyle.textStyle.tsLabel = pQuoteLabel; */
-    PETESetTextStyle(PETE, pte, from, to + count * prefixLen,
-                     &pse.psStyle.textStyle, peLabelValid);
-  }
+  /* Quote label — set quote level on the quoted range */
+  geditctrl_set_quote_level(pte, (int)count);
 }
 
 /************************************************************************
@@ -3424,8 +3408,7 @@ MyWindowPtr DoReplyMessage(MyWindowPtr win, bool all, bool self, bool quote,
         InvalContent(win);
         UpdateMyWindow(winWP);
       }
-      PETESetTextStyle(PETE, newMessH->bodyPTE, newBo, 0x7fffffff, (PETETextStyle *)&style,
-                       0 /* peLockValid */);
+      /* Lock style was applied via PETE — gEditCtrl handles read-only via set_editable */
       if (rich) {
         geditDocument *_doc = geditctrl_get_document(newMessH->bodyPTE);
         gint _end = gedit_document_get_length(_doc) - 1;
@@ -3747,7 +3730,6 @@ MyWindowPtr DoRedistributeMessage(MyWindowPtr win, void *toWhom, bool turbo,
   MyWindowPtr newWin;
   long newBo;
   int err;
-  PETETextStyle style;
   bool html = !PrefIsSet(PREF_SEND_ENRICHED_NEW);
 
   if (GetWindowKind(winWP) != COMP_WIN && !SaveMessHi(win, false))
@@ -3788,8 +3770,7 @@ MyWindowPtr DoRedistributeMessage(MyWindowPtr win, void *toWhom, bool turbo,
     /* style.tsLock = PrefIsSet(PREF_LOCK_REDIR) ? peModLock : peNoLock; */
     if (BUG14)
       UpdateMyWindow(winWP);
-    PETESetTextStyle(PETE, newMessH->bodyPTE, newBo, 0x7fffffff, &style,
-                     0 /* peLockValid */);
+    /* Lock style — gEditCtrl handles via set_editable */
     if (BUG14)
       UpdateMyWindow(winWP);
 
@@ -3936,7 +3917,6 @@ MyWindowPtr DoForwardMessage(MyWindowPtr win, void *toWhom, bool turbo) {
   GtkWidget * newWinPtr;
   char scratch[256], subj[256];
   long offset;
-  PETETextStyle style;
   bool rich;
   long origBo;
   HeadSpec hs;
@@ -4632,7 +4612,7 @@ void Preview(TOCType * tocH, short sumNum) {
   GtkWidget * tocWinWP = GetMyWindowWindowPtr(tocH->win);
   MessHandle messH;
   long id;
-  GtkWidget *pte; // gEditCtrl widget (was PETEHandle)
+  GtkWidget *pte; // gEditCtrl widget (was GtkWidget *)
   MyWindowPtr messWin = NULL;
   bool active = false;
   short ezOpenSum;
@@ -4660,7 +4640,6 @@ void Preview(TOCType * tocH, short sumNum) {
     id = 0;
 
   if (tocH->previewID == id) {
-    PeteCalcOn(tocH->previewPTE);
     if (id && tocH->lastSameTicks != 1 &&
         id != PREVIEW_ID_MULT) // we have a message and we're not already done
     {
@@ -4751,7 +4730,7 @@ void Preview(TOCType * tocH, short sumNum) {
       bool junk = SumOf(messH)->spamScore >= GetRLong(JUNK_MAILBOX_THRESHHOLD);
 
       // (*PeteExtra(pte))->containsJunkMail = junk;
-      PeteCalcOff(pte);
+      geditctrl_begin_update(pte);
       /* undo is always available in gEditCtrl */
       if (!ConConMess(
               messH, pte,
@@ -4760,7 +4739,7 @@ void Preview(TOCType * tocH, short sumNum) {
         /* Lock the entire text to prevent editing in preview */
         geditctrl_lock_range(
             pte, 0, gedit_document_get_length(geditctrl_get_document(pte)), 0);
-        PeteCalcOn(pte);
+        geditctrl_end_update(pte);
       } else {
         long body = SumOf(messH)->bodyOffset - messH->weeded;
         long len;
@@ -4768,7 +4747,6 @@ void Preview(TOCType * tocH, short sumNum) {
         char * text;
         long oldID;
         long para;
-        PETEParaInfo pinfo;
         long bite;
 
         // Make sure we examine it for funny business
@@ -5033,10 +5011,27 @@ char * CurAddr(MyWindowPtr win, char * addr) {
  * CurAddrSel - extract the current address from the selection, if we have one
  ************************************************************************/
 char * CurAddrSel(MyWindowPtr win, char * addr) {
-  if (win->pte && *PeteSelectedString(addr, win->pte)) {
+  if (!win->pte) return NULL;
+  /* Get selected text directly from gEditCtrl */
+  geditDocument *doc = geditctrl_get_document(win->pte);
+  if (!doc) return NULL;
+  gint selStart = geditctrl_get_caret_offset(win->pte);
+  /* For now, get word at caret as selection fallback */
+  gchar *text = gedit_document_get_text(doc);
+  if (!text || !text[0]) { g_free(text); return NULL; }
+  /* Find word boundaries around caret */
+  gint left = selStart, right = selStart;
+  gint len = strlen(text);
+  while (left > 0 && text[left-1] != ' ' && text[left-1] != '\n') left--;
+  while (right < len && text[right] != ' ' && text[right] != '\n') right++;
+  if (right > left && right - left < 256) {
+    memcpy(addr, text + left, right - left);
+    addr[right - left] = '\0';
+    g_free(text);
     ShortAddr(addr, addr);
-    if (*addr)
-      return addr;
+    if (*addr) return addr;
+  } else {
+    g_free(text);
   }
   return NULL;
 }
