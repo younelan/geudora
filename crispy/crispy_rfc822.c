@@ -1027,3 +1027,153 @@ int crispy_rfc822_parse_sequence(const char *seqset, unsigned long max_uid,
   }
   return count;
 }
+
+/* ================================================================
+ * Client-side search
+ * ================================================================ */
+
+/* Case-insensitive memmem — find pattern in text */
+static const char *ci_memmem(const char *hay, long hayLen,
+                              const char *needle, long needleLen) {
+  if (needleLen <= 0) return hay;
+  if (hayLen < needleLen) return NULL;
+  long limit = hayLen - needleLen;
+  for (long i = 0; i <= limit; i++) {
+    bool match = true;
+    for (long j = 0; j < needleLen; j++) {
+      if (tolower((unsigned char)hay[i+j]) != tolower((unsigned char)needle[j])) {
+        match = false;
+        break;
+      }
+    }
+    if (match) return &hay[i];
+  }
+  return NULL;
+}
+
+bool crispy_rfc822_search_text(const char *text, long textLen,
+                                const char *pattern) {
+  if (!text || !pattern) return false;
+  if (!*pattern) return true;
+  if (textLen < 0) textLen = (long)strlen(text);
+  long patLen = (long)strlen(pattern);
+  return ci_memmem(text, textLen, pattern, patLen) != NULL;
+}
+
+bool crispy_rfc822_search_addr(ImapAddress *adr, const char *pattern) {
+  if (!pattern || !*pattern) return true;
+  long patLen = (long)strlen(pattern);
+  while (adr) {
+    if (adr->name && ci_memmem(adr->name, (long)strlen(adr->name), pattern, patLen))
+      return true;
+    if (adr->mailbox && ci_memmem(adr->mailbox, (long)strlen(adr->mailbox), pattern, patLen))
+      return true;
+    if (adr->host && ci_memmem(adr->host, (long)strlen(adr->host), pattern, patLen))
+      return true;
+    /* Also match "mailbox@host" combined */
+    if (adr->mailbox && adr->host) {
+      char full[512];
+      snprintf(full, sizeof(full), "%s@%s", adr->mailbox, adr->host);
+      if (ci_memmem(full, (long)strlen(full), pattern, patLen))
+        return true;
+    }
+    adr = adr->next;
+  }
+  return false;
+}
+
+bool crispy_rfc822_search_header(const char *header_value, const char *pattern) {
+  if (!header_value || !pattern) return false;
+  return crispy_rfc822_search_text(header_value, (long)strlen(header_value), pattern);
+}
+
+bool crispy_rfc822_search_message(const char *message, long msgLen,
+                                   const char *pattern) {
+  if (!message || !pattern) return false;
+  if (msgLen < 0) msgLen = (long)strlen(message);
+  return crispy_rfc822_search_text(message, msgLen, pattern);
+}
+
+bool crispy_rfc822_subjects_match(const char *subj1, const char *subj2) {
+  if (!subj1 && !subj2) return true;
+  if (!subj1 || !subj2) return false;
+  const char *base1 = crispy_rfc822_base_subject(subj1);
+  const char *base2 = crispy_rfc822_base_subject(subj2);
+  return strcasecmp(base1, base2) == 0;
+}
+
+/* ================================================================
+ * Client-side sort comparison
+ * ================================================================ */
+
+/* Helper: get first address as string for comparison */
+static const char *first_addr_str(ImapEnvelope *env) {
+  if (!env) return "";
+  ImapAddress *a = env->from;
+  if (!a) return "";
+  if (a->name) return a->name;
+  if (a->mailbox) return a->mailbox;
+  return "";
+}
+
+int crispy_rfc822_sort_compare(const char *field,
+                                ImapFetchResult *a, ImapFetchResult *b) {
+  if (!field || !a || !b) return 0;
+
+  if (strcasecmp(field, "DATE") == 0) {
+    /* Compare INTERNALDATE strings lexicographically
+     * (IMAP date format is designed to sort correctly as text) */
+    const char *da = a->internaldate ? a->internaldate : "";
+    const char *db = b->internaldate ? b->internaldate : "";
+    /* Parse both dates for proper comparison */
+    CrispyDate ca, cb;
+    if (crispy_rfc822_parse_date(da, &ca) && crispy_rfc822_parse_date(db, &cb)) {
+      /* Normalize to comparable values */
+      long va = ca.year * 10000000L + ca.month * 100000L + ca.day * 1000L +
+                ca.hours * 100 + ca.minutes;
+      long vb = cb.year * 10000000L + cb.month * 100000L + cb.day * 1000L +
+                cb.hours * 100 + cb.minutes;
+      if (va != vb) return (va < vb) ? -1 : 1;
+      return ca.seconds - cb.seconds;
+    }
+    return strcmp(da, db);
+  }
+
+  if (strcasecmp(field, "FROM") == 0) {
+    return strcasecmp(first_addr_str(a->envelope), first_addr_str(b->envelope));
+  }
+
+  if (strcasecmp(field, "SUBJECT") == 0) {
+    const char *sa = a->envelope ? a->envelope->subject : "";
+    const char *sb_str = b->envelope ? b->envelope->subject : "";
+    /* Compare base subjects (strip Re:/Fwd:) */
+    return strcasecmp(crispy_rfc822_base_subject(sa ? sa : ""),
+                      crispy_rfc822_base_subject(sb_str ? sb_str : ""));
+  }
+
+  if (strcasecmp(field, "SIZE") == 0) {
+    if (a->size < b->size) return -1;
+    if (a->size > b->size) return 1;
+    return 0;
+  }
+
+  /* CC — compare first CC address */
+  if (strcasecmp(field, "CC") == 0) {
+    const char *ca = (a->envelope && a->envelope->cc) ?
+      (a->envelope->cc->name ? a->envelope->cc->name : a->envelope->cc->mailbox ? a->envelope->cc->mailbox : "") : "";
+    const char *cb = (b->envelope && b->envelope->cc) ?
+      (b->envelope->cc->name ? b->envelope->cc->name : b->envelope->cc->mailbox ? b->envelope->cc->mailbox : "") : "";
+    return strcasecmp(ca, cb);
+  }
+
+  /* TO — compare first TO address */
+  if (strcasecmp(field, "TO") == 0) {
+    const char *ta = (a->envelope && a->envelope->to) ?
+      (a->envelope->to->name ? a->envelope->to->name : a->envelope->to->mailbox ? a->envelope->to->mailbox : "") : "";
+    const char *tb = (b->envelope && b->envelope->to) ?
+      (b->envelope->to->name ? b->envelope->to->name : b->envelope->to->mailbox ? b->envelope->to->mailbox : "") : "";
+    return strcasecmp(ta, tb);
+  }
+
+  return 0;
+}

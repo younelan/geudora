@@ -151,4 +151,38 @@ const char *crispy_rfc822_base_subject(const char *subject);
 int crispy_rfc822_parse_sequence(const char *seqset, unsigned long max_uid,
                                   unsigned long **uids);
 
+/* ================================================================
+ * Client-side search — offline text/address matching
+ * ================================================================ */
+
+/* Case-insensitive substring search in text.
+ * Returns true if pattern is found anywhere in text. */
+bool crispy_rfc822_search_text(const char *text, long textLen,
+                                const char *pattern);
+
+/* Search within an address list for a pattern.
+ * Matches against name, mailbox, and host fields.
+ * Returns true if pattern found in any address. */
+bool crispy_rfc822_search_addr(ImapAddress *adr, const char *pattern);
+
+/* Search within a header value. Handles RFC2047-encoded words
+ * by searching the raw text (caller should decode first if needed).
+ * Returns true if pattern found. */
+bool crispy_rfc822_search_header(const char *header_value, const char *pattern);
+
+/* Full message search — searches headers and body text.
+ * Returns true if pattern found anywhere. */
+bool crispy_rfc822_search_message(const char *message, long msgLen,
+                                   const char *pattern);
+
+/* Compare two subjects for threading (strips Re:/Fwd:, case-insensitive).
+ * Returns true if base subjects match. */
+bool crispy_rfc822_subjects_match(const char *subj1, const char *subj2);
+
+/* Compare messages for client-side sorting.
+ * field: "DATE", "FROM", "SUBJECT", "SIZE".
+ * Returns <0, 0, >0 like strcmp. */
+int crispy_rfc822_sort_compare(const char *field,
+                                ImapFetchResult *a, ImapFetchResult *b);
+
 #endif /* CRISPY_RFC822_H */
