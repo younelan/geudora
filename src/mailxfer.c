@@ -25,6 +25,7 @@ ADVISED OF THE POSSIBILITY OF SUCH DAMAGE. */
 
 #include "mailxfer.h"
 #include "../gEditCtrl/geditctrl.h"
+#include "keychain.h"
 #include <glib/gstdio.h>
 #include "compact.h"
 #include "ends.h"
@@ -1576,8 +1577,10 @@ static short CrispyCheckMail(short *gotSome) {
   err = crispy_pop3_auth(&pop, popUser, CurPers->password);
   if (err) {
     g_print("CrispyCheckMail: auth failed (%s)\n", pop.last_reply);
-    /* Clear password so user gets re-prompted next time */
+    /* Clear password and invalidate cache so user gets re-prompted */
     CurPers->password[0] = '\0';
+    { char acct[256]; snprintf(acct, sizeof(acct), "%s@%s", popUser, popHost);
+      keychain_cache_invalidate("gEudora", acct); }
     crispy_pop3_close(&pop);
     return -1;
   }
@@ -1795,7 +1798,7 @@ static short CrispyCheckMail(short *gotSome) {
     WriteTOC(tocH);
     g_print("CrispyCheckMail: TOC written, count=%d\n", tocH->count);
 
-    /* Hand off to delivery system */
+    /* Hand off to delivery system via RenameInTemp */
     if (InAThread()) {
       g_print("CrispyCheckMail: calling RenameInTemp\n");
       tocH = RenameInTemp(tocH);

@@ -20,117 +20,180 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+#include <stdbool.h>
+#include <glib.h>
 
 /* ======================================================================
  * macOS — Security.framework
  * ====================================================================== */
 #if defined(__APPLE__)
 
+/* Legacy SecKeychain* API is deprecated since 10.10 but still the only way
+ * to get "Always Allow" ACL support on macOS. Silence the warnings. */
+#pragma clang diagnostic push
+#pragma clang diagnostic ignored "-Wdeprecated-declarations"
 #include <Security/Security.h>
+
+/*
+ * Password cache — avoid repeated keychain access.
+ * Uses legacy SecKeychainFindGenericPassword / SecKeychainAddGenericPassword
+ * which integrates with macOS keychain ACLs ("Always Allow" persists).
+ */
+#define KC_CACHE_MAX 16
+static struct {
+  char service[64];
+  char account[256];
+  char password[256];
+  bool valid;
+} kc_cache[KC_CACHE_MAX];
+static int kc_cache_count = 0;
+
+static int kc_cache_lookup(const char *service, const char *account,
+                            char *out, size_t size) {
+  for (int i = 0; i < kc_cache_count; i++) {
+    if (kc_cache[i].valid &&
+        strcmp(kc_cache[i].service, service) == 0 &&
+        strcmp(kc_cache[i].account, account) == 0) {
+      snprintf(out, size, "%s", kc_cache[i].password);
+      return KEYCHAIN_OK;
+    }
+  }
+  return KEYCHAIN_NOT_FOUND;
+}
+
+void keychain_cache_invalidate(const char *service, const char *account) {
+  for (int i = 0; i < kc_cache_count; i++) {
+    if (kc_cache[i].valid &&
+        strcmp(kc_cache[i].service, service) == 0 &&
+        strcmp(kc_cache[i].account, account) == 0) {
+      kc_cache[i].valid = false;
+      memset(kc_cache[i].password, 0, sizeof(kc_cache[i].password));
+      return;
+    }
+  }
+}
+
+void keychain_cache_clear(void) {
+  for (int i = 0; i < kc_cache_count; i++) {
+    memset(kc_cache[i].password, 0, sizeof(kc_cache[i].password));
+    kc_cache[i].valid = false;
+  }
+  kc_cache_count = 0;
+}
+
+static void kc_cache_store(const char *service, const char *account,
+                            const char *password) {
+  /* Update existing */
+  for (int i = 0; i < kc_cache_count; i++) {
+    if (kc_cache[i].valid &&
+        strcmp(kc_cache[i].service, service) == 0 &&
+        strcmp(kc_cache[i].account, account) == 0) {
+      snprintf(kc_cache[i].password, sizeof(kc_cache[i].password), "%s", password);
+      return;
+    }
+  }
+  /* Add new */
+  if (kc_cache_count < KC_CACHE_MAX) {
+    snprintf(kc_cache[kc_cache_count].service, 64, "%s", service);
+    snprintf(kc_cache[kc_cache_count].account, 256, "%s", account);
+    snprintf(kc_cache[kc_cache_count].password, 256, "%s", password);
+    kc_cache[kc_cache_count].valid = true;
+    kc_cache_count++;
+  }
+}
 
 int keychain_store(const char *service, const char *account,
                    const char *password) {
-    /* Delete any existing entry first so SecItemAdd doesn't return errSecDuplicateItem */
-    keychain_delete(service, account);
+    UInt32 pw_len = (UInt32)strlen(password);
+    SecKeychainItemRef item = NULL;
 
-    CFStringRef svc  = CFStringCreateWithCString(NULL, service,  kCFStringEncodingUTF8);
-    CFStringRef acct = CFStringCreateWithCString(NULL, account,  kCFStringEncodingUTF8);
-    CFDataRef   data = CFDataCreate(NULL, (const UInt8 *)password, (CFIndex)strlen(password));
+    /* Check if item already exists */
+    OSStatus st = SecKeychainFindGenericPassword(
+        NULL,                           /* default keychain */
+        (UInt32)strlen(service), service,
+        (UInt32)strlen(account), account,
+        NULL, NULL,                     /* don't need password data */
+        &item);
 
-    if (!svc || !acct || !data) {
-        if (svc) CFRelease(svc);
-        if (acct) CFRelease(acct);
-        if (data) CFRelease(data);
-        return KEYCHAIN_ERR;
+    if (st == errSecSuccess && item) {
+        /* Update existing item */
+        st = SecKeychainItemModifyAttributesAndData(item, NULL, pw_len,
+                                                     (const void *)password);
+        CFRelease(item);
+    } else {
+        /* Create new item */
+        st = SecKeychainAddGenericPassword(
+            NULL,                       /* default keychain */
+            (UInt32)strlen(service), service,
+            (UInt32)strlen(account), account,
+            pw_len, (const void *)password,
+            NULL);                      /* don't need item ref */
     }
 
-    CFDictionaryRef attrs = CFDictionaryCreate(NULL,
-        (const void *[]){
-            kSecClass, kSecAttrService, kSecAttrAccount, kSecValueData
-        },
-        (const void *[]){ kSecClassGenericPassword, svc, acct, data },
-        4,
-        &kCFTypeDictionaryKeyCallBacks,
-        &kCFTypeDictionaryValueCallBacks);
-
-    OSStatus st = SecItemAdd(attrs, NULL);
-
-    CFRelease(attrs);
-    CFRelease(data);
-    CFRelease(acct);
-    CFRelease(svc);
-
-    return (st == errSecSuccess) ? KEYCHAIN_OK : KEYCHAIN_ERR;
+    if (st == errSecSuccess) {
+        kc_cache_store(service, account, password);
+        return KEYCHAIN_OK;
+    }
+    return KEYCHAIN_ERR;
 }
 
 int keychain_find(const char *service, const char *account,
                   char *out, size_t size) {
-    CFStringRef svc  = CFStringCreateWithCString(NULL, service,  kCFStringEncodingUTF8);
-    CFStringRef acct = CFStringCreateWithCString(NULL, account,  kCFStringEncodingUTF8);
+    /* Check in-memory cache first */
+    if (kc_cache_lookup(service, account, out, size) == KEYCHAIN_OK)
+        return KEYCHAIN_OK;
 
-    if (!svc || !acct) {
-        if (svc) CFRelease(svc);
-        if (acct) CFRelease(acct);
+    /* Legacy API — respects "Always Allow" ACL */
+    UInt32 pw_len = 0;
+    void  *pw_data = NULL;
+
+    OSStatus st = SecKeychainFindGenericPassword(
+        NULL,                           /* default keychain */
+        (UInt32)strlen(service), service,
+        (UInt32)strlen(account), account,
+        &pw_len, &pw_data,
+        NULL);                          /* don't need item ref */
+
+    if (st == errSecItemNotFound)
+        return KEYCHAIN_NOT_FOUND;
+    if (st != errSecSuccess)
         return KEYCHAIN_ERR;
-    }
 
-    CFDictionaryRef query = CFDictionaryCreate(NULL,
-        (const void *[]){
-            kSecClass, kSecAttrService, kSecAttrAccount,
-            kSecReturnData, kSecMatchLimit
-        },
-        (const void *[]){
-            kSecClassGenericPassword, svc, acct,
-            kCFBooleanTrue, kSecMatchLimitOne
-        },
-        5,
-        &kCFTypeDictionaryKeyCallBacks,
-        &kCFTypeDictionaryValueCallBacks);
+    /* Copy password out */
+    size_t copy_len = pw_len;
+    if (copy_len >= size) copy_len = size - 1;
+    memcpy(out, pw_data, copy_len);
+    out[copy_len] = '\0';
+    SecKeychainItemFreeContent(NULL, pw_data);
 
-    CFDataRef result = NULL;
-    OSStatus st = SecItemCopyMatching(query, (CFTypeRef *)&result);
-
-    CFRelease(query);
-    CFRelease(acct);
-    CFRelease(svc);
-
-    if (st == errSecItemNotFound) return KEYCHAIN_NOT_FOUND;
-    if (st != errSecSuccess)      return KEYCHAIN_ERR;
-
-    CFIndex len = CFDataGetLength(result);
-    if ((size_t)len >= size) len = (CFIndex)(size - 1);
-    memcpy(out, CFDataGetBytePtr(result), len);
-    out[len] = '\0';
-    CFRelease(result);
+    /* Cache for future lookups */
+    kc_cache_store(service, account, out);
     return KEYCHAIN_OK;
 }
 
 int keychain_delete(const char *service, const char *account) {
-    CFStringRef svc  = CFStringCreateWithCString(NULL, service,  kCFStringEncodingUTF8);
-    CFStringRef acct = CFStringCreateWithCString(NULL, account,  kCFStringEncodingUTF8);
+    SecKeychainItemRef item = NULL;
 
-    if (!svc || !acct) {
-        if (svc) CFRelease(svc);
-        if (acct) CFRelease(acct);
+    OSStatus st = SecKeychainFindGenericPassword(
+        NULL,
+        (UInt32)strlen(service), service,
+        (UInt32)strlen(account), account,
+        NULL, NULL,
+        &item);
+
+    if (st == errSecItemNotFound)
+        return KEYCHAIN_NOT_FOUND;
+    if (st != errSecSuccess || !item)
         return KEYCHAIN_ERR;
-    }
 
-    CFDictionaryRef query = CFDictionaryCreate(NULL,
-        (const void *[]){ kSecClass, kSecAttrService, kSecAttrAccount },
-        (const void *[]){ kSecClassGenericPassword, svc, acct },
-        3,
-        &kCFTypeDictionaryKeyCallBacks,
-        &kCFTypeDictionaryValueCallBacks);
+    st = SecKeychainItemDelete(item);
+    CFRelease(item);
 
-    OSStatus st = SecItemDelete(query);
-
-    CFRelease(query);
-    CFRelease(acct);
-    CFRelease(svc);
-
-    if (st == errSecItemNotFound) return KEYCHAIN_NOT_FOUND;
+    keychain_cache_invalidate(service, account);
     return (st == errSecSuccess) ? KEYCHAIN_OK : KEYCHAIN_ERR;
 }
+
+#pragma clang diagnostic pop
 
 /* ======================================================================
  * Windows — Credential Manager

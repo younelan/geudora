@@ -1004,10 +1004,10 @@ static int InsaneTOC(TOCType * tocH) {
     g_warning("InsaneTOC(%s): stat failed for '%s': %s",
               path_basename(tocH->path), tocH->path, g_strerror(errno));
 
-  /* Right size? Allow off-by-one (Mac line ending differences) */
-  if (tocH->boxSize && boxSize > 0 &&
-      labs(tocH->boxSize - boxSize) > 1) {
-    g_warning("InsaneTOC(%s): file size mismatch (toc=%ld, file=%ld)",
+  /* Size check: growing is OK (messages appended), shrinking is corruption.
+   * Only flag mismatch if file is smaller than what TOC recorded. */
+  if (tocH->boxSize && boxSize > 0 && boxSize < tocH->boxSize - 1) {
+    g_warning("InsaneTOC(%s): file shrank (toc=%ld, file=%ld)",
               path_basename(tocH->path), tocH->boxSize, boxSize);
     return euMismatchTOC;
   }
