@@ -89,6 +89,25 @@ void geditctrl_insert_emoji(GtkWidget *ctrl, const gchar *emoji);
 /* Print the document */
 void geditctrl_print(GtkWidget *ctrl);
 
+/* Batch update — suppress layout recalc during multiple edits */
+void geditctrl_begin_update(GtkWidget *ctrl);
+void geditctrl_end_update(GtkWidget *ctrl);
+
+/* Dirty (modified) state tracking */
+gboolean geditctrl_is_dirty(GtkWidget *ctrl);
+void geditctrl_set_dirty(GtkWidget *ctrl, gboolean dirty);
+void geditctrl_clean(GtkWidget *ctrl);
+
+/* Get/set plain text content */
+gchar *geditctrl_get_text(GtkWidget *ctrl);
+gint geditctrl_get_length(GtkWidget *ctrl);
+void geditctrl_set_text(GtkWidget *ctrl, const gchar *text, gint len);
+void geditctrl_insert_text(GtkWidget *ctrl, gint offset, const gchar *text, gint len);
+void geditctrl_delete_range(GtkWidget *ctrl, gint offset, gint length);
+
+/* Focus */
+void geditctrl_focus(GtkWidget *ctrl);
+
 G_END_DECLS
 
 /* Rich text and editable helpers */

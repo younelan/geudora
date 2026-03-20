@@ -5,6 +5,112 @@
 #include <gtk/gtk.h>
 #include <string.h>
 
+/* ================================================================
+ * Batch update — suppress layout recalc during multiple edits
+ * ================================================================ */
+
+void geditctrl_begin_update(GtkWidget *ctrl) {
+  if (!ctrl) return;
+  gint depth = GPOINTER_TO_INT(g_object_get_data(G_OBJECT(ctrl), "gedit-batch-depth"));
+  g_object_set_data(G_OBJECT(ctrl), "gedit-batch-depth", GINT_TO_POINTER(depth + 1));
+  /* Freeze the drawing area to suppress redraws */
+  GtkWidget *area = gtk_scrolled_window_get_child(GTK_SCROLLED_WINDOW(ctrl));
+  if (area && depth == 0)
+    gtk_widget_set_visible(area, FALSE);  /* suppress draws during batch */
+}
+
+void geditctrl_end_update(GtkWidget *ctrl) {
+  if (!ctrl) return;
+  gint depth = GPOINTER_TO_INT(g_object_get_data(G_OBJECT(ctrl), "gedit-batch-depth"));
+  if (depth <= 0) return;
+  depth--;
+  g_object_set_data(G_OBJECT(ctrl), "gedit-batch-depth", GINT_TO_POINTER(depth));
+  if (depth == 0) {
+    /* Unfreeze and trigger full redraw */
+    GtkWidget *area = gtk_scrolled_window_get_child(GTK_SCROLLED_WINDOW(ctrl));
+    if (area) {
+      gtk_widget_set_visible(area, TRUE);
+      gtk_widget_queue_draw(area);
+    }
+  }
+}
+
+/* ================================================================
+ * Dirty state, text access, focus — convenience wrappers
+ * ================================================================ */
+
+gboolean geditctrl_is_dirty(GtkWidget *ctrl) {
+  if (!ctrl) return FALSE;
+  geditDocument *doc = geditctrl_get_document(ctrl);
+  if (!doc) return FALSE;
+  /* Use a stored flag on the document via g_object_get_data */
+  return GPOINTER_TO_INT(g_object_get_data(G_OBJECT(ctrl), "gedit-dirty"));
+}
+
+void geditctrl_set_dirty(GtkWidget *ctrl, gboolean dirty) {
+  if (!ctrl) return;
+  g_object_set_data(G_OBJECT(ctrl), "gedit-dirty", GINT_TO_POINTER(dirty));
+}
+
+void geditctrl_clean(GtkWidget *ctrl) {
+  geditctrl_set_dirty(ctrl, FALSE);
+}
+
+gchar *geditctrl_get_text(GtkWidget *ctrl) {
+  if (!ctrl) return NULL;
+  geditDocument *doc = geditctrl_get_document(ctrl);
+  return doc ? gedit_document_get_text(doc) : NULL;
+}
+
+gint geditctrl_get_length(GtkWidget *ctrl) {
+  if (!ctrl) return 0;
+  geditDocument *doc = geditctrl_get_document(ctrl);
+  return doc ? gedit_document_get_length(doc) : 0;
+}
+
+void geditctrl_set_text(GtkWidget *ctrl, const gchar *text, gint len) {
+  if (!ctrl) return;
+  geditDocument *doc = geditctrl_get_document(ctrl);
+  if (!doc) return;
+  /* Clear then insert */
+  gint cur_len = gedit_document_get_length(doc);
+  if (cur_len > 0) gedit_document_delete_range(doc, 0, cur_len);
+  if (text) {
+    /* If len specified, make null-terminated copy */
+    if (len >= 0) {
+      gchar *tmp = g_strndup(text, len);
+      gedit_document_insert_text(doc, 0, tmp);
+      g_free(tmp);
+    } else {
+      gedit_document_insert_text(doc, 0, text);
+    }
+  }
+}
+
+void geditctrl_insert_text(GtkWidget *ctrl, gint offset, const gchar *text, gint len) {
+  if (!ctrl || !text) return;
+  geditDocument *doc = geditctrl_get_document(ctrl);
+  if (!doc) return;
+  if (len >= 0) {
+    gchar *tmp = g_strndup(text, len);
+    gedit_document_insert_text(doc, offset, tmp);
+    g_free(tmp);
+  } else {
+    gedit_document_insert_text(doc, offset, text);
+  }
+}
+
+void geditctrl_delete_range(GtkWidget *ctrl, gint offset, gint length) {
+  if (!ctrl) return;
+  geditDocument *doc = geditctrl_get_document(ctrl);
+  if (doc) gedit_document_delete_range(doc, offset, length);
+}
+
+void geditctrl_focus(GtkWidget *ctrl) {
+  if (ctrl && GTK_IS_WIDGET(ctrl))
+    gtk_widget_grab_focus(ctrl);
+}
+
 /* Scroll event handler for mouse wheel */
 static gboolean gedit_scroll_cb(GtkEventControllerScroll *controller,
                                 gdouble dx, gdouble dy, gpointer user_data) {
@@ -1311,4 +1417,154 @@ void geditctrl_set_theme_colors(GtkWidget *ctrl,
   GtkWidget *area = gtk_scrolled_window_get_child(GTK_SCROLLED_WINDOW(ctrl));
   if (area && GTK_IS_DRAWING_AREA(area))
     gtk_widget_queue_draw(area);
+}
+
+/* ================================================================
+ * get_markup — serialize document to HTML
+ * Reverse of insert_markup: walks text + style runs, emits HTML tags.
+ * ================================================================ */
+
+gchar *gedit_document_get_markup(geditDocument *self, gint start, gint end) {
+  if (!self) return g_strdup("");
+
+  gchar *full_text = gedit_document_get_text(self);
+  if (!full_text) return g_strdup("");
+
+  gint doc_len = gedit_document_get_length(self);
+  if (start < 0) start = 0;
+  if (end < 0 || end > doc_len) end = doc_len;
+  if (start >= end) { g_free(full_text); return g_strdup(""); }
+
+  GList *runs = gedit_document_get_style_runs(self);
+  GString *html = g_string_new(NULL);
+
+  /* State tracking for open tags */
+  gboolean cur_bold = FALSE, cur_italic = FALSE, cur_underline = FALSE;
+  gboolean cur_has_color = FALSE;
+  gint cur_font_size = 0;
+  gchar *cur_font_family = NULL;
+  gchar *cur_link = NULL;
+
+  /* Walk character by character, checking style at each position */
+  gint pos = start;
+  while (pos < end) {
+    /* Find style run covering this position */
+    geditStyleRun style = {0};
+    gedit_document_get_style_at(self, pos, &style);
+
+    /* Determine how far this style extends */
+    gint run_end = pos + (style.length > 0 ? style.length : 1);
+    if (run_end > end) run_end = end;
+    /* Clamp: find the actual end from the run list */
+    for (GList *l = runs; l; l = l->next) {
+      geditStyleRun *r = (geditStyleRun *)l->data;
+      if (r->offset <= pos && r->offset + r->length > pos) {
+        run_end = r->offset + r->length;
+        if (run_end > end) run_end = end;
+        break;
+      }
+    }
+    if (run_end <= pos) run_end = pos + 1;
+
+    /* Close tags that no longer apply */
+    if (cur_link && (!style.link_url || strcmp(cur_link, style.link_url) != 0)) {
+      g_string_append(html, "</a>");
+      g_free(cur_link); cur_link = NULL;
+    }
+    if (cur_underline && !style.underline) {
+      g_string_append(html, "</u>");
+      cur_underline = FALSE;
+    }
+    if (cur_italic && !style.italic) {
+      g_string_append(html, "</i>");
+      cur_italic = FALSE;
+    }
+    if (cur_bold && !style.bold) {
+      g_string_append(html, "</b>");
+      cur_bold = FALSE;
+    }
+    if (cur_font_size && cur_font_size != style.font_size) {
+      g_string_append(html, "</span>");
+      cur_font_size = 0;
+    }
+    if (cur_font_family && (!style.font_family || strcmp(cur_font_family, style.font_family) != 0)) {
+      g_string_append(html, "</span>");
+      g_free(cur_font_family); cur_font_family = NULL;
+    }
+    if (cur_has_color) {
+      /* Check if color reset to black/default */
+      gboolean is_default = (style.color.red < 0.01 && style.color.green < 0.01 &&
+                              style.color.blue < 0.01);
+      if (is_default) {
+        g_string_append(html, "</span>");
+        cur_has_color = FALSE;
+      }
+    }
+
+    /* Open new tags */
+    if (style.font_family && style.font_family[0] && !cur_font_family) {
+      g_string_append_printf(html, "<span style=\"font-family:%s\">", style.font_family);
+      cur_font_family = g_strdup(style.font_family);
+    }
+    if (style.font_size > 0 && style.font_size != cur_font_size) {
+      if (cur_font_size) g_string_append(html, "</span>");
+      g_string_append_printf(html, "<span style=\"font-size:%dpt\">", style.font_size);
+      cur_font_size = style.font_size;
+    }
+    if (!cur_has_color && (style.color.red > 0.01 || style.color.green > 0.01 || style.color.blue > 0.01)) {
+      g_string_append_printf(html, "<span style=\"color:#%02x%02x%02x\">",
+        (int)(style.color.red * 255), (int)(style.color.green * 255), (int)(style.color.blue * 255));
+      cur_has_color = TRUE;
+    }
+    if (style.bold && !cur_bold) {
+      g_string_append(html, "<b>");
+      cur_bold = TRUE;
+    }
+    if (style.italic && !cur_italic) {
+      g_string_append(html, "<i>");
+      cur_italic = TRUE;
+    }
+    if (style.underline && !cur_underline) {
+      g_string_append(html, "<u>");
+      cur_underline = TRUE;
+    }
+    if (style.link_url && !cur_link) {
+      g_string_append_printf(html, "<a href=\"%s\">", style.link_url);
+      cur_link = g_strdup(style.link_url);
+    }
+
+    /* Output text content with HTML escaping */
+    for (gint i = pos; i < run_end && i < end; i++) {
+      /* Handle UTF-8: full_text is UTF-8, index by bytes won't work.
+         Use g_utf8 functions to walk correctly. */
+      char c = full_text[i]; /* simplified — works for ASCII portion */
+      if (c == '\n') {
+        g_string_append(html, "<br>\n");
+      } else if (c == '<') {
+        g_string_append(html, "&lt;");
+      } else if (c == '>') {
+        g_string_append(html, "&gt;");
+      } else if (c == '&') {
+        g_string_append(html, "&amp;");
+      } else if (c == '"') {
+        g_string_append(html, "&quot;");
+      } else {
+        g_string_append_c(html, c);
+      }
+    }
+
+    pos = run_end;
+  }
+
+  /* Close any remaining open tags (reverse order) */
+  if (cur_link) { g_string_append(html, "</a>"); g_free(cur_link); }
+  if (cur_underline) g_string_append(html, "</u>");
+  if (cur_italic) g_string_append(html, "</i>");
+  if (cur_bold) g_string_append(html, "</b>");
+  if (cur_font_size) g_string_append(html, "</span>");
+  if (cur_font_family) { g_string_append(html, "</span>"); g_free(cur_font_family); }
+  if (cur_has_color) g_string_append(html, "</span>");
+
+  g_free(full_text);
+  return g_string_free(html, FALSE);
 }

@@ -174,6 +174,13 @@ void gedit_document_set_link(geditDocument *self, gint offset, gint length,
                              const gchar *url);
 gchar *gedit_document_get_link_at(geditDocument *self, gint offset);
 
+/* Serialize document (or range) to HTML markup string.
+ * start/end: character range (-1 for end = full document).
+ * Returns malloc'd HTML string. Caller frees with g_free().
+ * Outputs: <b>, <i>, <u>, <span style="color:...">, <span style="font-size:...pt">,
+ *          <span style="font-family:...">, <a href="...">, <br>, <blockquote>, etc. */
+gchar *gedit_document_get_markup(geditDocument *self, gint start, gint end);
+
 /* Undo/redo */
 void gedit_document_undo(geditDocument *self);
 void gedit_document_redo(geditDocument *self);
