@@ -884,3 +884,55 @@ long macmbx_total_size(MacmbxTOC *toc) {
   for (int i = 0; i < toc->count; i++) total += toc->msgs[i].length;
   return total;
 }
+
+/* ================================================================
+ * Personality tagging
+ * ================================================================ */
+
+uint32_t macmbx_personality_hash(const char *account_name) {
+  if (!account_name || !*account_name) return 0;
+  uint32_t h = 5381;
+  while (*account_name) {
+    h = ((h << 5) + h) + (unsigned char)tolower(*account_name);
+    account_name++;
+  }
+  return h ? h : 1;
+}
+
+int macmbx_tag_personality(MacmbxTOC *toc, int index, const char *account_name) {
+  if (!toc || index < 0 || index >= toc->count) return -1;
+  toc->msgs[index].pop_pers_id = macmbx_personality_hash(account_name);
+  toc->dirty = true;
+  return 0;
+}
+
+int macmbx_tag_sending_personality(MacmbxTOC *toc, int index, const char *account_name) {
+  if (!toc || index < 0 || index >= toc->count) return -1;
+  toc->msgs[index].pers_id = macmbx_personality_hash(account_name);
+  toc->dirty = true;
+  return 0;
+}
+
+uint32_t macmbx_get_personality(MacmbxTOC *toc, int index) {
+  if (!toc || index < 0 || index >= toc->count) return 0;
+  return toc->msgs[index].pop_pers_id;
+}
+
+int macmbx_find_by_personality(MacmbxTOC *toc, const char *account_name,
+                                 int **indices) {
+  if (!toc || !account_name || !indices) return 0;
+  *indices = NULL;
+  uint32_t hash = macmbx_personality_hash(account_name);
+  if (!hash) return 0;
+
+  int count = 0, cap = 64;
+  *indices = (int *)calloc(cap, sizeof(int));
+  for (int i = 0; i < toc->count; i++) {
+    if (toc->msgs[i].pop_pers_id == hash &&
+        !(toc->msgs[i].flags & MACMBX_FLAG_DELETED)) {
+      if (count >= cap) { cap *= 2; *indices = (int *)realloc(*indices, cap * sizeof(int)); }
+      (*indices)[count++] = i;
+    }
+  }
+  return count;
+}

@@ -1086,6 +1086,28 @@ int macmbx_stat_save_from_message(MacmbxStationerySet *ss, const char *name,
                                     const char *message, long len);
 
 /* ================================================================
+ * Personality tagging — associate messages with accounts
+ * ================================================================ */
+
+/* Tag a message with the personality (account) that received it.
+ * Uses a hash of the account name for pop_pers_id. */
+int macmbx_tag_personality(MacmbxTOC *toc, int index, const char *account_name);
+
+/* Tag a message with the sending personality. */
+int macmbx_tag_sending_personality(MacmbxTOC *toc, int index, const char *account_name);
+
+/* Get the personality ID hash for a message. Returns 0 if untagged. */
+uint32_t macmbx_get_personality(MacmbxTOC *toc, int index);
+
+/* Hash an account name to a personality ID (same hash Eudora uses). */
+uint32_t macmbx_personality_hash(const char *account_name);
+
+/* Find all messages received by a personality.
+ * Returns count, allocates *indices. Caller frees. */
+int macmbx_find_by_personality(MacmbxTOC *toc, const char *account_name,
+                                 int **indices);
+
+/* ================================================================
  * Emoji — ASCII smiley ↔ Unicode emoji conversion
  * ================================================================ */
 

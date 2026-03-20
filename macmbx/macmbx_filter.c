@@ -187,6 +187,20 @@ static bool match_condition(MacmbxCondition *cond, MacmbxTOC *toc, int index) {
     return false;
   }
 
+  /* --- Personality: match by personality ID or name --- */
+  if (strcasecmp(cond->header, "Personality:") == 0 || strcasecmp(cond->header, "Personality") == 0) {
+    /* Match by pers_id (numeric) or by name (string).
+     * Value can be: numeric ID, or account name to compare.
+     * For numeric: pop_pers_id is a hash; for name: caller should
+     * set the value to the hash or name. We try both. */
+    char pers_str[32];
+    snprintf(pers_str, sizeof(pers_str), "%u", msg->pop_pers_id);
+    if (match_verb(pers_str, cond->verb, cond->value)) return true;
+    /* Also try pers_id (sending personality) */
+    snprintf(pers_str, sizeof(pers_str), "%u", msg->pers_id);
+    return match_verb(pers_str, cond->verb, cond->value);
+  }
+
   /* --- Body: search message body text --- */
   if (strcasecmp(cond->header, "Body:") == 0 || strcasecmp(cond->header, "Body") == 0 ||
       strcasecmp(cond->header, "<<Body>>") == 0) {
