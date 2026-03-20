@@ -552,6 +552,7 @@ typedef struct {
   char header[64];           /* header field name, e.g. "From:", "Subject:", "Any:" */
   MacmbxVerb verb;
   char value[256];           /* value to match against */
+  void *compiled_regex;      /* cached compiled regex (opaque, managed by filter engine) */
 } MacmbxCondition;
 
 /* Action type */
@@ -611,6 +612,7 @@ typedef struct {
   MacmbxRule *rules;
   int count;
   int capacity;
+  int next_id;               /* auto-increment ID for new rules */
   char path[PATH_MAX];       /* file path for save */
 } MacmbxFilterSet;
 
@@ -655,6 +657,18 @@ int macmbx_filter_move_rule(MacmbxFilterSet *fs, int from, int to);
 
 /* Get rule by index. */
 MacmbxRule *macmbx_filter_get_rule(MacmbxFilterSet *fs, int index);
+
+/* Find rule by ID. Returns index or -1. */
+int macmbx_filter_find_by_id(MacmbxFilterSet *fs, int id);
+
+/* Get rule by ID. Returns NULL if not found. */
+MacmbxRule *macmbx_filter_get_by_id(MacmbxFilterSet *fs, int id);
+
+/* Remove rule by ID. Returns 0 on success. */
+int macmbx_filter_remove_by_id(MacmbxFilterSet *fs, int id);
+
+/* Precompile regex patterns in all rules (call after load for faster matching). */
+void macmbx_filter_compile(MacmbxFilterSet *fs);
 
 /* --- Matching (pure logic, no side effects) --- */
 

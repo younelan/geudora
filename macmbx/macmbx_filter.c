@@ -13,8 +13,9 @@
 #include <ctype.h>
 #include <time.h>
 
-#ifdef MACMBX_HAVE_REGEX
+#ifndef _WIN32
   #include <regex.h>
+  #define MACMBX_HAVE_REGEX 1
 #endif
 
 /* ================================================================
@@ -56,21 +57,35 @@ static bool match_verb(const char *text, MacmbxVerb verb, const char *value) {
   case MACMBX_VERB_APPEARS:      return text && text[0];
   case MACMBX_VERB_NOT_APPEARS:  return !text || !text[0];
 #ifdef MACMBX_HAVE_REGEX
-  case MACMBX_VERB_REGEX: {
-    regex_t re;
-    if (regcomp(&re, value, REG_EXTENDED | REG_ICASE | REG_NOSUB) != 0)
-      return false;
-    bool m = regexec(&re, text ? text : "", 0, NULL, 0) == 0;
-    regfree(&re);
-    return m;
-  }
+  case MACMBX_VERB_REGEX:        return false; /* use match_verb_cond for regex */
 #else
-  case MACMBX_VERB_REGEX:        return ci_contains(text, value); /* fallback */
+  case MACMBX_VERB_REGEX:        return ci_contains(text, value);
 #endif
   case MACMBX_VERB_JUNK_LESS:    return false; /* needs spam score context */
   case MACMBX_VERB_JUNK_MORE:    return false;
   default: return false;
   }
+}
+
+/* Regex-aware match — uses cached compiled regex from condition */
+static bool match_verb_cond(const char *text, MacmbxCondition *cond) {
+  if (cond->verb != MACMBX_VERB_REGEX)
+    return match_verb(text, cond->verb, cond->value);
+#ifdef MACMBX_HAVE_REGEX
+  if (cond->compiled_regex) {
+    return regexec((regex_t *)cond->compiled_regex, text ? text : "",
+                   0, NULL, 0) == 0;
+  }
+  /* Fallback: compile on the fly */
+  regex_t re;
+  if (regcomp(&re, cond->value, REG_EXTENDED | REG_ICASE | REG_NOSUB) != 0)
+    return false;
+  bool m = regexec(&re, text ? text : "", 0, NULL, 0) == 0;
+  regfree(&re);
+  return m;
+#else
+  return ci_contains(text, cond->value);
+#endif
 }
 
 /* ================================================================
@@ -129,11 +144,11 @@ static bool match_condition(MacmbxCondition *cond, MacmbxTOC *toc, int index) {
 
   /* --- From: (fast, from summary) --- */
   if (strcasecmp(cond->header, "From:") == 0 || strcasecmp(cond->header, "From") == 0)
-    return match_verb(msg->from, cond->verb, cond->value);
+    return match_verb_cond(msg->from, cond);
 
   /* --- Subject: (fast, from summary) --- */
   if (strcasecmp(cond->header, "Subject:") == 0 || strcasecmp(cond->header, "Subject") == 0)
-    return match_verb(msg->subject, cond->verb, cond->value);
+    return match_verb_cond(msg->subject, cond);
 
   /* --- Date: comparison --- */
   if (strcasecmp(cond->header, "Date:") == 0 || strcasecmp(cond->header, "Date") == 0) {
@@ -177,27 +192,27 @@ static bool match_condition(MacmbxCondition *cond, MacmbxTOC *toc, int index) {
       strcasecmp(cond->header, "<<Body>>") == 0) {
     long bodyLen = 0;
     char *body = macmbx_read_body(toc, index, &bodyLen);
-    bool result = body && match_verb(body, cond->verb, cond->value);
+    bool result = body && match_verb_cond(body, cond);
     free(body);
     return result;
   }
 
   /* --- Any: match against all summary fields + To + Cc + body --- */
   if (strcasecmp(cond->header, "Any:") == 0 || strcasecmp(cond->header, "Any") == 0) {
-    if (match_verb(msg->from, cond->verb, cond->value)) return true;
-    if (match_verb(msg->subject, cond->verb, cond->value)) return true;
+    if (match_verb_cond(msg->from, cond)) return true;
+    if (match_verb_cond(msg->subject, cond)) return true;
     char *to = macmbx_read_header_field(toc, index, "To");
-    bool m = to && match_verb(to, cond->verb, cond->value);
+    bool m = to && match_verb_cond(to, cond);
     free(to);
     if (m) return true;
     char *cc = macmbx_read_header_field(toc, index, "Cc");
-    m = cc && match_verb(cc, cond->verb, cond->value);
+    m = cc && match_verb_cond(cc, cond);
     free(cc);
     if (m) return true;
     /* Search body as last resort */
     long bodyLen = 0;
     char *body = macmbx_read_body(toc, index, &bodyLen);
-    m = body && match_verb(body, cond->verb, cond->value);
+    m = body && match_verb_cond(body, cond);
     free(body);
     return m;
   }
@@ -209,7 +224,7 @@ static bool match_condition(MacmbxCondition *cond, MacmbxTOC *toc, int index) {
   if (flen > 0 && field[flen-1] == ':') field[flen-1] = '\0';
 
   char *val = macmbx_read_header_field(toc, index, field);
-  bool result = match_verb(val, cond->verb, cond->value);
+  bool result = match_verb_cond(val, cond);
   free(val);
   return result;
 }
@@ -459,12 +474,24 @@ MacmbxFilterSet *macmbx_filter_new(void) {
   MacmbxFilterSet *fs = (MacmbxFilterSet *)calloc(1, sizeof(MacmbxFilterSet));
   if (!fs) return NULL;
   fs->capacity = 16;
+  fs->next_id = 1;
   fs->rules = (MacmbxRule *)calloc(fs->capacity, sizeof(MacmbxRule));
   return fs;
 }
 
 void macmbx_filter_free(MacmbxFilterSet *fs) {
   if (!fs) return;
+#ifdef MACMBX_HAVE_REGEX
+  /* Free cached compiled regexes */
+  for (int r = 0; r < fs->count; r++) {
+    for (int c = 0; c < fs->rules[r].condition_count; c++) {
+      if (fs->rules[r].conditions[c].compiled_regex) {
+        regfree((regex_t *)fs->rules[r].conditions[c].compiled_regex);
+        free(fs->rules[r].conditions[c].compiled_regex);
+      }
+    }
+  }
+#endif
   free(fs->rules);
   free(fs);
 }
@@ -476,6 +503,11 @@ int macmbx_filter_add_rule(MacmbxFilterSet *fs, const MacmbxRule *rule) {
     fs->rules = (MacmbxRule *)realloc(fs->rules, fs->capacity * sizeof(MacmbxRule));
   }
   fs->rules[fs->count] = *rule;
+  /* Auto-assign ID if not set */
+  if (fs->rules[fs->count].id <= 0)
+    fs->rules[fs->count].id = fs->next_id++;
+  else if (fs->rules[fs->count].id >= fs->next_id)
+    fs->next_id = fs->rules[fs->count].id + 1;
   return fs->count++;
 }
 
@@ -505,6 +537,52 @@ int macmbx_filter_move_rule(MacmbxFilterSet *fs, int from, int to) {
 MacmbxRule *macmbx_filter_get_rule(MacmbxFilterSet *fs, int index) {
   if (!fs || index < 0 || index >= fs->count) return NULL;
   return &fs->rules[index];
+}
+
+int macmbx_filter_find_by_id(MacmbxFilterSet *fs, int id) {
+  if (!fs || id <= 0) return -1;
+  for (int i = 0; i < fs->count; i++)
+    if (fs->rules[i].id == id) return i;
+  return -1;
+}
+
+MacmbxRule *macmbx_filter_get_by_id(MacmbxFilterSet *fs, int id) {
+  int idx = macmbx_filter_find_by_id(fs, id);
+  return idx >= 0 ? &fs->rules[idx] : NULL;
+}
+
+int macmbx_filter_remove_by_id(MacmbxFilterSet *fs, int id) {
+  int idx = macmbx_filter_find_by_id(fs, id);
+  if (idx < 0) return -1;
+  return macmbx_filter_remove_rule(fs, idx);
+}
+
+void macmbx_filter_compile(MacmbxFilterSet *fs) {
+#ifdef MACMBX_HAVE_REGEX
+  if (!fs) return;
+  for (int r = 0; r < fs->count; r++) {
+    for (int c = 0; c < fs->rules[r].condition_count; c++) {
+      MacmbxCondition *cond = &fs->rules[r].conditions[c];
+      if (cond->verb == MACMBX_VERB_REGEX && cond->value[0]) {
+        /* Free old compiled regex if any */
+        if (cond->compiled_regex) {
+          regfree((regex_t *)cond->compiled_regex);
+          free(cond->compiled_regex);
+        }
+        cond->compiled_regex = malloc(sizeof(regex_t));
+        if (cond->compiled_regex) {
+          if (regcomp((regex_t *)cond->compiled_regex, cond->value,
+                      REG_EXTENDED | REG_ICASE | REG_NOSUB) != 0) {
+            free(cond->compiled_regex);
+            cond->compiled_regex = NULL;
+          }
+        }
+      }
+    }
+  }
+#else
+  (void)fs;
+#endif
 }
 
 /* ================================================================
@@ -723,6 +801,7 @@ MacmbxFilterSet *macmbx_filter_load(const char *path) {
     macmbx_filter_add_rule(fs, &cur);
 
   fclose(f);
+  macmbx_filter_compile(fs);
   return fs;
 }
 
