@@ -2129,34 +2129,24 @@ bool CompSend(MessHandle messH) {
   if (body) g_string_append(msg, body);
   g_free(body);
 
-  /* Get the mailer — it handles everything: send, save to Out, state */
+  /* Hand message to macmbx_mailer — it queues to Out with QUEUED state */
   extern MacmbxMailer *idle_scheduler_get_mailer(void);
   MacmbxMailer *mailer = idle_scheduler_get_mailer();
-  int err = -1;
-
-  if (mailer) {
-    /* Send immediately — macmbx connects SMTP, sends the message,
-     * saves a copy to Out with state SENT, updates the TOC. */
-    err = macmbx_mailer_send_now(mailer, msg->str, (long)msg->len,
-                                   fromBare, NULL);
-    g_print("CompSend: macmbx_mailer_send_now returned %d\n", err);
-
-    if (err != 0) {
-      /* Send failed — queue it for later retry */
-      macmbx_mailer_queue(mailer, msg->str, (long)msg->len, fromBare, NULL);
-      g_print("CompSend: queued for retry\n");
-    }
-  } else {
-    g_warning("CompSend: no mailer instance");
-  }
+  if (mailer)
+    macmbx_mailer_queue(mailer, msg->str, (long)msg->len, fromBare, NULL);
 
   g_string_free(msg, TRUE);
 
   /* Close the compose window */
+  win->isDirty = false;
   if (win->window)
     gtk_window_close(GTK_WINDOW(win->window));
 
-  return (err == 0);
+  /* Signal the idle scheduler to send queued messages asynchronously */
+  extern void idle_scheduler_request_send(void);
+  idle_scheduler_request_send();
+
+  return true;
 }
 
 /**********************************************************************

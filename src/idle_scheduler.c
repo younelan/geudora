@@ -34,6 +34,8 @@ MacmbxMailer *idle_scheduler_get_mailer(void) { return g_mailer; }
 static guint idle_timer_id = 0;
 static bool scheduler_running = false;
 static bool need_notify = false;
+static bool need_send = false;
+static bool send_in_progress = false;
 
 /* ── Incoming mail delivery ──
  *
@@ -77,15 +79,38 @@ static void notify_new_mail(void) {
   }
 }
 
+/* ── Send queued messages (async via background thread) ── */
+
+void idle_scheduler_request_send(void) { need_send = true; }
+
+static gpointer send_thread_func(gpointer data) {
+  MacmbxMailer *mailer = (MacmbxMailer *)data;
+  int sent = macmbx_mailer_send(mailer);
+  g_print("Send thread: macmbx_mailer_send returned %d\n", sent);
+  send_in_progress = false;
+  need_notify = true; /* trigger UI refresh on next tick */
+  return NULL;
+}
+
+static void process_send(void) {
+  if (!need_send || send_in_progress || !g_mailer) return;
+  need_send = false;
+  send_in_progress = true;
+  g_thread_new("send-queue", send_thread_func, g_mailer);
+}
+
 /* ── Main tick ── */
 
 static gboolean idle_scheduler_tick(gpointer user_data) {
   (void)user_data;
 
   /* Priority order:
-     1. Process incoming mail delivery
-     2. Notify user of new mail
-     Future: auto-check timer, IMAP IDLE wakeup, send queued, etc. */
+     1. Send queued messages (async)
+     2. Process incoming mail delivery
+     3. Notify user of new mail */
+
+  if (need_send && !send_in_progress)
+    process_send();
 
   if (NeedToFilterIn)
     process_incoming();

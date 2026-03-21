@@ -112,7 +112,145 @@ extern void SetPriority(MacmbxTOC *tocH, short sumNum, short priority);
 extern short AdjustSpecialMenuSelection(short item);
 extern void MakeNickFromSelection(MyWindowPtr win);
 extern void MakeMessNick(MyWindowPtr win, short modifiers);
-extern void DoMakeFilter(MyWindowPtr win);
+/* DoMakeFilter — create a filter rule from the current message using macmbx */
+static void on_make_filter_create(GtkWidget *dialog);
+
+void DoMakeFilter(MyWindowPtr win) {
+  if (!win) return;
+  MessHandle messH = Win2MessH(win);
+  if (!messH) return;
+  MacmbxTOC *tocH = messH->tocH;
+  int sumNum = messH->sumNum;
+  if (!tocH || sumNum < 0 || sumNum >= tocH->count) return;
+
+  /* Read headers from macmbx */
+  char *from = macmbx_read_header_field(tocH, sumNum, "From");
+  char *subject = macmbx_read_header_field(tocH, sumNum, "Subject");
+  char *to = macmbx_read_header_field(tocH, sumNum, "To");
+
+  /* Build a dialog */
+  GtkWidget *dialog = gtk_window_new();
+  gtk_window_set_title(GTK_WINDOW(dialog), "Make Filter");
+  gtk_window_set_default_size(GTK_WINDOW(dialog), 450, 350);
+  gtk_window_set_modal(GTK_WINDOW(dialog), TRUE);
+
+  GtkWidget *vbox = gtk_box_new(GTK_ORIENTATION_VERTICAL, 8);
+  gtk_widget_set_margin_start(vbox, 16);
+  gtk_widget_set_margin_end(vbox, 16);
+  gtk_widget_set_margin_top(vbox, 16);
+  gtk_widget_set_margin_bottom(vbox, 16);
+
+  /* Match field selector */
+  gtk_box_append(GTK_BOX(vbox), gtk_label_new("Match on:"));
+  GtkWidget *match_combo = gtk_drop_down_new_from_strings(
+    (const char *[]){"From", "Subject", "To", "Any Header", NULL});
+  gtk_box_append(GTK_BOX(vbox), match_combo);
+
+  /* Match value (pre-filled) */
+  gtk_box_append(GTK_BOX(vbox), gtk_label_new("Contains:"));
+  GtkWidget *match_entry = gtk_entry_new();
+  if (from) gtk_editable_set_text(GTK_EDITABLE(match_entry), from);
+  gtk_box_append(GTK_BOX(vbox), match_entry);
+
+  /* Action selector */
+  gtk_box_append(GTK_BOX(vbox), gtk_label_new("Action:"));
+  GtkWidget *action_combo = gtk_drop_down_new_from_strings(
+    (const char *[]){"Move to mailbox", "Set status", "Set priority", "Set label",
+                      "Mark as junk", "Delete", "None", NULL});
+  gtk_box_append(GTK_BOX(vbox), action_combo);
+
+  /* Destination (for Move To) */
+  gtk_box_append(GTK_BOX(vbox), gtk_label_new("Destination mailbox:"));
+  GtkWidget *dest_entry = gtk_entry_new();
+  gtk_box_append(GTK_BOX(vbox), dest_entry);
+
+  /* Buttons */
+  GtkWidget *btn_box = gtk_box_new(GTK_ORIENTATION_HORIZONTAL, 8);
+  gtk_widget_set_halign(btn_box, GTK_ALIGN_END);
+  GtkWidget *cancel_btn = gtk_button_new_with_label("Cancel");
+  GtkWidget *create_btn = gtk_button_new_with_label("Create");
+  gtk_widget_add_css_class(create_btn, "suggested-action");
+  gtk_box_append(GTK_BOX(btn_box), cancel_btn);
+  gtk_box_append(GTK_BOX(btn_box), create_btn);
+  gtk_box_append(GTK_BOX(vbox), btn_box);
+
+  /* Store refs for callback */
+  g_object_set_data(G_OBJECT(dialog), "match-combo", match_combo);
+  g_object_set_data(G_OBJECT(dialog), "match-entry", match_entry);
+  g_object_set_data(G_OBJECT(dialog), "action-combo", action_combo);
+  g_object_set_data(G_OBJECT(dialog), "dest-entry", dest_entry);
+
+  /* Cancel just closes */
+  g_signal_connect_swapped(cancel_btn, "clicked", G_CALLBACK(gtk_window_close), dialog);
+
+  /* Create button: build the rule and save */
+  g_signal_connect_swapped(create_btn, "clicked", G_CALLBACK(on_make_filter_create), dialog);
+
+  gtk_window_set_child(GTK_WINDOW(dialog), vbox);
+  gtk_window_present(GTK_WINDOW(dialog));
+
+  free(from); free(subject); free(to);
+}
+
+static void on_make_filter_create(GtkWidget *dialog) {
+  GtkWidget *match_combo = g_object_get_data(G_OBJECT(dialog), "match-combo");
+  GtkWidget *match_entry = g_object_get_data(G_OBJECT(dialog), "match-entry");
+  GtkWidget *action_combo = g_object_get_data(G_OBJECT(dialog), "action-combo");
+  GtkWidget *dest_entry = g_object_get_data(G_OBJECT(dialog), "dest-entry");
+
+  guint match_idx = gtk_drop_down_get_selected(GTK_DROP_DOWN(match_combo));
+  const char *match_val = gtk_editable_get_text(GTK_EDITABLE(match_entry));
+  guint action_idx = gtk_drop_down_get_selected(GTK_DROP_DOWN(action_combo));
+  const char *dest = gtk_editable_get_text(GTK_EDITABLE(dest_entry));
+
+  /* Build the filter rule */
+  MacmbxRule rule;
+  memset(&rule, 0, sizeof(rule));
+  snprintf(rule.name, sizeof(rule.name), "Filter: %s", match_val);
+  rule.when = MACMBX_WHEN_INCOMING;
+  rule.condition_count = 1;
+
+  /* Match field */
+  const char *headers[] = {"From:", "Subject:", "To:", "Any:"};
+  snprintf(rule.conditions[0].header, sizeof(rule.conditions[0].header),
+           "%s", headers[match_idx < 4 ? match_idx : 0]);
+  rule.conditions[0].verb = MACMBX_VERB_CONTAINS;
+  snprintf(rule.conditions[0].value, sizeof(rule.conditions[0].value),
+           "%s", match_val);
+
+  /* Action */
+  rule.action_count = 1;
+  switch (action_idx) {
+    case 0: /* Move to mailbox */
+      rule.actions[0].type = MACMBX_ACT_TRANSFER;
+      if (dest && dest[0])
+        snprintf(rule.actions[0].str_value, sizeof(rule.actions[0].str_value), "%s", dest);
+      break;
+    case 1: rule.actions[0].type = MACMBX_ACT_STATUS; rule.actions[0].int_value = MACMBX_READ; break;
+    case 2: rule.actions[0].type = MACMBX_ACT_PRIORITY; rule.actions[0].int_value = 1; break;
+    case 3: rule.actions[0].type = MACMBX_ACT_LABEL; rule.actions[0].int_value = 1; break;
+    case 4: rule.actions[0].type = MACMBX_ACT_JUNK; break;
+    case 5: rule.actions[0].type = MACMBX_ACT_DELETE; break;
+    default: rule.actions[0].type = MACMBX_ACT_NONE; break;
+  }
+
+  /* Load filters, add rule, save */
+  MacmbxStore *store = gtk_mailbox_get_store();
+  if (store) {
+    char filt_path[PATH_MAX];
+    snprintf(filt_path, sizeof(filt_path), "%s/../Filters", store->root_path);
+    MacmbxFilterSet *fs = macmbx_filter_load(filt_path);
+    if (!fs) fs = macmbx_filter_new();
+    macmbx_filter_add_rule(fs, &rule);
+    if (filt_path[0]) {
+      snprintf(fs->path, sizeof(fs->path), "%s", filt_path);
+      macmbx_filter_save(fs);
+    }
+    macmbx_filter_free(fs);
+  }
+
+  gtk_window_close(GTK_WINDOW(dialog));
+}
 extern void SetState(MacmbxTOC *tocH, int sumNum, int state);
 extern short Item2Status(short item);
 extern void SelectBoxRange(MacmbxTOC *tocH, int start, int end, bool cmd, int eStart, int eEnd);

@@ -511,7 +511,6 @@ bool IsKnownWindowMyWindow(void *win) { return false; }
 void LVSelect(void *lv, short row, bool extend) {}
 
 /* Filter creation stub */
-void DoMakeFilter(void *tocH, short sumNum) {}
 
 /* Receipt generation stub */
 void GenerateReceipt(void *messH, short type, short action) {}

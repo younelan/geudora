@@ -327,13 +327,10 @@ short XferMail(bool check, bool send, bool manual, bool scripted, bool thread,
     }
   }
 
-  /* Send queued — macmbx_mailer iterates all personalities,
-   * connects SMTP, sends each queued message, marks as SENT */
+  /* Send queued — async via idle scheduler background thread */
   if (send) {
-    g_print("XferMail: calling macmbx_mailer_send...\n");
-    int sent = macmbx_mailer_send(mailer);
-    g_print("XferMail: macmbx_mailer_send returned %d\n", sent);
-    if (sent < 0) err = sent;
+    extern void idle_scheduler_request_send(void);
+    idle_scheduler_request_send();
   }
 
   return err;
