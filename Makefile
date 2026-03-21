@@ -2,7 +2,7 @@ CC = cc
 KRB5_PREFIX = $(shell brew --prefix krb5 2>/dev/null)
 OPENSSL_CFLAGS = $(shell pkg-config --cflags openssl 2>/dev/null)
 OPENSSL_LIBS = $(shell pkg-config --libs openssl 2>/dev/null || echo "-lssl -lcrypto")
-CFLAGS = $(shell pkg-config --cflags gtk4 json-glib-1.0 libxml-2.0) -Wall -Iinclude -Icrispy -IgEditCtrl -ICrispinIMAP/Include -DIMAP -DTHREADING_ON -DESSL -pthread \
+CFLAGS = $(shell pkg-config --cflags gtk4 json-glib-1.0 libxml-2.0) -Wall -Iinclude -Icrispy -IgEditCtrl -Imacmbx -DTHREADING_ON -DESSL -pthread \
          -I$(KRB5_PREFIX)/include $(OPENSSL_CFLAGS)
 LIBS = $(shell pkg-config --libs gtk4 json-glib-1.0 libxml-2.0) -pthread \
        $(shell pkg-config --libs libcurl 2>/dev/null || echo -lcurl) \
@@ -20,9 +20,20 @@ RESOURCE_H = resources/eudora_resources.h
 
 # Source files in src/ directory
 SRC_ALL = $(wildcard src/*.c)
-SRC_EXCLUDE = src/scripting_ae.c
+# Exclude: platform scripting + TCP/SSL (now in CrispinIMAP)
+# Excluded: legacy network (crispy), legacy IMAP (crispy_imap), legacy parsing
+# (crispy_rfc822/lex822/richtext), legacy filters/junk/compact (macmbx)
+SRC_EXCLUDE = src/scripting_ae.c src/tcp.c src/ssl.c src/TransStream.c \
+              src/pop.c src/sendmail.c src/uudecode.c src/binhex.c \
+              src/rich.c src/peteglue.c \
+              src/imapnetlib.c src/imapdownload.c src/imapmailboxes.c \
+              src/imapconnections.c src/imapauth.c \
+              src/compact.c src/junk.c src/filtrun.c \
+              src/trans.c src/lex822.c src/header.c src/mime.c \
+              src/hexbin.c src/toc.c src/buildtoc.c src/filters.c \
+              src/sasl.c src/scripting_dbus.c
 ifeq ($(shell uname),Darwin)
-  SRC_EXCLUDE = src/scripting_ae.c
+  SRC_EXCLUDE += src/scripting_ae.c
 endif
 SRC = $(filter-out $(SRC_EXCLUDE),$(SRC_ALL)) $(RESOURCE_C)
 OBJ = $(patsubst src/%.c,$(BUILD_DIR)/%.o,$(filter src/%.c,$(SRC))) \
@@ -34,9 +45,9 @@ gedit_SRC = $(wildcard geditCtrl/*.c)
 gedit_OBJ = $(gedit_SRC:.c=.o)
 
 crispy_LIB = crispy/libcrispy.a
-crispin_LIB = CrispinIMAP/libc-client.a
+macmbx_LIB = macmbx/libmacmbx.a
 
-all: $(BUILD_DIR) $(RESOURCE_C) $(crispy_LIB) $(gedit_LIB) $(crispin_LIB) $(TARGET)
+all: $(BUILD_DIR) $(RESOURCE_C) $(crispy_LIB) $(macmbx_LIB) $(gedit_LIB) $(TARGET)
 
 $(BUILD_DIR):
 	mkdir -p $(BUILD_DIR)
@@ -57,14 +68,16 @@ $(crispy_LIB):
 	$(MAKE) -C crispy libcrispy.a
 	@echo "✓ Built crispy library"
 
-# Build CrispinIMAP library
-$(crispin_LIB):
-	$(MAKE) -C CrispinIMAP
-	@echo "✓ Built CrispinIMAP library"
+# Build macmbx (delegates to macmbx/Makefile)
+$(macmbx_LIB): $(crispy_LIB)
+	$(MAKE) -C macmbx libmacmbx.a
+	@echo "✓ Built macmbx library"
+
+# CrispinIMAP removed — IMAP handled by crispy_imap + macmbx
 
 # Build main application
-$(TARGET): $(OBJ) $(crispy_LIB) $(gedit_LIB) $(crispin_LIB)
-	$(CC) $(CFLAGS) -o $(TARGET) $(OBJ) $(if $(wildcard src/mailbox_stub.o),src/mailbox_stub.o,) $(crispy_LIB) $(gedit_LIB) $(crispin_LIB) $(LIBS)
+$(TARGET): $(OBJ) $(crispy_LIB) $(macmbx_LIB) $(gedit_LIB)
+	$(CC) $(CFLAGS) -o $(TARGET) $(OBJ) $(macmbx_LIB) $(crispy_LIB) $(gedit_LIB) $(LIBS)
 	@echo "✓ Built $(TARGET)"
 
 # Compile source files from src/
