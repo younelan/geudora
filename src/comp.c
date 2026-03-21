@@ -1272,14 +1272,8 @@ MyWindowPtr OpenComp(MacmbxTOC * tocH, int sumNum, GtkWidget *winWP,
   g_signal_connect(winWP, "close-request",
                    G_CALLBACK(on_comp_close_request), win);
 
-  /* Track dirty state when body text changes */
-  if (win->pte) {
-    geditDocument *body_doc = geditctrl_get_document(win->pte);
-    if (body_doc)
-      g_signal_connect(body_doc, "document-changed",
-                       G_CALLBACK(on_comp_body_changed), win);
-  }
-  win->isDirty = false; /* start clean */
+  /* Dirty tracking connected below, AFTER all fields are populated */
+  win->isDirty = false;
 
   if (showIt)
     ShowMyWindow(winWP);
@@ -1294,6 +1288,25 @@ MyWindowPtr OpenComp(MacmbxTOC * tocH, int sumNum, GtkWidget *winWP,
     if (area)
       gtk_widget_grab_focus(area);
   }
+
+  /* NOW connect dirty tracking — after all fields are populated.
+   * This way loading an existing message doesn't set isDirty. */
+  if (win->pte) {
+    geditDocument *body_doc = geditctrl_get_document(win->pte);
+    if (body_doc)
+      g_signal_connect(body_doc, "document-changed",
+                       G_CALLBACK(on_comp_body_changed), win);
+  }
+  {
+    const char *hdr_keys[] = {"comp-to", "comp-subject", "comp-cc", "comp-bcc", NULL};
+    for (int i = 0; hdr_keys[i]; i++) {
+      GtkWidget *entry = g_object_get_data(G_OBJECT(winWP), hdr_keys[i]);
+      if (entry && GTK_IS_EDITABLE(entry))
+        g_signal_connect(entry, "changed",
+                          G_CALLBACK(on_comp_body_changed), win);
+    }
+  }
+  win->isDirty = false; /* final reset after signals connected */
 
   return (win);
 }
@@ -2137,7 +2150,7 @@ bool CompSend(MessHandle messH) {
 
   g_string_free(msg, TRUE);
 
-  /* Close the compose window */
+  /* Close immediately — queue is instant, send is async */
   win->isDirty = false;
   if (win->window)
     gtk_window_close(GTK_WINDOW(win->window));
