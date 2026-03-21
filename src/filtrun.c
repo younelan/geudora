@@ -35,13 +35,13 @@ DAMAGE. */
 #include "messact.h"
 #include "message.h"
 #include "mailxfer.h"
-#include "imapdownload.h"
-#include "imapmailboxes.h"
+/* imapdownload.h and imapmailboxes.h removed — IMAP handled by crispy/macmbx */
 #include "fileutil.h"
-#include "junk.h"
+/* junk.h removed — junk scoring handled by macmbx_junk */
 #include "util.h"
 #include "threading.h"
 #include <string.h>
+#include "macmbx.h"
 #include <strings.h>
 #include <stdlib.h>
 #include <ctype.h>
@@ -1774,26 +1774,16 @@ static char *FilterUsagePath(void)
 
 static uLong FilterLastMatch(short filter)
 {
-	uLong when = 0;
+	/* Look up from macmbx filter set */
+	extern MacmbxFilterSet *get_filter_set(void);
+	MacmbxFilterSet *fs = get_filter_set();
+	if (!fs) return 0;
+
 	long id = gCurFilters[filter].fu.id;
 	if (!id) return 0;
 
-	char *path = FilterUsagePath();
-	FILE *f = fopen(path, "rb");
-	g_free(path);
-	if (!f) return 0;
-
-	FilterUse fu;
-	while (fread(&fu, sizeof(fu), 1, f) == 1)
-	{
-		if (fu.id == id)
-		{
-			when = fu.lastMatch;
-			break;
-		}
-	}
-	fclose(f);
-	return when;
+	MacmbxRule *rule = macmbx_filter_get_by_id(fs, id);
+	return rule ? rule->last_match : 0;
 }
 
 /**********************************************************************
@@ -1822,71 +1812,22 @@ uLong FilterLastMatchHi(short filter)
  **********************************************************************/
 int FilterNoteMatch(short filter, long secs)
 {
-	long id = gCurFilters[filter].fu.id;
 	gCurFilters[filter].fu.lastMatch = secs;
 
+	/* Update in macmbx and save */
+	extern MacmbxFilterSet *get_filter_set(void);
+	MacmbxFilterSet *fs = get_filter_set();
+	if (!fs) return 0;
+
+	long id = gCurFilters[filter].fu.id;
 	if (!id) return 0;
 
-	char *path = FilterUsagePath();
-
-	/* Read existing records */
-	FilterUse *records = NULL;
-	size_t count = 0;
-	FILE *f = fopen(path, "rb");
-	if (f)
-	{
-		fseek(f, 0, SEEK_END);
-		long fileSize = ftell(f);
-		fseek(f, 0, SEEK_SET);
-		if (fileSize > 0)
-		{
-			count = (size_t)fileSize / sizeof(FilterUse);
-			records = (FilterUse *)malloc(count * sizeof(FilterUse));
-			if (records)
-				count = fread(records, sizeof(FilterUse), count, f);
-			else
-				count = 0;
-		}
-		fclose(f);
+	int idx = macmbx_filter_find_by_id(fs, id);
+	if (idx >= 0) {
+		char *path = FilterUsagePath();
+		macmbx_filter_note_match(fs, idx, path);
+		g_free(path);
 	}
-
-	/* Update existing or append new */
-	bool found = false;
-	for (size_t i = 0; i < count; i++)
-	{
-		if (records[i].id == id)
-		{
-			records[i].lastMatch = secs;
-			found = true;
-			break;
-		}
-	}
-
-	if (!found)
-	{
-		FilterUse *grown = (FilterUse *)realloc(records, (count + 1) * sizeof(FilterUse));
-		if (!grown)
-		{
-			free(records);
-			g_free(path);
-			return -108; /* ENOMEM */
-		}
-		records = grown;
-		records[count].id = id;
-		records[count].lastMatch = secs;
-		count++;
-	}
-
-	/* Write back */
-	f = fopen(path, "wb");
-	if (f)
-	{
-		fwrite(records, sizeof(FilterUse), count, f);
-		fclose(f);
-	}
-
-	free(records);
-	g_free(path);
 	return 0;
 }
 

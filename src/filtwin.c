@@ -268,150 +268,7 @@ static int AppendFilter(FilterRecord *fr) {
   return 0;
 }
 
-/* Get the filters file path */
-static const char *GetFiltersPath(void) {
-  static char path[1024] = {0};
-  if (!path[0]) {
-    const char *home = g_get_home_dir();
-    snprintf(path, sizeof(path), "%s/.local/share/geudora/Filters", home);
-  }
-  return path;
-}
-
-/* ReadFilters — read filter database from text file */
-int ReadFilters(void) {
-  const char *path = GetFiltersPath();
-  FILE *fp = fopen(path, "r");
-  if (!fp) return 0; /* no file = no filters, not an error */
-
-  FilterRecord fr;
-  FRInit(&fr);
-  int term = 0;
-  char line[1024];
-
-  while (fgets(line, sizeof(line), fp)) {
-    int len = strlen(line);
-    while (len > 0 && (line[len-1] == '\n' || line[len-1] == '\r'))
-      line[--len] = 0;
-    if (len == 0 || line[0] == '#') continue;
-
-    char *space = strchr(line, ' ');
-    char keyword[64] = {0};
-    char value[960] = {0};
-    if (space) {
-      int kwlen = space - line;
-      if (kwlen > 63) kwlen = 63;
-      memcpy(keyword, line, kwlen);
-      keyword[kwlen] = 0;
-      sstrncpy(value, space + 1, sizeof(value));
-    } else {
-      sstrncpy(keyword, line, sizeof(keyword));
-    }
-
-    FilterKeywordEnum key = LookupKeyword(keyword);
-    if (key == flkZero) continue;
-
-    if (key == flkRaise) { key = flkPriority; strcpy(value, "7"); }
-    if (key == flkLower) { key = flkPriority; strcpy(value, "8"); }
-
-    /* Check if it's an action keyword */
-    FActionProc *fap = (FActionProc *)FATable(key);
-    if (fap) {
-      FActionHandle fa = NewAction(key);
-      if (fa) {
-        /* Pass the value as a plain C string to faeRead */
-        (*fap)(faeRead, fa, NULL, value[0] ? value : NULL);
-        AppendAction(&fr.actions, fa);
-      }
-      continue;
-    }
-
-    /* Non-action keywords */
-    switch (key) {
-    case flkRule:
-      if (fr.name[0]) AppendFilter(&fr);
-      FRInit(&fr);
-      term = 0;
-      sstrncpy(fr.name, value, sizeof(fr.name));
-      break;
-    case flkIncoming:
-      fr.incoming = true;
-      break;
-    case flkOutgoing:
-      fr.outgoing = true;
-      break;
-    case flkManual:
-      fr.manual = true;
-      break;
-    case flkId:
-      fr.fu.id = atol(value);
-      if (fr.fu.id >= gNextFilterId) gNextFilterId = fr.fu.id + 1;
-      break;
-    case flkHeader:
-      sstrncpy(fr.terms[term].header, value, sizeof(fr.terms[term].header));
-      break;
-    case flkVerb:
-      fr.terms[term].verb = LookupVerb(value);
-      break;
-    case flkValue:
-      sstrncpy(fr.terms[term].value, value, sizeof(fr.terms[term].value));
-      break;
-    case flkConjunction:
-      fr.conjunction = LookupConj(value);
-      if (term == 0) term = 1;
-      break;
-    case flkCopyInstead: {
-      FActionHandle last = NULL;
-      for (FActionHandle a = fr.actions; a; a = a->next)
-        if (a->action == flkTransfer) last = a;
-      if (last) last->action = flkCopy;
-      break;
-    }
-    default:
-      break;
-    }
-  }
-  if (fr.name[0]) AppendFilter(&fr);
-
-  fclose(fp);
-  g_print("ReadFilters: loaded %d filters from %s\n", gNFilters, path);
-  return 0;
-}
-
-/* FWriteStr — write "keyword value\n" to file (C string value) */
-static int FWriteStr(FILE *fp, FilterKeywordEnum flk, const char *val) {
-  if (!val || !val[0]) return 0;
-  if ((int)flk >= (int)NUM_FILT_KEYWORDS) return -1;
-  fprintf(fp, "%s %s\n", FiltKeywords[flk], val);
-  return 0;
-}
-
-/* FWriteBool — write keyword line only if value is true */
-short FWriteBool(short refN, FilterKeywordEnum flk, bool value) {
-  (void)refN;
-  return 0;
-}
-
-static int FWriteBoolFP(FILE *fp, FilterKeywordEnum flk, bool value) {
-  if (!value) return 0;
-  if ((int)flk >= (int)NUM_FILT_KEYWORDS) return -1;
-  fprintf(fp, "%s\n", FiltKeywords[flk]);
-  return 0;
-}
-
-static int FWriteEnum(FILE *fp, FilterKeywordEnum flk, short e) {
-  if ((int)flk >= (int)NUM_FILT_KEYWORDS) return -1;
-  const char *evalStr = "";
-  if (flk == flkVerb && e > 0 && e < (int)NUM_VERB_STRINGS)
-    evalStr = VerbStrings[e];
-  else if (flk == flkConjunction && e > 0 && e < (int)NUM_CONJ_STRINGS)
-    evalStr = ConjStrings[e];
-  fprintf(fp, "%s %s\n", FiltKeywords[flk], evalStr);
-  return 0;
-}
-
-/* FD* struct forward declarations for WriteFilter action data access.
- * These mirror the struct definitions in the FAflk* functions below. */
+/* FD* struct forward declarations (used by ReadFilters and action handlers) */
 typedef struct { FSSpec spec; bool brandNew; GtkWidget *button; } FDTransfer;
 typedef struct { short status; GtkWidget *dropdown; } FDStatus;
 typedef struct { char subject[256]; GtkWidget *entry; } FDSubject;
@@ -422,115 +279,276 @@ typedef struct { long prior; GtkWidget *dropdown; } FDPrior;
 typedef struct { char addresses[256]; GtkWidget *entry; } FDForward;
 typedef struct { long flags; GtkWidget *chk_mailbox; GtkWidget *chk_message; } FDOpen;
 
+/* ReadFilters — sync gFilterArray from macmbx filter set (no file I/O) */
+extern MacmbxFilterSet *get_filter_set(void);
+
+int ReadFilters(void) {
+  MacmbxFilterSet *fs = get_filter_set();
+  if (!fs) return 0;
+
+  /* Free old array */
+  if (gFilterArray) { free(gFilterArray); gFilterArray = NULL; }
+  gNFilters = 0;
+
+  if (fs->count == 0) return 0;
+
+  gFilterArray = (FilterRecord *)calloc(fs->count, sizeof(FilterRecord));
+  if (!gFilterArray) return -1;
+
+  for (int i = 0; i < fs->count; i++) {
+    MacmbxRule *rule = macmbx_filter_get_rule(fs, i);
+    if (!rule) continue;
+
+    FilterRecord *fr = &gFilterArray[gNFilters];
+    FRInit(fr);
+
+    g_strlcpy(fr->name, rule->name, sizeof(fr->name));
+    fr->fu.id = rule->id;
+    fr->incoming = (rule->when & MACMBX_WHEN_INCOMING) != 0;
+    fr->outgoing = (rule->when & MACMBX_WHEN_OUTGOING) != 0;
+    fr->manual = (rule->when & MACMBX_WHEN_MANUAL) != 0;
+
+    /* Map conjunction */
+    switch (rule->conjunction) {
+    case MACMBX_CONJ_AND:    fr->conjunction = cjAnd; break;
+    case MACMBX_CONJ_OR:     fr->conjunction = cjOr; break;
+    case MACMBX_CONJ_UNLESS: fr->conjunction = cjUnless; break;
+    default: fr->conjunction = cjIgnore; break;
+    }
+
+    /* Map conditions → terms */
+    for (int t = 0; t < 2 && t < 2; t++) {
+      MacmbxCondition *cond = &rule->conditions[t];
+      if (!cond->header[0] && !cond->value[0]) break;
+      g_strlcpy(fr->terms[t].header, cond->header, sizeof(fr->terms[t].header));
+      g_strlcpy(fr->terms[t].value, cond->value, sizeof(fr->terms[t].value));
+      /* Map verb */
+      switch (cond->verb) {
+      case MACMBX_VERB_CONTAINS:     fr->terms[t].verb = mbmContains; break;
+      case MACMBX_VERB_NOT_CONTAINS: fr->terms[t].verb = mbmNotContains; break;
+      case MACMBX_VERB_IS:           fr->terms[t].verb = mbmIs; break;
+      case MACMBX_VERB_IS_NOT:       fr->terms[t].verb = mbmIsnt; break;
+      case MACMBX_VERB_STARTS_WITH:  fr->terms[t].verb = mbmStarts; break;
+      case MACMBX_VERB_ENDS_WITH:    fr->terms[t].verb = mbmEnds; break;
+      case MACMBX_VERB_REGEX:        fr->terms[t].verb = mbmRegEx; break;
+      default: fr->terms[t].verb = mbmContains; break;
+      }
+    }
+
+    /* Map actions */
+    for (int a = 0; a < rule->action_count && a < MACMBX_MAX_ACTIONS; a++) {
+      MacmbxAction *ma = &rule->actions[a];
+      FActionHandle fah = (FActionHandle)calloc(1, sizeof(struct FAction));
+      if (!fah) continue;
+
+      switch (ma->type) {
+      case MACMBX_ACT_TRANSFER: fah->action = flkTransfer; break;
+      case MACMBX_ACT_COPY:     fah->action = flkCopy; break;
+      case MACMBX_ACT_STATUS:   fah->action = flkStatus; break;
+      case MACMBX_ACT_PRIORITY: fah->action = flkPriority; break;
+      case MACMBX_ACT_LABEL:    fah->action = flkLabel; break;
+      case MACMBX_ACT_JUNK:     fah->action = flkJunk; break;
+      case MACMBX_ACT_SUBJECT:  fah->action = flkSubject; break;
+      case MACMBX_ACT_FORWARD:  fah->action = flkForward; break;
+      case MACMBX_ACT_REDIRECT: fah->action = flkRedirect; break;
+      case MACMBX_ACT_REPLY:    fah->action = flkReply; break;
+      case MACMBX_ACT_SOUND:    fah->action = flkSound; break;
+      case MACMBX_ACT_OPEN:     fah->action = flkOpenMessage; break;
+      case MACMBX_ACT_PRINT:    fah->action = flkPrint; break;
+      case MACMBX_ACT_NOTIFY:   fah->action = flkNotifyUser; break;
+      case MACMBX_ACT_DELETE:   fah->action = flkhDelete; break;
+      case MACMBX_ACT_STOP:     fah->action = flkStop; break;
+      default: fah->action = flkNone; break;
+      }
+
+      /* Store action value as string data for the UI to parse later */
+      if (ma->str_value[0]) {
+        /* Allocate appropriate FD* struct based on action type */
+        switch (fah->action) {
+        case flkTransfer:
+        case flkCopy: {
+          FDTransfer *d = calloc(1, sizeof(FDTransfer));
+          g_strlcpy((char *)spec_name(d->spec), ma->str_value, sizeof(spec_name(d->spec)));
+          FDTransfer **pp = calloc(1, sizeof(FDTransfer *));
+          *pp = d;
+          fah->data = (void *)pp;
+          break;
+        }
+        case flkForward:
+        case flkRedirect: {
+          FDForward *d = calloc(1, sizeof(FDForward));
+          g_strlcpy(d->addresses, ma->str_value, sizeof(d->addresses));
+          FDForward **pp = calloc(1, sizeof(FDForward *));
+          *pp = d;
+          fah->data = (void *)pp;
+          break;
+        }
+        case flkSubject: {
+          FDSubject *d = calloc(1, sizeof(FDSubject));
+          g_strlcpy(d->subject, ma->str_value, sizeof(d->subject));
+          FDSubject **pp = calloc(1, sizeof(FDSubject *));
+          *pp = d;
+          fah->data = (void *)pp;
+          break;
+        }
+        default:
+          break;
+        }
+      }
+
+      /* Append to action list */
+      if (!fr->actions) fr->actions = fah;
+      else {
+        FActionHandle tail = fr->actions;
+        while (tail->next) tail = tail->next;
+        tail->next = fah;
+      }
+    }
+
+    gNFilters++;
+  }
+
+  g_print("ReadFilters: loaded %d filters from macmbx\n", gNFilters);
+  return 0;
+
+}
+
+/* FWriteBool — legacy API, now a no-op (save goes through macmbx) */
+short FWriteBool(short refN, FilterKeywordEnum flk, bool value) {
+  (void)refN; (void)flk; (void)value;
+  return 0;
+}
+
 /* afbOpenMailbox / afbOpenMessage flags */
 #ifndef afbOpenMailbox
 #define afbOpenMailbox 1
 #define afbOpenMessage 2
 #endif
 
-/* WriteFilter — write a single filter to file */
-static int WriteFilter(FILE *fp, FilterRecord *fr) {
-  FWriteStr(fp, flkRule, fr->name);
-  if (!fr->fu.id) fr->fu.id = FilterNewId();
-  {
-    char idstr[32];
-    snprintf(idstr, sizeof(idstr), "%ld", fr->fu.id);
-    FWriteStr(fp, flkId, idstr);
-  }
-  FWriteBoolFP(fp, flkIncoming, fr->incoming);
-  FWriteBoolFP(fp, flkOutgoing, fr->outgoing);
-  FWriteBoolFP(fp, flkManual, fr->manual);
-  FWriteStr(fp, flkHeader, fr->terms[0].header);
-  FWriteEnum(fp, flkVerb, fr->terms[0].verb);
-  FWriteStr(fp, flkValue, fr->terms[0].value);
-  if (fr->conjunction && fr->conjunction != cjIgnore) {
-    FWriteEnum(fp, flkConjunction, fr->conjunction);
-    FWriteStr(fp, flkHeader, fr->terms[1].header);
-    FWriteEnum(fp, flkVerb, fr->terms[1].verb);
-    FWriteStr(fp, flkValue, fr->terms[1].value);
-  }
-  for (FActionHandle fa = fr->actions; fa; fa = fa->next) {
-    FilterKeywordEnum act = fa->action;
-    if (act == flkNone || act == flkZero) continue;
-    if ((int)act >= (int)NUM_FILT_KEYWORDS || !FiltKeywords[act][0]) continue;
+/* WriteFilter removed — saving now goes through macmbx_filter_save */
 
-    /* Write action keyword with its data value */
-    const char *val = NULL;
-    char numbuf[32];
-    if (fa->data) {
-      switch (act) {
-      case flkPriority: {
-        FDPrior *d = *(FDPrior **)fa->data;
-        if (d) { snprintf(numbuf, sizeof(numbuf), "%ld", d->prior); val = numbuf; }
-        break;
-      }
-      case flkLabel: {
-        FDLabel *d = *(FDLabel **)fa->data;
-        if (d) { snprintf(numbuf, sizeof(numbuf), "%ld", d->color); val = numbuf; }
-        break;
-      }
-      case flkStatus: {
-        FDStatus *d = *(FDStatus **)fa->data;
-        if (d) { snprintf(numbuf, sizeof(numbuf), "%d", d->status); val = numbuf; }
-        break;
-      }
-      case flkSubject: {
-        FDSubject *d = *(FDSubject **)fa->data;
-        if (d && d->subject[0]) val = d->subject;
-        break;
-      }
-      case flkTransfer:
-      case flkCopy: {
-        FDTransfer *d = *(FDTransfer **)fa->data;
-        if (d && spec_name(d->spec)[0]) val = spec_name(d->spec);
-        break;
-      }
-      case flkForward:
-      case flkRedirect: {
-        FDForward *d = *(FDForward **)fa->data;
-        if (d && d->addresses[0]) val = d->addresses;
-        break;
-      }
-      case flkSound: {
-        FDSound *d = *(FDSound **)fa->data;
-        if (d && spec_name(d)[0]) val = spec_name(d);
-        break;
-      }
-      default:
-        break;
+/* SaveFilters — sync gFilterArray back to macmbx and save to disk */
+int SaveFilters(void) {
+  MacmbxFilterSet *fs = get_filter_set();
+  if (!fs) return -1;
+
+  /* Sync gFilterArray → MacmbxFilterSet.
+   * Clear existing rules and rebuild from UI state. */
+  while (fs->count > 0)
+    macmbx_filter_remove_rule(fs, fs->count - 1);
+
+  for (int i = 0; i < gNFilters; i++) {
+    FilterRecord *fr = &gFilterArray[i];
+
+    MacmbxRule rule;
+    memset(&rule, 0, sizeof(rule));
+    g_strlcpy(rule.name, fr->name, sizeof(rule.name));
+    rule.id = fr->fu.id;
+    rule.when = 0;
+    if (fr->incoming) rule.when |= MACMBX_WHEN_INCOMING;
+    if (fr->outgoing) rule.when |= MACMBX_WHEN_OUTGOING;
+    if (fr->manual)   rule.when |= MACMBX_WHEN_MANUAL;
+
+    switch (fr->conjunction) {
+    case cjAnd:    rule.conjunction = MACMBX_CONJ_AND; break;
+    case cjOr:     rule.conjunction = MACMBX_CONJ_OR; break;
+    case cjUnless: rule.conjunction = MACMBX_CONJ_UNLESS; break;
+    default:       rule.conjunction = MACMBX_CONJ_AND; break;
+    }
+
+    for (int t = 0; t < 2; t++) {
+      if (!fr->terms[t].header[0]) break;
+      g_strlcpy(rule.conditions[t].header, fr->terms[t].header,
+                 sizeof(rule.conditions[t].header));
+      g_strlcpy(rule.conditions[t].value, fr->terms[t].value,
+                 sizeof(rule.conditions[t].value));
+      switch (fr->terms[t].verb) {
+      case mbmContains:      rule.conditions[t].verb = MACMBX_VERB_CONTAINS; break;
+      case mbmNotContains:   rule.conditions[t].verb = MACMBX_VERB_NOT_CONTAINS; break;
+      case mbmIs:            rule.conditions[t].verb = MACMBX_VERB_IS; break;
+      case mbmIsnt:         rule.conditions[t].verb = MACMBX_VERB_IS_NOT; break;
+      case mbmStarts:    rule.conditions[t].verb = MACMBX_VERB_STARTS_WITH; break;
+      case mbmEnds:      rule.conditions[t].verb = MACMBX_VERB_ENDS_WITH; break;
+      case mbmRegEx: rule.conditions[t].verb = MACMBX_VERB_REGEX; break;
+      default:               rule.conditions[t].verb = MACMBX_VERB_CONTAINS; break;
       }
     }
-    if (val)
-      fprintf(fp, "%s %s\n", FiltKeywords[act], val);
-    else
-      fprintf(fp, "%s\n", FiltKeywords[act]);
+
+    rule.action_count = 0;
+    for (FActionHandle fa = fr->actions; fa && rule.action_count < MACMBX_MAX_ACTIONS; fa = fa->next) {
+      MacmbxAction *ma = &rule.actions[rule.action_count];
+      switch (fa->action) {
+      case flkTransfer: ma->type = MACMBX_ACT_TRANSFER; break;
+      case flkCopy:     ma->type = MACMBX_ACT_COPY; break;
+      case flkStatus:   ma->type = MACMBX_ACT_STATUS; break;
+      case flkPriority: ma->type = MACMBX_ACT_PRIORITY; break;
+      case flkLabel:    ma->type = MACMBX_ACT_LABEL; break;
+      case flkJunk:     ma->type = MACMBX_ACT_JUNK; break;
+      case flkSubject:  ma->type = MACMBX_ACT_SUBJECT; break;
+      case flkForward:  ma->type = MACMBX_ACT_FORWARD; break;
+      case flkRedirect: ma->type = MACMBX_ACT_REDIRECT; break;
+      case flkReply:    ma->type = MACMBX_ACT_REPLY; break;
+      case flkSound:    ma->type = MACMBX_ACT_SOUND; break;
+      case flkOpenMessage: ma->type = MACMBX_ACT_OPEN; break;
+      case flkPrint:    ma->type = MACMBX_ACT_PRINT; break;
+      case flkNotifyUser: ma->type = MACMBX_ACT_NOTIFY; break;
+      case flkhDelete:   ma->type = MACMBX_ACT_DELETE; break;
+      case flkStop:     ma->type = MACMBX_ACT_STOP; break;
+      default: continue;
+      }
+
+      /* Extract value from FD* struct */
+      if (fa->data) {
+        switch (fa->action) {
+        case flkTransfer:
+        case flkCopy: {
+          FDTransfer *d = *(FDTransfer **)fa->data;
+          if (d) g_strlcpy(ma->str_value, spec_name(d->spec), sizeof(ma->str_value));
+          break;
+        }
+        case flkForward:
+        case flkRedirect: {
+          FDForward *d = *(FDForward **)fa->data;
+          if (d) g_strlcpy(ma->str_value, d->addresses, sizeof(ma->str_value));
+          break;
+        }
+        case flkSubject: {
+          FDSubject *d = *(FDSubject **)fa->data;
+          if (d) g_strlcpy(ma->str_value, d->subject, sizeof(ma->str_value));
+          break;
+        }
+        case flkPriority: {
+          FDPrior *d = *(FDPrior **)fa->data;
+          if (d) snprintf(ma->str_value, sizeof(ma->str_value), "%ld", d->prior);
+          break;
+        }
+        case flkLabel: {
+          FDLabel *d = *(FDLabel **)fa->data;
+          if (d) snprintf(ma->str_value, sizeof(ma->str_value), "%ld", d->color);
+          break;
+        }
+        case flkStatus: {
+          FDStatus *d = *(FDStatus **)fa->data;
+          if (d) snprintf(ma->str_value, sizeof(ma->str_value), "%d", d->status);
+          break;
+        }
+        case flkSound: {
+          FDSound *d = *(FDSound **)fa->data;
+          if (d) g_strlcpy(ma->str_value, spec_name(d), sizeof(ma->str_value));
+          break;
+        }
+        default: break;
+        }
+      }
+      rule.action_count++;
+    }
+
+    macmbx_filter_add_rule(fs, &rule);
   }
-  return 0;
-}
 
-/* SaveFilters — save all filters to disk */
-int SaveFilters(void) {
-  const char *path = GetFiltersPath();
-
-  char dir[1024];
-  snprintf(dir, sizeof(dir), "%s/.local/share/geudora", g_get_home_dir());
-  g_mkdir_with_parents(dir, 0755);
-
-  char tmppath[1080];
-  snprintf(tmppath, sizeof(tmppath), "%s~", path);
-  FILE *fp = fopen(tmppath, "w");
-  if (!fp) {
-    g_print("SaveFilters: cannot open %s: %s\n", tmppath, strerror(errno));
-    return -1;
-  }
-
-  for (int i = 0; i < gNFilters; i++)
-    WriteFilter(fp, &gFilterArray[i]);
-
-  fclose(fp);
-  rename(tmppath, path);
-  g_print("SaveFilters: saved %d filters to %s\n", gNFilters, path);
-  return 0;
+  int err = macmbx_filter_save(fs);
+  g_print("SaveFilters: saved %d filters via macmbx (err=%d)\n", fs->count, err);
+  return err;
 }
 
 /* RegenerateFilters — load filters from disk if not already loaded */

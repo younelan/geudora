@@ -75,6 +75,13 @@ MacmbxAddressBooks *get_address_books(void) {
   return app_state.nicknames;
 }
 
+/* Accessor for filter set (used by filtwin.c, filtrun.c) */
+MacmbxFilterSet *get_filter_set(void) {
+  if (app_state.mailer)
+    return macmbx_mailer_get_filters(app_state.mailer);
+  return NULL;
+}
+
 /* Forward declarations */
 static GtkWidget *create_message_list(void);
 static void open_mailbox_tab(const char *name, const char *path);

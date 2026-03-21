@@ -28,8 +28,7 @@ ADVISED OF THE POSSIBILITY OF SUCH DAMAGE. */
 
 #include "filters.h"
 #include "filtrun.h"
-#include "imapdownload.h"
-#include "imapnetlib.h"
+/* imapdownload.h and imapnetlib.h removed — IMAP handled by crispy/macmbx */
 #include "mailbox.h"
 #include "messact.h"
 #include "message.h"
