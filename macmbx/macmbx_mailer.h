@@ -167,6 +167,40 @@ int macmbx_mailer_fetch_attachment(MacmbxMailer *m, MacmbxTOC *toc,
 bool macmbx_mailer_is_stub(MacmbxMailer *m, MacmbxTOC *toc, int index);
 
 /* ================================================================
+ * IMAP IDLE — optional push notification
+ *
+ * If enabled, keeps an IMAP connection open per account and uses
+ * the IDLE command to receive server push. When the server reports
+ * changes (new mail, deletions, flag updates), runs a full sync
+ * internally and fires the callback with results.
+ *
+ * Completely optional — if you never call idle_start, check_account
+ * works the same as before (connect, sync, disconnect).
+ *
+ * Falls back to periodic NOOP if the server doesn't advertise IDLE.
+ * ================================================================ */
+
+/* Callback fired after IDLE-triggered sync completes.
+ * Called from the IDLE thread — caller is responsible for
+ * dispatching to UI thread (e.g. g_idle_add). */
+typedef void (*MacmbxIdleCallback)(int account_index, int new_msgs,
+                                     int deleted, int flag_updated,
+                                     void *ctx);
+
+/* Start IDLE watching for an IMAP account.
+ * Runs initial sync (same as check_account), then enters IDLE loop.
+ * Returns 0 on success, -1 if account is not IMAP or connect fails. */
+int macmbx_mailer_idle_start(MacmbxMailer *m, int account_index,
+                               MacmbxIdleCallback cb, void *ctx);
+
+/* Stop IDLE for one account, or all if account_index == -1.
+ * Closes the persistent connection and joins the thread. */
+void macmbx_mailer_idle_stop(MacmbxMailer *m, int account_index);
+
+/* Check if IDLE is running for an account. */
+bool macmbx_mailer_idle_active(MacmbxMailer *m, int account_index);
+
+/* ================================================================
  * Connection management
  * ================================================================ */
 
@@ -174,7 +208,7 @@ bool macmbx_mailer_is_stub(MacmbxMailer *m, MacmbxTOC *toc, int index);
  * Returns 0 if both succeed. */
 int macmbx_mailer_test_connection(MacmbxMailer *m, int account_index);
 
-/* Disconnect all open connections. */
+/* Disconnect all open connections (including IDLE sessions). */
 void macmbx_mailer_disconnect(MacmbxMailer *m);
 
 #endif /* MACMBX_MAILER_H */

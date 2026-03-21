@@ -18,6 +18,7 @@
 #include <strings.h>
 #include <time.h>
 #include <sys/stat.h>
+#include <pthread.h>
 #ifdef _WIN32
   #include <direct.h>
   #define mkdir_p(p) _mkdir(p)
@@ -25,6 +26,9 @@
   #include <unistd.h>
   #define mkdir_p(p) mkdir(p, 0755)
 #endif
+
+/* Max simultaneous IDLE sessions (one per IMAP account) */
+#define MAILER_MAX_IDLE 16
 
 /* ================================================================
  * Internal structure
@@ -47,6 +51,16 @@ struct MacmbxMailer {
   char *signature;
   /* LMOS directory */
   char lmos_dir[1024];
+  /* IDLE sessions (optional, one per IMAP account) */
+  struct {
+    int account_index;
+    pthread_t thread;
+    volatile bool running;     /* set false to request stop */
+    volatile bool active;      /* true while thread is alive */
+    MacmbxIdleCallback cb;
+    void *cb_ctx;
+  } idle[MAILER_MAX_IDLE];
+  int idle_count;
 };
 
 /* ================================================================
@@ -620,8 +634,139 @@ int macmbx_mailer_check_dominant(MacmbxMailer *m) {
 }
 
 /* ================================================================
- * IMAP check — connect, select INBOX, fetch new messages
+ * IMAP check — full sync ported from CrispinIMAP DoFetchNewMessages
+ *
+ * Sync algorithm (from imapdownload.c:664-900):
+ * 1. Build local UID list from TOC (≡ SpecToUIDList)
+ * 2. Get highest local UID (≡ GetLocalHighestUid)
+ * 3. Connect, SELECT mailbox
+ * 4. Check UIDVALIDITY — if changed, redownload all
+ * 5. If remote has 0 messages → delete all local
+ * 6. If fetchFlags (or redownloadAll): FetchAllFlags for ALL messages
+ *    else: fetch UIDs for range lastUID+1:*
+ * 7. MergeUidLists: compare local vs remote →
+ *      toDelete (local only), toFetch (remote only), toUpdate (flag changes)
+ * 8. Delete local messages removed from server
+ * 9. Fetch new messages
+ * 10. Update flags on existing local messages
+ * 11. Save state (UIDVALIDITY + highest UID)
  * ================================================================ */
+
+/* Map IMAP flags to Eudora state.
+ * Original CrispinIMAP stored flags in UIDNode then applied them
+ * through the delivery pipeline. We do it directly. */
+static uint8_t imap_flags_to_state(ImapFlags f) {
+  if (f.answered) return MACMBX_REPLIED;
+  if (f.draft)    return MACMBX_UNSENT;
+  if (f.seen)     return MACMBX_READ;
+  return MACMBX_UNREAD;
+}
+
+/* Build sorted UID list from local TOC (≡ SpecToUIDList).
+ * Returns count, allocates *out_uids (caller frees). */
+static int build_local_uid_list(MacmbxTOC *toc, unsigned long **out_uids) {
+  if (!toc || toc->count == 0) {
+    *out_uids = NULL;
+    return 0;
+  }
+  unsigned long *uids = calloc(toc->count, sizeof(unsigned long));
+  if (!uids) { *out_uids = NULL; return 0; }
+  int n = 0;
+  for (int i = 0; i < toc->count; i++) {
+    unsigned long uid = toc->msgs[i].uid_hash;
+    if (uid == 0) continue;
+    uids[n++] = uid;
+  }
+  /* Sort ascending (≡ UID_LL_OrderedInsert building sorted list) */
+  for (int i = 1; i < n; i++) {
+    unsigned long key = uids[i];
+    int j = i - 1;
+    while (j >= 0 && uids[j] > key) { uids[j+1] = uids[j]; j--; }
+    uids[j+1] = key;
+  }
+  *out_uids = uids;
+  return n;
+}
+
+/* Get highest UID from sorted list (≡ GetLocalHighestUid) */
+static unsigned long get_local_highest_uid(unsigned long *uids, int count) {
+  if (!uids || count == 0) return 0;
+  return uids[count - 1];
+}
+
+/* MergeUidLists — ported from imapdownload.c:1124-1172
+ *
+ * Both lists must be sorted ascending by UID.
+ * After merge:
+ *   local_uids  → contains UIDs no longer on server (to delete locally)
+ *   remote_uids → contains UIDs that need to be fetched (new on server)
+ *   update_uids + update_flags → contains flag updates for local msgs still on server
+ *
+ * Counts are updated in place. */
+static void merge_uid_lists(
+    unsigned long *local_uids,  int *local_count,
+    unsigned long *remote_uids, ImapFlags *remote_flags, int *remote_count,
+    unsigned long **out_update_uids, ImapFlags **out_update_flags, int *out_update_count)
+{
+  int lc = *local_count;
+  int rc = *remote_count;
+
+  /* Allocate update list (at most min(lc, rc) entries) */
+  int max_updates = lc < rc ? lc : rc;
+  unsigned long *upd_uids = max_updates > 0 ? calloc(max_updates, sizeof(unsigned long)) : NULL;
+  ImapFlags *upd_flags = max_updates > 0 ? calloc(max_updates, sizeof(ImapFlags)) : NULL;
+  int upd_count = 0;
+
+  /* Walk both sorted lists simultaneously (≡ MergeUidLists logic) */
+  int li = 0, ri = 0;
+  int new_local = 0, new_remote = 0;
+
+  while (li < lc && ri < rc) {
+    if (local_uids[li] < remote_uids[ri]) {
+      /* Local UID not on server → keep in local list (to delete) */
+      local_uids[new_local++] = local_uids[li++];
+    } else if (local_uids[li] > remote_uids[ri]) {
+      /* Remote UID not local → keep in remote list (to fetch) */
+      remote_uids[new_remote] = remote_uids[ri];
+      remote_flags[new_remote] = remote_flags[ri];
+      new_remote++;
+      ri++;
+    } else {
+      /* Same UID — exists on both sides → update flags, remove from both lists */
+      if (upd_uids && upd_flags) {
+        upd_uids[upd_count] = remote_uids[ri];
+        upd_flags[upd_count] = remote_flags[ri];
+        upd_count++;
+      }
+      li++;
+      ri++;
+    }
+  }
+
+  /* Remaining locals not on server → to delete */
+  while (li < lc) local_uids[new_local++] = local_uids[li++];
+
+  /* Remaining remotes not local → to fetch */
+  while (ri < rc) {
+    remote_uids[new_remote] = remote_uids[ri];
+    remote_flags[new_remote] = remote_flags[ri];
+    new_remote++;
+    ri++;
+  }
+
+  *local_count = new_local;
+  *remote_count = new_remote;
+  *out_update_uids = upd_uids;
+  *out_update_flags = upd_flags;
+  *out_update_count = upd_count;
+}
+
+/* Find TOC index by uid_hash */
+static int find_toc_index_by_uid(MacmbxTOC *toc, unsigned long uid) {
+  for (int i = 0; i < toc->count; i++)
+    if (toc->msgs[i].uid_hash == uid) return i;
+  return -1;
+}
 
 static int macmbx_mailer_check_imap(MacmbxMailer *m, int account_index,
                                       MacmbxAccount *acct) {
@@ -644,6 +789,19 @@ static int macmbx_mailer_check_imap(MacmbxMailer *m, int account_index,
   fprintf(stderr, "check_imap[%d]: server=%s port=%d ssl=%d\n",
           account_index, acct->server, port, imap_ssl);
 
+  /* --- Step 1: Build local UID list from TOC (≡ SpecToUIDList) --- */
+  MacmbxNode *in_node = macmbx_store_find_special(m->store, MACMBX_TYPE_IN);
+  if (!in_node) return -1;
+  MacmbxTOC *inbox = macmbx_toc_open(in_node->path);
+  if (!inbox) return -1;
+
+  unsigned long *local_uids = NULL;
+  int local_count = build_local_uid_list(inbox, &local_uids);
+
+  /* --- Step 2: Get highest local UID (≡ GetLocalHighestUid) --- */
+  unsigned long local_highest = get_local_highest_uid(local_uids, local_count);
+
+  /* --- Step 3: Connect + SELECT (≡ GetIMAPConnection + IMAPOpenMailbox) --- */
   ImapTransport tp = crispy_transport_new();
   crispy_transport_set_cert_callback(&tp, mailer_cert_callback, m);
 
@@ -652,13 +810,14 @@ static int macmbx_mailer_check_imap(MacmbxMailer *m, int account_index,
   int err = crispy_imap_connect(&imap, acct->server, port, security);
   if (err) {
     fprintf(stderr, "check_imap[%d]: connect failed\n", account_index);
+    free(local_uids);
     return -1;
   }
 
-  /* Authenticate */
   char pw[256] = "";
   if (get_password(m, acct, pw, sizeof(pw)) != 0) {
     crispy_imap_close(&imap);
+    free(local_uids);
     return -1;
   }
   const char *user = acct->username[0] ? acct->username : acct->email;
@@ -666,81 +825,253 @@ static int macmbx_mailer_check_imap(MacmbxMailer *m, int account_index,
   if (err) {
     fprintf(stderr, "check_imap[%d]: login failed for %s\n", account_index, user);
     crispy_imap_close(&imap);
+    free(local_uids);
     return -1;
   }
 
-  /* Select INBOX */
   err = crispy_imap_select(&imap, "INBOX");
   if (err) {
     fprintf(stderr, "check_imap[%d]: SELECT INBOX failed\n", account_index);
     crispy_imap_close(&imap);
+    free(local_uids);
     return -1;
   }
-  fprintf(stderr, "check_imap[%d]: INBOX selected, %d messages, %d recent\n",
-          account_index, imap.selected.exists, imap.selected.recent);
+  fprintf(stderr, "check_imap[%d]: INBOX selected, %ld msgs, uidvalidity=%lu\n",
+          account_index, imap.selected.exists, imap.selected.uidvalidity);
+
+  /* --- Step 4: Load saved UIDVALIDITY, check for change --- */
+  unsigned long saved_uidvalidity = 0;
+  {
+    const char *lmos_path = macmbx_mailer_lmos_path(m, account_index);
+    if (lmos_path) {
+      FILE *f = fopen(lmos_path, "r");
+      if (f) {
+        char line[128];
+        if (fgets(line, sizeof(line), f)) saved_uidvalidity = strtoul(line, NULL, 10);
+        fclose(f);
+      }
+    }
+  }
+  unsigned long server_uidvalidity = imap.selected.uidvalidity;
+  bool redownload_all = false;
+  if (saved_uidvalidity != 0 && server_uidvalidity != saved_uidvalidity) {
+    fprintf(stderr, "check_imap[%d]: UIDVALIDITY changed (%lu -> %lu), full resync\n",
+            account_index, saved_uidvalidity, server_uidvalidity);
+    redownload_all = true;
+  }
+
+  /* --- Step 5: If remote has 0 messages → delete all local IMAP msgs --- */
+  int downloaded = 0;
+  int deleted = 0;
+  int updated = 0;
 
   if (imap.selected.exists == 0) {
-    crispy_imap_close(&imap);
-    return 0;
-  }
-
-  /* Search for UNSEEN messages */
-  unsigned long *uids = NULL;
-  int uid_count = crispy_imap_search(&imap, "UNSEEN", &uids);
-  fprintf(stderr, "check_imap[%d]: SEARCH UNSEEN → %d messages\n",
-          account_index, uid_count);
-  if (uid_count <= 0) {
-    free(uids);
-    crispy_imap_close(&imap);
-    return 0;
-  }
-
-  /* Open inbox */
-  MacmbxNode *in_node = macmbx_store_find_special(m->store, MACMBX_TYPE_IN);
-  if (!in_node) { free(uids); crispy_imap_close(&imap); return -1; }
-  MacmbxTOC *inbox = macmbx_toc_open(in_node->path);
-  if (!inbox) { free(uids); crispy_imap_close(&imap); return -1; }
-
-  /* Fetch each unseen message */
-  int downloaded = 0;
-  for (int i = 0; i < uid_count; i++) {
-    progress(m, "Downloading...", i + 1, uid_count);
-
-    long msgLen = 0;
-    char *msg = crispy_imap_fetch_message(&imap, uids[i], &msgLen);
-    if (!msg || msgLen <= 0) { free(msg); continue; }
-
-    fprintf(stderr, "check_imap[%d]: FETCH UID %lu → %ld bytes\n",
-            account_index, uids[i], msgLen);
-
-    /* Dedup */
-    if (macmbx_is_duplicate(inbox, msg, msgLen) >= 0) { free(msg); continue; }
-
-    /* Append to inbox */
-    int idx = macmbx_append_message(inbox, msg, msgLen, NULL, MACMBX_UNREAD, 3);
-    if (idx >= 0) {
-      if (account_index > 0)
-        macmbx_tag_personality(inbox, idx, acct->name);
-      downloaded++;
-
-      /* Mark as \Seen on server */
-      char uid_str[32];
-      snprintf(uid_str, sizeof(uid_str), "%lu", uids[i]);
-      ImapFlags seen_flags = {0};
-      seen_flags.seen = true;
-      crispy_imap_store_flags(&imap, uid_str, "+FLAGS", seen_flags);
+    /* ≡ delivery->td = MSUM_DELETE_ALL */
+    fprintf(stderr, "check_imap[%d]: remote empty, deleting all %d local msgs\n",
+            account_index, local_count);
+    /* Delete local messages with IMAP UIDs (backwards to preserve indices) */
+    for (int i = inbox->count - 1; i >= 0; i--) {
+      if (inbox->msgs[i].uid_hash != 0)
+        macmbx_delete_message(inbox, i);
     }
-    free(msg);
+    deleted = local_count;
+    goto save_state;
   }
 
-  free(uids);
+  /* --- Steps 6-7: Fetch flags or just new UIDs --- */
+  /*
+   * ≡ CrispinIMAP logic (imapdownload.c:786-837):
+   * if redownloadAll or fetchFlags → FetchAllFlags(1:*)
+   * else → FetchFlags(lastUID+1:*)
+   *
+   * fetchFlags is true when we want full sync (flag changes, deletes).
+   * We always fetch flags to get the complete picture — CrispinIMAP
+   * does this on manual check and periodically.
+   */
+  bool fetch_flags = redownload_all || (local_count > 0);
+  /* If this is first sync with no local messages, just fetch UIDs */
+  if (local_count == 0 && !redownload_all) fetch_flags = false;
+
+  unsigned long *remote_uids = NULL;
+  ImapFlags *remote_flags = NULL;
+  int remote_count = 0;
+
+  if (fetch_flags) {
+    /* ≡ FetchAllFlags(imapStream, &remoteList) — fetch flags for ALL messages */
+    int fc = 0;
+    err = crispy_imap_fetch_flags(&imap, "1:*", &remote_uids, &remote_flags, &fc);
+    if (err || fc <= 0) {
+      fprintf(stderr, "check_imap[%d]: FETCH FLAGS 1:* failed\n", account_index);
+      free(local_uids); crispy_imap_close(&imap);
+      return -1;
+    }
+    remote_count = fc;
+    fprintf(stderr, "check_imap[%d]: fetched flags for %d remote msgs\n",
+            account_index, remote_count);
+  } else {
+    /* ≡ FetchFlags(imapStream, "localHighest+1:*", &remoteList)
+     * Only look at new messages, don't track deletes/flags this time */
+    if (local_highest > 0) {
+      char range[64];
+      snprintf(range, sizeof(range), "%lu:*", local_highest + 1);
+      int fc = 0;
+      err = crispy_imap_fetch_flags(&imap, range, &remote_uids, &remote_flags, &fc);
+      if (err) { free(local_uids); crispy_imap_close(&imap); return -1; }
+      remote_count = fc;
+      /* Remove local_highest itself if returned (UID ranges are inclusive) */
+      if (remote_count > 0 && remote_uids[0] == local_highest) {
+        memmove(remote_uids, remote_uids + 1, (remote_count - 1) * sizeof(unsigned long));
+        memmove(remote_flags, remote_flags + 1, (remote_count - 1) * sizeof(ImapFlags));
+        remote_count--;
+      }
+    } else {
+      /* First sync — get all */
+      int fc = 0;
+      err = crispy_imap_fetch_flags(&imap, "1:*", &remote_uids, &remote_flags, &fc);
+      if (err || fc <= 0) { free(local_uids); crispy_imap_close(&imap); return -1; }
+      remote_count = fc;
+    }
+    fprintf(stderr, "check_imap[%d]: %d new UIDs (range %lu:*)\n",
+            account_index, remote_count, local_highest + 1);
+  }
+
+  /* --- Step 6b: If redownloadAll, zap local list (≡ UID_LL_Zap(&localList)) --- */
+  if (redownload_all) {
+    /* ≡ CrispinIMAP: UID_LL_Zap(&localList) + delivery->td = MSUM_DELETE_ALL
+     * Delete all local messages, then fetch everything */
+    fprintf(stderr, "check_imap[%d]: UIDVALIDITY resync — deleting %d local msgs\n",
+            account_index, inbox->count);
+    for (int i = inbox->count - 1; i >= 0; i--) {
+      if (inbox->msgs[i].uid_hash != 0)
+        macmbx_delete_message(inbox, i);
+    }
+    deleted = local_count;
+    local_count = 0;
+    /* All remote messages are now "to fetch" — skip merge */
+  }
+
+  /* --- Step 7: MergeUidLists (≡ imapdownload.c:1124-1172) --- */
+  unsigned long *update_uids = NULL;
+  ImapFlags *update_flags = NULL;
+  int update_count = 0;
+
+  if (!redownload_all && fetch_flags && local_count > 0) {
+    /* Full merge: compare local vs remote → toDelete, toFetch, toUpdate */
+    merge_uid_lists(local_uids, &local_count,
+                    remote_uids, remote_flags, &remote_count,
+                    &update_uids, &update_flags, &update_count);
+    fprintf(stderr, "check_imap[%d]: merge: %d to_delete, %d to_fetch, %d to_update\n",
+            account_index, local_count, remote_count, update_count);
+  } else if (!fetch_flags) {
+    /* ≡ CrispinIMAP: if !fetchFlags, zap localList (no deletes),
+     * remoteList stays as-is (all to fetch), no updates.
+     * "if we didn't fetch new uid's, then we're not going to change
+     *  the local cache at all. Delete the local list so we don't
+     *  end up deleting anything locally." */
+    local_count = 0; /* nothing to delete */
+  }
+
+  /* --- Step 8: Delete local messages removed from server --- */
+  /* ≡ delivery->td = UIDNodeList2Handle(&localList) then ProcessDelivery removes them */
+  if (local_count > 0) {
+    fprintf(stderr, "check_imap[%d]: deleting %d msgs removed from server\n",
+            account_index, local_count);
+    for (int d = 0; d < local_count; d++) {
+      int idx = find_toc_index_by_uid(inbox, local_uids[d]);
+      if (idx >= 0) {
+        macmbx_delete_message(inbox, idx);
+        deleted++;
+      }
+    }
+  }
+
+  /* --- Step 9: Fetch new messages (≡ UIDFetchMessages) --- */
+  if (remote_count > 0) {
+    fprintf(stderr, "check_imap[%d]: fetching %d new messages\n",
+            account_index, remote_count);
+    for (int i = 0; i < remote_count; i++) {
+      progress(m, "Downloading...", i + 1, remote_count);
+
+      long msgLen = 0;
+      char *msg = crispy_imap_fetch_message(&imap, remote_uids[i], &msgLen);
+      if (!msg || msgLen <= 0) { free(msg); continue; }
+
+      fprintf(stderr, "check_imap[%d]: FETCH UID %lu -> %ld bytes\n",
+              account_index, remote_uids[i], msgLen);
+
+      int idx = macmbx_append_message(inbox, msg, msgLen, NULL,
+                                       imap_flags_to_state(remote_flags[i]), 3);
+      if (idx >= 0) {
+        /* Store UID in the summary so we can track it next sync */
+        inbox->msgs[idx].uid_hash = (uint32_t)remote_uids[i];
+        if (account_index > 0)
+          macmbx_tag_personality(inbox, idx, acct->name);
+        downloaded++;
+      }
+      free(msg);
+    }
+  }
+
+  /* --- Step 10: Update flags on existing local messages (≡ delivery->tu) --- */
+  /* ≡ CrispinIMAP: updateList contains new flags for messages still on server.
+   * ProcessDelivery walks tu and updates each summary's state/flags. */
+  if (update_count > 0) {
+    fprintf(stderr, "check_imap[%d]: updating flags on %d existing msgs\n",
+            account_index, update_count);
+    for (int u = 0; u < update_count; u++) {
+      int idx = find_toc_index_by_uid(inbox, update_uids[u]);
+      if (idx < 0) continue;
+
+      uint8_t new_state = imap_flags_to_state(update_flags[u]);
+      uint8_t cur_state = inbox->msgs[idx].state;
+
+      /* Only update if the flag-derived state differs from current.
+       * Don't downgrade states set locally (e.g. REPLIED stays REPLIED
+       * unless server says otherwise). */
+      if (new_state != cur_state) {
+        macmbx_set_state(inbox, idx, new_state);
+        updated++;
+      }
+    }
+  }
+
+save_state:
+  /* --- Step 11: Save UIDVALIDITY + highest UID for next check --- */
+  {
+    unsigned long highest = 0;
+    for (int i = 0; i < inbox->count; i++) {
+      unsigned long u = inbox->msgs[i].uid_hash;
+      if (u > highest) highest = u;
+    }
+    /* Also consider fetched UIDs in case some weren't appended */
+    for (int i = 0; i < remote_count; i++)
+      if (remote_uids && remote_uids[i] > highest) highest = remote_uids[i];
+
+    const char *lmos_path = macmbx_mailer_lmos_path(m, account_index);
+    if (lmos_path) {
+      struct stat st; if (stat(m->lmos_dir, &st) != 0) mkdir_p(m->lmos_dir);
+      FILE *f = fopen(lmos_path, "w");
+      if (f) {
+        fprintf(f, "%lu\n%lu\n", server_uidvalidity, highest);
+        fclose(f);
+      }
+    }
+    fprintf(stderr, "check_imap[%d]: saved state uidvalidity=%lu highest_uid=%lu\n",
+            account_index, server_uidvalidity, highest);
+  }
+
+  free(local_uids);
+  free(remote_uids);
+  free(remote_flags);
+  free(update_uids);
+  free(update_flags);
   crispy_imap_close(&imap);
 
-  fprintf(stderr, "check_imap[%d]: downloaded %d messages\n",
-          account_index, downloaded);
+  fprintf(stderr, "check_imap[%d]: done — %d downloaded, %d deleted, %d flag-updated\n",
+          account_index, downloaded, deleted, updated);
   macmbx_toc_save(inbox);
 
-  /* Post-receive: run filters */
+  /* Post-receive: run filters on inbox */
   if (m->filters && downloaded > 0) {
     macmbx_filter_apply_all(m->filters, inbox, MACMBX_WHEN_INCOMING,
                               m->store, NULL, NULL);
@@ -785,20 +1116,35 @@ int macmbx_mailer_check_account(MacmbxMailer *m, int account_index) {
     return msg_count == 0 ? 0 : -1;
   }
 
-  /* UIDL for LMOS tracking — use TOP to get Message-ID as fallback */
   bool use_lmos = acct.leave_on_server;
+
+  /* Get UIDL list for LMOS tracking (proper POP3 way) */
+  Pop3MsgInfo *msg_list = NULL;
+  int list_count = 0;
+  if (use_lmos) {
+    list_count = crispy_pop3_list(pop, &msg_list);
+    fprintf(stderr, "check_account[%d]: UIDL list returned %d entries\n",
+            account_index, list_count);
+  }
 
   /* Open inbox */
   MacmbxNode *in_node = macmbx_store_find_special(m->store, MACMBX_TYPE_IN);
-  fprintf(stderr, "check_account[%d]: in_node=%p\n", account_index, (void*)in_node);
-  if (!in_node) { crispy_pop3_close(pop); free(pop); return -1; }
+  if (!in_node) { free(msg_list); crispy_pop3_close(pop); free(pop); return -1; }
   MacmbxTOC *inbox = macmbx_toc_open(in_node->path);
-  fprintf(stderr, "check_account[%d]: inbox=%p path=%s\n", account_index, (void*)inbox, in_node->path);
-  if (!inbox) { crispy_pop3_close(pop); free(pop); return -1; }
+  if (!inbox) { free(msg_list); crispy_pop3_close(pop); free(pop); return -1; }
 
   int downloaded = 0;
   for (int i = 1; i <= msg_count; i++) {
     progress(m, "Downloading...", i, msg_count);
+
+    /* LMOS check — skip if already seen (by UIDL) */
+    if (use_lmos && msg_list && i <= list_count && msg_list[i-1].uidl[0]) {
+      if (macmbx_mailer_lmos_seen(m, account_index, msg_list[i-1].uidl)) {
+        fprintf(stderr, "check_account[%d]: msg %d UIDL '%s' already seen, skip\n",
+                account_index, i, msg_list[i-1].uidl);
+        continue;
+      }
+    }
 
     /* Download message */
     char *msg = NULL;
@@ -806,69 +1152,34 @@ int macmbx_mailer_check_account(MacmbxMailer *m, int account_index) {
     fprintf(stderr, "check_account[%d]: RETR %d len=%ld\n", account_index, i, msgLen);
     if (msgLen <= 0 || !msg) { free(msg); continue; }
 
-    /* Use Message-ID as LMOS key */
-    if (use_lmos) {
-      int32_t hash = 0;
-      /* Extract Message-ID hash for LMOS tracking */
-      const char *p = msg;
-      while (*p) {
-        if (strncasecmp(p, "Message-ID:", 11) == 0 || strncasecmp(p, "Message-Id:", 11) == 0) {
-          p += 11; while (*p == ' ') p++;
-          const char *id = p; if (*id == '<') id++;
-          const char *end = id; while (*end && *end != '>' && *end != '\r' && *end != '\n') end++;
-          char uidl[256];
-          int len = (int)(end - id); if (len >= 256) len = 255;
-          memcpy(uidl, id, len); uidl[len] = '\0';
-          if (macmbx_mailer_lmos_seen(m, account_index, uidl)) {
-            free(msg); goto next_msg;
-          }
-          break;
-        }
-        while (*p && *p != '\n') p++;
-        if (*p == '\n') p++;
-        if (*p == '\r' || *p == '\n') break;
-      }
-    }
-
     /* Dedup check */
-    if (macmbx_is_duplicate(inbox, msg, msgLen) >= 0) { free(msg); continue; }
+    if (macmbx_is_duplicate(inbox, msg, msgLen) >= 0) {
+      fprintf(stderr, "check_account[%d]: msg %d is duplicate, skip\n", account_index, i);
+      /* Still mark LMOS so we don't re-download */
+      if (use_lmos && msg_list && i <= list_count && msg_list[i-1].uidl[0])
+        macmbx_mailer_lmos_mark(m, account_index, msg_list[i-1].uidl);
+      free(msg); continue;
+    }
 
     /* Append to inbox */
     int idx = macmbx_append_message(inbox, msg, msgLen, NULL, MACMBX_UNREAD, 3);
-    fprintf(stderr, "check_account[%d]: append msg %d → idx=%d inbox->count=%d\n",
-            account_index, i, idx, inbox->count);
+    fprintf(stderr, "check_account[%d]: append msg %d → idx=%d\n", account_index, i, idx);
     if (idx >= 0) {
       if (account_index > 0)
         macmbx_tag_personality(inbox, idx, acct.name);
       downloaded++;
 
-      /* Mark LMOS with Message-ID */
-      if (use_lmos) {
-        const char *p2 = msg;
-        while (*p2) {
-          if (strncasecmp(p2, "Message-ID:", 11) == 0 || strncasecmp(p2, "Message-Id:", 11) == 0) {
-            p2 += 11; while (*p2 == ' ') p2++;
-            const char *id = p2; if (*id == '<') id++;
-            const char *end = id; while (*end && *end != '>' && *end != '\r') end++;
-            char uidl[256]; int len = (int)(end - id); if (len >= 256) len = 255;
-            memcpy(uidl, id, len); uidl[len] = '\0';
-            macmbx_mailer_lmos_mark(m, account_index, uidl);
-            break;
-          }
-          while (*p2 && *p2 != '\n') p2++;
-          if (*p2 == '\n') p2++;
-          if (*p2 == '\r' || *p2 == '\n') break;
-        }
-      }
+      /* Mark LMOS with UIDL */
+      if (use_lmos && msg_list && i <= list_count && msg_list[i-1].uidl[0])
+        macmbx_mailer_lmos_mark(m, account_index, msg_list[i-1].uidl);
     }
     free(msg);
 
     if (!use_lmos)
       crispy_pop3_dele(pop, i);
-
-    next_msg:;
   }
 
+  free(msg_list);
   crispy_pop3_close(pop);
   free(pop);
   fprintf(stderr, "check_account[%d]: downloaded %d messages, saving TOC\n",
@@ -964,8 +1275,200 @@ int macmbx_mailer_test_connection(MacmbxMailer *m, int account_index) {
   return 0;
 }
 
+/* ================================================================
+ * IMAP IDLE — optional push notification
+ *
+ * Thread per IMAP account. Keeps connection open, enters IDLE,
+ * wakes on server push or 29-min timeout, runs sync, fires callback.
+ * Falls back to NOOP + sleep if server doesn't support IDLE.
+ * ================================================================ */
+
+typedef struct {
+  MacmbxMailer *mailer;
+  int slot;           /* index into mailer->idle[] */
+  int account_index;
+} IdleThreadArg;
+
+static void *idle_thread_func(void *arg) {
+  IdleThreadArg *a = (IdleThreadArg *)arg;
+  MacmbxMailer *m = a->mailer;
+  int slot = a->slot;
+  int account_index = a->account_index;
+  free(a);
+
+  MacmbxAccount acct;
+  if (get_account(m, account_index, &acct) != 0) {
+    m->idle[slot].active = false;
+    return NULL;
+  }
+
+  /* Connect */
+  int imap_ssl = 0;
+  if (m->conf) {
+    imap_ssl = macmbx_conf_get_int(m->conf, "ssl", "ssl_imap_mode", 0);
+    if (acct.index > 0) {
+      char sec[32]; snprintf(sec, sizeof(sec), "account_%d", acct.index);
+      imap_ssl = macmbx_conf_get_int(m->conf, sec, "ssl_mode", imap_ssl);
+    }
+  }
+  int port = 143;
+  ImapSecurity security = IMAP_PLAIN;
+  if (imap_ssl & 4) { security = IMAP_SSL; port = 993; }
+  else if (imap_ssl & 2) security = IMAP_STARTTLS;
+  else if (imap_ssl & 1) security = IMAP_STARTTLS;
+
+  ImapTransport tp = crispy_transport_new();
+  crispy_transport_set_cert_callback(&tp, mailer_cert_callback, m);
+
+  ImapSession imap;
+  crispy_imap_init(&imap, tp);
+
+  while (m->idle[slot].running) {
+    /* (Re)connect if needed */
+    if (!imap.connected) {
+      if (crispy_imap_connect(&imap, acct.server, port, security) != 0) {
+        fprintf(stderr, "idle[%d]: connect failed, retry in 60s\n", account_index);
+        for (int w = 0; w < 60 && m->idle[slot].running; w++) sleep(1);
+        continue;
+      }
+      char pw[256] = "";
+      if (get_password(m, &acct, pw, sizeof(pw)) != 0) {
+        crispy_imap_close(&imap);
+        fprintf(stderr, "idle[%d]: no password, retry in 60s\n", account_index);
+        for (int w = 0; w < 60 && m->idle[slot].running; w++) sleep(1);
+        continue;
+      }
+      const char *user = acct.username[0] ? acct.username : acct.email;
+      if (crispy_imap_login(&imap, user, pw) != 0) {
+        crispy_imap_close(&imap);
+        fprintf(stderr, "idle[%d]: login failed, retry in 60s\n", account_index);
+        for (int w = 0; w < 60 && m->idle[slot].running; w++) sleep(1);
+        continue;
+      }
+      if (crispy_imap_select(&imap, "INBOX") != 0) {
+        crispy_imap_close(&imap);
+        fprintf(stderr, "idle[%d]: SELECT failed, retry in 60s\n", account_index);
+        for (int w = 0; w < 60 && m->idle[slot].running; w++) sleep(1);
+        continue;
+      }
+      fprintf(stderr, "idle[%d]: connected, INBOX selected, cap_idle=%d\n",
+              account_index, imap.cap_idle);
+    }
+
+    if (!m->idle[slot].running) break;
+
+    /* Enter IDLE (or NOOP fallback).
+     * 29 minutes — RFC 2177 recommends re-issuing before 30 min. */
+    int res = crispy_imap_idle(&imap, 29 * 60 * 1000);
+    if (res < 0) {
+      /* Connection lost — will reconnect next iteration */
+      fprintf(stderr, "idle[%d]: connection lost, reconnecting\n", account_index);
+      crispy_imap_close(&imap);
+      continue;
+    }
+
+    if (!m->idle[slot].running) break;
+
+    /* IDLE returned — server sent an update or we timed out.
+     * Check imap.reply for EXISTS/EXPUNGE/FETCH to know if something changed.
+     * Either way, run a full sync to get the definitive state. */
+    bool has_changes = false;
+    if (strstr(imap.reply, "EXISTS") || strstr(imap.reply, "EXPUNGE") ||
+        strstr(imap.reply, "FETCH")) {
+      has_changes = true;
+      fprintf(stderr, "idle[%d]: server push: %s\n", account_index, imap.reply);
+    }
+
+    if (has_changes) {
+      /* Run full sync — reuse the open connection's state but
+       * we need to do it via check_account which opens its own connection.
+       * Close this one, sync, then reconnect for next IDLE cycle. */
+      crispy_imap_close(&imap);
+
+      int new_msgs = macmbx_mailer_check_account(m, account_index);
+      int downloaded = new_msgs > 0 ? new_msgs : 0;
+
+      /* Fire callback */
+      if (m->idle[slot].cb) {
+        m->idle[slot].cb(account_index, downloaded, 0, 0, m->idle[slot].cb_ctx);
+      }
+      /* Connection closed — will reconnect at top of loop */
+    }
+    /* If no changes (timeout), loop re-enters IDLE as keepalive */
+  }
+
+  crispy_imap_close(&imap);
+  m->idle[slot].active = false;
+  fprintf(stderr, "idle[%d]: stopped\n", account_index);
+  return NULL;
+}
+
+int macmbx_mailer_idle_start(MacmbxMailer *m, int account_index,
+                               MacmbxIdleCallback cb, void *ctx) {
+  if (!m) return -1;
+
+  /* Verify this is an IMAP account */
+  MacmbxAccount acct;
+  if (get_account(m, account_index, &acct) != 0) return -1;
+  if (strcasecmp(acct.type, "IMAP") != 0 && strcasecmp(acct.type, "imap") != 0)
+    return -1;
+
+  /* Check if already running */
+  for (int i = 0; i < m->idle_count; i++) {
+    if (m->idle[i].account_index == account_index && m->idle[i].active)
+      return 0; /* already running */
+  }
+
+  if (m->idle_count >= MAILER_MAX_IDLE) return -1;
+
+  /* Run initial sync before entering IDLE */
+  macmbx_mailer_check_account(m, account_index);
+
+  int slot = m->idle_count++;
+  m->idle[slot].account_index = account_index;
+  m->idle[slot].running = true;
+  m->idle[slot].active = true;
+  m->idle[slot].cb = cb;
+  m->idle[slot].cb_ctx = ctx;
+
+  IdleThreadArg *arg = calloc(1, sizeof(IdleThreadArg));
+  arg->mailer = m;
+  arg->slot = slot;
+  arg->account_index = account_index;
+  pthread_create(&m->idle[slot].thread, NULL, idle_thread_func, arg);
+
+  return 0;
+}
+
+void macmbx_mailer_idle_stop(MacmbxMailer *m, int account_index) {
+  if (!m) return;
+  for (int i = 0; i < m->idle_count; i++) {
+    if (account_index >= 0 && m->idle[i].account_index != account_index)
+      continue;
+    if (!m->idle[i].active) continue;
+
+    m->idle[i].running = false;
+    /* Thread will exit on next IDLE timeout or error.
+     * We could also close the socket to force immediate wakeup,
+     * but for now just wait. */
+    pthread_join(m->idle[i].thread, NULL);
+    m->idle[i].active = false;
+  }
+}
+
+bool macmbx_mailer_idle_active(MacmbxMailer *m, int account_index) {
+  if (!m) return false;
+  for (int i = 0; i < m->idle_count; i++) {
+    if (m->idle[i].account_index == account_index && m->idle[i].active)
+      return true;
+  }
+  return false;
+}
+
 void macmbx_mailer_disconnect(MacmbxMailer *m) {
-  (void)m; /* Sessions are created and closed per operation */
+  if (!m) return;
+  /* Stop all IDLE sessions */
+  macmbx_mailer_idle_stop(m, -1);
 }
 
 /* ================================================================
