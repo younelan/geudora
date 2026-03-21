@@ -45,7 +45,8 @@ void LinkTickle(void);
 int ParseURL(unsigned char *url, unsigned char *proto, unsigned char *host,
              unsigned char *query);
 void FixURLString(char *url);
-void *DupHandle(void **src);
+void *DupHandle(void *h);
+void *DupHandle(void *h) { if (!h) return NULL; size_t sz = 256; void *d = malloc(sz); if (d) memcpy(d, h, sz); return d; }
 void LVAdd(ViewListPtr pView, VLNodeInfo *info);
 short GetMenuHandle(short menuID);
 void GetMenuItemText(short mh, short item, unsigned char *text);

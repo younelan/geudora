@@ -32,8 +32,8 @@ MERCHANTABILITY AND FITNESS FOR A PARTICULAR PURPOSE ARE DISCLAIMED. */
 #include "buildtoc.h"
 #include "euErrors.h"
 #include "fileutil.h"
-#include "imapmailboxes.h"
-#include "junk.h"
+/* imapmailboxes.h removed — crispy_imap handles IMAP */
+/* junk.h removed — macmbx_junk handles junk */
 #include "mydefs.h"
 #include "StringDefs.h"
 #include "gtk_prefs.h"
@@ -1248,9 +1248,7 @@ void CleanseTOC(TOCType * tocH) {
   tocH->beingWritten = 0;
   tocH->analScanned = false;
 
-  /* Junk processing */
-  if (tocH->which == JUNK)
-    JunkTOCCleanse(tocH);
+  /* Junk cleansing is handled by macmbx_toc_open internally */
 }
 
 /************************************************************************

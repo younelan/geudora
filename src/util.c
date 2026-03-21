@@ -33,6 +33,7 @@ static inline long StyledLineBreak(const char *text, long len, long s, long e, l
 #include "MyRes.h"
 #include "StringUtil.h"
 #include "fileutil.h"
+#include "crispy_smtp.h"
 #include "gtk_menus.h"
 #include "schizo.h"
 #include "threading.h"
@@ -1595,10 +1596,13 @@ int AccuAddPtrB64(AccuPtr a, void *bytes, long len) {
   if (!encoded)
     return ENOMEM;
 
-  Encode64DataPtr(encoded, &newLen, bytes, len);
-  ASSERT(newLen <= len * 4 / 3 + 4);
-
-  err = AccuAddPtr(a, encoded, newLen);
+  {
+    long encLen = 0;
+    char *enc = crispy_base64_encode((const char *)bytes, len, &encLen);
+    if (!enc) { free(encoded); return ENOMEM; }
+    err = AccuAddPtr(a, enc, encLen);
+    free(enc);
+  }
 
   free(encoded);
 
@@ -1822,31 +1826,19 @@ long AccuFindLong(AccuPtr a, unsigned long theLong) {
  * DecodeB64Accu - decode a base64 accumulator
  ************************************************************************/
 short DecodeB64Accu(AccuPtr a, bool isText) {
-  Dec64 d64;
-  char *data = malloc((3 * a->offset) / 4 + 4);
-  long len;
-  long result;
+  (void)isText;
+  if (!a->offset) return 0;
 
-  if (!data)
-    return ENOMEM;
-  if (!a->offset) {
-    free(data);
-    return 0;
+  long decLen = 0;
+  char *decoded = crispy_base64_decode(a->data, a->offset, &decLen);
+  if (!decoded) return ENOMEM;
+
+  if (decLen <= a->size) {
+    memcpy(a->data, decoded, decLen);
+    a->offset = decLen;
   }
-
-  Zero(d64);
-  result = Decode64(a->data, a->offset, data, &len, &d64, isText);
-  if ((d64.decoderState + d64.padCount) % 4)
-    result++;
-
-  if (!result) {
-    a->offset = len;
-    memmove(a->data, data, len);
-  }
-
-  free(data);
-
-  return (result);
+  free(decoded);
+  return 0;
 }
 
 /**********************************************************************

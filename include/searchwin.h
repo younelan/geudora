@@ -115,7 +115,7 @@ typedef struct SearchInfo {
   int currentBox;           /* current mailbox index being searched */
   int currentMsg;           /* current message index in current mailbox */
   GPtrArray *mailboxPaths;  /* array of mailbox file paths to search */
-  TOCType * currentTOC;     /* TOC currently being searched */
+  MacmbxTOC * currentTOC;     /* TOC currently being searched */
   bool currentTOCOpened;    /* we opened it (need to close) */
 
   /* Bulk search state */
@@ -153,21 +153,21 @@ void        SearchClose_cb(MyWindowPtr win);
 
 /* Externally-used functions */
 bool        IsSearchWindow(void *winWP);
-TOCType *   GetTOCFromSearchWin(char * spec);
-void        GetSearchTOC(MyWindowPtr win, TOCType * *ptoc);
-void        SearchUpdateSum(TOCType * tocH, short sumNum,
-                            TOCType * fromTocH, long serialNum,
+MacmbxTOC *   GetTOCFromSearchWin(char * spec);
+void        GetSearchTOC(MyWindowPtr win, MacmbxTOC * *ptoc);
+void        SearchUpdateSum(MacmbxTOC * tocH, short sumNum,
+                            MacmbxTOC * fromTocH, long serialNum,
                             bool transfer, bool nuke);
-void        CopySum(MSumPtr sumFrom, MSumPtr sumTo, short virtualMBIdx);
+void        CopySum(MacmbxMsgSum * sumFrom, MacmbxMsgSum * sumTo, short virtualMBIdx);
 void        IMAPSearchIncremental(MailboxNodeHandle mbox);
 void        SearchAllIdle(void);
 void        SearchMBUpdate(void);
 
 /* Incremental search / mailbox tracking */
-bool        SearchIncremental(MyWindowPtr win, TOCType * tocH, int sumNum);
-void        SearchInvalTocBox(TOCType * tocH, short sumNum, int boxCol);
+bool        SearchIncremental(MyWindowPtr win, MacmbxTOC * tocH, int sumNum);
+void        SearchInvalTocBox(MacmbxTOC * tocH, short sumNum, int boxCol);
 void        TellSearchMBRename(char * oldSpec, char * newSpec);
-bool        SearchBoxesInclude(MyWindowPtr win, TOCType * tocH);
+bool        SearchBoxesInclude(MyWindowPtr win, MacmbxTOC * tocH);
 
 /* Saved search files */
 void        SearchSave(MyWindowPtr win, bool saveAs);
@@ -180,12 +180,12 @@ void        OpenSearchMenu(short item);
 
 /* Utility */
 void        SearchNewFindStringLo(const char *str, bool withPrejudice);
-void        SearchFixUnread(TOCType * tocH, bool unread);
+void        SearchFixUnread(MacmbxTOC * tocH, bool unread);
 bool        GetSearchWinSpec(void *winWP, char *spec);
 void        SearchSetWTitle(MyWindowPtr win);
 void        AddCriteriaText(SearchInfo *si, char *buf, int bufSize);
 
 /* Query */
-bool        SearchViewIsMailbox(TOCType * tocH);
+bool        SearchViewIsMailbox(MacmbxTOC * tocH);
 
 #endif /* SEARCHWIN_H */

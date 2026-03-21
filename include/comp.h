@@ -34,9 +34,27 @@ bool CloseMyWindow(void *winWP);
 #ifndef COMP_H
 #define COMP_H
 
-#include "sendmail.h"
-
 #include "mailbox.h"
+
+/* HeadSpec — describes a header field position in compose text.
+ * Moved from sendmail.h (which is now removed — crispy handles SMTP). */
+typedef struct HeadSpec {
+  long offset;
+  long length;
+  long stop;
+  long value;
+  long start;
+  short index;
+} HeadSpec, *HSPtr;
+
+/* Compose header manipulation */
+HSPtr CompHeadFind(MessHandle messH, short index, HSPtr hSpec);
+HSPtr CompHeadFindStr(MessHandle messH, char *name, HSPtr hSpec);
+int CompHeadGetText(GtkWidget *pte, HSPtr hSpec, char **text);
+int CompHeadGetStrLo(MessHandle messH, short index, char *string, short size);
+int CompHeadAppendPtr(GtkWidget *pte, HSPtr hSpec, char *text, long size);
+int CompHeadAppendStr(GtkWidget *pte, HSPtr hSpec, char *text);
+int InsertCommaIfNeedBe(GtkWidget *pte, HeadSpec *hs);
 #include "toc.h"
 #include <gtk/gtk.h>
 #include <stdbool.h>
@@ -56,9 +74,9 @@ void comp_set_body_quoted(MyWindowPtr win, const char *attribution,
 
 /* Main composition functions - ported to use gEditCtrl instead of Pete */
 bool SaveComp(MyWindowPtr win);
-MyWindowPtr OpenComp(TOCType * tocH, int sumNum, GtkWidget *winWP,
+MyWindowPtr OpenComp(MacmbxTOC * tocH, int sumNum, GtkWidget *winWP,
                      MyWindowPtr win, bool showIt, bool new);
-int QueueSelectedMessages(TOCType * tocH, short toState, unsigned long when);
+int QueueSelectedMessages(MacmbxTOC * tocH, short toState, unsigned long when);
 int CreateMessageBody(char *buffer, unsigned long *hashPtr);
 long CountCompBytes(MessHandle messH);
 void UpdateSum(MessHandle messH, long offset, long length);

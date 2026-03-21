@@ -78,7 +78,7 @@ static const char *priority_to_str(int priority) {
   }
 }
 
-GtkMessageListItem *gtk_messagelist_item_new(MessageSummary *summary,
+GtkMessageListItem *gtk_messagelist_item_new(MacmbxMsgSum *summary,
                                              int index) {
   GtkMessageListItem *msg = g_object_new(GTK_TYPE_MESSAGELIST_ITEM, NULL);
 
@@ -111,7 +111,7 @@ GtkMessageListItem *gtk_messagelist_item_new(MessageSummary *summary,
     msg->from = ensure_utf8(summary->from);
 
     /* Subject */
-    msg->subject = ensure_utf8(summary->subj);
+    msg->subject = ensure_utf8(summary->subject);
 
     /* Date */
     char date_str[64];
@@ -135,9 +135,9 @@ GtkMessageListItem *gtk_messagelist_item_new(MessageSummary *summary,
     msg->size = g_strdup(size_str);
 
     /* Junk score */
-    if (summary->spamScore > 0) {
+    if (summary->spam_score > 0) {
       char jbuf[8];
-      snprintf(jbuf, sizeof(jbuf), "%ld", (long)summary->spamScore);
+      snprintf(jbuf, sizeof(jbuf), "%ld", (long)summary->spam_score);
       msg->junk = g_strdup(jbuf);
     } else {
       msg->junk = g_strdup("");

@@ -46,6 +46,12 @@ int keychain_find(const char *service, const char *account,
 /* Delete a credential. Returns 0 if deleted, KEYCHAIN_NOT_FOUND if absent. */
 int keychain_delete(const char *service, const char *account);
 
+/* Invalidate cached password for an account. Call after password change/clear. */
+void keychain_cache_invalidate(const char *service, const char *account);
+
+/* Invalidate all cached passwords. */
+void keychain_cache_clear(void);
+
 /* Error codes */
 #define KEYCHAIN_OK          0
 #define KEYCHAIN_NOT_FOUND   1

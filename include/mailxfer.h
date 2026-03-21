@@ -26,7 +26,6 @@ ADVISED OF THE POSSIBILITY OF SUCH DAMAGE. */
 #ifndef MAILXFER_H
 #define MAILXFER_H
 
-#include "TransStream.h"
 #include "filters.h"
 #include "message.h"
 #include "schizo.h"
@@ -56,13 +55,13 @@ typedef struct XferFlags {
 typedef struct IMAPTransferRec_ {
   short command;
   char targetSpec[PATH_MAX];
-  TOCType * destToc;
+  MacmbxTOC * destToc;
   GArray *uids;
   bool attachmentsToo;
-  TOCType * delToc;
+  MacmbxTOC * delToc;
   bool nuke;
   bool expunge;
-  TOCType * sourceToc;
+  MacmbxTOC * sourceToc;
   bool copy;
   void *attachments;
   int attachmentsCount;
@@ -83,30 +82,16 @@ typedef struct IMAPTransferRec_ {
 #endif
 
 
+/* Mail transfer — all network I/O via macmbx_mailer/crispy */
 short XferMail(bool check, bool send, bool manual, bool scripted, bool thread,
                short modifiers);
-short XferMailSetup(bool *check, bool *send, bool manual, bool scripted,
-                    XferFlags *flags, short modifiers);
-short XferMailRun(bool check, bool send, bool manual, bool scripted, XferFlags flags,
-                  IMAPTransferPtr imapInfo);
-void GrabSignature(uint32_t fid);
-int TransmitMessageHi(TransStream stream, MessHandle messH, bool chatter,
-                        bool sendDataCmd);
-void ShowBoxAt(TOCType * tocH, short selectMe, GtkWidget * behindWin);
-short FumLub(TOCType * tocH);
-void FilterXferMessages(void);
 void ResetCheckTime(bool force);
-void NotifyNewMail(short gotSome, bool noXfer, TOCType * tocH,
+void NotifyNewMail(short gotSome, bool noXfer, MacmbxTOC * tocH,
                    FilterPB *fpbDelivery);
-void NotifyNewMailLo(short gotSome, bool noXfer, TOCType * tocH,
+void NotifyNewMailLo(short gotSome, bool noXfer, MacmbxTOC * tocH,
                      FilterPB *fpbDelivery, bool OpenIn);
-int DoFcc(TOCType * tocH, short sumNum, CSpecHandle list);
-void CompAttDel(MessHandle messH);
+void ShowBoxAt(MacmbxTOC * tocH, short selectMe, GtkWidget * behindWin);
 GtkWidget * OpenBehindMePlease(void);
-void ProcessReceivedRegFiles(void);
-int OutgoingMIDListSave(void);
-int OutgoingMIDListLoad(void);
-void BadgeTheSupidDock(short count, char *text, bool attentionColor);
 long GlobalUnreadCount(void);
 #define PrefBadgeDo() ((GetPrefLong(PREF_NO_STEENKEEN_BATCHES) & 0x1) == 0)
 #define PrefBadgeRecent() ((GetPrefLong(PREF_NO_STEENKEEN_BATCHES) & 0x2) == 0)

@@ -39,9 +39,9 @@ ADVISED OF THE POSSIBILITY OF SUCH DAMAGE. */
 #include <stdbool.h>
 
 int PrintOneMessage(MyWindowPtr win, bool select, bool now);
-int PrintSelectedMessages(TOCType *tocH, bool select, bool now,
+int PrintSelectedMessages(MacmbxTOC *tocH, bool select, bool now,
                           long beginSel, long endSel, GtkWidget *printMe);
-int PrintClosedMessage(TOCType *tocH, short sumNum, bool now);
+int PrintClosedMessage(MacmbxTOC *tocH, short sumNum, bool now);
 void DoPageSetup(GtkWindow *parent);
 void SetupPrintFont(void);
 

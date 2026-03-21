@@ -31,7 +31,7 @@ ADVISED OF THE POSSIBILITY OF SUCH DAMAGE. */
  *
  * GTK4 port:
  *   - MessHandle still **MessType (double pointer) per message.h
- *   - TOCType * direct pointer (no void *indirection on TOC)
+ *   - MacmbxTOC * direct pointer (no void *indirection on TOC)
  *   - GtkWidget * / bodyPTE / subPTE = GtkWidget* (GtkTextView via gEditCtrl)
  *   - ControlHandle = void* (GtkWidget* buttons/widgets)
  *   - QuickDraw drawing → GTK4 widgets / CSS styling
@@ -49,20 +49,24 @@ ADVISED OF THE POSSIBILITY OF SUCH DAMAGE. */
 #include "StrnDefs.h"
 #include "comp.h"
 #include "features.h"
-#include "filtrun.h"
+/* filtrun.h removed — macmbx_filter handles filters */
 #include "find.h"
 #include "gtk_menus.h"
-#include "imapdownload.h"
-#include "junk.h"
+/* imapdownload.h removed — crispy_imap handles IMAP */
+/* junk.h removed — macmbx_junk handles junk */
+#include "macmbx.h"
+#include "gtk_mailbox.h"
 #include "mailbox.h"
+#include "prefdefs.h"
+#include "gtk_dialogs.h"
 #include "message.h"
 #include "mydefs.h"
 #include "nickmng.h"
-#include "pop.h"
+/* pop.h removed — crispy_pop3 handles POP */
 #include "print.h"
 #include "schizo.h"
 #include "searchwin.h"
-#include "sendmail.h"
+/* sendmail.h removed — crispy handles SMTP */
 #include "toc.h"
 #include "util.h"
 #include "utl.h"
@@ -72,14 +76,13 @@ ADVISED OF THE POSSIBILITY OF SUCH DAMAGE. */
 
 /* Forward declarations for functions not in available headers */
 extern bool IsMailboxChoice(short menu, short item);
-extern bool IsMailboxSubmenu(short menu);
 extern bool GetTransferParams(short menu, short item, char * spec, void *p);
 extern bool SameSpec(char * a, char * b);
-extern void MoveMessage(TOCType *tocH, short sumNum, char * spec, bool copy);
-extern void AddXfUndo(TOCType *fromTocH, TOCType *toTocH, short sumNum);
-extern void MakeMessTitle(unsigned char *title, TOCType *tocH, short sumNum, bool full);
+extern void MoveMessage(MacmbxTOC *tocH, short sumNum, char * spec, bool copy);
+extern void AddXfUndo(MacmbxTOC *fromTocH, MacmbxTOC *toTocH, short sumNum);
+extern void MakeMessTitle(unsigned char *title, MacmbxTOC *tocH, short sumNum, bool full);
 extern void InvalTopMargin(MyWindowPtr win);
-extern void MakeMessFileName(TOCType *tocH, short sumNum, unsigned char *name);
+extern void MakeMessFileName(MacmbxTOC *tocH, short sumNum, unsigned char *name);
 extern void GetAttFolderPath(char *buf, int bufSize);
 extern int GetIMAPAttachFolderPath(char *buf, int bufSize);
 extern void GetPartsFolder(char *buf, int bufSize);
@@ -94,7 +97,7 @@ extern int BuildHTML(AccuPtr a, GtkWidget *pte, void *p1, long len, long off,
                      void *p2, void *p3, int n, unsigned char *mid, void *p4, void *p5);
 extern int BuildEnriched(AccuPtr a, GtkWidget *pte, void *p1, long len, long off,
                          void *p2, bool b);
-extern int SaveTextAsMessage(void *extras, void *text, TOCType *tocH, long *fromLen);
+extern int SaveTextAsMessage(void *extras, void *text, MacmbxTOC *tocH, long *fromLen);
 extern void ReplyDefaults(short modifiers, bool *all, bool *self, bool *quote);
 extern void DoReplyMessage(MyWindowPtr win, bool all, bool self, bool quote,
                            bool b1, short item, bool b2, bool b3, bool b4);
@@ -102,31 +105,30 @@ extern void DoRedistributeMessage(MyWindowPtr win, void *addr, bool turbo,
                                   bool b1, bool b2);
 extern void DoForwardMessage(MyWindowPtr win, void *addr, bool b);
 extern void DoSalvageMessage(MyWindowPtr win, bool b);
-extern void DeleteMessage(TOCType *tocH, short sumNum, bool nuke);
-extern TOCType *GetTrashTOC(void);
-extern void ServerMenuChoice(TOCType *tocH, short sumNum, short item, bool shift);
-extern void SetPriority(TOCType *tocH, short sumNum, short priority);
+extern void DeleteMessage(MacmbxTOC *tocH, short sumNum, bool nuke);
+/* GetTrashTOC is a macro in toc.h using macmbx */
+extern void ServerMenuChoice(MacmbxTOC *tocH, short sumNum, short item, bool shift);
+extern void SetPriority(MacmbxTOC *tocH, short sumNum, short priority);
 extern short AdjustSpecialMenuSelection(short item);
 extern void MakeNickFromSelection(MyWindowPtr win);
 extern void MakeMessNick(MyWindowPtr win, short modifiers);
 extern void DoMakeFilter(MyWindowPtr win);
-extern void SetState(TOCType *tocH, int sumNum, int state);
+extern void SetState(MacmbxTOC *tocH, int sumNum, int state);
 extern short Item2Status(short item);
-extern void SelectBoxRange(TOCType *tocH, int start, int end, bool cmd, int eStart, int eEnd);
+extern void SelectBoxRange(MacmbxTOC *tocH, int start, int end, bool cmd, int eStart, int eEnd);
 extern void BoxCenterSelection(MyWindowPtr win);
-extern void BeenThereDoneThat(TOCType *tocH, short sumNum);
+extern void BeenThereDoneThat(MacmbxTOC *tocH, short sumNum);
 extern void *MenuItem2Handle(short menu, short item);
 extern void SetTopMargin(MyWindowPtr win, short margin);
 extern void SetBGColorsByPers(MessHandle messH);
-extern int CacheMessage(TOCType *tocH, short sumNum);
+extern int CacheMessage(MacmbxTOC *tocH, short sumNum);
 extern void GenerateReceipt(MessHandle messH, int disp, int dispLocal, int action, int sent);
 extern bool DisplayGetGraphics(MyWindowPtr win);
 extern int Box2Path(const char *boxPath, unsigned char *path);
-extern void CompIBarUpdate(MessHandle messH);
-extern void InsertCommaIfNeedBe(GtkWidget *pte, HeadSpec *hs);
+extern int InsertCommaIfNeedBe(GtkWidget *pte, HeadSpec *hs);
 extern short SubjCompare(unsigned char *s1, unsigned char *s2);
-extern TOCType *GetRealTOC(TOCType *tocH, short sumNum, short *realSum);
-extern bool FindRealSummary(TOCType *tocH, long serialNum, short *sumNum);
+extern MacmbxTOC *GetRealTOC(MacmbxTOC *tocH, short sumNum, short *realSum);
+extern bool FindRealSummary(MacmbxTOC *tocH, long serialNum, short *sumNum);
 extern void BoxOpen(MyWindowPtr win);
 
 #ifndef peeEvent
@@ -359,7 +361,7 @@ static void PeteSetDirty_(GtkWidget *pte) {
  * ============================================================ */
 bool MessClose(MyWindowPtr win) {
   MessHandle messH = (MessHandle)GetMyWindowPrivateData(win);
-  TOCType *tocH = messH->tocH;
+  MacmbxTOC *tocH = messH->tocH;
   int sumNum = messH->sumNum;
 
   if (!GrowZoning && TheBody && messH->subPTE &&
@@ -389,10 +391,7 @@ bool MessClose(MyWindowPtr win) {
   free(messH->newsGroupAcc.data); messH->newsGroupAcc.data = NULL; messH->newsGroupAcc.offset = messH->newsGroupAcc.size = 0;
 
   g_free(messH); messH = NULL;
-  tocH->sums[sumNum].messH = nil;
-
-  if (tocH->imapTOC)
-    IMAPAbortMessageFetch(tocH, sumNum);
+  tocH->msgs[sumNum].messH = nil;
 
   return true;
 }
@@ -440,7 +439,7 @@ short NewPrior(short item, short prior) {
 /* ============================================================
  * TransferMenuChoice - handle a menu choice from a transfer menu
  * ============================================================ */
-bool TransferMenuChoice(short menu, short item, TOCType *tocH, short sumNum,
+bool TransferMenuChoice(short menu, short item, MacmbxTOC *tocH, short sumNum,
                         long modifiers, bool fcc) {
   FSSpec spec, toSpec;
   short function = REAL_BIG;
@@ -449,7 +448,7 @@ bool TransferMenuChoice(short menu, short item, TOCType *tocH, short sumNum,
 
   if (menu == TRANSFER_MENU)
     function = TRANSFER;
-  else if (IsMailboxSubmenu(menu))
+  else if (false)
     function = (menu - BOX_MENU_START) / MAX_BOX_LEVELS;
 
   if (function == TRANSFER) {
@@ -457,11 +456,11 @@ bool TransferMenuChoice(short menu, short item, TOCType *tocH, short sumNum,
     if (GetTransferParams(menu, item, &toSpec, nil) &&
         !SameSpec(&spec, &toSpec)) {
       if (HasFeature(featureFcc) && fcc)
-        Fcc(tocH->sums[sumNum].messH, &toSpec);
+        Fcc(tocH->msgs[sumNum].messH, &toSpec);
       else if (sumNum >= 0) {
         if (!(modifiers & GDK_ALT_MASK)) {
-          if (!tocH->imapTOC)
-            AddXfUndo(tocH, TOCBySpec(&toSpec), sumNum);
+          if (!tocH->virtualTOC)
+            AddXfUndo(tocH, macmbx_toc_open(&toSpec), sumNum);
           EzOpen(tocH, sumNum, 0, modifiers, true, true);
         }
         MoveMessage(tocH, sumNum, &toSpec, (modifiers & GDK_ALT_MASK) != 0);
@@ -476,14 +475,14 @@ bool TransferMenuChoice(short menu, short item, TOCType *tocH, short sumNum,
 /* ============================================================
  * SetSubject - set the subject in a message summary
  * ============================================================ */
-void SetSubject(TOCType *tocH, short sumNum, char *sub) {
+void SetSubject(MacmbxTOC *tocH, short sumNum, char *sub) {
   unsigned char oldSubj[64];
   unsigned char title[256];
-  MessHandle messH = tocH->sums[sumNum].messH;
+  MessHandle messH = tocH->msgs[sumNum].messH;
 
-  g_strlcpy((char *)oldSubj, (char *)tocH->sums[sumNum].subj, 64);
+  g_strlcpy((char *)oldSubj, (char *)tocH->msgs[sumNum].subject, 64);
   if (!(strcmp((const char *)(oldSubj), (const char *)(sub)) == 0)) {
-    g_strlcpy((char *)tocH->sums[sumNum].subj, (char *)sub, 60);
+    g_strlcpy((char *)tocH->msgs[sumNum].subject, (char *)sub, 60);
     InvalSum(tocH, sumNum);
     TOCSetDirty(tocH, true);
 
@@ -504,7 +503,7 @@ void SetSubject(TOCType *tocH, short sumNum, char *sub) {
         gtk_text_buffer_set_text(buf, cSub, -1);
       }
     }
-    SearchUpdateSum(tocH, sumNum, tocH, tocH->sums[sumNum].serialNum,
+    SearchUpdateSum(tocH, sumNum, tocH, tocH->msgs[sumNum].serial_num,
                     false, false);
   }
 }
@@ -512,14 +511,14 @@ void SetSubject(TOCType *tocH, short sumNum, char *sub) {
 /* ============================================================
  * SetSender - set the sender in a message summary
  * ============================================================ */
-void SetSender(TOCType *tocH, short sumNum, char *sender) {
+void SetSender(MacmbxTOC *tocH, short sumNum, char *sender) {
   unsigned char oldSender[64];
   unsigned char title[256];
-  MessHandle messH = tocH->sums[sumNum].messH;
+  MessHandle messH = tocH->msgs[sumNum].messH;
 
-  g_strlcpy((char *)oldSender, (char *)tocH->sums[sumNum].from, 64);
+  g_strlcpy((char *)oldSender, (char *)tocH->msgs[sumNum].from, 64);
   if (!(strcmp((const char *)(oldSender), (const char *)(sender)) == 0)) {
-    g_strlcpy((char *)tocH->sums[sumNum].from, (char *)sender, 48);
+    g_strlcpy((char *)tocH->msgs[sumNum].from, (char *)sender, 48);
     InvalSum(tocH, sumNum);
     TOCSetDirty(tocH, true);
     if (messH) {
@@ -536,24 +535,24 @@ void SetSender(TOCType *tocH, short sumNum, char *sender) {
 /* ============================================================
  * SetFlag - set one of the message flags
  * ============================================================ */
-void SetFlag(TOCType *tocH, short sumNum, long flag, bool on) {
+void SetFlag(MacmbxTOC *tocH, short sumNum, long flag, bool on) {
   if (on)
-    tocH->sums[sumNum].flags |= flag;
+    tocH->msgs[sumNum].flags |= flag;
   else
-    tocH->sums[sumNum].flags &= ~flag;
-  if (tocH->sums[sumNum].messH)
-    InvalTopMargin(tocH->sums[sumNum].messH->win);
+    tocH->msgs[sumNum].flags &= ~flag;
+  if (tocH->msgs[sumNum].messH)
+    InvalTopMargin(((MessHandle)tocH->msgs[sumNum].messH)->win);
   TOCSetDirty(tocH, true);
 }
 
 /* ============================================================
  * SetOpt - set one of the message options
  * ============================================================ */
-void SetOpt(TOCType *tocH, short sumNum, long flag, bool on) {
+void SetOpt(MacmbxTOC *tocH, short sumNum, long flag, bool on) {
   if (on)
-    tocH->sums[sumNum].opts |= flag;
+    tocH->msgs[sumNum].opts |= flag;
   else
-    tocH->sums[sumNum].opts &= ~flag;
+    tocH->msgs[sumNum].opts &= ~flag;
   TOCSetDirty(tocH, true);
 }
 
@@ -657,8 +656,16 @@ static int OpenAttLine(GtkWidget *pte, unsigned char *line, bool finderSelect,
   err = AttLine2Spec(line, &spec, true);
   if (err) return err;
 
-  if (IsIMAPAttachmentStub(&spec))
-    err = FetchIMAPAttachment(pte, &spec, true);
+  /* macmbx downloads full messages including attachments during check.
+   * If the attachment file doesn't exist locally, it may need to be
+   * extracted from the mbox via macmbx. For now, just try to open it. */
+
+  if (err == 0 && !g_file_test(spec, G_FILE_TEST_EXISTS)) {
+    /* Attachment file not found — may not have been decoded yet.
+     * TODO: extract attachment from mbox via macmbx_read_message + MIME parse */
+    g_warning("Attachment not found: %s", spec);
+    err = -1;
+  }
 
   if (err == 0) {
     GError *error = NULL;
@@ -808,7 +815,7 @@ int RelLine2Spec(char *line, char * spec, uLong *cid,
  * ============================================================ */
 bool SaveMess(MyWindowPtr win) {
   MessHandle messH = Win2MessH(win);
-  TOCType *tocH = messH->tocH;
+  MacmbxTOC *tocH = messH->tocH;
   long fromLen;
   void *text = MessText(messH);
   HeadSpec hSpec;
@@ -856,7 +863,7 @@ bool SaveMess(MyWindowPtr win) {
                   /* Wrap in full HTML document */
                   char *full = g_strdup_printf(
                     "<html><head><title>%s</title></head><body>%s</body></html>",
-                    SumOf(messH)->subj, _html);
+                    SumOf(messH)->subject, _html);
                   err = AccuAddPtr(&enriched, full, strlen(full));
                   g_free(full);
                 } else {
@@ -899,20 +906,20 @@ bool SaveMess(MyWindowPtr win) {
       return false;
   }
 
-  MSumType *oldSum = &tocH->sums[messH->sumNum];
-  MSumType *newSum = &tocH->sums[tocH->count - 1];
+  MacmbxMsgSum *oldSum = &tocH->msgs[messH->sumNum];
+  MacmbxMsgSum *newSum = &tocH->msgs[tocH->count - 1];
 
   tocH->usedK -= oldSum->length / 1024;
   tocH->updateBoxSizes = true;
   oldSum->offset = newSum->offset;
   oldSum->length = newSum->length;
-  oldSum->bodyOffset = newSum->bodyOffset;
+  oldSum->body_offset = newSum->body_offset;
   if (newSum->seconds & !(oldSum->flags & FLAG_OUT)) {
     oldSum->seconds = newSum->seconds;
-    oldSum->origZone = newSum->origZone;
+    oldSum->orig_zone = newSum->orig_zone;
   }
 
-  if (tocH->imapTOC && (oldSum->opts && OPT_IMAP_SENT)) {
+  if (tocH->virtualTOC && (oldSum->opts && OPT_IMAP_SENT)) {
     if (oldSum->from[0]) g_strlcpy((char *)newSum->from, (char *)oldSum->from, 48);
   } else {
     if (newSum->from[0]) g_strlcpy((char *)oldSum->from, (char *)newSum->from, 48);
@@ -935,7 +942,7 @@ bool SaveMess(MyWindowPtr win) {
   free(SumOf(messH)->cache);
   SetMessOpt(messH, OPT_EDITED);
   free(messH->etlFiles);
-  if (tocH->previewID == SumOf(messH)->serialNum)
+  if (tocH->previewID == SumOf(messH)->serial_num)
     tocH->previewID = 0;
   return true;
 }
@@ -967,7 +974,7 @@ void ShowMessageSeparator(GtkWidget *pte, bool center) {
  * ============================================================ */
 bool MessMenu(MyWindowPtr win, int menu, int item, short modifiers) {
   MessHandle messH = (MessHandle)GetMyWindowPrivateData(win);
-  TOCType *tocH = messH->tocH;
+  MacmbxTOC *tocH = messH->tocH;
   int sumNum = messH->sumNum;
   bool result = false;
   short tableId;
@@ -1041,9 +1048,19 @@ bool MessMenu(MyWindowPtr win, int menu, int item, short modifiers) {
       result = true;
       break;
     case MESSAGE_JUNK_ITEM:
-    case MESSAGE_NOTJUNK_ITEM:
-      Junk(tocH, sumNum, item == MESSAGE_JUNK_ITEM, true);
+    case MESSAGE_NOTJUNK_ITEM: {
+      /* Mark as junk/not-junk via macmbx */
+      MacmbxTOC *mtoc = macmbx_toc_open(tocH->mbox_path);
+      if (mtoc && sumNum < mtoc->count) {
+        MacmbxJunkConfig jcfg;
+        macmbx_junk_config_init(&jcfg);
+        macmbx_junk_mark(&jcfg, mtoc, sumNum,
+                          item == MESSAGE_JUNK_ITEM,
+                          gtk_mailbox_get_store());
+        macmbx_toc_save(mtoc);
+      }
       break;
+    }
     case MESSAGE_DELETE_ITEM:
       EzOpen(messH->openedFromTocH, -1, messH->openedFromSerialNum,
              modifiers, true, true);
@@ -1113,13 +1130,19 @@ bool MessMenu(MyWindowPtr win, int menu, int item, short modifiers) {
       DoMakeFilter(win);
       break;
     case SPECIAL_FILTER_ITEM: {
-      uint32_t ezOpenSN = messH->ezOpenSerialNum;
-      FilterMessage(flkManual, tocH, sumNum);
-      if (tocH->count) {
-        if (ezOpenSN)
-          EzOpen(tocH, sumNum, ezOpenSN, modifiers, false, false);
-        else
-          BoxSelectAfter(tocH->win, sumNum);
+      /* Run filters on this message via macmbx */
+      MacmbxTOC *mtoc = macmbx_toc_open(tocH->mbox_path);
+      MacmbxStore *store = gtk_mailbox_get_store();
+      if (mtoc && sumNum < mtoc->count && store) {
+        char filt_path[1024];
+        snprintf(filt_path, sizeof(filt_path), "%s/../Filters",
+                 store->root_path);
+        MacmbxFilterSet *fs = macmbx_filter_load(filt_path);
+        if (fs) {
+          macmbx_filter_apply(fs, mtoc, sumNum, store, NULL, NULL);
+          macmbx_toc_save(mtoc);
+          macmbx_filter_free(fs);
+        }
       }
       result = true;
       break;
@@ -1128,7 +1151,7 @@ bool MessMenu(MyWindowPtr win, int menu, int item, short modifiers) {
     break;
 
   case PRIOR_HIER_MENU:
-    SetPriority(tocH, sumNum, NewPrior(item, tocH->sums[sumNum].priority));
+    SetPriority(tocH, sumNum, NewPrior(item, tocH->msgs[sumNum].priority));
     result = true;
     break;
 
@@ -1180,37 +1203,37 @@ void Fcc(MessHandle messH, char * box) {
     geditctrl_select_range(TheBody, hs.stop, hs.stop);
     geditctrl_set_dirty(TheBody, TRUE);
     ClearMessFlag(messH, FLAG_KEEP_COPY);
-    CompIBarUpdate(messH);
+    /* CompIBarUpdate — GTK toolbar handles compose UI */
   }
 }
 
 /* ============================================================
  * EzOpenFind - find next candidate for EzOpen
  * ============================================================ */
-short EzOpenFind(TOCType *tocH, short origSum) {
+short EzOpenFind(MacmbxTOC *tocH, short origSum) {
   long ez = GetPrefLong(PREF_NO_EZ_OPEN);
   if (origSum < tocH->count - 1) {
     if (ez == 1) return origSum + 1;
-    if (tocH->sums[origSum + 1].state == UNREAD) {
+    if (tocH->msgs[origSum + 1].state == UNREAD) {
       if (ez == 3 || ez == 2) return origSum + 1;
       if (ez == 4) {
         unsigned char s1[64], s2[64];
-        g_strlcpy((char *)s1, (char *)tocH->sums[origSum].subj, 64);
-        g_strlcpy((char *)s2, (char *)tocH->sums[origSum + 1].subj, 64);
+        g_strlcpy((char *)s1, (char *)tocH->msgs[origSum].subject, 64);
+        g_strlcpy((char *)s2, (char *)tocH->msgs[origSum + 1].subject, 64);
         if (!SubjCompare(s1, s2)) return origSum + 1;
       }
     }
   }
   if (ez == 2)
     for (short s = origSum + 2; s < tocH->count; s++)
-      if (tocH->sums[s].state == UNREAD) return s;
+      if (tocH->msgs[s].state == UNREAD) return s;
   return -1;
 }
 
 /* ============================================================
  * EzOpen - easy open
  * ============================================================ */
-void EzOpen(TOCType *tocH, short sumNum, uLong serialNum, long modifiers,
+void EzOpen(MacmbxTOC *tocH, short sumNum, uLong serialNum, long modifiers,
             bool hideFront, bool willDelete) {
   short newSumNum;
   short ez;
@@ -1223,11 +1246,11 @@ void EzOpen(TOCType *tocH, short sumNum, uLong serialNum, long modifiers,
   }
 
   if (hideFront) {
-    TOCType *realTOC;
+    MacmbxTOC *realTOC;
     short realSum;
     realTOC = GetRealTOC(tocH, sumNum, &realSum);
-    if (realTOC->sums[realSum].messH)
-      serialNum = realTOC->sums[realSum].messH->ezOpenSerialNum;
+    if (realTOC->msgs[realSum].messH)
+      serialNum = realTOC->msgs[realSum].messH ? ((MessHandle)realTOC->msgs[realSum].messH)->ezOpenSerialNum : 0;
     else if (tocH->previewPTE && tocH->previewID) {
       preview = true;
       serialNum = tocH->ezOpenSerialNum;
@@ -1236,7 +1259,7 @@ void EzOpen(TOCType *tocH, short sumNum, uLong serialNum, long modifiers,
     sumNum = FindSumBySerialNum(tocH, serialNum);
 
   if (serialNum & (newSumNum = FindSumBySerialNum(tocH, serialNum)) >= 0 &&
-      tocH->sums[newSumNum].state == UNREAD)
+      tocH->msgs[newSumNum].state == UNREAD)
     ; /* found */
   else {
     if (!hideFront) newSumNum = EzOpenFind(tocH, sumNum - 1);
@@ -1336,7 +1359,13 @@ static short SaveAsToOpenFileLo(short refN, MessHandle messH) {
 
   if (!exclHead & isOut & SumOf(messH)->seconds) {
     unsigned char scratch[64];
-    BuildDateHeader(scratch, SumOf(messH)->seconds);
+    /* Format date header — was BuildDateHeader from sendmail.h */
+    {
+      time_t t = (time_t)SumOf(messH)->seconds;
+      struct tm *tm = localtime(&t);
+      if (tm) strftime((char*)scratch, sizeof(scratch), "Date: %a, %d %b %Y %H:%M:%S %z\r\n", tm);
+      else scratch[0] = '\0';
+    }
     int len = strlen((const char *)scratch);
     write(refN, scratch, len);
     write(refN, "\n", 1);
@@ -1466,7 +1495,7 @@ bool MessKey(MyWindowPtr win, void *eventPtr) {
   return false;
 #if 0 /* Dead until GTK key dispatch is connected */
   MessHandle messH = (MessHandle)GetMyWindowPrivateData(win);
-  TOCType *tocH = messH->tocH;
+  MacmbxTOC *tocH = messH->tocH;
   long uLetter = 0; /* was: UnadornMessage(event) & charCodeMask */
   bool bodyEdit = !win->ro & win->pte == TheBody;
   bool shift = false;
@@ -1512,7 +1541,7 @@ bool MessKey(MyWindowPtr win, void *eventPtr) {
 /* ============================================================
  * NextMess - skip to the next message
  * ============================================================ */
-void NextMess(TOCType *tocH, MessHandle messH, short whichWay,
+void NextMess(MacmbxTOC *tocH, MessHandle messH, short whichWay,
               long modifiers, bool ezOpen) {
   short next, sumNum;
   bool close, diffTOC;
@@ -1549,8 +1578,8 @@ void NextMess(TOCType *tocH, MessHandle messH, short whichWay,
       close = false;
     }
     if (next >= 0 & next < tocH->count) {
-      if (tocH->sums[next].messH) {
-        MyWindowPtr nextWin = tocH->sums[next].messH->win;
+      if (tocH->msgs[next].messH) {
+        MyWindowPtr nextWin = ((MessHandle)tocH->msgs[next].messH)->win;
         if (nextWin && nextWin->window)
           gtk_window_present(GTK_WINDOW(nextWin->window));
       } else {
@@ -1642,7 +1671,7 @@ int MessGonnaShow(MyWindowPtr win) {
     GtkWidget *subEntry = gtk_text_view_new();
     gtk_text_view_set_wrap_mode(GTK_TEXT_VIEW(subEntry), GTK_WRAP_NONE);
     gtk_text_view_set_accepts_tab(GTK_TEXT_VIEW(subEntry), FALSE);
-    unsigned char *subj = SumOf(messH)->subj;
+    unsigned char *subj = SumOf(messH)->subject;
     if (subj[0] != '\0') {
       GtkTextBuffer *buf = gtk_text_view_get_buffer(GTK_TEXT_VIEW(subEntry));
       gtk_text_buffer_set_text(buf, (const char *)subj, -1);
@@ -1693,10 +1722,10 @@ static void AddNotifyControls(MessHandle messH) {
 static void PlaceNotifyControls(MyWindowPtr win) { (void)win; }
 
 void AddMessErrNote(MessHandle messH) {
-  TOCType *tocH = messH->tocH;
+  MacmbxTOC *tocH = messH->tocH;
   int sumNum = messH->sumNum;
-  mesgErrorHandle mesgErrH = tocH->sums[sumNum].mesgErrH;
-  if (mesgErrH || tocH->sums[sumNum].state == MESG_ERR)
+  mesgErrorHandle mesgErrH = tocH->msgs[sumNum].mesgErrH;
+  if (mesgErrH || tocH->msgs[sumNum].state == MESG_ERR)
     messH->sound = NOTIFY_SOUND;
 }
 
@@ -1705,41 +1734,131 @@ void PlaceMessErrNote(MessHandle messH) { (void)messH; }
 /* ============================================================
  * MessIBarUpdate - update the icon bar state
  * ============================================================ */
+/* ============================================================
+ * MessIBarUpdate - update the message status bar (GTK port)
+ *
+ * Shows message state: read/unread/replied/forwarded/queued/sent,
+ * priority, server status (on server / fetched / deleted),
+ * and attachment indicator.
+ * ============================================================ */
 void MessIBarUpdate(MessHandle messH) {
   MyWindowPtr win = messH->win;
-  if (!win) return;
+  if (!win || !win->window) return;
 
-  bool on = MessOnPOPD(POPD_ID, messH);
-  bool lmos = PrefIsSet(PREF_LMOS);
-  bool fetch = on & MessOnPOPD(FETCH_ID, messH);
-  bool del = on & ((fetch & !lmos) || MessOnPOPD(DELETE_ID, messH));
-  ControlHandle blah;
+  MacmbxTOC *tocH = messH->tocH;
+  int sumNum = messH->sumNum;
+  if (!tocH || sumNum < 0 || sumNum >= tocH->count) return;
 
-  if ((blah = FindControlByRefCon(win, mcWrite_)))
-  if ((blah = FindControlByRefCon(win, mcBlahBlah_)))
-  if ((blah = FindControlByRefCon(win, mcFixed_)))
-  if ((blah = FindControlByRefCon(win, mcFetch_))) {
-    if (!on || !MessFlagIsSet(messH, FLAG_SKIPPED))
-    messH->hasFetchIcon = (blah != nil);
+  MacmbxMsgSum * sum = &tocH->msgs[sumNum];
+
+  /* Find or create the status bar */
+  GtkWidget *winWP = win->window;
+  GtkWidget *statusbar = g_object_get_data(G_OBJECT(winWP), "msg-statusbar");
+  if (!statusbar) {
+    statusbar = gtk_box_new(GTK_ORIENTATION_HORIZONTAL, 8);
+    gtk_widget_add_css_class(statusbar, "msg-statusbar");
+    gtk_widget_set_margin_start(statusbar, 8);
+    gtk_widget_set_margin_end(statusbar, 8);
+    gtk_widget_set_margin_top(statusbar, 2);
+    gtk_widget_set_margin_bottom(statusbar, 2);
+    g_object_set_data(G_OBJECT(winWP), "msg-statusbar", statusbar);
+
+    /* Insert into window content — find the main vbox */
+    GtkWidget *content = gtk_window_get_child(GTK_WINDOW(winWP));
+    if (content && GTK_IS_BOX(content))
+      gtk_box_prepend(GTK_BOX(content), statusbar);
   }
-  if ((blah = FindControlByRefCon(win, mcGetGraphics_))) {
-    /* Mac UI control update removed */
+
+  /* Clear existing children */
+  GtkWidget *child;
+  while ((child = gtk_widget_get_first_child(statusbar)))
+    gtk_box_remove(GTK_BOX(statusbar), child);
+
+  /* State indicator */
+  const char *state_icon = NULL;
+  const char *state_text = NULL;
+  switch (sum->state) {
+    case UNREAD:     state_icon = "mail-unread-symbolic";   state_text = "Unread"; break;
+    case READ:       state_icon = "mail-read-symbolic";     state_text = "Read"; break;
+    case REPLIED:    state_icon = "mail-reply-sender-symbolic"; state_text = "Replied"; break;
+    case FORWARDED:  state_icon = "mail-forward-symbolic";  state_text = "Forwarded"; break;
+    case REDIST:     state_icon = "mail-forward-symbolic";  state_text = "Redirected"; break;
+    case QUEUED:     state_icon = "mail-send-symbolic";     state_text = "Queued"; break;
+    case SENT:       state_icon = "mail-send-symbolic";     state_text = "Sent"; break;
+    case UNSENDABLE: state_icon = "document-edit-symbolic"; state_text = "Draft"; break;
+    case UNSENT:     state_icon = "document-edit-symbolic"; state_text = "Draft"; break;
+    case MESG_ERR:   state_icon = "dialog-error-symbolic";  state_text = "Error"; break;
+    default:         state_icon = "mail-read-symbolic";     state_text = ""; break;
   }
-  if ((blah = FindControlByRefCon(win, mcTrash_))) {
-    if (!on) {}
-    messH->hasDelIcon = (blah != nil);
+  if (state_icon) {
+    GtkWidget *icon = gtk_image_new_from_icon_name(state_icon);
+    gtk_image_set_pixel_size(GTK_IMAGE(icon), 16);
+    gtk_box_append(GTK_BOX(statusbar), icon);
+  }
+  if (state_text && state_text[0]) {
+    GtkWidget *lbl = gtk_label_new(state_text);
+    gtk_widget_add_css_class(lbl, "msg-status-text");
+    gtk_box_append(GTK_BOX(statusbar), lbl);
+  }
+
+  /* Priority */
+  if (sum->priority != 0 && sum->priority != 3) {
+    const char *pri_text = NULL;
+    switch (sum->priority) {
+      case 1: pri_text = "Highest"; break;
+      case 2: pri_text = "High"; break;
+      case 4: pri_text = "Low"; break;
+      case 5: pri_text = "Lowest"; break;
+    }
+    if (pri_text) {
+      GtkWidget *sep = gtk_separator_new(GTK_ORIENTATION_VERTICAL);
+      gtk_box_append(GTK_BOX(statusbar), sep);
+      GtkWidget *pri_lbl = gtk_label_new(pri_text);
+      gtk_widget_add_css_class(pri_lbl, "msg-priority");
+      gtk_box_append(GTK_BOX(statusbar), pri_lbl);
+    }
+  }
+
+  /* Attachment indicator */
+  if (sum->flags & FLAG_HAS_ATT) {
+    GtkWidget *sep = gtk_separator_new(GTK_ORIENTATION_VERTICAL);
+    gtk_box_append(GTK_BOX(statusbar), sep);
+    GtkWidget *att_icon = gtk_image_new_from_icon_name("mail-attachment-symbolic");
+    gtk_image_set_pixel_size(GTK_IMAGE(att_icon), 16);
+    gtk_box_append(GTK_BOX(statusbar), att_icon);
+    GtkWidget *att_lbl = gtk_label_new("Attachment");
+    gtk_box_append(GTK_BOX(statusbar), att_lbl);
+  }
+
+  /* Size */
+  {
+    char size_text[32];
+    if (sum->length >= 1024*1024)
+      snprintf(size_text, sizeof(size_text), "%.1f MB", sum->length / (1024.0*1024.0));
+    else if (sum->length >= 1024)
+      snprintf(size_text, sizeof(size_text), "%ld KB", sum->length / 1024);
+    else
+      snprintf(size_text, sizeof(size_text), "%ld B", sum->length);
+
+    GtkWidget *sep = gtk_separator_new(GTK_ORIENTATION_VERTICAL);
+    gtk_box_append(GTK_BOX(statusbar), sep);
+    GtkWidget *size_lbl = gtk_label_new(size_text);
+    gtk_widget_add_css_class(size_lbl, "msg-size");
+    gtk_widget_set_hexpand(size_lbl, TRUE);
+    gtk_label_set_xalign(GTK_LABEL(size_lbl), 1.0);
+    gtk_box_append(GTK_BOX(statusbar), size_lbl);
   }
 }
 
 /* ============================================================
  * ExportHTMLSum / ExportHTML - export as HTML and open in browser
  * ============================================================ */
-int ExportHTMLSum(TOCType *tocH, short sumNum) {
-  MessHandle messH = tocH->sums[sumNum].messH;
+int ExportHTMLSum(MacmbxTOC *tocH, short sumNum) {
+  MessHandle messH = tocH->msgs[sumNum].messH;
   MyWindowPtr win = nil;
   int err;
 
-  if (tocH->imapTOC) EnsureMsgDownloaded(tocH, sumNum, false);
+  /* macmbx downloads full messages during check — no on-demand fetch needed */
   if (!messH) {
     win = GetAMessage(tocH, sumNum, nil, nil, false);
     if (!win) return -108;
@@ -1786,7 +1905,7 @@ int ExportHTML(MessHandle messH) {
 
   char tempPath[256];
   snprintf(tempPath, sizeof(tempPath), "/tmp/eudora_export_%u.html",
-           SumOf(messH)->uidHash);
+           SumOf(messH)->uid_hash);
   FILE *fp = fopen(tempPath, "w");
   if (!fp) return -1;
   fwrite(htmlStart, 1, len, fp);
@@ -1850,13 +1969,13 @@ static void MessHelp(MyWindowPtr win, Point mouse) {
   (void)win; (void)mouse;
 }
 
-void SetMessTable(TOCType *tocH, short sumNum, short newId) {
-  if (tocH->sums[sumNum].tableId != newId) {
-    tocH->sums[sumNum].tableId = newId;
+void SetMessTable(MacmbxTOC *tocH, short sumNum, short newId) {
+  if (tocH->msgs[sumNum].table_id != newId) {
+    tocH->msgs[sumNum].table_id = newId;
     TOCSetDirty(tocH, true);
-    if (tocH->previewID == tocH->sums[sumNum].serialNum) tocH->previewID = 0;
-    if (tocH->which != OUT && tocH->sums[sumNum].messH)
-      ReopenMessage(tocH->sums[sumNum].messH->win);
+    if (tocH->previewID == tocH->msgs[sumNum].serial_num) tocH->previewID = 0;
+    if (tocH->which != OUT && tocH->msgs[sumNum].messH)
+      ReopenMessage(((MessHandle)tocH->msgs[sumNum].messH)->win);
   }
 }
 
@@ -1997,7 +2116,7 @@ short AddXlateTables(bool isOut, short nowId, bool ph, void **pmh) {
   return 0;
 }
 
-bool Menu2TableId(TOCType *tocH, void **pmh, short item, short *tableId) {
+bool Menu2TableId(MacmbxTOC *tocH, void **pmh, short item, short *tableId) {
   (void)tocH; (void)pmh; (void)item;
   if (tableId) *tableId = 0;
   return false;

@@ -67,16 +67,16 @@ static void InitFoldTable(void) {
 /* ------------------------------------------------------------------ */
 
 /* Get SearchInfo from a TOC that is a search virtual TOC */
-static SearchInfo *GetSearchInfoFromTOC(TOCType *toc) {
+static SearchInfo *GetSearchInfoFromTOC(MacmbxTOC *toc) {
   if (!toc || !toc->virtualTOC) return NULL;
-  return (SearchInfo *)toc->mailbox.virtualMB.data;
+  return (SearchInfo *)toc->mbox_path; // was mailbox.virtualMB.data;
 }
 
 /* Get the search TOC from a MyWindowPtr (if it is a search window) */
-static TOCType *GetSearchTOCFromWin(MyWindowPtr win) {
+static MacmbxTOC *GetSearchTOCFromWin(MyWindowPtr win) {
   if (!win) return NULL;
   /* The TOC is stored as the window's private data */
-  return (TOCType *)win->privateData;
+  return (MacmbxTOC *)win->privateData;
 }
 
 /* ------------------------------------------------------------------ */
@@ -184,14 +184,14 @@ static int ShortCompare(int a, int b) {
  * message file. For now, summary-only fields (status, priority, date, size,
  * from, subject, etc.) are directly searchable.
  */
-static bool SearchSummary(MSumPtr sum, SearchCriterion *crit,
+static bool SearchSummary(MacmbxMsgSum * sum, SearchCriterion *crit,
                            PortableRegexp *re) {
   long result;
   switch (crit->category) {
     case SC_SUMMARY:
       /* Search in subject and from fields of summary */
-      if (SearchTextRelation(crit->text, (const char *)sum->subj + 1,
-                              sum->subj[0], 0, crit->relation, re))
+      if (SearchTextRelation(crit->text, (const char *)sum->subject + 1,
+                              sum->subject[0], 0, crit->relation, re))
         return true;
       if (SearchTextRelation(crit->text, (const char *)sum->from + 1,
                               sum->from[0], 0, crit->relation, re))
@@ -211,8 +211,8 @@ static bool SearchSummary(MSumPtr sum, SearchCriterion *crit,
                                 sum->from[0], 0, crit->relation, re))
           return true;
       if (crit->category == SC_SUBJECT)
-        return SearchTextRelation(crit->text, (const char *)sum->subj + 1,
-                                   sum->subj[0], 0, crit->relation, re);
+        return SearchTextRelation(crit->text, (const char *)sum->subject + 1,
+                                   sum->subject[0], 0, crit->relation, re);
       /* For TO/CC/BCC/ANY_RECIPIENT on summary, check the from field as
        * fallback; a full search would need the message text. */
       return false;
@@ -237,7 +237,7 @@ static bool SearchSummary(MSumPtr sum, SearchCriterion *crit,
     }
 
     case SC_JUNK_SCORE: {
-      int val = sum->spamScore;
+      int val = sum->spam_score;
       result = ShortCompare(val, (int)crit->specifier);
       goto DoCompare;
     }
@@ -281,8 +281,8 @@ static bool SearchSummary(MSumPtr sum, SearchCriterion *crit,
     case SC_ATTACH_COUNT:
       /* These require reading message text from file.
        * Search in summary fields as fallback. */
-      if (SearchTextRelation(crit->text, (const char *)sum->subj + 1,
-                              sum->subj[0], 0, crit->relation, re))
+      if (SearchTextRelation(crit->text, (const char *)sum->subject + 1,
+                              sum->subject[0], 0, crit->relation, re))
         return true;
       if (SearchTextRelation(crit->text, (const char *)sum->from + 1,
                               sum->from[0], 0, crit->relation, re))
@@ -307,7 +307,7 @@ DoCompare:
  * MatchesCriteria - test a message summary against all criteria.
  * matchAny = true means OR mode, false means AND mode.
  */
-static bool MatchesCriteria(MSumPtr sum, SearchInfo *si) {
+static bool MatchesCriteria(MacmbxMsgSum * sum, SearchInfo *si) {
   PortableRegexp *re = NULL;
 
   for (int i = 0; i < si->criteriaCount; i++) {
@@ -343,7 +343,7 @@ MyWindowPtr SearchOpen(int searchMode) {
 }
 
 void SearchClose_cb(MyWindowPtr win) {
-  TOCType *toc = GetSearchTOCFromWin(win);
+  MacmbxTOC *toc = GetSearchTOCFromWin(win);
   if (toc) {
     SearchInfo *si = GetSearchInfoFromTOC(toc);
     if (si) {
@@ -357,7 +357,7 @@ void SearchClose_cb(MyWindowPtr win) {
       if (si->mailboxPaths)
         g_ptr_array_free(si->mailboxPaths, TRUE);
       g_free(si);
-      toc->mailbox.virtualMB.data = NULL;
+      toc->mbox_path; // was mailbox.virtualMB.data = NULL;
     }
   }
   if (gSearchWinCount > 0) gSearchWinCount--;
@@ -370,24 +370,24 @@ void SearchClose_cb(MyWindowPtr win) {
 bool IsSearchWindow(void *winWP) {
   if (!winWP) return false;
   MyWindowPtr win = (MyWindowPtr)winWP;
-  TOCType *toc = GetSearchTOCFromWin(win);
+  MacmbxTOC *toc = GetSearchTOCFromWin(win);
   if (!toc) return false;
-  return toc->virtualTOC && toc->mailbox.virtualMB.type == kSearchMB;
+  return toc->virtualTOC && toc->mbox_path; // was mailbox.virtualMB.type == kSearchMB;
 }
 
-TOCType *GetTOCFromSearchWin(char * spec) {
+MacmbxTOC *GetTOCFromSearchWin(char * spec) {
   (void)spec;
   /* Walk open windows to find a search TOC matching this spec.
    * Without a window list implementation, return NULL. */
   return NULL;
 }
 
-void GetSearchTOC(MyWindowPtr win, TOCType **ptoc) {
+void GetSearchTOC(MyWindowPtr win, MacmbxTOC **ptoc) {
   if (!ptoc) return;
   *ptoc = GetSearchTOCFromWin(win);
 }
 
-bool SearchViewIsMailbox(TOCType *tocH) {
+bool SearchViewIsMailbox(MacmbxTOC *tocH) {
   if (!tocH || !tocH->virtualTOC) return false;
   SearchInfo *si = GetSearchInfoFromTOC(tocH);
   return si && si->mailboxView;
@@ -396,7 +396,7 @@ bool SearchViewIsMailbox(TOCType *tocH) {
 bool GetSearchWinSpec(void *winWP, char *spec) {
   if (!winWP || !spec) return false;
   MyWindowPtr win = (MyWindowPtr)winWP;
-  TOCType *toc = GetSearchTOCFromWin(win);
+  MacmbxTOC *toc = GetSearchTOCFromWin(win);
   if (!toc) return false;
   SearchInfo *si = GetSearchInfoFromTOC(toc);
   if (!si || !si->hasSaveSpec) return false;
@@ -408,15 +408,15 @@ bool GetSearchWinSpec(void *winWP, char *spec) {
 /* Public API: Summary copy / update                                  */
 /* ------------------------------------------------------------------ */
 
-void CopySum(MSumPtr sumFrom, MSumPtr sumTo, short virtualMBIdx) {
+void CopySum(MacmbxMsgSum * sumFrom, MacmbxMsgSum * sumTo, short virtualMBIdx) {
   if (!sumFrom || !sumTo) return;
   *sumTo = *sumFrom;
-  sumTo->u.virtualMess.virtualMBIdx = virtualMBIdx;
-  sumTo->u.virtualMess.linkSerialNum = sumFrom->serialNum;
+/* virtual mailbox data removed */
+
 }
 
-void SearchUpdateSum(TOCType *tocH, short sumNum,
-                      TOCType *fromTocH, long serialNum,
+void SearchUpdateSum(MacmbxTOC *tocH, short sumNum,
+                      MacmbxTOC *fromTocH, long serialNum,
                       bool transfer, bool nuke) {
   (void)tocH; (void)sumNum; (void)fromTocH;
   (void)serialNum; (void)transfer; (void)nuke;
@@ -430,19 +430,19 @@ void SearchUpdateSum(TOCType *tocH, short sumNum,
 /* Public API: Incremental search / mailbox tracking                  */
 /* ------------------------------------------------------------------ */
 
-bool SearchIncremental(MyWindowPtr win, TOCType *tocH, int sumNum) {
+bool SearchIncremental(MyWindowPtr win, MacmbxTOC *tocH, int sumNum) {
   if (!win || !tocH) return false;
-  TOCType *srchToc = GetSearchTOCFromWin(win);
+  MacmbxTOC *srchToc = GetSearchTOCFromWin(win);
   if (!srchToc) return false;
   SearchInfo *si = GetSearchInfoFromTOC(srchToc);
   if (!si || !si->didSearch) return false;
 
   /* Test this message against search criteria */
   if (sumNum < 0 || sumNum >= tocH->count) return false;
-  return MatchesCriteria(&tocH->sums[sumNum], si);
+  return MatchesCriteria(&tocH->msgs[sumNum], si);
 }
 
-void SearchInvalTocBox(TOCType *tocH, short sumNum, int boxCol) {
+void SearchInvalTocBox(MacmbxTOC *tocH, short sumNum, int boxCol) {
   (void)tocH; (void)sumNum; (void)boxCol;
   if (!gSearchWinCount) return;
   /* In full implementation, invalidate matching virtual summaries. */
@@ -454,9 +454,9 @@ void TellSearchMBRename(char * oldSpec, char * newSpec) {
   /* In full implementation, update spec lists in search windows. */
 }
 
-bool SearchBoxesInclude(MyWindowPtr win, TOCType *tocH) {
+bool SearchBoxesInclude(MyWindowPtr win, MacmbxTOC *tocH) {
   if (!win || !tocH) return false;
-  TOCType *srchToc = GetSearchTOCFromWin(win);
+  MacmbxTOC *srchToc = GetSearchTOCFromWin(win);
   if (!srchToc) return false;
   SearchInfo *si = GetSearchInfoFromTOC(srchToc);
   if (!si || !si->mailboxPaths) return false;
@@ -531,7 +531,7 @@ void SearchNewFindStringLo(const char *str, bool withPrejudice) {
   /* TODO: Set the search string in the frontmost search window. */
 }
 
-void SearchFixUnread(TOCType *tocH, bool unread) {
+void SearchFixUnread(MacmbxTOC *tocH, bool unread) {
   (void)tocH; (void)unread;
   if (!gSearchWinCount) return;
   /* TODO: Update unread indicators in search window mailbox lists. */

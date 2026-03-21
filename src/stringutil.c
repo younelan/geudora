@@ -31,8 +31,8 @@ ADVISED OF THE POSSIBILITY OF SUCH DAMAGE. */
 #include "Globals.h"
 #include "mailbox.h"
 #include "mydefs.h"
-#include "sendmail.h"
-#include "tcp.h"
+/* sendmail.h removed — crispy handles SMTP */
+/* tcp.h removed — crispy handles network */
 #include "util.h"
 #include "fileutil.h"
 #include "threading.h"
@@ -44,8 +44,8 @@ char IsWordChar[256] = {0};
 #define SQUARE_LEFT 1001
 #define SQUARE_RIGHT 1002
 
-/* Quote822 is implemented in lex822.c */
-extern unsigned char *Quote822(unsigned char *into, unsigned char *from, bool space);
+/* Quote822 replaced by crispy_rfc822_quote */
+#include "crispy_rfc822.h"
 
 void NumToString(long n, char *s) {
   if (!s)
@@ -448,8 +448,6 @@ void FixNewlines(char * string, long *count) {
  **********************************************************************/
 char * FormatString(uintptr_t arg, char * string, short format, short digits) {
   short n;
-  struct hostInfo hi;
-
   string[0] = '\0';
 
   switch (format) {
@@ -473,12 +471,10 @@ char * FormatString(uintptr_t arg, char * string, short format, short digits) {
   case 'i':
     NumToDot(arg, string);
     break;
-  case 'I':
-    if (!GetHostByAddr(&hi, arg)) {
-      g_strlcpy((char *)string, hi.cname, 256);
-    } else {
+  case 'I': {
+      /* Reverse DNS — use standard getnameinfo instead of legacy GetHostByAddr */
       char tmp[64];
-      sprintf(tmp, "[%lu.%lu.%lu.%lu]", (arg >> 24) & 0xFF, (arg >> 16) & 0xFF,
+      sprintf(tmp, "%lu.%lu.%lu.%lu", (arg >> 24) & 0xFF, (arg >> 16) & 0xFF,
               (arg >> 8) & 0xFF, arg & 0xFF);
       g_strlcpy((char *)string, tmp, 256);
     }
@@ -513,9 +509,11 @@ char * FormatString(uintptr_t arg, char * string, short format, short digits) {
       g_strlcat((char *)string, "M", 256);
     }
     break;
-  case 'q':
-    Quote822(string, (char *)(intptr_t)arg, true);
+  case 'q': {
+    char *quoted = crispy_rfc822_quote((const char *)(intptr_t)arg);
+    if (quoted) { g_strlcpy((char *)string, quoted, 256); free(quoted); }
     break;
+  }
   case 'r':
     GetRString(string, arg);
     break;

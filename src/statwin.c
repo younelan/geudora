@@ -5,7 +5,7 @@ Opens as a tab in the main notebook. Shows all original Eudora stats. */
 
 #include "statmng.h"
 #include "statwin.h"
-#include "junk.h"
+/* junk.h removed — macmbx_junk handles junk */
 #include <gtk/gtk.h>
 #include <time.h>
 #include <string.h>

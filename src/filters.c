@@ -17,8 +17,10 @@ NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE OF THIS SOFTWARE, EVE
 DAMAGE. */
 
 #include "filters.h"
-#include "filtrun.h"
+/* filtrun.h removed — macmbx_filter handles filters */
 #include "scripting.h"
+#include "macmbx.h"
+#include "gtk_mailbox.h"
 #include <string.h>
 #include <stdlib.h>
 
@@ -453,7 +455,7 @@ int ScriptDeletePersonality(long index)
 #include "compact.h"
 #include "toc.h"
 #include "message.h"
-#include "uudecode.h"
+/* uudecode.h removed — crispy handles encoding */
 #include "StringDefs.h"
 
 /* Forward declarations for message operations (defined in message.c) */

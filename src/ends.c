@@ -57,17 +57,17 @@ void SetSendQueue(void)
         pers->sendQueue = 0;
 
     /* Count messages in Out mailbox that are QUEUED or TIMED */
-    TOCType *toc = GetOutTOC();
+    MacmbxTOC *toc = GetOutTOC();
     g_print("SetSendQueue: toc=%p count=%d\n", (void*)toc, toc ? toc->count : -1);
     int count = 0;
     if (toc) {
         for (int i = 0; i < toc->count; i++) {
-            int state = toc->sums[i].state;
+            int state = toc->msgs[i].state;
             if (state == QUEUED || state == TIMED) {
                 count++;
                 /* Credit to the owning personality */
                 for (pers = PersList; pers; pers = pers->next) {
-                    if (pers->persId == toc->sums[i].persId) {
+                    if (pers->persId == toc->msgs[i].pers_id) {
                         pers->sendQueue++;
                         break;
                     }

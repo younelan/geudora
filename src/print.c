@@ -46,8 +46,10 @@ ADVISED OF THE POSSIBILITY OF SUCH DAMAGE. */
 #include "MyRes.h"
 #include "StringUtil.h"
 #include "mailbox.h"
+#include "macmbx.h"
+#include "macmbx_mailer.h"
 #include "message.h"
-#include "imapdownload.h"
+/* imapdownload.h removed — crispy_imap handles IMAP */
 #include "threading.h"
 #include <gtk/gtk.h>
 #include <pango/pangocairo.h>
@@ -691,10 +693,10 @@ int PrintOneMessage(MyWindowPtr win, bool select, bool now)
  * with page breaks, run one print operation. Each message gets its own
  * header from its window title.
  *
- * Note: TOCHandle → TOCType* (no void *indirection)
+ * Note: TOCHandle → MacmbxTOC* (no void *indirection)
  * Note: GtkWidget * → GtkWidget* (printMe parameter)
  ************************************************************************/
-int PrintSelectedMessages(TOCType *tocH, bool select, bool now,
+int PrintSelectedMessages(MacmbxTOC *tocH, bool select, bool now,
                           long beginSel, long endSel, GtkWidget *printMe)
 {
     int sumNum;
@@ -714,12 +716,17 @@ int PrintSelectedMessages(TOCType *tocH, bool select, bool now,
 
     /* Iterate through summaries — original: for(sumNum=0; !CommandPeriod && sumNum<tocH->count; sumNum++) */
     for (sumNum = 0; !CommandPeriod && sumNum < tocH->count; sumNum++) {
-        if (!tocH->sums[sumNum].selected)
+        if (!tocH->msgs[sumNum].selected)
             continue;
 
-        /* Original: if (tocH->imapTOC) EnsureMsgDownloaded(tocH, sumNum, false); */
-        if (tocH->imapTOC)
-            EnsureMsgDownloaded(tocH, sumNum, false);
+        /* Ensure message body is available (for IMAP headers-only mode) */
+        {
+          extern MacmbxMailer *idle_scheduler_get_mailer(void);
+          MacmbxMailer *mailer = idle_scheduler_get_mailer();
+          MacmbxTOC *mtoc = macmbx_toc_open(tocH->mbox_path);
+          if (mailer && mtoc && sumNum < mtoc->count)
+            macmbx_mailer_ensure_body(mailer, mtoc, sumNum);
+        }
 
         /* Original: win = GetAMessage(tocH, sumNum, nil, nil, false);
            Opens the message window (or returns existing one). */
@@ -789,15 +796,15 @@ int PrintSelectedMessages(TOCType *tocH, bool select, bool now,
  * PrintClosedMessage - print a message that is not currently open
  *
  * Original:
- *   - Checked if message was already open: opened = !tocH->sums[sumNum].messH
+ *   - Checked if message was already open: opened = !tocH->msgs[sumNum].messH
  *   - GetAMessage to open it
  *   - PrintOneMessage
  *   - If we opened it, CloseMyWindow to close it again
  *
  * Note: messH is the MessHandle — if NULL, the message isn't open.
- * TOCHandle → TOCType* (no void *indirection).
+ * TOCHandle → MacmbxTOC* (no void *indirection).
  ************************************************************************/
-int PrintClosedMessage(TOCType *tocH, short sumNum, bool now)
+int PrintClosedMessage(MacmbxTOC *tocH, short sumNum, bool now)
 {
     bool opened;
     MyWindowPtr win;
@@ -806,9 +813,9 @@ int PrintClosedMessage(TOCType *tocH, short sumNum, bool now)
     if (!tocH || sumNum < 0 || sumNum >= tocH->count)
         return -1;
 
-    /* Original: opened = !tocH->sums[sumNum].messH;
+    /* Original: opened = !tocH->msgs[sumNum].messH;
        messH is non-NULL if the message is already open in a window. */
-    opened = (tocH->sums[sumNum].messH == NULL);
+    opened = (tocH->msgs[sumNum].messH == NULL);
 
     /* Original: win = GetAMessage(tocH, sumNum, nil, nil, false); */
     win = GetAMessage(tocH, sumNum, NULL, NULL, false);

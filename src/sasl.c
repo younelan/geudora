@@ -23,7 +23,7 @@ DAMAGE. */
 #include "log.h"         /* For ComposeLogS */
 #include "progress.h"    /* For progress constants and ProgressMessageR */
 #include "gtk_dialogs.h" /* For PrefIsSet */
-#include "pop.h"         /* For GenKeyedDigest, GenDigest */
+/* pop.h removed — crispy_pop3 handles POP */         /* For GenKeyedDigest, GenDigest */
 #include "lex822.h"      /* For DecodeB64String */
 #include "acap.h"        /* For GetPOPInfo, GetPOPPref */
 #include "threading.h"   /* For CurPers, GlobalTemp, DealingWithIdiotIMail */

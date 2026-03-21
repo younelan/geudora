@@ -41,7 +41,42 @@ typedef int GdkEventType;
 typedef int GdkModifierType;
 #endif
 
-#include "TransStream.h"
+/* TransStream — legacy network transport structure.
+ * Replaced by crispy_transport for actual network I/O.
+ * Kept as a type definition for backward compatibility with
+ * code that hasn't been migrated yet. */
+#ifndef TRANSSTREAM_H
+#define TRANSSTREAM_H
+typedef enum { kAuditNothing = 0, kAuditBytesReceived, kAuditBytesSent } StreamAuditTypeEnum;
+typedef struct TransStreamStruct {
+  int sockfd;
+  void *ctx;
+  void *ssl;
+  char *RcvBuffer;
+  int RcvSize;
+  int RcvSpot;
+  long ESSLSetting;
+  bool BeSilent;
+  bool Opening;
+  bool DontWait;
+  int streamErr;
+  unsigned long port;
+  char serverName[256];
+  char localHostName[256];
+  StreamAuditTypeEnum auditType;
+  long bytesTransferred;
+} TransStreamStruct;
+#ifndef TRANSSTREAM_PTR_DEFINED
+typedef TransStreamStruct *TransStream;
+#define TRANSSTREAM_PTR_DEFINED 1
+#endif
+typedef TransStreamStruct *TransStreamPtr;
+int NewTransStream(TransStream *newStream);
+void ZapTransStream(TransStream *theStream);
+void StartStreamAudit(TransStream s, StreamAuditTypeEnum what);
+void StopStreamAudit(TransStream s);
+long ReportStreamAudit(TransStream s);
+#endif /* TRANSSTREAM_H */
 #include "mailbox.h"
 #include "mydefs.h"
 
@@ -179,8 +214,8 @@ void ETLDisposeAddrList(emsHeaderDataP addrList);
 void ETLIdle(long flags);
 ModeTypeEnum GetCurrentPayMode();
 void ETLEudoraModeNotification(ModeEventEnum modeEvent, ModeTypeEnum newMode);
-void ETLDrawBoxTag(TOCType * tocH, Rect *r);
-void ETLAddBoxButtons(TOCType * tocH);
+void ETLDrawBoxTag(MacmbxTOC * tocH, Rect *r);
+void ETLAddBoxButtons(MacmbxTOC * tocH);
 void ETLButtonHit(MyWindowPtr win, short item);
 bool ETLClickContextMenu(MyWindowPtr win, Point pt, Rect *rSizeBox);
 bool ETLHasMBoxContextFolder(MyWindowPtr win);

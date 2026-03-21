@@ -6,7 +6,7 @@
  * equivalents, while preserving the logical operations (selection, sorting,
  * status, opening, etc.).
  *
- * TOCHandle → TOCType *  (direct pointer, no double-deref)
+ * TOCHandle → MacmbxTOC *  (direct pointer, no double-deref)
  * char * → unsigned char * (Pascal strings)
  * EventRecord * → void * (opaque event)
  * int → int
@@ -81,61 +81,61 @@
 #include "StrnDefs.h"
 
 /* Extern declarations for functions in other modules */
-extern void SetState(TOCType *tocH, int sumNum, int state);
-extern short BoxNextSelected(TOCType *tocH, short afterNum);
-extern short LastMsgSelected(TOCType *tocH);
+extern void SetState(MacmbxTOC *tocH, int sumNum, int state);
+extern short BoxNextSelected(MacmbxTOC *tocH, short afterNum);
+extern short LastMsgSelected(MacmbxTOC *tocH);
 
 /* Comparator function type */
-typedef int (*SumCompareFn)(MSumPtr, MSumPtr);
+typedef int (*SumCompareFn)(MacmbxMsgSum *, MacmbxMsgSum *);
 
 /* ---- Module globals ---- */
-static TOCType *gSortTOC;
+static MacmbxTOC *gSortTOC;
 
 /* ---- Forward declarations ---- */
 static void BoxCenter(MyWindowPtr win, short mNum);
-static short BoxCountSelected(TOCType *tocH);
+static short BoxCountSelected(MacmbxTOC *tocH);
 
 /* Sorting comparators */
-static int SumTimeCompare(MSumPtr sum1, MSumPtr sum2);
-static int SumStatCompare(MSumPtr sum1, MSumPtr sum2);
-static int SumPriorCompare(MSumPtr sum1, MSumPtr sum2);
-static int SumSubjCompare(MSumPtr sum1, MSumPtr sum2);
-static int SumFromCompare(MSumPtr sum1, MSumPtr sum2);
-static int SumSizeCompare(MSumPtr sum1, MSumPtr sum2);
-static int SumAttCompare(MSumPtr sum1, MSumPtr sum2);
-static int SumLabelCompare(MSumPtr sum1, MSumPtr sum2);
-static int SumJunkCompare(MSumPtr sum1, MSumPtr sum2);
-static int SumAnalCompare(MSumPtr sum1, MSumPtr sum2);
-static int SumSelectCompare(MSumPtr sum1, MSumPtr sum2);
-static int SumSubjIdCompare(MSumPtr sum1, MSumPtr sum2);
-static int SumTimeFuzzCompare(MSumPtr sum1, MSumPtr sum2);
-static int SumSizeKCompare(MSumPtr sum1, MSumPtr sum2);
-static int SumOffsetCompare(MSumPtr sum1, MSumPtr sum2);
+static int SumTimeCompare(MacmbxMsgSum * sum1, MacmbxMsgSum * sum2);
+static int SumStatCompare(MacmbxMsgSum * sum1, MacmbxMsgSum * sum2);
+static int SumPriorCompare(MacmbxMsgSum * sum1, MacmbxMsgSum * sum2);
+static int SumSubjCompare(MacmbxMsgSum * sum1, MacmbxMsgSum * sum2);
+static int SumFromCompare(MacmbxMsgSum * sum1, MacmbxMsgSum * sum2);
+static int SumSizeCompare(MacmbxMsgSum * sum1, MacmbxMsgSum * sum2);
+static int SumAttCompare(MacmbxMsgSum * sum1, MacmbxMsgSum * sum2);
+static int SumLabelCompare(MacmbxMsgSum * sum1, MacmbxMsgSum * sum2);
+static int SumJunkCompare(MacmbxMsgSum * sum1, MacmbxMsgSum * sum2);
+static int SumAnalCompare(MacmbxMsgSum * sum1, MacmbxMsgSum * sum2);
+static int SumSelectCompare(MacmbxMsgSum * sum1, MacmbxMsgSum * sum2);
+static int SumSubjIdCompare(MacmbxMsgSum * sum1, MacmbxMsgSum * sum2);
+static int SumTimeFuzzCompare(MacmbxMsgSum * sum1, MacmbxMsgSum * sum2);
+static int SumSizeKCompare(MacmbxMsgSum * sum1, MacmbxMsgSum * sum2);
+static int SumOffsetCompare(MacmbxMsgSum * sum1, MacmbxMsgSum * sum2);
 
-static int RevSumTimeCompare(MSumPtr s1, MSumPtr s2);
-static int RevSumStatCompare(MSumPtr s1, MSumPtr s2);
-static int RevSumPriorCompare(MSumPtr s1, MSumPtr s2);
-static int RevSumSubjCompare(MSumPtr s1, MSumPtr s2);
-static int RevSumFromCompare(MSumPtr s1, MSumPtr s2);
-static int RevSumSizeCompare(MSumPtr s1, MSumPtr s2);
-static int RevSumAttCompare(MSumPtr s1, MSumPtr s2);
-static int RevSumLabelCompare(MSumPtr s1, MSumPtr s2);
-static int RevSumJunkCompare(MSumPtr s1, MSumPtr s2);
-static int RevSumAnalCompare(MSumPtr s1, MSumPtr s2);
-static int RevSumOffsetCompare(MSumPtr s1, MSumPtr s2);
+static int RevSumTimeCompare(MacmbxMsgSum * s1, MacmbxMsgSum * s2);
+static int RevSumStatCompare(MacmbxMsgSum * s1, MacmbxMsgSum * s2);
+static int RevSumPriorCompare(MacmbxMsgSum * s1, MacmbxMsgSum * s2);
+static int RevSumSubjCompare(MacmbxMsgSum * s1, MacmbxMsgSum * s2);
+static int RevSumFromCompare(MacmbxMsgSum * s1, MacmbxMsgSum * s2);
+static int RevSumSizeCompare(MacmbxMsgSum * s1, MacmbxMsgSum * s2);
+static int RevSumAttCompare(MacmbxMsgSum * s1, MacmbxMsgSum * s2);
+static int RevSumLabelCompare(MacmbxMsgSum * s1, MacmbxMsgSum * s2);
+static int RevSumJunkCompare(MacmbxMsgSum * s1, MacmbxMsgSum * s2);
+static int RevSumAnalCompare(MacmbxMsgSum * s1, MacmbxMsgSum * s2);
+static int RevSumOffsetCompare(MacmbxMsgSum * s1, MacmbxMsgSum * s2);
 
 static SumCompareFn MBCompareTable[BoxLinesLimit + 2];
-static int MBResortCompare(MSumPtr s1, MSumPtr s2);
+static int MBResortCompare(MacmbxMsgSum * s1, MacmbxMsgSum * s2);
 static SumCompareFn FindMBSort(short item, bool reverse);
-static void SwapSum(MSumPtr sum1, MSumPtr sum2);
-static void SortTOC(TOCType *tocH, bool reverse, SumCompareFn compare);
+static void SwapSum(MacmbxMsgSum * sum1, MacmbxMsgSum * sum2);
+static void SortTOC(MacmbxTOC *tocH, bool reverse, SumCompareFn compare);
 
 static short BoxLine2Item(short line);
 static short BoxItem2Line(short item);
-static void MBRemoveSort(TOCType *tocH, short index);
-static void MBAddSort(TOCType *tocH, short index, long sortOrder);
-static bool MBIsSticky(TOCType *tocH);
-static void MBSortHit(TOCType *tocH, short index, bool reverse, bool extend);
+static void MBRemoveSort(MacmbxTOC *tocH, short index);
+static void MBAddSort(MacmbxTOC *tocH, short index, long sortOrder);
+static bool MBIsSticky(MacmbxTOC *tocH);
+static void MBSortHit(MacmbxTOC *tocH, short index, bool reverse, bool extend);
 
 #define NSORT 6
 #define MBGetSort(tocH, index) (tocH)->sorts[(index)-1]
@@ -193,7 +193,7 @@ short Status2Item(short status)
  * In GTK4 the visual inversion is handled by the GtkListView selection
  * model — we just update the data model here.
  ***********************************************************************/
-void SelectBoxRange(TOCType *tocH, int start, int end, bool cmd,
+void SelectBoxRange(MacmbxTOC *tocH, int start, int end, bool cmd,
                     int eStart, int eEnd)
 {
     int sNum;
@@ -218,35 +218,35 @@ void SelectBoxRange(TOCType *tocH, int start, int end, bool cmd,
     if (cmd) {
         /* cmd-click: toggle selection in [r1..r2], leave others alone */
         for (sNum = 0; sNum < r1; sNum++)
-            if (tocH->sums[sNum].selected) {
+            if (tocH->msgs[sNum].selected) {
                 if (win) win->hasSelection = true;
                 break;
             }
 
         for (sNum = r1; sNum <= r2; sNum++)
             if (sNum < eStart || sNum > eEnd) {
-                tocH->sums[sNum].selected = !tocH->sums[sNum].selected;
+                tocH->msgs[sNum].selected = !tocH->msgs[sNum].selected;
                 if (win)
-                    win->hasSelection = win->hasSelection || tocH->sums[sNum].selected;
+                    win->hasSelection = win->hasSelection || tocH->msgs[sNum].selected;
             }
 
         if (win && !win->hasSelection)
             for (sNum = r2 + 1; sNum < tocH->count; sNum++)
-                if (tocH->sums[sNum].selected) {
+                if (tocH->msgs[sNum].selected) {
                     win->hasSelection = true;
                     break;
                 }
     } else {
         /* normal click: select [r1..r2], deselect everything else */
         for (sNum = 0; sNum < r1; sNum++)
-            tocH->sums[sNum].selected = false;
+            tocH->msgs[sNum].selected = false;
 
         for (sNum = r1; sNum <= r2; sNum++)
-            tocH->sums[sNum].selected = true;
+            tocH->msgs[sNum].selected = true;
         if (win) win->hasSelection = (r1 <= r2);
 
         for (sNum = r2 + 1; sNum < tocH->count; sNum++)
-            tocH->sums[sNum].selected = false;
+            tocH->msgs[sNum].selected = false;
     }
 
     tocH->updateBoxSizes = true;
@@ -256,11 +256,11 @@ void SelectBoxRange(TOCType *tocH, int start, int end, bool cmd,
 /***********************************************************************
  * BoxSetSummarySelected - make sure a summary is selected or not
  ***********************************************************************/
-void BoxSetSummarySelected(TOCType *tocH, short sumNum, bool selected)
+void BoxSetSummarySelected(MacmbxTOC *tocH, short sumNum, bool selected)
 {
     if (!tocH || sumNum < 0 || sumNum >= tocH->count) return;
-    if (tocH->sums[sumNum].selected != selected) {
-        tocH->sums[sumNum].selected = selected;
+    if (tocH->msgs[sumNum].selected != selected) {
+        tocH->msgs[sumNum].selected = selected;
         InvalSum(tocH, sumNum);
         tocH->updateBoxSizes = true;
         tocH->conConMultiScan = true;
@@ -280,7 +280,7 @@ void BoxActivate(MyWindowPtr win)
 /***********************************************************************
  * BoxListFocus - focus on the list (vs preview)
  ***********************************************************************/
-void BoxListFocus(TOCType *tocH, bool focus)
+void BoxListFocus(MacmbxTOC *tocH, bool focus)
 {
     if (!tocH) return;
     if (focus != tocH->listFocus) {
@@ -309,12 +309,12 @@ bool BoxFind(MyWindowPtr win, char *what)
 {
     if (!win || !what || !*what) return false;
 
-    TOCType *tocH = (TOCType *)win->privateData;
+    MacmbxTOC *tocH = (MacmbxTOC *)win->privateData;
     if (!tocH || !tocH->count) return false;
 
     short start;
     for (start = tocH->count - 1; start >= 0; start--)
-        if (tocH->sums[start].selected) break;
+        if (tocH->msgs[start].selected) break;
     start++;
 
     bool wrapped = false;
@@ -324,9 +324,9 @@ bool BoxFind(MyWindowPtr win, char *what)
             wrapped = true;
             if (!start) break;
         }
-        MSumPtr sum = &tocH->sums[sumNum];
+        MacmbxMsgSum * sum = &tocH->msgs[sumNum];
         if (strcasestr(sum->from, (const char *)what) ||
-            strcasestr(sum->subj, (const char *)what)) {
+            strcasestr(sum->subject, (const char *)what)) {
             SelectBoxRange(tocH, sumNum, sumNum, false, -1, -1);
             BoxCenterSelection(win);
             return true;
@@ -341,17 +341,17 @@ bool BoxFind(MyWindowPtr win, char *what)
 bool BoxClose(MyWindowPtr win)
 {
     if (!win) return true;
-    TOCType *tocH = (TOCType *)win->privateData;
+    MacmbxTOC *tocH = (MacmbxTOC *)win->privateData;
     if (!tocH) return true;
 
     /* Write dirty TOC */
     if (tocH->dirty)
-        toc_save(tocH);
+        macmbx_toc_save(tocH);
 
     /* Close associated message windows */
     for (short sumNum = tocH->count - 1; sumNum >= 0; sumNum--) {
-        if (tocH->sums[sumNum].messH) {
-            MessHandle messH = tocH->sums[sumNum].messH;
+        if (tocH->msgs[sumNum].messH) {
+            MessHandle messH = tocH->msgs[sumNum].messH;
             MyWindowPtr messWin = messH->win;
             if (messWin && !messWin->isDirty) {
                 CloseMyWindow(messWin);
@@ -368,14 +368,14 @@ bool BoxClose(MyWindowPtr win)
 void BoxOpen(MyWindowPtr win)
 {
     if (!win) return;
-    TOCType *tocH = (TOCType *)win->privateData;
+    MacmbxTOC *tocH = (MacmbxTOC *)win->privateData;
     if (!tocH) return;
 
     /* Walk selected entries, open message windows */
     for (int sum = 0; sum < tocH->count; sum++) {
-        if (tocH->sums[sum].selected) {
-            if (tocH->sums[sum].messH) {
-                MessHandle messH = tocH->sums[sum].messH;
+        if (tocH->msgs[sum].selected) {
+            if (tocH->msgs[sum].messH) {
+                MessHandle messH = tocH->msgs[sum].messH;
                 MyWindowPtr messWin = messH->win;
                 if (messWin) {
                     /* Show and raise the window */
@@ -384,7 +384,7 @@ void BoxOpen(MyWindowPtr win)
                 }
             } else {
                 /* Open message from disk */
-                TOCType *realTOC = GetRealTOC(tocH, sum, NULL);
+                MacmbxTOC *realTOC = GetRealTOC(tocH, sum, NULL);
                 if (!realTOC) realTOC = tocH;
                 MyWindowPtr w = GetAMessage(realTOC, sum, NULL, NULL, true);
                 if (!w) break;
@@ -422,14 +422,14 @@ static void BoxCenter(MyWindowPtr win, short mNum)
 void BoxSelectAfter(MyWindowPtr win, short mNum)
 {
     if (!win) return;
-    TOCType *tocH = (TOCType *)win->privateData;
+    MacmbxTOC *tocH = (MacmbxTOC *)win->privateData;
     if (!tocH) return;
 
     if (mNum >= 0 && BoxNextSelected(tocH, -1) < 0) {
         if (tocH->count > 0) {
             win->hasSelection = true;
             if (mNum >= tocH->count) mNum = tocH->count - 1;
-            tocH->sums[mNum].selected = true;
+            tocH->msgs[mNum].selected = true;
             BoxCenter(win, mNum);
         }
     }
@@ -441,14 +441,14 @@ void BoxSelectAfter(MyWindowPtr win, short mNum)
 void BoxCenterSelection(MyWindowPtr win)
 {
     if (!win) return;
-    TOCType *tocH = (TOCType *)win->privateData;
+    MacmbxTOC *tocH = (MacmbxTOC *)win->privateData;
     if (!tocH) return;
 
     int top, bottom;
     for (top = 0; top < tocH->count; top++)
-        if (tocH->sums[top].selected) break;
+        if (tocH->msgs[top].selected) break;
     for (bottom = tocH->count - 1; bottom >= 0; bottom--)
-        if (tocH->sums[bottom].selected) break;
+        if (tocH->msgs[bottom].selected) break;
     if (top <= bottom) BoxCenter(win, (top + bottom) / 2);
 }
 
@@ -465,14 +465,14 @@ int BoxPosition(MyWindowPtr win)
 /***********************************************************************
  * MakeMessFileName - make a default filename for save-as from subject
  ***********************************************************************/
-void MakeMessFileName(TOCType *tocH, short sumNum, unsigned char *name)
+void MakeMessFileName(MacmbxTOC *tocH, short sumNum, unsigned char *name)
 {
     if (!tocH || sumNum < 0 || sumNum >= tocH->count) {
         name[0] = 0;
         return;
     }
 
-    const char *subj = tocH->sums[sumNum].subj;
+    const char *subj = tocH->msgs[sumNum].subject;
     short len = (short)strlen(subj);
     if (len > MAX_BOX_NAME) len = MAX_BOX_NAME;
 
@@ -501,8 +501,8 @@ void BoxDidResize(MyWindowPtr win, Rect *oldContR)
     /* GTK4 handles layout automatically via GtkBox/GtkPaned.
      * We still call RedoTOC to update internal state. */
     if (!win) return;
-    TOCType *tocH = (TOCType *)win->privateData;
-    if (tocH) RedoTOC(tocH);
+    MacmbxTOC *tocH = (MacmbxTOC *)win->privateData;
+    if (tocH) /* RedoTOC removed — UI refreshes on demand */
     (void)oldContR;
 }
 
@@ -512,7 +512,7 @@ void BoxDidResize(MyWindowPtr win, Rect *oldContR)
 int BoxGonnaShow(MyWindowPtr win)
 {
     if (!win) return -1;
-    TOCType *tocH = (TOCType *)win->privateData;
+    MacmbxTOC *tocH = (MacmbxTOC *)win->privateData;
     if (!tocH) return -1;
 
     tocH->listFocus = true;
@@ -527,7 +527,7 @@ int BoxGonnaShow(MyWindowPtr win)
 /***********************************************************************
  * BoxInitialSelection - make an initial selection in a mailbox
  ***********************************************************************/
-void BoxInitialSelection(TOCType *tocH)
+void BoxInitialSelection(MacmbxTOC *tocH)
 {
     if (!tocH || !tocH->count) return;
     /* Default: select last message (newest) */
@@ -537,37 +537,37 @@ void BoxInitialSelection(TOCType *tocH)
 /***********************************************************************
  * SetPriority - set a message's priority, handle virtual TOCs
  ***********************************************************************/
-void SetPriority(TOCType *tocH, short sumNum, short priority)
+void SetPriority(MacmbxTOC *tocH, short sumNum, short priority)
 {
     short realSum = -1;
-    TOCType *realTOC;
+    MacmbxTOC *realTOC;
 
     if (!tocH || sumNum < 0 || sumNum >= tocH->count) return;
 
     /* Set in current TOC */
     short dp = Prior2Display(priority);
-    if (dp != Prior2Display(tocH->sums[sumNum].priority))
+    if (dp != Prior2Display(tocH->msgs[sumNum].priority))
         InvalTocBox(tocH, sumNum, blPrior);
 
-    tocH->sums[sumNum].priority = priority;
+    tocH->msgs[sumNum].priority = priority;
     TOCSetDirty(tocH, true);
 
     /* If virtual TOC, set in real TOC too */
     realTOC = GetRealTOC(tocH, sumNum, &realSum);
     if (realTOC && realTOC != tocH) {
-        realTOC->sums[realSum].priority = priority;
+        realTOC->msgs[realSum].priority = priority;
         TOCSetDirty(realTOC, true);
         InvalTocBox(realTOC, realSum, blPrior);
     }
 
-    SearchUpdateSum(tocH, sumNum, tocH, tocH->sums[sumNum].serialNum,
+    SearchUpdateSum(tocH, sumNum, tocH, tocH->msgs[sumNum].serial_num,
                     false, false);
 }
 
 /***********************************************************************
  * InvalTocBox - invalidate one area of a mailbox window
  ***********************************************************************/
-void InvalTocBox(TOCType *tocH, short sumNum, short box)
+void InvalTocBox(MacmbxTOC *tocH, short sumNum, short box)
 {
     /* In GTK4, invalidation triggers a redraw via
      * gtk_widget_queue_draw on the relevant list row.
@@ -583,7 +583,7 @@ void InvalTocBox(TOCType *tocH, short sumNum, short box)
     } else if (sumNum == -2) {
         /* Invalidate all selected messages? Eudora often uses -2 for this. */
         for (short i = 0; i < tocH->count; i++) {
-            if (tocH->sums[i].selected)
+            if (tocH->msgs[i].selected)
                 InvalSum(tocH, i);
         }
     }
@@ -623,12 +623,12 @@ void *MenuItem2Handle(short menu, short item)
 /***********************************************************************
  * ServerMenuChoice - choose an item from the server menu
  ***********************************************************************/
-void ServerMenuChoice(TOCType *tocH, short sumNum, short item,
+void ServerMenuChoice(MacmbxTOC *tocH, short sumNum, short item,
                       bool shiftPressed)
 {
     if (!tocH) return;
 
-    if (tocH->imapTOC) {
+    if (tocH->virtualTOC) {
         /* IMAP server menu choices */
         switch (item) {
         case 1: /* delete */
@@ -667,25 +667,25 @@ void ServerMenuChoice(TOCType *tocH, short sumNum, short item,
 /***********************************************************************
  * BeenThereDoneThat - mark messages as read
  ***********************************************************************/
-void BeenThereDoneThat(TOCType *tocH, short sumNum)
+void BeenThereDoneThat(MacmbxTOC *tocH, short sumNum)
 {
     if (!tocH) return;
 
     if (sumNum < 0) {
         /* Mark all selected messages as read */
         for (short s = tocH->count - 1; s >= 0; s--)
-            if (tocH->sums[s].selected)
+            if (tocH->msgs[s].selected)
                 BeenThereDoneThat(tocH, s);
     } else {
         if (sumNum >= tocH->count) return;
-        if (tocH->sums[sumNum].state == UNREAD)
+        if (tocH->msgs[sumNum].state == UNREAD)
             SetState(tocH, sumNum, READ);
 
         if (tocH->virtualTOC) {
             short realSum = -1;
-            TOCType *realTOC = GetRealTOC(tocH, sumNum, &realSum);
+            MacmbxTOC *realTOC = GetRealTOC(tocH, sumNum, &realSum);
             if (realTOC && realSum >= 0 &&
-                realTOC->sums[realSum].state == UNREAD)
+                realTOC->msgs[realSum].state == UNREAD)
                 SetState(realTOC, realSum, READ);
         }
     }
@@ -716,7 +716,7 @@ bool BoxScroll(MyWindowPtr win, short h, short v)
 bool BoxHasSelection(MyWindowPtr win)
 {
     if (!win) return false;
-    TOCType *tocH = (TOCType *)win->privateData;
+    MacmbxTOC *tocH = (MacmbxTOC *)win->privateData;
     if (!tocH) return false;
     return (LastMsgSelected(tocH) >= 0);
 }
@@ -727,7 +727,7 @@ bool BoxHasSelection(MyWindowPtr win)
 void BoxIdle(MyWindowPtr win)
 {
     if (!win) return;
-    TOCType *tocH = (TOCType *)win->privateData;
+    MacmbxTOC *tocH = (MacmbxTOC *)win->privateData;
     if (!tocH) return;
 
     /* Attend to any pending updates */
@@ -756,7 +756,7 @@ void BoxClick(MyWindowPtr win, void *event)
 /***********************************************************************
  * BoxSelectSame - select all messages with the same <something>
  ***********************************************************************/
-void BoxSelectSame(TOCType *tocH, short item, short clickedSum)
+void BoxSelectSame(MacmbxTOC *tocH, short item, short clickedSum)
 {
     SumCompareFn compare = NULL;
 
@@ -780,15 +780,15 @@ void BoxSelectSame(TOCType *tocH, short item, short clickedSum)
 
     /* Phase 1: find candidates matching any selected summary */
     for (short selected = 0; selected < tocH->count; selected++) {
-        if (tocH->sums[selected].selected) {
-            tocH->sums[selected].spareShort2 = 0;
+        if (tocH->msgs[selected].selected) {
+            tocH->msgs[selected].score = 0;
             for (short candidate = 0; candidate < tocH->count; candidate++) {
                 if (candidate != selected &&
-                    !(tocH->sums[candidate].opts & OPT_WILL_SEL)) {
-                    tocH->sums[candidate].spareShort2 = 0;
-                    if (!compare(&tocH->sums[selected],
-                                 &tocH->sums[candidate]))
-                        tocH->sums[candidate].opts |= OPT_WILL_SEL;
+                    !(tocH->msgs[candidate].opts & OPT_WILL_SEL)) {
+                    tocH->msgs[candidate].score = 0;
+                    if (!compare(&tocH->msgs[selected],
+                                 &tocH->msgs[candidate]))
+                        tocH->msgs[candidate].opts |= OPT_WILL_SEL;
                 }
             }
         }
@@ -796,10 +796,10 @@ void BoxSelectSame(TOCType *tocH, short item, short clickedSum)
 
     /* Phase 2: select them */
     for (short candidate = 0; candidate < tocH->count; candidate++) {
-        if (tocH->sums[candidate].opts & OPT_WILL_SEL) {
-            if (!tocH->sums[candidate].selected)
+        if (tocH->msgs[candidate].opts & OPT_WILL_SEL) {
+            if (!tocH->msgs[candidate].selected)
                 SelectBoxRange(tocH, candidate, candidate, true, -1, -1);
-            tocH->sums[candidate].opts &= ~OPT_WILL_SEL;
+            tocH->msgs[candidate].opts &= ~OPT_WILL_SEL;
         }
     }
 
@@ -807,7 +807,7 @@ void BoxSelectSame(TOCType *tocH, short item, short clickedSum)
     short last = -1;
     bool need = false;
     for (short candidate = 0; candidate < tocH->count; candidate++) {
-        if (tocH->sums[candidate].selected) {
+        if (tocH->msgs[candidate].selected) {
             if (last != -1 && last != candidate - 1) {
                 need = true;
                 break;
@@ -818,10 +818,10 @@ void BoxSelectSame(TOCType *tocH, short item, short clickedSum)
 
     if (need) {
         for (short candidate = 0; candidate < tocH->count; candidate++) {
-            if (tocH->sums[candidate].selected)
-                tocH->sums[candidate].spareShort = 1;
+            if (tocH->msgs[candidate].selected)
+                tocH->msgs[candidate].subj_id = 1;
             else
-                tocH->sums[candidate].spareShort =
+                tocH->msgs[candidate].subj_id =
                     (candidate < clickedSum) ? 0 : 2;
         }
         SortTOC(tocH, false, SumSelectCompare);
@@ -870,14 +870,14 @@ int SubjCompare(unsigned char *in1, unsigned char *in2)
 /*                        SORTING COMPARATORS                         */
 /* ================================================================== */
 
-static int SumTimeCompare(MSumPtr sum1, MSumPtr sum2)
+static int SumTimeCompare(MacmbxMsgSum * sum1, MacmbxMsgSum * sum2)
 {
     if ((unsigned long)sum1->seconds > (unsigned long)sum2->seconds) return 1;
     if (sum1->seconds == sum2->seconds) return 0;
     return -1;
 }
 
-static int SumStatCompare(MSumPtr sum1, MSumPtr sum2)
+static int SumStatCompare(MacmbxMsgSum * sum1, MacmbxMsgSum * sum2)
 {
     static unsigned char table[] = {1,2,3,4,5,6,8,7,10,11,9,12,13,14,15,16,17};
     short s1 = (sum1->state == 255) ? 255 :
@@ -889,58 +889,58 @@ static int SumStatCompare(MSumPtr sum1, MSumPtr sum2)
     return s1 - s2;
 }
 
-static int SumPriorCompare(MSumPtr sum1, MSumPtr sum2)
+static int SumPriorCompare(MacmbxMsgSum * sum1, MacmbxMsgSum * sum2)
 {
     short p1 = sum1->priority ? sum1->priority : Display2Prior(3);
     short p2 = sum2->priority ? sum2->priority : Display2Prior(3);
     return p1 - p2;
 }
 
-static int SumSubjCompare(MSumPtr sum1, MSumPtr sum2)
+static int SumSubjCompare(MacmbxMsgSum * sum1, MacmbxMsgSum * sum2)
 {
-    return SubjCompare((unsigned char *)sum1->subj, (unsigned char *)sum2->subj);
+    return SubjCompare((unsigned char *)sum1->subject, (unsigned char *)sum2->subject);
 }
 
-static int SumFromCompare(MSumPtr sum1, MSumPtr sum2)
+static int SumFromCompare(MacmbxMsgSum * sum1, MacmbxMsgSum * sum2)
 {
     return strcasecmp(sum1->from, sum2->from);
 }
 
-#define DisplayLength(sum) ((sum)->length - (sum)->bodyOffset + 1023)
+#define DisplayLength(sum) ((sum)->length - (sum)->body_offset + 1023)
 #define EffectiveLength(sum) \
     (((sum)->flags & FLAG_SKIPPED) ? -1 K : \
      (((sum)->opts & OPT_JUSTSUB) ? -2 K : DisplayLength(sum)))
 
-static int SumSizeCompare(MSumPtr sum1, MSumPtr sum2)
+static int SumSizeCompare(MacmbxMsgSum * sum1, MacmbxMsgSum * sum2)
 {
     long l1 = EffectiveLength(sum1);
     long l2 = EffectiveLength(sum2);
     return (l1 > l2) ? 1 : (l1 < l2) ? -1 : 0;
 }
 
-static int SumSizeKCompare(MSumPtr sum1, MSumPtr sum2)
+static int SumSizeKCompare(MacmbxMsgSum * sum1, MacmbxMsgSum * sum2)
 {
     long l1 = EffectiveLength(sum1) / (1 K);
     long l2 = EffectiveLength(sum2) / (1 K);
     return (l1 > l2) ? 1 : (l1 < l2) ? -1 : 0;
 }
 
-static int SumAttCompare(MSumPtr sum1, MSumPtr sum2)
+static int SumAttCompare(MacmbxMsgSum * sum1, MacmbxMsgSum * sum2)
 {
     return (int)(sum1->flags & FLAG_HAS_ATT) - (int)(sum2->flags & FLAG_HAS_ATT);
 }
 
-static int SumLabelCompare(MSumPtr sum1, MSumPtr sum2)
+static int SumLabelCompare(MacmbxMsgSum * sum1, MacmbxMsgSum * sum2)
 {
     return SumColor(sum1) - SumColor(sum2);
 }
 
-static int SumJunkCompare(MSumPtr sum1, MSumPtr sum2)
+static int SumJunkCompare(MacmbxMsgSum * sum1, MacmbxMsgSum * sum2)
 {
-    return sum1->spamScore - sum2->spamScore;
+    return sum1->spam_score - sum2->spam_score;
 }
 
-static int SumAnalCompare(MSumPtr sum1, MSumPtr sum2)
+static int SumAnalCompare(MacmbxMsgSum * sum1, MacmbxMsgSum * sum2)
 {
     if ((unsigned)sum1->score > (unsigned)sum2->score) return 1;
     if (sum1->score == sum2->score) return 0;
@@ -948,27 +948,27 @@ static int SumAnalCompare(MSumPtr sum1, MSumPtr sum2)
 }
 
 
-static int SumSelectCompare(MSumPtr sum1, MSumPtr sum2)
+static int SumSelectCompare(MacmbxMsgSum * sum1, MacmbxMsgSum * sum2)
 {
     if (sum1->length == kLargeUniqueValue) return 1;
     if (sum2->length == kLargeUniqueValue) return -1;
-    long res = (long)sum1->spareShort - (long)sum2->spareShort;
-    if (!res) res = sum1->spareShort2 - sum2->spareShort2;
+    long res = (long)sum1->subj_id - (long)sum2->subj_id;
+    if (!res) res = sum1->score - sum2->score;
     return res;
 }
 
-static int SumSubjIdCompare(MSumPtr sum1, MSumPtr sum2)
+static int SumSubjIdCompare(MacmbxMsgSum * sum1, MacmbxMsgSum * sum2)
 {
-    return sum1->subjId - sum2->subjId;
+    return sum1->subj_id - sum2->subj_id;
 }
 
-static int SumTimeFuzzCompare(MSumPtr sum1, MSumPtr sum2)
+static int SumTimeFuzzCompare(MacmbxMsgSum * sum1, MacmbxMsgSum * sum2)
 {
     /* Simple: compare dates as seconds */
     return SumTimeCompare(sum1, sum2);
 }
 
-static int SumOffsetCompare(MSumPtr sum1, MSumPtr sum2)
+static int SumOffsetCompare(MacmbxMsgSum * sum1, MacmbxMsgSum * sum2)
 {
     if ((unsigned long)sum1->offset > (unsigned long)sum2->offset) return 1;
     if (sum1->offset == sum2->offset) return 0;
@@ -976,17 +976,17 @@ static int SumOffsetCompare(MSumPtr sum1, MSumPtr sum2)
 }
 
 /* Reverse comparators */
-static int RevSumTimeCompare(MSumPtr s1, MSumPtr s2) { return -SumTimeCompare(s1, s2); }
-static int RevSumStatCompare(MSumPtr s1, MSumPtr s2) { return -SumStatCompare(s1, s2); }
-static int RevSumPriorCompare(MSumPtr s1, MSumPtr s2) { return -SumPriorCompare(s1, s2); }
-static int RevSumSubjCompare(MSumPtr s1, MSumPtr s2) { return -SumSubjCompare(s1, s2); }
-static int RevSumFromCompare(MSumPtr s1, MSumPtr s2) { return -SumFromCompare(s1, s2); }
-static int RevSumSizeCompare(MSumPtr s1, MSumPtr s2) { return -SumSizeCompare(s1, s2); }
-static int RevSumAttCompare(MSumPtr s1, MSumPtr s2) { return -SumAttCompare(s1, s2); }
-static int RevSumLabelCompare(MSumPtr s1, MSumPtr s2) { return -SumLabelCompare(s1, s2); }
-static int RevSumJunkCompare(MSumPtr s1, MSumPtr s2) { return -SumJunkCompare(s1, s2); }
-static int RevSumAnalCompare(MSumPtr s1, MSumPtr s2) { return -SumAnalCompare(s1, s2); }
-static int RevSumOffsetCompare(MSumPtr s1, MSumPtr s2) { return -SumOffsetCompare(s1, s2); }
+static int RevSumTimeCompare(MacmbxMsgSum * s1, MacmbxMsgSum * s2) { return -SumTimeCompare(s1, s2); }
+static int RevSumStatCompare(MacmbxMsgSum * s1, MacmbxMsgSum * s2) { return -SumStatCompare(s1, s2); }
+static int RevSumPriorCompare(MacmbxMsgSum * s1, MacmbxMsgSum * s2) { return -SumPriorCompare(s1, s2); }
+static int RevSumSubjCompare(MacmbxMsgSum * s1, MacmbxMsgSum * s2) { return -SumSubjCompare(s1, s2); }
+static int RevSumFromCompare(MacmbxMsgSum * s1, MacmbxMsgSum * s2) { return -SumFromCompare(s1, s2); }
+static int RevSumSizeCompare(MacmbxMsgSum * s1, MacmbxMsgSum * s2) { return -SumSizeCompare(s1, s2); }
+static int RevSumAttCompare(MacmbxMsgSum * s1, MacmbxMsgSum * s2) { return -SumAttCompare(s1, s2); }
+static int RevSumLabelCompare(MacmbxMsgSum * s1, MacmbxMsgSum * s2) { return -SumLabelCompare(s1, s2); }
+static int RevSumJunkCompare(MacmbxMsgSum * s1, MacmbxMsgSum * s2) { return -SumJunkCompare(s1, s2); }
+static int RevSumAnalCompare(MacmbxMsgSum * s1, MacmbxMsgSum * s2) { return -SumAnalCompare(s1, s2); }
+static int RevSumOffsetCompare(MacmbxMsgSum * s1, MacmbxMsgSum * s2) { return -SumOffsetCompare(s1, s2); }
 
 /* ================================================================== */
 /*                          SORTING ENGINE                            */
@@ -1009,9 +1009,9 @@ static SumCompareFn FindMBSort(short item, bool reverse)
     }
 }
 
-static void SwapSum(MSumPtr sum1, MSumPtr sum2)
+static void SwapSum(MacmbxMsgSum * sum1, MacmbxMsgSum * sum2)
 {
-    MSumType temp = *sum1;
+    MacmbxMsgSum temp = *sum1;
     *sum1 = *sum2;
     *sum2 = temp;
 }
@@ -1020,23 +1020,23 @@ static void SwapSum(MSumPtr sum1, MSumPtr sum2)
 static SumCompareFn gActiveCompare;
 static int qsort_wrapper(const void *a, const void *b)
 {
-    return gActiveCompare((MSumPtr)a, (MSumPtr)b);
+    return gActiveCompare((MacmbxMsgSum *)a, (MacmbxMsgSum *)b);
 }
 
-static void SortTOC(TOCType *tocH, bool reverse, SumCompareFn compare)
+static void SortTOC(MacmbxTOC *tocH, bool reverse, SumCompareFn compare)
 {
     if (!tocH || tocH->count <= 1) return;
 
-    MSumPtr sums = tocH->sums;
+    MacmbxMsgSum *sums = tocH->msgs;
     int count = tocH->count;
 
     /* Tag original positions for stability */
     for (int i = 0; i < count; i++)
-        sums[i].spareShort2 = i;
+        sums[i].score = i;
 
     gSortTOC = tocH;
     gActiveCompare = compare;
-    qsort(sums, count, sizeof(MSumType), qsort_wrapper);
+    qsort(sums, count, sizeof(MacmbxMsgSum), qsort_wrapper);
 
     /* Update back-pointers from messages to their sum index */
     for (int i = 0; i < count; i++)
@@ -1047,7 +1047,7 @@ static void SortTOC(TOCType *tocH, bool reverse, SumCompareFn compare)
     (void)reverse; /* reverse is encoded in the comparators */
 }
 
-static int MBResortCompare(MSumPtr s1, MSumPtr s2)
+static int MBResortCompare(MacmbxMsgSum * s1, MacmbxMsgSum * s2)
 {
     if (s1->length == kLargeUniqueValue) return 1;
     if (s2->length == kLargeUniqueValue) return -1;
@@ -1055,7 +1055,7 @@ static int MBResortCompare(MSumPtr s1, MSumPtr s2)
     long res = 0;
     for (int i = 0; MBCompareTable[i] && !res; i++)
         res = MBCompareTable[i](s1, s2);
-    return res ? res : (s1->spareShort2 - s2->spareShort2);
+    return res ? res : (s1->score - s2->score);
 }
 
 static short BoxLine2Item(short line)
@@ -1094,7 +1094,7 @@ static short BoxItem2Line(short item)
     }
 }
 
-static bool MBIsSticky(TOCType *tocH)
+static bool MBIsSticky(MacmbxTOC *tocH)
 {
     if (!tocH) return false;
     for (short i = 1; i <= NSORT; i++)
@@ -1102,7 +1102,7 @@ static bool MBIsSticky(TOCType *tocH)
     return false;
 }
 
-static void MBRemoveSort(TOCType *tocH, short index)
+static void MBRemoveSort(MacmbxTOC *tocH, short index)
 {
     long oldSort = MBGetSort(tocH, index);
     if (!oldSort) return;
@@ -1118,7 +1118,7 @@ static void MBRemoveSort(TOCType *tocH, short index)
     TOCSetDirty(tocH, true);
 }
 
-static void MBAddSort(TOCType *tocH, short index, long sortOrder)
+static void MBAddSort(MacmbxTOC *tocH, short index, long sortOrder)
 {
     long max = 0;
     for (short i = 1; i <= NSORT; i++)
@@ -1130,7 +1130,7 @@ static void MBAddSort(TOCType *tocH, short index, long sortOrder)
     TOCSetDirty(tocH, true);
 }
 
-static void MBSortHit(TOCType *tocH, short index, bool reverse, bool extend)
+static void MBSortHit(MacmbxTOC *tocH, short index, bool reverse, bool extend)
 {
     long sort = MBGetSort(tocH, index);
 
@@ -1154,7 +1154,7 @@ static void MBSortHit(TOCType *tocH, short index, bool reverse, bool extend)
 /***********************************************************************
  * MBResort - resort a mailbox using its stored sort criteria
  ***********************************************************************/
-void MBResort(TOCType *tocH)
+void MBResort(MacmbxTOC *tocH)
 {
     if (!tocH) return;
 
@@ -1175,7 +1175,7 @@ void MBResort(TOCType *tocH)
                     MBCompareTable[n - 1] = FindMBSort(
                         BoxLine2Item(i),
                         (MBGetSort(tocH, i) & 3) == SORT_DESCEND);
-                    tocH->lastSort = BoxLine2Item(i);
+                    tocH->last_sort = BoxLine2Item(i);
                     break;
                 }
         MBCompareTable[n - 1] = NULL;
@@ -1192,11 +1192,11 @@ void MBResort(TOCType *tocH)
 /***********************************************************************
  * BoxCountSelected - how many messages are selected
  ***********************************************************************/
-static short BoxCountSelected(TOCType *tocH)
+static short BoxCountSelected(MacmbxTOC *tocH)
 {
     short count = 0;
     if (!tocH) return 0;
     for (short i = tocH->count - 1; i >= 0; i--)
-        if (tocH->sums[i].selected) count++;
+        if (tocH->msgs[i].selected) count++;
     return count;
 }

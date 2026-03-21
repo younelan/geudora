@@ -169,7 +169,7 @@ int GetSMTPInfo(unsigned char *host) {
   g_free(server);
   return 0;
 }
-short GetSumColor(TOCType *tocH, short sumNum) {
+short GetSumColor(MacmbxTOC *tocH, short sumNum) {
   return 0;
 }
 /* GetTrashTOC — real implementation in address.c */
@@ -192,7 +192,8 @@ void IMAPAccuInit() {}
 void IMAPAccuZap() {}
 void ImportErr() {}
 /* InitFPB — real implementation elsewhere */
-int InsertCommaIfNeedBe(void* pte, void* hs) {
+struct HeadSpec;
+int InsertCommaIfNeedBe(GtkWidget *pte, struct HeadSpec *hs) {
   return 0;
 }
 MyWindowPtr InsertWin = NULL;
@@ -381,7 +382,7 @@ void SetResInfo(void **res, short id, unsigned char *name) {
 /* SetSig — real implementation in compact.c */
 void SetStrOverride(short strn, const char *str) {
 }
-void SetSumColor(TOCType *tocH, short sumNum, short color) {
+void SetSumColor(MacmbxTOC *tocH, short sumNum, short color) {
 }
 void SetSumFlag(void* tocH, short sumNum, long flag) {
 }
@@ -532,3 +533,4 @@ int GetAttFolderPath(short vRef, long dirId, char *path, int pathSize) {
   g_mkdir_with_parents(path, 0755);
   return 0;
 }
+

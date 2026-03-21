@@ -26,7 +26,7 @@ ADVISED OF THE POSSIBILITY OF SUCH DAMAGE. */
 
 #include "nickmng.h"
 #include "comp.h"
-#include "sendmail.h"
+/* sendmail.h removed — crispy handles SMTP */
 #include "Globals.h"
 #include "StringDefs.h"
 #include "StringUtil.h"
@@ -37,22 +37,26 @@ ADVISED OF THE POSSIBILITY OF SUCH DAMAGE. */
 #include "lineio.h"
 #include "sort.h"
 #include "util.h"
-#include "imapdownload.h"
+/* imapdownload.h removed — crispy_imap handles IMAP */
 #include "threading.h"
 #include <gtk/gtk.h>
+#include "gtk_dialogs.h"
+#include "macmbx.h"
+#include "crispy_rfc822.h"
+#include "macmbx_mailer.h"
+#include "idle_scheduler.h"
 #define FILE_NUM 2
 
 // Forward declarations for functions implemented elsewhere
-extern void BeautifyFrom(unsigned char *name);
 extern void SetPrefLong(short prefId, long value);
 extern void SetResLoad(bool load);
 extern int PeteGetTextAndSelection(void *pte, void **text, long *start, long *end);
 extern void ReplyDefaults(short modifiers, bool *all, bool *self, bool *quote);
 extern void *DoReplyMessage(void *win, bool all, bool self, bool f1, bool f2, int i,
                      bool f3, bool f4, bool f5);
-extern void JunkSetScore(TOCType * tocH, short sumNum, int score, int reason);
-extern void EnsureFromHash(TOCType * tocH, short sumNum);
-extern void *DupHandle(void **h);
+/* JunkSetScore declaration removed — use macmbx_junk_set_score from macmbx.h */
+extern void EnsureFromHash(MacmbxTOC * tocH, short sumNum);
+extern void *DupHandle(void *h);
 extern short ComposeStdAlert(int alertType, int msgResId, ...);
 /* HGetState/HSetState provided by legacy_shim.h */
 // ParseAttributeValuePair has 6 parameters in actual usage
@@ -201,7 +205,7 @@ typedef unsigned char Str32[33];
 #define ktFlatten 1
 
 // GTK replacement for Mac AlertStr
-void AlertStr(short alertId, short type, unsigned char *str) {
+void AlertStr(short alertId, short type, const char *str) {
   GtkWidget *dialog;
   GtkAlertDialog *alert;
   GtkMessageType msgType = GTK_MESSAGE_WARNING;
@@ -632,7 +636,7 @@ void CheckForNicknameBogosity(short which)
   count =
       This.theDataCount;
   for (index = 0; !bogus && index < count; ++index) {
-    BeautifyFrom(GetNicknameNamePStr(which, index, beautifulName));
+    crispy_rfc822_beautify_from((char *)GetNicknameNamePStr(which, index, beautifulName));
     if (!This.theData[index].deleted &&
         This.theData[index].hashName != NickHash(beautifulName))
       bogus = true;
@@ -1809,7 +1813,7 @@ static short AddNickToTOC(short which, char * name, void *hData,
 
   if (!This.containsBogusNicks) {
     g_strlcpy((char *)(beautifulName), (char *)(name), sizeof(beautifulName));
-    BeautifyFrom(beautifulName);
+    crispy_rfc822_beautify_from((char *)beautifulName);
     if (nickInfo.hashName != NickHash(beautifulName))
       This.containsBogusNicks = true;
   }
@@ -2425,24 +2429,28 @@ int GatherCompAddresses(MyWindowPtr win, char *addrList) {
 void MakeMessNick(MyWindowPtr win, short modifiers) {
 #ifdef VCARD
   MessHandle messH = (MessHandle)GetMyWindowPrivateData(win);
-  TOCType * tocH = messH->tocH;
+  MacmbxTOC * tocH = messH->tocH;
   int sumNum = messH->sumNum;
   FSSpec attSpec;
   void *text;
   long offset;
   bool foundVCard;
 #endif
-  TOCType * out = GetOutTOC();
+  MacmbxTOC * out = GetOutTOC();
   bool all, quote, self;
 
 #ifdef VCARD
   // Is a vCard attached to this message?
   foundVCard = false;
   if (IsVCardAvailable()) {
-    CacheMessage(tocH, sumNum);
-    if (!(text = tocH->sums[sumNum].cache))
-      return;
-    offset = tocH->sums[sumNum].bodyOffset - 1;
+    {
+      MacmbxTOC *mtoc = macmbx_toc_open(tocH->mbox_path);
+      long msgLen = 0;
+      if (mtoc && sumNum < mtoc->count)
+        text = macmbx_read_message(mtoc, sumNum, &msgLen);
+      if (!text) return;
+    }
+    offset = tocH->msgs[sumNum].body_offset - 1;
     while (!foundVCard &&
            (0 <= (offset = FindAnAttachment(text, offset + 1, &attSpec, true,
                                             nil, nil, nil)))) {
@@ -2454,7 +2462,7 @@ void MakeMessNick(MyWindowPtr win, short modifiers) {
   ReplyDefaults(modifiers, &all, &self, &quote);
 
   if (out) {
-    bool wasDirty = out->win->isDirty;
+    bool wasDirty = ((MyWindowPtr)out->win)->isDirty;
     win = DoReplyMessage(win, all, self, false, false, 0, false, false, false);
     if (!win)
       return;
@@ -2464,7 +2472,7 @@ void MakeMessNick(MyWindowPtr win, short modifiers) {
     MakeCompNick(win);
 #endif
     CloseMyWindow(GetMyWindowWindowPtr(win));
-    out->win->isDirty = wasDirty;
+    ((MyWindowPtr)out->win)->isDirty = wasDirty;
   }
 }
 
@@ -2473,7 +2481,7 @@ void MakeMessNick(MyWindowPtr win, short modifiers) {
  ************************************************************************/
 void MakeMboxNick(MyWindowPtr win, short modifiers) {
   TextAddrHandle addresses = nil;
-  TOCType * tocH = (TOCType *)GetMyWindowPrivateData(win);
+  MacmbxTOC * tocH = (MacmbxTOC *)GetMyWindowPrivateData(win);
   int err =
       GatherBoxAddresses(tocH, modifiers, -1, -1, (void ***)&addresses, false);
 
@@ -2490,7 +2498,7 @@ void MakeMboxNick(MyWindowPtr win, short modifiers) {
 /************************************************************************
  * GatherBoxAddresses - gather addresses from the selected messages in an mbox
  ************************************************************************/
-int GatherBoxAddresses(TOCType * tocH, short modifiers, short from, short to,
+int GatherBoxAddresses(MacmbxTOC * tocH, short modifiers, short from, short to,
                        void ***addresses, bool caching) {
   MyWindowPtr messWin, compWin;
   short sumNum;
@@ -2511,10 +2519,15 @@ int GatherBoxAddresses(TOCType * tocH, short modifiers, short from, short to,
     MiniEvents();
     if (CommandPeriod)
       break;
-    if (!selected || tocH->sums[sumNum].selected) {
-      // if this is an IMAP message, make sure it's been fully fetched.
-      if (tocH && tocH->imapTOC && !EnsureMsgDownloaded(tocH, sumNum, false))
-        return (err = 1);
+    if (!selected || tocH->msgs[sumNum].selected) {
+      // ensure message body is downloaded (for IMAP headers-only mode)
+      {
+        MacmbxMailer *mailer = idle_scheduler_get_mailer();
+        MacmbxTOC *mtoc = macmbx_toc_open(tocH->mbox_path);
+        if (mailer && mtoc && sumNum < mtoc->count &&
+            macmbx_mailer_ensure_body(mailer, mtoc, sumNum) != 0)
+          return (err = 1);
+      }
       if (messWin = GetAMessage(tocH, sumNum, nil, nil, false)) {
         compWin = MessFlagIsSet(Win2MessH(messWin), FLAG_OUT)
                       ? messWin
@@ -2545,7 +2558,7 @@ int GatherBoxAddresses(TOCType * tocH, short modifiers, short from, short to,
  ************************************************************************/
 void MakeCboxNick(MyWindowPtr win) {
   void *addresses = malloc(0);
-  TOCType * tocH = (TOCType *)GetMyWindowPrivateData(win);
+  MacmbxTOC * tocH = (MacmbxTOC *)GetMyWindowPrivateData(win);
   MyWindowPtr compWin;
   short sumNum;
   short err = 0;
@@ -2556,7 +2569,7 @@ void MakeCboxNick(MyWindowPtr win) {
     MiniEvents();
     if (CommandPeriod)
       break;
-    if (tocH->sums[sumNum].selected)
+    if (tocH->msgs[sumNum].selected)
       if (compWin = GetAMessage(tocH, sumNum, nil, nil, false)) {
         GtkWidget * compWinWP = GetMyWindowWindowPtr(compWin);
         err = GatherCompAddresses(compWin, addresses);
@@ -3648,7 +3661,7 @@ int AddHandleToAddressHashes(TextAddrHandle sourceHandle, AccuPtr a) {
 void ReadPluginNickFiles(bool reread) {
   FSSpec folderSpec;
 
-  ETLGetPluginFolderSpec(&folderSpec, PLUGIN_NICKNAMES);
+  (-1) /* plugins removed */;
 
   /* clear filename */ { char *_sn = strrchr(folderSpec, '/'); if (_sn) _sn[1] = '\0'; else folderSpec[0] = '\0'; }
   ReadNickFileList(&folderSpec, pluginAddressBook, reread);
@@ -4123,7 +4136,7 @@ bool AnyPersonalNicknames(void)
 /************************************************************************
  * WhiteListTS - add a message's sender to the whitelist
  ************************************************************************/
-int WhiteListTS(TOCType * tocH, short sumNum) {
+int WhiteListTS(MacmbxTOC * tocH, short sumNum) {
   char scratch[256];
   struct HeadSpec hs;
   TextAddrHandle addr = nil;
@@ -4135,10 +4148,10 @@ int WhiteListTS(TOCType * tocH, short sumNum) {
 
     // Examine all the selected messages
     for (sumNum = tocH->count - 1; sumNum >= 0; sumNum--) {
-      if (tocH->sums[sumNum].selected) {
+      if (tocH->msgs[sumNum].selected) {
         WhiteListTS(tocH, sumNum);
         EnsureFromHash(tocH, sumNum);
-        hash = tocH->sums[sumNum].fromHash;
+        hash = tocH->msgs[sumNum].from_hash;
         if (ValidHash(hash) & 0 > AccuFindPtr(&a, &hash, sizeof(hash)))
           AccuAddPtr(&a, &hash, sizeof(hash));
       }
@@ -4146,27 +4159,35 @@ int WhiteListTS(TOCType * tocH, short sumNum) {
 
     // select everything with the same hash
     for (sumNum = tocH->count; sumNum--;)
-      if (!tocH->sums[sumNum].selected) {
+      if (!tocH->msgs[sumNum].selected) {
         EnsureFromHash(tocH, sumNum);
-        hash = tocH->sums[sumNum].fromHash;
+        hash = tocH->msgs[sumNum].from_hash;
         if (ValidHash(hash) & 0 <= AccuFindPtr(&a, &hash, sizeof(hash)))
           BoxSetSummarySelected(tocH, sumNum, true);
       }
 
     free(a.data); a.data = NULL; a.offset = a.size = 0;
   } else {
-    if (!CacheMessage(tocH, sumNum)) {
+    {
+      /* Read message via macmbx instead of CacheMessage */
+      MacmbxTOC *mtoc = macmbx_toc_open(tocH->mbox_path);
+      long msgLen = 0;
+      char *msgText = (mtoc && sumNum < mtoc->count) ?
+        macmbx_read_message(mtoc, sumNum, &msgLen) : NULL;
+      tocH->msgs[sumNum].cache = msgText; /* temporary — freed below */
+    }
+    if (tocH->msgs[sumNum].cache) {
 
       HeaderName(FROM_HEAD); // weird--goes into scratch
       TrimWhite(scratch);
-      if (HandleHeadFindStr(tocH->sums[sumNum].cache, scratch, &hs)) {
-        HandleHeadGetText(tocH->sums[sumNum].cache, &hs, &addr);
+      if (HandleHeadFindStr(tocH->msgs[sumNum].cache, scratch, &hs)) {
+        HandleHeadGetText(tocH->msgs[sumNum].cache, &hs, &addr);
         if (addr)
           WhiteListAddr(addr);
         free(addr);
       }
       // Now that we've whitelisted the message, bop its junk score
-      JunkSetScore(tocH, sumNum, JUNK_BECAUSE_WHITE, 0);
+      macmbx_junk_set_score(tocH, sumNum, (int8_t)0, (uint8_t)JUNK_BECAUSE_WHITE);
     }
   }
 
@@ -4316,8 +4337,8 @@ int SortAddrNameCompare(char * *s1, char * *s2) {
 
   g_strlcpy((char *)(n1), (char *)(*s1), sizeof(n1));
   g_strlcpy((char *)(n2), (char *)(*s2), sizeof(n2));
-  BeautifyFrom(n1);
-  BeautifyFrom(n2);
+  crispy_rfc822_beautify_from((char *)n1);
+  crispy_rfc822_beautify_from((char *)n2);
   ParseFirstLast(n1, first, last);
   g_strlcpy((char *)(n1), (char *)(last), sizeof(n1));
   PCat(n1, first);

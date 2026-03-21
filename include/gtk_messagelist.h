@@ -1,5 +1,5 @@
 /*
- * EudoraMessage GObject wrapper for MessageSummary
+ * EudoraMessage GObject wrapper for MacmbxMsgSum
  * Required for GtkColumnView/GListModel
  */
 
@@ -16,7 +16,7 @@ G_BEGIN_DECLS
 G_DECLARE_FINAL_TYPE(GtkMessageListItem, gtk_messagelist_item, GTK,
                      MESSAGELIST_ITEM, GObject)
 
-GtkMessageListItem *gtk_messagelist_item_new(MessageSummary *summary,
+GtkMessageListItem *gtk_messagelist_item_new(MacmbxMsgSum *summary,
                                              int index);
 
 /* Getters - matches original Eudora mailbox columns */

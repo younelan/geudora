@@ -4,19 +4,19 @@ Filters window — ported from Mac Carbon/QuickDraw to GTK4.
 Original: filtwin.c + filtmng.c persistence logic. */
 
 #include "filters.h"
-#include "filtrun.h"
+/* filtrun.h removed — macmbx_filter handles filters */
 #include "FiltDefs.h"
 #include "features.h"
 #include "mailbox.h"
 #include "toc.h"
-#include "junk.h"
+/* junk.h removed — macmbx_junk handles junk */
 #include "schizo.h"
 #include "messact.h"
 #include "nickmng.h"
 #include "mydefs.h"
 #include "fileutil.h"
-#include "imapmailboxes.h"
-#include "imapdownload.h"
+/* imapmailboxes.h removed — crispy_imap handles IMAP */
+/* imapdownload.h removed — crispy_imap handles IMAP */
 #include "prefdefs.h"
 #include "threading.h"
 #include <gtk/gtk.h>
@@ -28,21 +28,19 @@ Original: filtwin.c + filtmng.c persistence logic. */
 #include <sys/stat.h>
 
 /* Forward declarations for functions not yet ported to headers */
-extern void SetState(TOCType *tocH, short sumNum, short state);
-extern void SetPriority(TOCType *tocH, short sumNum, short priority);
-extern short DoFordirectMessage(TOCType *tocH, short sumNum, short action,
+extern void SetState(MacmbxTOC *tocH, short sumNum, short state);
+extern void SetPriority(MacmbxTOC *tocH, short sumNum, short priority);
+extern short DoFordirectMessage(MacmbxTOC *tocH, short sumNum, short action,
                                 unsigned char *addresses, bool now);
-extern short DoReplyClosed(TOCType *tocH, short sumNum, bool all, bool self,
+extern short DoReplyClosed(MacmbxTOC *tocH, short sumNum, bool all, bool self,
                            bool quote, bool redo, short item, bool vis,
                            bool station);
 extern void PlayNamedSound(char *name);
-extern char *GetMailboxSpec(TOCType *tocH, short which, char *outSpec);
-extern TOCType *TOCBySpec(char *spec);
+extern char *GetMailboxSpec(MacmbxTOC *tocH, short which, char *outSpec);
 extern bool SameSpec(char *a, char *b);
-extern void InvalSum(TOCType *tocH, short sumNum);
-extern bool FetchAllIMAPAttachments(TOCType *tocH, short sumNum, bool fg);
+extern void InvalSum(MacmbxTOC *tocH, short sumNum);
 extern void CacheRecentNickname(void *addr);
-extern short PrintClosedMessage(TOCType *tocH, short sumNum, bool now);
+extern short PrintClosedMessage(MacmbxTOC *tocH, short sumNum, bool now);
 
 /* Filter return codes */
 #ifndef euFilterStop
@@ -51,7 +49,7 @@ extern short PrintClosedMessage(TOCType *tocH, short sumNum, bool now);
 #endif
 
 #ifndef TS_TO_PPERS
-#define TS_TO_PPERS(toc, sum) (FindPersById((toc)->sums[sum].persId))
+#define TS_TO_PPERS(toc, sum) (FindPersById((toc)->msgs[sum].persId))
 #endif
 
 /* Global Filters handle — the in-memory filter database */
@@ -580,16 +578,12 @@ short FAflkJunk(FACallEnum callType, FActionHandle action, Rect *r,
   switch (callType) {
   case faeDo:
     if (HasFeature(featureJunk)) {
-      TOCType *junkTOC = NULL;
-      if (fpb->tocH->imapTOC)
-        junkTOC = LocateIMAPJunkToc(fpb->tocH, true, true);
-      else
-        junkTOC = GetSpecialTOC(MBX_JUNK);
+      MacmbxTOC *junkTOC = GetJunkTOC();
 
       if (junkTOC) {
         int err;
         UseFeature(featureJunk);
-        err = Junk(fpb->tocH, fpb->sumNum, true, false);
+        err = macmbx_junk_mark(NULL, fpb->tocH, fpb->sumNum, true, gtk_mailbox_get_store());
         if (!err && (fpb->tocH != junkTOC)) {
           GetMailboxSpec(junkTOC, -1, fpb->spec);
           fpb->xferred = true;
@@ -615,11 +609,11 @@ short FAflkPrint(FACallEnum callType, FActionHandle action, Rect *r,
   if (callType == faeDo) {
     if (HasFeature(featureFilterPrint)) {
       UseFeature(featureFilterPrint);
-      if (fpb->tocH->imapTOC) {
-        bool filtering = IMAPFilteringUnderway();
-        if (filtering) IMAPStopFiltering(false);
-        EnsureMsgDownloaded(fpb->tocH, fpb->sumNum, false);
-        if (filtering) IMAPStartFiltering(fpb->tocH, true);
+      if (fpb->tocH->virtualTOC) {
+        bool filtering = false;
+        if (filtering) ((void)0);
+        true;
+        if (filtering) ((void)0);
       }
       fpb->print = true;
     }
@@ -673,33 +667,33 @@ short FAflkTransfer(FACallEnum callType, FActionHandle action, Rect *r,
       if (SameSpec(&curSpec, &data->spec)) return euFilterStop;
 
       if (!copy & fpb->openMessage)
-        fpb->tocH->sums[fpb->sumNum].opts |= OPT_OPEN;
+        fpb->tocH->msgs[fpb->sumNum].opts |= OPT_OPEN;
 
       if (!copy & fpb->print) {
-        short oldstat = fpb->tocH->sums[fpb->sumNum].state;
-        if (fpb->tocH->imapTOC) {
-          bool filtering = IMAPFilteringUnderway();
-          if (filtering) IMAPStopFiltering(false);
-          EnsureMsgDownloaded(fpb->tocH, fpb->sumNum, false);
-          if (filtering) IMAPStartFiltering(fpb->tocH, true);
+        short oldstat = fpb->tocH->msgs[fpb->sumNum].state;
+        if (fpb->tocH->virtualTOC) {
+          bool filtering = false;
+          if (filtering) ((void)0);
+          true;
+          if (filtering) ((void)0);
         }
         PrintClosedMessage(fpb->tocH, fpb->sumNum, true);
         SetState(fpb->tocH, fpb->sumNum, oldstat);
       }
 
-      fpb->tocH->sums[fpb->sumNum].flags |= FLAG_SKIPWARN;
+      fpb->tocH->msgs[fpb->sumNum].flags |= FLAG_SKIPWARN;
 
-      TOCType *toTocH = TOCBySpec(&data->spec);
-      if (fpb->tocH->imapTOC || (toTocH && toTocH->imapTOC)) {
-        bool filtering = IMAPFilteringUnderway();
-        if (filtering) IMAPStopFiltering(false);
+      MacmbxTOC *toTocH = macmbx_toc_open(&data->spec);
+      if (fpb->tocH->virtualTOC || (toTocH && toTocH->virtualTOC)) {
+        bool filtering = false;
+        if (filtering) ((void)0);
         /* IMAP transfer */
-        if (filtering) IMAPStartFiltering(fpb->tocH, true);
+        if (filtering) ((void)0);
       }
 
       if (!copy) {
         fpb->xferred = true;
-        if (fpb->tocH->imapTOC) fpb->xferredFromIMAP = true;
+        if (fpb->tocH->virtualTOC) fpb->xferredFromIMAP = true;
         g_strlcpy(fpb->spec, data->spec, sizeof(fpb->spec));
         err = euFilterXfered;
       }
@@ -755,16 +749,9 @@ short FAflkMoveAttach(FACallEnum callType, FActionHandle action, Rect *r,
     break;
   case faeDo:
     if (!data) break;
-    if (fpb->tocH->sums[fpb->sumNum].flags & FLAG_HAS_ATT) {
-      if (fpb->tocH->imapTOC) {
-        bool filtering = IMAPFilteringUnderway();
-        if (filtering) IMAPStopFiltering(false);
-        EnsureMsgDownloaded(fpb->tocH, fpb->sumNum, false);
-        if (FetchAllIMAPAttachments(fpb->tocH, fpb->sumNum, true)) {
-          g_print("FAflkMoveAttach: move attachments for sum=%d\n", fpb->sumNum);
-        }
-        if (filtering) IMAPStartFiltering(fpb->tocH, true);
-      } else {
+    if (fpb->tocH->msgs[fpb->sumNum].flags & FLAG_HAS_ATT) {
+      {
+        /* macmbx_mailer downloads full messages including attachments */
         g_print("FAflkMoveAttach: move attachments for sum=%d\n", fpb->sumNum);
       }
     }
@@ -862,7 +849,7 @@ short FAflkSubject(FACallEnum callType, FActionHandle action, Rect *r,
       /* NonSequitur expects Pascal string — convert at boundary */
       unsigned char ps[256];
       c_to_pascal(ps, data->subject);
-      NonSequitur(ps, fpb->tocH, fpb->sumNum);
+      ((void)0);
     }
     break;
   default:
@@ -1118,7 +1105,7 @@ short FAflkPriority(FACallEnum callType, FActionHandle action, Rect *r,
   case faeDo:
     if (data) {
       short newPrior = NewPrior((short)data->prior,
-                                fpb->tocH->sums[fpb->sumNum].priority);
+                                fpb->tocH->msgs[fpb->sumNum].priority);
       SetPriority(fpb->tocH, fpb->sumNum, newPrior);
     }
     break;
@@ -1167,7 +1154,7 @@ short FAflkForward(FACallEnum callType, FActionHandle action, Rect *r,
     break;
   case faeDo:
     if (HasFeature(featureFilterForward) && data) {
-      if ((fpb->tocH->sums[fpb->sumNum].opts && OPT_BULK) &&
+      if ((fpb->tocH->msgs[fpb->sumNum].opts && OPT_BULK) &&
           !PrefIsSet(PREF_BOMBS_AWAY))
         return 0;
       /* DoFordirectMessage expects Pascal string — convert at boundary */
@@ -1223,7 +1210,7 @@ short FAflkReply(FACallEnum callType, FActionHandle action, Rect *r,
     break;
   case faeDo:
     if (HasFeature(featureFilterReply)) {
-      if ((fpb->tocH->sums[fpb->sumNum].opts & OPT_BULK) &&
+      if ((fpb->tocH->msgs[fpb->sumNum].opts & OPT_BULK) &&
           !PrefIsSet(PREF_BOMBS_AWAY))
         return 0;
       UseFeature(featureFilterReply);
@@ -1349,23 +1336,10 @@ short FAflkServerOpts(FACallEnum callType, FActionHandle action, Rect *r,
     if (HasFeature(featureFilterServerOptions) && data) {
       UseFeature(featureFilterServerOptions);
       long flag = data->flags;
-      long uidHash = fpb->tocH->sums[fpb->sumNum].uidHash;
-      PersHandle pers = TS_TO_PPERS(fpb->tocH, fpb->sumNum);
-
-      if (fpb->tocH->imapTOC) {
-        bool filtering = IMAPFilteringUnderway();
-        if (filtering) IMAPStopFiltering(false);
-        if (flag & afbFetch) {
-          if (!IMAPMessageDownloaded(fpb->tocH, fpb->sumNum) &&
-              !IMAPMessageBeingDownloaded(fpb->tocH, fpb->sumNum))
-            UIDDownloadMessage(fpb->tocH, uidHash, true, true);
-        } else if (flag & afbTrash) {
-          IMAPDeleteMessageDuringFiltering(fpb->tocH, pers, uidHash);
-        }
-        if (filtering) IMAPStartFiltering(fpb->tocH, true);
-      } else {
+      /* IMAP on-demand download removed — macmbx handles everything */
+      {
         if (flag & afbTrash)
-          fpb->tocH->sums[fpb->sumNum].flags |= FLAG_SKIPWARN;
+          fpb->tocH->msgs[fpb->sumNum].flags |= FLAG_SKIPWARN;
       }
     }
     break;

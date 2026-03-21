@@ -125,7 +125,7 @@ typedef struct {
 #define FR (*(FRHandle)Filters)
 
 typedef struct {
-  TOCType * tocH;
+  MacmbxTOC * tocH;
   short sumNum;
   bool openMailbox;
   bool openMessage;

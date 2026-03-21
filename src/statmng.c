@@ -32,11 +32,21 @@ static short InBG = 0;
 #include "StringUtil.h"
 #include "fileutil.h"
 #include "graph.h"
-#include "junk.h"
+/* junk.h removed — macmbx_junk handles junk */
 #include "mailbox.h" /* For Accumulator struct definition */
 #include "toc.h"
-#include "sendmail.h"
+/* sendmail.h removed — crispy handles SMTP */
 #include "util.h"
+
+/* From removed headers — simple replacements */
+static char *R822Date(char *buf, long secs) {
+  time_t t = (time_t)secs;
+  struct tm *tm = localtime(&t);
+  if (tm) strftime(buf, 64, "%a, %d %b %Y %H:%M:%S %z", tm);
+  else buf[0] = '\0';
+  return buf;
+}
+#define JunkPrefWhiteList() false
 
 /* Stubs for Mac-specific platform functions not in GTK port */
 static void AccuIndent(AccuPtr a) { (void)a; }
@@ -290,7 +300,7 @@ void StatsIdle(void) {
 
   facetimeMode = kFacetimeOther;
   if ((winWP = MyFrontWindow()) && IsMyWindow(winWP)) {
-    TOCType * tocH;
+    MacmbxTOC * tocH;
 
     switch (GetWindowKind(winWP)) {
     case COMP_WIN:
@@ -303,7 +313,7 @@ void StatsIdle(void) {
 
     case MBOX_WIN:
     case CBOX_WIN:
-      tocH = (TOCType *)NULL;
+      tocH = (MacmbxTOC *)NULL;
       if (tocH->previewPTE)
         facetimeMode = kFacetimeRead;
       break;

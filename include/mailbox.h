@@ -20,6 +20,8 @@
 
 typedef int OSStatus;
 
+#include "macmbx.h"
+
 
 /* Point and Rect — basic geometry types */
 #ifndef POINT_DEFINED
@@ -182,7 +184,7 @@ typedef void *FSSpecHandle;
 typedef void *ControlHandle;
 /* WindowPtr removed — use GtkWidget * directly */
 typedef struct MyWindow *MyWindowPtr;
-typedef struct TOCType TOCType, *TOCPtr;
+typedef struct MacmbxTOC MacmbxTOC, *TOCPtr;
 
 #ifndef RECT_DEFINED
 #define RECT_DEFINED
@@ -644,25 +646,26 @@ void SendBehind(void *winWP, void *behindWP);
 bool CloseMyWindow(void *winWP);
 
 /* Mailbox open/close */
-int OpenMailbox(const char *path, bool showIt, TOCType * toc);
-void InitMailboxWin(MyWindowPtr win, TOCType * toc, bool showIt);
-GtkWidget *CreateMailboxPanel(TOCType *toc);
+int OpenMailbox(const char *path, bool showIt, MacmbxTOC * toc);
+void InitMailboxWin(MyWindowPtr win, MacmbxTOC * toc, bool showIt);
+GtkWidget *CreateMailboxPanel(MacmbxTOC *toc);
+GtkWidget *CreateMailboxPanelMacmbx(MacmbxTOC *mtoc);
 void OpenMBWin(void);
 
 /* Mailbox function prototypes */
-short FirstMsgSelected(TOCType * tocH);
-char *GetMailboxName(TOCType * tocH, short sum, char *name);
-int BoxFOpenLo(TOCType * tocH, short sumNum);
-int BoxFOpen(TOCType * tocH);
-void BoxFClose(TOCType * tocH, bool flush);
-int AddMesgError(TOCType * tocH, short sum, char *errorStr,
+short FirstMsgSelected(MacmbxTOC * tocH);
+char *GetMailboxName(MacmbxTOC * tocH, short sum, char *name);
+int BoxFOpenLo(MacmbxTOC * tocH, short sumNum);
+int BoxFOpen(MacmbxTOC * tocH);
+void BoxFClose(MacmbxTOC * tocH, bool flush);
+int AddMesgError(MacmbxTOC * tocH, short sum, char *errorStr,
                  int errorCode);
-void NoteFreeSpace(TOCType * tocH);
-short CountSelectedMessages(TOCType * tocH);
-int UpdateIMAPMailbox(TOCType * tocH);
+void NoteFreeSpace(MacmbxTOC * tocH);
+short CountSelectedMessages(MacmbxTOC * tocH);
+int UpdateIMAPMailbox(MacmbxTOC * tocH);
 void UsingWindow(GtkWidget *win);
 void NotUsingWindow(GtkWidget *win);
-TOCType * FindTOC(const char *path);
+MacmbxTOC * FindTOC(const char *path);
 
 /* IsWindowVisible: GTK4 portable check — true if widget is non-null and visible
  */
@@ -672,22 +675,22 @@ static inline bool IsWindowVisible(void *win) {
 
 /* Search window — declared in searchwin.h */
 bool IsSearchWindow(void *win);
-void GetSearchTOC(MyWindowPtr win, TOCType * *tocH);
+void GetSearchTOC(MyWindowPtr win, MacmbxTOC * *tocH);
 
 /* Mailbox/message utilities */
-short FindSumBySerialNum(TOCType * tocH, long serialNum);
+short FindSumBySerialNum(MacmbxTOC * tocH, long serialNum);
 int GetMailbox(const char *path, bool showIt);
-void DeleteMessageLo(TOCType * tocH, int sumNum, bool nuke);
+void DeleteMessageLo(MacmbxTOC * tocH, int sumNum, bool nuke);
 short FindDirLevel(short vRefNum, long dirID);
 char *MailboxMenuFile(short mid, short item, char *name);
-long CountFlaggedMessages(TOCType * tocH);
-short GetSumColor(TOCType * tocH, short sumNum);
+long CountFlaggedMessages(MacmbxTOC * tocH);
+short GetSumColor(MacmbxTOC * tocH, short sumNum);
 #ifndef SumColor
 #define SumColor(sum) (((sum)->flags >> 14) & 0xf)
 #endif
-void SetSumColor(TOCType * tocH, short sumNum, short color);
-int DeleteMesgError(TOCType * tocH, short sum);
+void SetSumColor(MacmbxTOC * tocH, short sumNum, short color);
+int DeleteMesgError(MacmbxTOC * tocH, short sum);
 void FixSpecUnread(const char *path, bool unread);
-bool SaveMessageSum(void *sum, TOCType * *tocH);
+bool SaveMessageSum(void *sum, MacmbxTOC * *tocH);
 
 #endif /* MAILBOX_H */

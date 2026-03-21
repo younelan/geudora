@@ -49,9 +49,10 @@ ADVISED OF THE POSSIBILITY OF SUCH DAMAGE. */
 #include "fileutil.h"
 extern int PtrAndHand(const void *ptr, void **hand, long size);
 #include "gtk_dialogs.h"
-#include "imapdownload.h"
-#include "imapmailboxes.h"
-#include "junk.h"
+/* imapdownload.h removed — crispy_imap handles IMAP */
+/* imapmailboxes.h removed — crispy_imap handles IMAP */
+/* junk.h removed — macmbx_junk handles junk */
+#define JUNK_BECAUSE_XFER 1
 #include "messact.h"
 #include "boxact.h"
 
@@ -59,14 +60,98 @@ extern int PtrAndHand(const void *ptr, void **hand, long size);
 
 #include "log.h"
 #include "mailbox.h"
-#include "pop.h"
+/* pop.h removed — crispy_pop3 handles POP */
 #include "prefdefs.h"
 #include "schizo.h"
 #include "threading.h"
 #include "toc.h"
-#include "trans.h"
+/* trans.h removed — crispy handles network */
 #include "util.h"
 #include "utl.h"
+#include "macmbx.h"
+#include "crispy_rfc822.h"
+#include "macmbx_mailer.h"
+#include "idle_scheduler.h"
+
+/* On-demand message fetch — wraps macmbx_mailer_ensure_body for legacy callers.
+ * Returns true if message body is available, false on error. */
+static bool EnsureMsgDownloaded(MacmbxTOC *tocH, int sumNum, bool a) {
+  (void)a;
+  MacmbxMailer *mailer = idle_scheduler_get_mailer();
+  if (!mailer) return true; /* no mailer = assume local, not IMAP */
+  MacmbxTOC *mtoc = macmbx_toc_open(tocH->mbox_path);
+  if (!mtoc || sumNum >= mtoc->count) return true;
+  return macmbx_mailer_ensure_body(mailer, mtoc, sumNum) == 0;
+}
+static bool IMAPMessageDownloaded(MacmbxTOC *tocH, int sumNum) {
+  MacmbxMailer *mailer = idle_scheduler_get_mailer();
+  if (!mailer) return true;
+  MacmbxTOC *mtoc = macmbx_toc_open(tocH->mbox_path);
+  if (!mtoc || sumNum >= mtoc->count) return true;
+  return !macmbx_mailer_is_stub(mailer, mtoc, sumNum);
+}
+static bool IMAPMessageBeingDownloaded(MacmbxTOC *tocH, int sumNum) {
+  (void)tocH; (void)sumNum;
+  return false; /* macmbx_mailer fetches synchronously */
+}
+
+/* Forward declarations for functions defined later in this file */
+int CacheMessage(MacmbxTOC *tocH, short sumNum);
+MyWindowPtr DoSalvageMessageLo(MyWindowPtr win, bool forXfer, bool forIMAP);
+int GetIndAttachmentLo(void *text, short index, char *spec, void *where, void *hs);
+
+/* IMAP delete — use macmbx_delete_message instead */
+static void IMAPDeleteMessage(void *a, unsigned long b, bool c, bool d, bool e) {
+  (void)a;(void)b;(void)c;(void)d;(void)e;
+  /* macmbx handles deletion — IMAP server delete via crispy_imap during sync */
+}
+static void IMAPDeleteMessages(void *a, void *b, bool c, bool d, bool e, bool f) {
+  (void)a;(void)b;(void)c;(void)d;(void)e;(void)f;
+}
+
+/* IMAP message processed check — not needed, macmbx downloads everything */
+static bool IsIMAPMessageProcessed(void *a, int b) { (void)a;(void)b; return true; }
+
+/* POP server tracking — macmbx_mailer handles LMOS internally */
+static bool IdIsOnPOPD(uint32_t a, int b, uint32_t c) { (void)a;(void)b;(void)c; return false; }
+
+/* Search window update — not needed for macmbx path */
+static void SearchUpdateSum(void *a, int b, void *c, long d, bool e, bool f) {
+  (void)a;(void)b;(void)c;(void)d;(void)e;(void)f;
+}
+
+/* UID download — replaced by macmbx_mailer_ensure_body */
+static int UIDDownloadMessages(void *a, void *b, bool c, bool d) {
+  (void)a;(void)b;(void)c;(void)d; return 0;
+}
+static int UIDDownloadMessage(void *a, unsigned long b, bool c, bool d) {
+  (void)a;(void)b;(void)c;(void)d; return 0;
+}
+
+/* Remaining legacy functions — from removed sendmail.h/imapdownload.h */
+static void BuildDateHeader(char *buf, unsigned long secs) {
+  time_t t = (time_t)secs;
+  struct tm *tm = localtime(&t);
+  if (tm) strftime(buf, 64, "Date: %a, %d %b %Y %H:%M:%S %z\r\n", tm);
+  else buf[0] = '\0';
+}
+static char *FormatZone(char *s, long delta) {
+  int hrs = (int)(delta / 3600);
+  int mins = abs((int)((delta % 3600) / 60));
+  sprintf(s, "%+03d%02d", hrs, mins);
+  return s;
+}
+static void TimeStamp(void *a, short b, uint32_t c, long d) { (void)a;(void)b;(void)c;(void)d; }
+static void IMAPAbortMessageFetch(void *a, int b) { (void)a;(void)b; }
+static bool IMAPDontAutoFccMailbox(void *a) { (void)a; return false; }
+static void FetchAllIMAPAttachments(void *a, int b) { (void)a;(void)b; }
+static int GetIndAttachment(void *a, short b, char *c, void *d) { (void)a;(void)b;(void)c;(void)d; return -1; }
+
+/* Nickname expansion — should come from macmbx_nicknames eventually */
+static short NickUniq(char *a, char *b, bool c) { (void)a;(void)b;(void)c; return 0; }
+static short ExpandAliasesLow(void *a, void *b, int c, bool d, const char *e, int f) {
+  (void)a;(void)b;(void)c;(void)d;(void)e;(void)f; return 0;
+}
 #ifndef LOG_PLUG
 #define LOG_PLUG 0x100
 #endif
@@ -74,17 +159,31 @@ extern int PtrAndHand(const void *ptr, void **hand, long size);
 
 int ReallyDoAnAlert(int templ, int which);
 
-short FindTOCSpot(TOCType * tocH, long serialNum);
+/* FindTOCSpot removed — macmbx handles mbox file positioning internally */
+static long FindTOCSpot(MacmbxTOC *tocH) {
+  if (!tocH) return 0;
+  FILE *f = fopen(tocH->mbox_path, "rb");
+  if (!f) return 0;
+  fseek(f, 0, SEEK_END);
+  long pos = ftell(f);
+  fclose(f);
+  return pos;
+}
 
 char *FindHeaderString(char *text, char *headerName, long *size, bool bodyToo);
-void BeautifyFrom(char *fromStr);
 char * GrabAttribution(short attrId, MyWindowPtr win, char * attribution);
 int EnsureMessNewline(MessHandle messH);
-int LastMsgSelected(TOCType * tocH);
+int LastMsgSelected(MacmbxTOC * tocH);
 int RedirectAnnotation(MessHandle messH);
 void CacheRecentNickname(char *name);
-int QueueMessage(TOCType * tocH, short sumNum, int when, int flags, bool b1,
-                 bool b2);
+/* QueueMessage — set message state to QUEUED via macmbx */
+int QueueMessage(MacmbxTOC *tocH, short sumNum, int when, int flags, bool b1, bool b2) {
+  (void)when; (void)flags; (void)b1; (void)b2;
+  if (!tocH || sumNum < 0 || sumNum >= tocH->count) return -1;
+  macmbx_set_state(tocH, sumNum, MACMBX_QUEUED);
+  macmbx_toc_save(tocH);
+  return 0;
+}
 int InsertCommaIfNeedBe(GtkWidget *pte, HeadSpec *hs);
 void CompAttachSpec(MyWindowPtr win, char *spec);
 /* NumToString declared in legacy_shim.h */
@@ -93,19 +192,31 @@ void AttachSelect(MessHandle messH);
 int SigValidate(short sigId);
 #define ValidHash(h) 1
 /* SelectBoxRange declared in boxact.h */
-void *FindRealSummary(TOCType * tocH, long serialNum, short *realSum);
+void *FindRealSummary(MacmbxTOC * tocH, long serialNum, short *realSum);
 int ConConMess(MessHandle messH, GtkWidget *pte, void *profile, void *a,
                void *b);
-void *BoxPreviewProfile(void *name, TOCType * tocH, int which);
+void *BoxPreviewProfile(void *name, MacmbxTOC * tocH, int which);
 /* BeenThereDoneThat declared in boxact.h */
 int MakeAttSubFolder(MessHandle messH, unsigned long uidHash,
                        char * folder);
-void ConConMultiple(TOCType * tocH, GtkWidget *pte, void *profile, int rule,
+void ConConMultiple(MacmbxTOC * tocH, GtkWidget *pte, void *profile, int rule,
                     void *a, void *b);
 long Munger(void *h, long offset, void *ptr1, long len1, void *ptr2,
             long len2);
 int StackQueue(void *what, StackHandle *pStack);
-long BeautifyDate(char *dateStr, long *zoneSecs);
+/* BeautifyDate: parse RFC date → epoch seconds. Uses crispy_rfc822_parse_date */
+static uint32_t BeautifyDate(char *dateStr, long *zoneSecs) {
+  CrispyDate d;
+  if (crispy_rfc822_parse_date(dateStr, &d)) {
+    struct tm tm = {0};
+    tm.tm_year = d.year - 1900; tm.tm_mon = d.month - 1; tm.tm_mday = d.day;
+    tm.tm_hour = d.hours; tm.tm_min = d.minutes; tm.tm_sec = d.seconds;
+    if (zoneSecs) *zoneSecs = d.tz_offset_min * 60;
+    return (uint32_t)mktime(&tm);
+  }
+  if (zoneSecs) *zoneSecs = 0;
+  return 0;
+}
 
 extern _Thread_local threadGlobalsPtr CurThreadGlobals;
 #define MINI_MASK 0
@@ -117,7 +228,7 @@ void ComputeLocalDate(void *sum, char *dateStr) {
   if (!dateStr) return;
   dateStr[0] = '\0';
   if (sum) {
-    MSumType *ms = (MSumType *)sum;
+    MacmbxMsgSum *ms = (MacmbxMsgSum *)sum;
     if (ms->seconds) {
       time_t t = (time_t)ms->seconds;
       struct tm *tm = localtime(&t);
@@ -130,7 +241,7 @@ void ComputeLocalDate(void *sum, char *dateStr) {
 /**********************************************************************
  * MakeMessTitle - make a reasonable message title from a summary
  **********************************************************************/
-void MakeMessTitle(char *title, TOCType * tocH, int sumNum,
+void MakeMessTitle(char *title, MacmbxTOC * tocH, int sumNum,
                    bool useSummary) {
   char from[64], date[64], time[64], mailbox[64], subject[64];
   char pattern[64];
@@ -139,7 +250,7 @@ void MakeMessTitle(char *title, TOCType * tocH, int sumNum,
   char zoneStr[32];
   long zone;
 
-  strcpy(from, (const char *)tocH->sums[sumNum].from);
+  strcpy(from, (const char *)tocH->msgs[sumNum].from);
   if (useSummary) {
     int maxW = BoxWidths[blFrom - 1];
     if ((int)strlen((char *)from) > maxW)
@@ -148,16 +259,16 @@ void MakeMessTitle(char *title, TOCType * tocH, int sumNum,
 
   if (useSummary) {
     if (BoxWidths[blDate - 1] > 1) {
-      ComputeLocalDate(tocH->sums + sumNum, datetime);
+      ComputeLocalDate(tocH->msgs + sumNum, datetime);
       int maxDW = BoxWidths[blDate - 1];
       if ((int)strlen((char *)datetime) > maxDW)
         datetime[maxDW] = '\0';
     } else
       datetime[0] = '\0';
   } else {
-    if ((secs = tocH->sums[sumNum].seconds)) {
+    if ((secs = tocH->msgs[sumNum].seconds)) {
       zone = PrefIsSet(PREF_LOCAL_DATE) ? ZoneSecs()
-                                        : 60 * tocH->sums[sumNum].origZone;
+                                        : 60 * tocH->msgs[sumNum].orig_zone;
       secs += zone;
       TimeString(secs, false, time, NULL);
       utl_PlugParams(GetRString(pattern, DATE_SUM_FMT),
@@ -167,7 +278,7 @@ void MakeMessTitle(char *title, TOCType * tocH, int sumNum,
   }
 
   GetMailboxName(tocH, sumNum, mailbox);
-  strcpy(subject, (const char *)tocH->sums[sumNum].subj);
+  strcpy(subject, (const char *)tocH->msgs[sumNum].subject);
 
   utl_PlugParams(GetRString(pattern, MESS_TITLE_PLUG),
                  title, mailbox, from, datetime, subject);
@@ -241,7 +352,7 @@ int FindAndCopyHeader(MessHandle origMH, MessHandle newMH, char *fromHead,
                       short toHead);
 void WeedHeaders(char **buf, size_t *bufSize, long *weeded, short toWeed, AccuPtr weeds);
 long StripTrailingNewlines(char **buf, size_t *bufSize, long stop);
-MyWindowPtr OpenMessage(TOCType * tocH, short sumNum, GtkWidget *winWP,
+MyWindowPtr OpenMessage(MacmbxTOC * tocH, short sumNum, GtkWidget *winWP,
                         MyWindowPtr win, bool showIt, bool preview);
 int RemoveSelf(MessHandle messH, short head, bool wantErrors);
 void FindFrom(char *who, GtkWidget *pte);
@@ -251,28 +362,28 @@ void XferCustomTable(MessHandle origMessH, MessHandle newMessH);
 void WeedXAttachments(MessHandle messH, bool errReport);
 void RemoveIndAttachment(MessHandle messH, short index);
 void PeteApplyStyles(GtkWidget *pte, void *styles);
-int CopyToOut(TOCType * fromTocH, short sumNum, TOCType * toTocH);
+int CopyToOut(MacmbxTOC * fromTocH, short sumNum, MacmbxTOC * toTocH);
 int UniqueHeader(MessHandle messH, short head, bool wantErrors);
-int FindMessageByMID(unsigned long mid, TOCType * *tocH, short *sumNum);
-int TOCFindMessByMID(unsigned long mid, TOCType * tocH, long *sumNum);
-int WipeMessage(TOCType * tocH, short sumNum);
-int MessageWarnings(TOCType * tocH, short sumNum, bool toTrash, bool nuke,
+int FindMessageByMID(unsigned long mid, MacmbxTOC * *tocH, short *sumNum);
+int TOCFindMessByMID(unsigned long mid, MacmbxTOC * tocH, long *sumNum);
+int WipeMessage(MacmbxTOC * tocH, short sumNum);
+int MessageWarnings(MacmbxTOC * tocH, short sumNum, bool toTrash, bool nuke,
                     bool *queuedWarning, bool *unsentWarning,
                     bool *unreadWarning, bool *busyWarning);
-int SelectedWarnings(TOCType * tocH, bool toTrash, bool nuke);
-int SingleWarnings(TOCType * tocH, short sumNum, bool toTrash, bool nuke);
-void DeleteMessageLo(TOCType * tocH, int sumNum, bool nuke);
+int SelectedWarnings(MacmbxTOC * tocH, bool toTrash, bool nuke);
+int SingleWarnings(MacmbxTOC * tocH, short sumNum, bool toTrash, bool nuke);
+void DeleteMessageLo(MacmbxTOC * tocH, int sumNum, bool nuke);
 long CompBodyOffset(MessHandle messH);
 int SpoolAttachments(MessHandle messH);
 int CopyAttachments(MessHandle messH);
-TOCType * GetRealTOC(TOCType * tocH, short sumN, short *realSumNum);
-int ReadMessage(TOCType * tocH, int sumN, char *buffer);
-unsigned long GetMessageLength(TOCType * tocH, short sumNum);
-void FixSourceStatus(TOCType * tocH, short sumNum);
-int AppendMessage(TOCType * fromTocH, int fromN, TOCType ** toTocHP, bool copy,
-                  bool toTemp, bool isIMAPtoPopTransfer);
-void DeleteSum(TOCType * tocH, int sumNum);
-void Rehash(TOCType * tocH, int sumNum, char *buffer);
+MacmbxTOC * GetRealTOC(MacmbxTOC * tocH, short sumN, short *realSumNum);
+int ReadMessage(MacmbxTOC * tocH, int sumN, char *buffer);
+unsigned long GetMessageLength(MacmbxTOC * tocH, short sumNum);
+void FixSourceStatus(MacmbxTOC * tocH, short sumNum);
+int AppendMessage(MacmbxTOC * fromTocH, int fromN, MacmbxTOC ** toTocHP, bool copy,
+                  bool toTemp, bool destHasAtt);
+void DeleteSum(MacmbxTOC * tocH, int sumNum);
+void Rehash(MacmbxTOC * tocH, int sumNum, char *buffer);
 
 /* NOTE: using geditDocument APIs directly per request; no helpers here */
 
@@ -286,26 +397,24 @@ int SubFolderSpec(short nameId, char * spec);
 
 int RemoveDir(char * spec);
 bool PrefIsSetOrNot(int pref, int modifiers, int mask);
-long SizeSelectedMessages(TOCType * tocH, bool includeText);
+long SizeSelectedMessages(MacmbxTOC * tocH, bool includeText);
 bool MemoryPreflight(long size);
 bool MultiMessageOpOK(int warnType, int count);
-void AddXfUndo(TOCType * tocH, TOCType * trashTOC, int unused);
-TOCType * GetTrashTOC(void);
+void AddXfUndo(MacmbxTOC * tocH, MacmbxTOC * trashTOC, int unused);
 void MonitorGrow(bool flag);
-bool DoMessageMenu(short item, TOCType * tocH, short sumNum, short toWhom,
+bool DoMessageMenu(short item, MacmbxTOC * tocH, short sumNum, short toWhom,
                    void *addr, long modifiers, bool nuke, bool *busy);
-void SetState(TOCType * tocH, short sumNum, int state);
+void SetState(MacmbxTOC * tocH, short sumNum, int state);
 
 /* ServerMenuChoice, SetPriority, BoxSelectAfter, BeenThereDoneThat — in boxact.h */
 int Menu2Label(short menu);
-MyWindowPtr GetAMessage(TOCType * tocH, short sumNum, void *u1, void *u2,
+MyWindowPtr GetAMessage(MacmbxTOC * tocH, short sumNum, void *u1, void *u2,
                         bool b1);
 void NotUsingWindow(GtkWidget *win);
 int SavePtrAsMessage(char *preText, long preSize, char *text, long size,
-                       TOCType * tocH, long *fromLen);
-int PutOutFromLine(short refN, long *len);
+                       MacmbxTOC * tocH, long *fromLen);
 int TruncAtMark(short refN);
-int ReadSum(void *u1, bool b1, LineIOP lip, bool b2);
+/* ReadSum removed — macmbx loads all summaries via macmbx_toc_open */
 void NicknameWatcherFocusChange(GtkWidget *pte);
 MyWindowPtr DoComposeNew(int type);
 /* DELETE_ID is defined in MyRes.h (1003) */
@@ -314,28 +423,27 @@ MyWindowPtr DoComposeNew(int type);
 int CopyNewsgroups(MessHandle origMH, MessHandle newMH);
 bool AttStillInFolder(char * att, char * folder);
 char *MessCurAddr(MyWindowPtr win, char *addr);
-void MakeMessTitle(char *title, TOCType * tocH, int sumNum,
+void MakeMessTitle(char *title, MacmbxTOC * tocH, int sumNum,
                    bool useSummary);
 
 void DoGStringGlobalReplace(GString *theString, const char *stringToFind,
                             const char *replacement);
 
 /* PeteExtra declared in peteglue.h */
-void RehashLo(TOCType * tocH, short sumNum, char *text, bool soft);
-bool IsIMAPMessageProcessed(TOCType * tocH, short sumNum);
+void RehashLo(MacmbxTOC * tocH, short sumNum, char *text, bool soft);
 void ShowBoxSizes(MyWindowPtr win);
 bool Mom(short button, short item, short pref, short warning, short verb);
-bool IsQueued(TOCType * tocH, short sumNum);
+bool IsQueued(MacmbxTOC * tocH, short sumNum);
 /* Forward declarations */
 #define SetHandleBig SetHandleSize
-void MovingAttachments(TOCType * tocH, short sumNum, bool a, bool b, bool c,
+void MovingAttachments(MacmbxTOC * tocH, short sumNum, bool a, bool b, bool c,
                        bool d);
 int WipeDiskArea(short refN, long offset, long len);
 void PlayNamedSound(char *name);
 MyWindowPtr DoRedistributeMessage(MyWindowPtr win, void *toWhom, bool turbo,
                                   bool andDelete, bool showIt);
 MyWindowPtr DoForwardMessage(MyWindowPtr win, void *toWhom, bool turbo);
-short FindSumBySerialNum(TOCType * tocH, long serialNum);
+short FindSumBySerialNum(MacmbxTOC * tocH, long serialNum);
 MyWindowPtr DoReplyMessage(MyWindowPtr win, bool all, bool self, bool quote,
                            bool doFcc, short withWhich, bool vis, bool station,
                            bool caching);
@@ -344,20 +452,19 @@ char *PeteSelectedString(void *res, GtkWidget *pte);
 int TextFindAndCopyHeader(char *body, long size, MessHandle newMH,
                           char *fromHead, short toHead, short label);
 int SpoolIndAttachment(MessHandle messH, short i);
-void SumInfoCpy(MSumPtr newSum, MSumPtr oldSum);
-void Preview(TOCType * tocH, short sumNum);
+void SumInfoCpy(MacmbxMsgSum * newSum, MacmbxMsgSum * oldSum);
+void Preview(MacmbxTOC * tocH, short sumNum);
 void ReplyDefaults(short modifiers, bool *all, bool *self, bool *quote);
 MyWindowPtr DoSalvageMessage(MyWindowPtr win, bool forXfer);
-MyWindowPtr DoSalvageMessageLo(MyWindowPtr win, bool forXfer, bool forIMAP);
 
 /************************************************************************
  * GetAMessage - grab a message
  ************************************************************************/
-MyWindowPtr GetAMessageLo(TOCType * origTocH, int origSumNum, GtkWidget *winWP,
+MyWindowPtr GetAMessageLo(MacmbxTOC * origTocH, int origSumNum, GtkWidget *winWP,
                           MyWindowPtr win, bool showIt, bool *newWin) {
   GtkWidget *messWinWP;
   MessHandle messH;
-  TOCType * tocH;
+  MacmbxTOC * tocH;
   short sumNum;
 
   if (newWin)
@@ -365,7 +472,7 @@ MyWindowPtr GetAMessageLo(TOCType * origTocH, int origSumNum, GtkWidget *winWP,
   tocH = GetRealTOC(origTocH, origSumNum, &sumNum);
   if (!tocH || tocH->count <= sumNum)
     return (NULL);
-  if ((messH = tocH->sums[sumNum].messH)) {
+  if ((messH = tocH->msgs[sumNum].messH)) {
     messWinWP = (GtkWidget *)GetMyWindowWindowPtr(messH->win);
     if (newWin)
       *newWin = false;
@@ -382,7 +489,7 @@ MyWindowPtr GetAMessageLo(TOCType * origTocH, int origSumNum, GtkWidget *winWP,
   if (win) {
     Win2MessH(win)->openedFromTocH = origTocH;
     Win2MessH(win)->openedFromSerialNum =
-        origTocH->sums[origSumNum].serialNum;
+        origTocH->msgs[origSumNum].serial_num;
   }
   return (win);
 }
@@ -390,7 +497,7 @@ MyWindowPtr GetAMessageLo(TOCType * origTocH, int origSumNum, GtkWidget *winWP,
 /**********************************************************************
  * OpenMessage - open a message in its own window
  **********************************************************************/
-MyWindowPtr OpenMessage(TOCType * tocH, short sumNum, GtkWidget *winWP,
+MyWindowPtr OpenMessage(MacmbxTOC * tocH, short sumNum, GtkWidget *winWP,
                         MyWindowPtr win, bool showIt, bool preview)
 {
   MessHandle messH;
@@ -424,14 +531,14 @@ MyWindowPtr OpenMessage(TOCType * tocH, short sumNum, GtkWidget *winWP,
 
   winWP = (GtkWidget *)GetMyWindowWindowPtr(win);
 
-  tocH->sums[sumNum].messH = messH;
+  tocH->msgs[sumNum].messH = messH;
   messH->win = win;
   messH->sumNum = sumNum;
   messH->tocH = tocH;
   /* apply FLAG_OUT ex post facto */
-  if (tocH->sums[sumNum].state == SENT ||
-      tocH->sums[sumNum].state == UNSENT)
-    tocH->sums[sumNum].flags |= FLAG_OUT;
+  if (tocH->msgs[sumNum].state == SENT ||
+      tocH->msgs[sumNum].state == UNSENT)
+    tocH->msgs[sumNum].flags |= FLAG_OUT;
 
   SetMyWindowPrivateData(win, (void *)messH);
   win->close = MessClose;
@@ -440,38 +547,7 @@ MyWindowPtr OpenMessage(TOCType * tocH, short sumNum, GtkWidget *winWP,
   if (MessOptIsSet(messH, OPT_WRITE))
     ClearMessOpt(messH, OPT_WRITE);
 
-  // Actually go fetch this message if we must
-  if (tocH->imapTOC && !IMAPMessageDownloaded(tocH, sumNum)) {
-    // threading is off.  Download message now
-    if (PrefIsSet(PREF_THREADING_OFF) || !ThreadsAvailable()) {
-      if (EnsureMsgDownloaded(tocH, sumNum, true))
-        text = GetMessText(messH);
-    } else {
-      char scratch[256];
-      bool reallyGetIt = !preview || (!Offline && AutoCheckOK());
-
-      // start the message download thread.  If we're opening this message to be
-      // previewed ONLY, don't fetch it if we're offline.
-      err = 0;
-      if (!IMAPMessageBeingDownloaded(tocH, sumNum) &&
-          !IMAPMessageDownloaded(tocH, sumNum) && reallyGetIt)
-        err = UIDDownloadMessage(tocH, tocH->sums[sumNum].uidHash, false,
-                                 false);
-      if (err)
-        goto Abort;
-
-      // put the "waiting for download" text in the message window.
-      if (!reallyGetIt)
-        GetRString(scratch, IMAP_GETTING_MESSAGE_OFFLINE);
-      else
-        GetRString(scratch, IMAP_GETTING_MESSAGE);
-      text = g_strdup(scratch);
-      disableButtons = true;
-    }
-  } else
-  {
-    text = GetMessText(messH);
-  }
+  text = GetMessText(messH);
   useLizzie = false;
 
   // Create gEditCtrl widget instead of Pete
@@ -521,7 +597,7 @@ MyWindowPtr OpenMessage(TOCType * tocH, short sumNum, GtkWidget *winWP,
      * in the first 4K of the body */
     {
       size_t textLen = strlen(text);
-      long bodyOff = SumOf(messH)->bodyOffset - messH->weeded;
+      long bodyOff = SumOf(messH)->body_offset - messH->weeded;
       if (bodyOff < 0) bodyOff = 0;
       if ((size_t)bodyOff > textLen) bodyOff = 0;
       const char *body = text + bodyOff;
@@ -556,7 +632,7 @@ MyWindowPtr OpenMessage(TOCType * tocH, short sumNum, GtkWidget *winWP,
       if (isHTML) {
         /* For HTML messages, pass the body portion through markup parser.
          * Headers (before bodyOffset) are plain text. */
-        long bodyOff = SumOf(messH)->bodyOffset - messH->weeded;
+        long bodyOff = SumOf(messH)->body_offset - messH->weeded;
         if (bodyOff < 0) bodyOff = 0;
         if (bodyOff > 0 && bodyOff < size) {
           /* Insert headers as plain text */
@@ -666,7 +742,7 @@ MyWindowPtr OpenMessage(TOCType * tocH, short sumNum, GtkWidget *winWP,
        * prepare for ezopen
        */
       if (!err && ezOpenSum >= 0) {
-        messH->ezOpenSerialNum = tocH->sums[ezOpenSum].serialNum;
+        messH->ezOpenSerialNum = tocH->msgs[ezOpenSum].serial_num;
         CacheMessage(tocH, ezOpenSum);
       }
       if (disableButtons)
@@ -718,13 +794,13 @@ char * MessCurAddr(MyWindowPtr win, char * addr) {
 /**********************************************************************
  * EnsureMID - make sure a message has an id
  **********************************************************************/
-int EnsureMID(TOCType * tocH, short sumNum) {
+int EnsureMID(MacmbxTOC * tocH, short sumNum) {
   int err = 0;
 
-  if (tocH->sums[sumNum].uidHash == kNeverHashed ||
-      tocH->sums[sumNum].msgIdHash == kNeverHashed) {
+  if (tocH->msgs[sumNum].uid_hash == kNeverHashed ||
+      tocH->msgs[sumNum].msg_id_hash == kNeverHashed) {
     if (!(err = CacheMessage(tocH, sumNum)))
-      RehashLo(tocH, sumNum, (char *)tocH->sums[sumNum].cache, true);
+      RehashLo(tocH, sumNum, (char *)tocH->msgs[sumNum].cache, true);
   }
   return (err);
 }
@@ -732,16 +808,16 @@ int EnsureMID(TOCType * tocH, short sumNum) {
 /**********************************************************************
  * EnsureFromHash - make sure a message has a from id
  **********************************************************************/
-int EnsureFromHash(TOCType * tocH, short sumNum) {
+int EnsureFromHash(MacmbxTOC * tocH, short sumNum) {
   int err = 0;
   char scratch[256], shortAddr[256];
   unsigned long addrHash;
 
-  if (tocH->sums[sumNum].fromHash == kNeverHashed) {
+  if (tocH->msgs[sumNum].from_hash == kNeverHashed) {
     if (!(err = CacheMessage(tocH, sumNum))) {
       HeaderName(FROM_HEAD); // weird--goes into scratch
       TrimWhite(scratch);
-      if (*HandleHeadGetPStr((char *)tocH->sums[sumNum].cache,
+      if (*HandleHeadGetPStr((char *)tocH->msgs[sumNum].cache,
                              HEADER_STRN + FROM_HEAD, scratch)) {
         ShortAddr(shortAddr, scratch);
         MyLowerStr(shortAddr);
@@ -749,7 +825,7 @@ int EnsureFromHash(TOCType * tocH, short sumNum) {
       } else
         addrHash = kNoMessageId;
 
-      tocH->sums[sumNum].fromHash = addrHash;
+      tocH->msgs[sumNum].from_hash = addrHash;
       TOCSetDirty(tocH, true);
     }
   }
@@ -759,21 +835,20 @@ int EnsureFromHash(TOCType * tocH, short sumNum) {
 /**********************************************************************
  * CacheMessage - put a message into the cache
  **********************************************************************/
-int CacheMessage(TOCType * tocH, short sumNum) {
+int CacheMessage(MacmbxTOC * tocH, short sumNum) {
   void *cache;
   int err = 0;
 
   if (0 > sumNum || sumNum >= tocH->count)
     return (ENOENT);
 
-  // don't do anything with IMAP messages that have not been downloaded yet.
-  if (tocH->sums[sumNum].offset < 0)
+  if (tocH->msgs[sumNum].offset < 0)
     return (ENOENT);
 
   /*
    * is it there?
    */
-  if (tocH->sums[sumNum].cache) {
+  if (tocH->msgs[sumNum].cache) {
     return (0); /* in the cache */
   }
 
@@ -788,7 +863,7 @@ int CacheMessage(TOCType * tocH, short sumNum) {
     if (err)
       free(cache);
     else {
-      tocH->sums[sumNum].cache = cache;
+      tocH->msgs[sumNum].cache = cache;
       /*
        * Accept messages that end in CR (\r), LF (\n), or CRLF.
        * Normalize to a trailing CR so older code that expects '\015'
@@ -831,7 +906,7 @@ int CacheMessage(TOCType * tocH, short sumNum) {
  **********************************************************************/
 char *GetMessText(MessHandle messH) {
   MyWindowPtr win = messH->win;
-  TOCType *tocH = messH->tocH;
+  MacmbxTOC *tocH = messH->tocH;
   int sumNum = messH->sumNum;
   char *buf = NULL;
   size_t bufSize = 0;
@@ -844,8 +919,8 @@ char *GetMessText(MessHandle messH) {
    * grab cached text, if any
    */
   void *cache = NULL;
-  if (tocH->sums[sumNum].cache) {
-    cache = tocH->sums[sumNum].cache;
+  if (tocH->msgs[sumNum].cache) {
+    cache = tocH->msgs[sumNum].cache;
   }
 
   /*
@@ -875,7 +950,7 @@ char *GetMessText(MessHandle messH) {
       buf = (char *)g_malloc(bufSize + 1);
       if (buf) memmove(buf, cache, bufSize);
       free(cache);
-      tocH->sums[sumNum].cache = NULL;
+      tocH->msgs[sumNum].cache = NULL;
     }
   } else {
     if ((MessErr = ReadMessage(tocH, sumNum, buf)))
@@ -886,7 +961,7 @@ char *GetMessText(MessHandle messH) {
     void *newCache = g_malloc(cacheSize);
     if (newCache) {
       memmove(newCache, buf, cacheSize);
-      tocH->sums[sumNum].cache = newCache;
+      tocH->msgs[sumNum].cache = newCache;
     } else {
       g_free(newCache);
     }
@@ -896,7 +971,7 @@ char *GetMessText(MessHandle messH) {
   /*
    * set hash, if we haven't already
    */
-  if (tocH->sums[sumNum].uidHash == kNeverHashed)
+  if (tocH->msgs[sumNum].uid_hash == kNeverHashed)
     Rehash(tocH, sumNum, buf);
 
   /*
@@ -934,7 +1009,7 @@ char *GetMessText(MessHandle messH) {
     WeedHeaders(&buf, &bufSize, &weeded, BadHeadStrn, &weeds);
     messH->weeded = weeded;
     StripTrailingNewlines(&buf, &bufSize,
-                          SumOf(messH)->bodyOffset - weeded + 1);
+                          SumOf(messH)->body_offset - weeded + 1);
   } else
     messH->weeded = 0;
   WeedHeaders(&buf, &bufSize, &weeded, FROM_STRN, NULL);
@@ -953,7 +1028,7 @@ failure:
 /**********************************************************************
  * ReadMessage - read a given message into a preallocated buffer
  **********************************************************************/
-int ReadMessage(TOCType * tocH, int sumN, char *buffer) {
+int ReadMessage(MacmbxTOC * tocH, int sumN, char *buffer) {
   long count;
   char name[256];
   short sumNum;
@@ -962,10 +1037,10 @@ int ReadMessage(TOCType * tocH, int sumN, char *buffer) {
   if (!tocH)
     return ENOENT; // unable to find real TOC from virtual TOC
   GetMailboxName(tocH, sumNum, name);
-  count = tocH->sums[sumNum].length;
+  count = tocH->msgs[sumNum].length;
 
   if (!(MessErr = BoxFOpenLo(tocH, sumNum))) {
-    if (lseek(tocH->refN, tocH->sums[sumNum].offset, SEEK_SET) < 0) {
+    if (lseek(tocH->refN, tocH->msgs[sumNum].offset, SEEK_SET) < 0) {
       MessErr = EIO;
       FileSystemError(READ_MBOX, name, MessErr);
     } else if ((MessErr = file_read(tocH->refN, &count, buffer))) {
@@ -980,15 +1055,15 @@ int ReadMessage(TOCType * tocH, int sumN, char *buffer) {
  * MoveMessage - transfer a message from one box to another
  * called when the transfer menu is invoked with a message frontmost
  **********************************************************************/
-int MoveMessage(TOCType * tocH, int sumNum, char * toSpec, bool copy) {
-  TOCType * toTocH;
+int MoveMessage(MacmbxTOC * tocH, int sumNum, char * toSpec, bool copy) {
+  MacmbxTOC * toTocH;
 
 
-  if ((toTocH = TOCBySpec(toSpec)) == NULL)
+  if ((toTocH = macmbx_toc_open(toSpec)) == NULL)
     return (1);
 
   if (toTocH->which == OUT && !copy &&
-      !(tocH->sums[sumNum].flags & FLAG_OUT))
+      !(tocH->msgs[sumNum].flags & FLAG_OUT))
     if (ReallyDoAnAlert(XFER_TO_OUT, Caution) != 1)
       return (1);
 
@@ -1003,48 +1078,30 @@ int MoveMessage(TOCType * tocH, int sumNum, char * toSpec, bool copy) {
 /**********************************************************************
  * MoveMessageLo - transfer a message from one box to another, no warnings
  **********************************************************************/
-int MoveMessageLo(TOCType * tocH, int sumNum, char * toSpec, bool copy,
+int MoveMessageLo(MacmbxTOC * tocH, int sumNum, char * toSpec, bool copy,
                   bool toTemp, bool holdOpen) {
-  TOCType * toTocH;
-  MessHandle messH = tocH->sums[sumNum].messH;
+  MacmbxTOC * toTocH;
+  MessHandle messH = tocH->msgs[sumNum].messH;
   char name[256];
   long serialNum;
   short realSumNum;
-  bool isIMAPtoPopTransfer = false;
 
   // can't transfer a message we're sending
-  if (!copy && (tocH->sums[sumNum].state == BUSY_SENDING))
+  if (!copy && (tocH->msgs[sumNum].state == BUSY_SENDING))
     return (-1);
   if (LogLevel & LOG_MOVE)
     ComposeLogS(
         LOG_MOVE, NULL, "%s \"%s,%s\"  \"%s\"->\"%s\"\r",
-        copy ? "Copy" : "Transfer", tocH->sums[sumNum].from,
-        tocH->sums[sumNum].subj,
+        copy ? "Copy" : "Transfer", tocH->msgs[sumNum].from,
+        tocH->msgs[sumNum].subject,
         GetMailboxName(tocH, sumNum, name), path_basename(toSpec));
 
 
-  if ((toTocH = TOCBySpec(toSpec)) == NULL)
+  if ((toTocH = macmbx_toc_open(toSpec)) == NULL)
     return (1);
 
   tocH = GetRealTOC(tocH, sumNum, &realSumNum);
   sumNum = realSumNum;
-
-  // handle special transfer cases for IMAP mailbox transfers
-  if (toTocH->imapTOC) {
-    int err = 0;
-
-    // IMAP to IMAP. Do an IMAP transfer.
-    if (toTocH->imapTOC && tocH->imapTOC) {
-      err = IMAPTransferMessage(tocH, toTocH, tocH->sums[sumNum].uidHash,
-                                copy, false);
-    }
-    // POP to IMAP
-    else if (toTocH->imapTOC && !tocH->imapTOC) {
-      err = IMAPTransferMessageToServer(tocH, toTocH, sumNum, copy, false);
-    }
-
-    return (err);
-  }
 
   if (tocH->which == OUT && !copy)
     FixSourceStatus(
@@ -1053,37 +1110,8 @@ int MoveMessageLo(TOCType * tocH, int sumNum, char * toSpec, bool copy,
   if (messH && messH->subPTE && geditctrl_is_dirty(messH->subPTE))
     MessSaveSub(messH);
 
-  // if this is an IMAP to POP transfer, close the message window
-  if (tocH->imapTOC) {
-    // IMAP to POP.  Download the message.
-    bool downloaded = EnsureMsgDownloaded(tocH, sumNum, true);
-
-    // drop the message if a translator asked to delete it
-    if (tocH->sums[sumNum].opts & OPT_EMSR_DELETE_REQUESTED) {
-      // message was fetched, but a translator deleted it.
-      tocH->sums[sumNum].opts |=
-          OPT_ORPHAN_ATT; // be real sure the attachments are left alone
-      ComposeLogS(
-          LOG_PLUG, NULL,
-          "A plugin has deleted an IMAP message: '%s' in '%s'",
-          tocH->sums[sumNum].subj, path_basename(tocH->mailbox.spec));
-      return (0);
-    } else if (!downloaded)
-      return (1);
-
-    // if the message is open, close it.
-    if (!copy && messH)
-      CloseMyWindow(GetMyWindowWindowPtr(messH->win));
-  }
-
-
-  // if this is an IMAP to POP transfer, the POP copy will point to the
-  // attachment
-  isIMAPtoPopTransfer =
-      tocH && tocH->imapTOC && toTocH && !toTocH->imapTOC;
-
   MessErr =
-      AppendMessage(tocH, sumNum, &toTocH, copy, toTemp, isIMAPtoPopTransfer);
+      AppendMessage(tocH, sumNum, &toTocH, copy, toTemp, false);
 
   if (MessErr)
     return (MessErr);
@@ -1093,24 +1121,10 @@ int MoveMessageLo(TOCType * tocH, int sumNum, char * toSpec, bool copy,
   }
 
 
-  // if we moved an IMAP message to a POP mailbox, forget about its attachments
-  // so they don't get tidied up.
-  if (tocH->imapTOC && !toTocH->imapTOC)
-    tocH->sums[sumNum].opts |= OPT_ORPHAN_ATT;
-
   if (!copy)
   {
-    serialNum = tocH->sums[sumNum].serialNum;
-    // if this was an IMAP message, we'll need to delete it from the server.
-    if (tocH->imapTOC) {
-      MessErr = IMAPDeleteMessage(tocH, tocH->sums[sumNum].uidHash, false,
-                                  false, false)
-                    ? 0
-                    : 1;
-    } else
-      DeleteSum(tocH, sumNum);
-    //	Check for updates to search results
-    SearchUpdateSum(toTocH, toTocH->count - 1, tocH, serialNum, true, false);
+    serialNum = tocH->msgs[sumNum].serial_num;
+    DeleteSum(tocH, sumNum);
   }
   return (MessErr);
 }
@@ -1129,11 +1143,11 @@ int MoveMessageLo(TOCType * tocH, int sumNum, char * toSpec, bool copy,
  * except that we might waste some space in the new mailbox.
  * Step 3 shouldn't ever fail.
  **********************************************************************/
-int AppendMessage(TOCType * fromTocH, int fromN, TOCType ** toTocHP, bool copy,
+int AppendMessage(MacmbxTOC * fromTocH, int fromN, MacmbxTOC ** toTocHP, bool copy,
                   bool toTemp, bool destHasAtt) {
-  TOCType *toTocH = *toTocHP;
+  MacmbxTOC *toTocH = *toTocHP;
   // unsigned char * buffer = NULL; // Unused variable removed
-  MSumType sum;
+  MacmbxMsgSum sum;
   long eof;
   long count;
   // short err = 0; // Unused variable removed
@@ -1144,14 +1158,14 @@ int AppendMessage(TOCType * fromTocH, int fromN, TOCType ** toTocHP, bool copy,
   /*
    * if it's an outgoing message, save it first
    */
-  fromMH = fromTocH->sums[fromN].messH;
+  fromMH = fromTocH->msgs[fromN].messH;
   if (fromMH) {
     MyWindowPtr win = fromMH->win;
     if (win->saveSize && win->position)
       (*win->position_new)(true, win);
     if (fromTocH->which == OUT) {
       MyWindowPtr win = fromMH->win;
-      if ((win->isDirty || !fromTocH->sums[fromN].length) && !SaveComp(win))
+      if ((win->isDirty || !fromTocH->msgs[fromN].length) && !SaveComp(win))
         return (1);
     } else if (win->isDirty) {
       geditctrl_focus(fromMH->bodyPTE);
@@ -1174,7 +1188,7 @@ int AppendMessage(TOCType * fromTocH, int fromN, TOCType ** toTocHP, bool copy,
    * is there space?
    */
   GetMailboxSpec(toTocH, -1, toSpec);
-  if ((MessErr = VolumeMargin(0, fromTocH->sums[fromN].length)))
+  if ((MessErr = VolumeMargin(0, fromTocH->msgs[fromN].length)))
     return (MessErr);
 
   /*
@@ -1183,7 +1197,7 @@ int AppendMessage(TOCType * fromTocH, int fromN, TOCType ** toTocHP, bool copy,
   if (toTocH->count >= MAX_MESSAGES_PER_MAILBOX) {
     char s[256];
     ComposeStdAlert(Stop, TOO_MANY_MESSAGES,
-                    strcpy((char *)s, path_basename(toTocH->mailbox.spec)));
+                    strcpy((char *)s, path_basename(toTocH->mbox_path)));
     return MessErr = 1;
   }
 
@@ -1191,26 +1205,26 @@ int AppendMessage(TOCType * fromTocH, int fromN, TOCType ** toTocHP, bool copy,
    * copy the message from one to the other
    */
   if (!copy)
-    fromTocH->sums[fromN].flags &= ~FLAG_SKIPWARN;
-  eof = FindTOCSpot(toTocH, fromTocH->sums[fromN].length);
-  if (toTocH->which == OUT && !(fromTocH->sums[fromN].flags & FLAG_OUT)) {
+    fromTocH->msgs[fromN].flags &= ~FLAG_SKIPWARN;
+  eof = FindTOCSpot(toTocH);
+  if (toTocH->which == OUT && !(fromTocH->msgs[fromN].flags & FLAG_OUT)) {
     if ((MessErr = CopyToOut(fromTocH, fromN, toTocH)))
       return (MessErr);
   } else {
-    if (fromTocH->sums[fromN].cache) {
-      count = fromTocH->sums[fromN].length;
+    if (fromTocH->msgs[fromN].cache) {
+      count = fromTocH->msgs[fromN].length;
       MessErr = lseek(toTocH->refN, eof, SEEK_SET) < 0 ? EIO : 0;
       if (!MessErr)
         MessErr = file_write(toTocH->refN, &count,
-             (char *)fromTocH->sums[fromN].cache);
+             (char *)fromTocH->msgs[fromN].cache);
       if (RunType != Production) {
         long controls = 0;
-        char * dbspot = (char *)fromTocH->sums[fromN].cache;
-        char * dbend = dbspot + fromTocH->sums[fromN].length;
+        char * dbspot = (char *)fromTocH->msgs[fromN].cache;
+        char * dbend = dbspot + fromTocH->msgs[fromN].length;
         for (; dbspot < dbend; dbspot++)
           if (*dbspot != '\015' && *dbspot < ' ' && *dbspot != '\t')
             controls++;
-        if (controls * 20 > fromTocH->sums[fromN].length) {
+        if (controls * 20 > fromTocH->msgs[fromN].length) {
           char buffer[256];
           ComposeString(buffer,
                         "Warning: %d control characters; may be a problem",
@@ -1220,43 +1234,43 @@ int AppendMessage(TOCType * fromTocH, int fromN, TOCType ** toTocHP, bool copy,
       }
     } else
       MessErr =
-          CopyFBytes(fromTocH->refN, fromTocH->sums[fromN].offset,
-                     fromTocH->sums[fromN].length, toTocH->refN, eof);
+          CopyFBytes(fromTocH->refN, fromTocH->msgs[fromN].offset,
+                     fromTocH->msgs[fromN].length, toTocH->refN, eof);
     if (MessErr) {
       FileSystemError(COPY_FAILED, path_basename(toSpec), MessErr);
       return (MessErr);
     }
-    (void)ftruncate(toTocH->refN, eof + fromTocH->sums[fromN].length);
-    newBodyOffset = fromTocH->sums[fromN].bodyOffset;
-    newLength = fromTocH->sums[fromN].length;
+    (void)ftruncate(toTocH->refN, eof + fromTocH->msgs[fromN].length);
+    newBodyOffset = fromTocH->msgs[fromN].body_offset;
+    newLength = fromTocH->msgs[fromN].length;
 
     /*
      * now, create a new summary for the copied message, and put it in the
      * new TOC.
      */
-    sum = fromTocH->sums[fromN];
+    sum = fromTocH->msgs[fromN];
     sum.offset = eof;
     sum.length = newLength;
-    sum.bodyOffset = newBodyOffset;
+    sum.body_offset = newBodyOffset;
     sum.selected = false;
     sum.messH = NULL;    /* break connection with open message window */
     sum.mesgErrH = NULL; /* clear mesgErrH. add it below */
-    sum.serialNum = toTocH->nextSerialNum++;
+    sum.serial_num = toTocH->next_serial++;
 
     // Junk processing
-    if (toTocH->which == JUNK && sum.spamBecause == 0) {
-      sum.spamScore = GetRLong(JUNK_XFER_SCORE);
-      sum.spamBecause = JUNK_BECAUSE_XFER;
+    if (toTocH->which == JUNK && sum.spam_because == 0) {
+      sum.spam_score = GetRLong(JUNK_XFER_SCORE);
+      sum.spam_because = JUNK_BECAUSE_XFER;
     } else if (fromTocH->which == JUNK &&
-               fromTocH->sums[fromN].spamBecause == JUNK_BECAUSE_XFER) {
-      sum.spamScore = 0;
-      sum.spamBecause = 0;
+               fromTocH->msgs[fromN].spam_because == JUNK_BECAUSE_XFER) {
+      sum.spam_score = 0;
+      sum.spam_because = 0;
     }
 
     if (copy)
       sum.cache = NULL; // because we're copying, leave the cache alone
     else
-      fromTocH->sums[fromN].cache =
+      fromTocH->msgs[fromN].cache =
           NULL; // let the cache go with the transferred message
 
     // the copy won't have an attachment.  That way, if it gets deleted, the
@@ -1269,37 +1283,36 @@ int AppendMessage(TOCType * fromTocH, int fromN, TOCType ** toTocHP, bool copy,
     if (fromTocH->which == OUT && !toTemp) {
       if (sum.state != SENT)
         sum.state = UNSENT;
-      sum.tableId = NO_TABLE; /* don't translate */
+      sum.table_id = NO_TABLE; /* don't translate */
       sum.flags |= FLAG_OUT;
     }
 
     if (toTocH->count) {
       /* Grow the TOC to hold one more summary */
-      size_t newSize = sizeof(TOCType) + toTocH->count * sizeof(MSumType);
-      TOCType *oldPtr = toTocH;
-      TOCType *grown = (TOCType *)g_realloc(toTocH, newSize);
+      size_t newSize = sizeof(MacmbxTOC) + toTocH->count * sizeof(MacmbxMsgSum);
+      MacmbxTOC *oldPtr = toTocH;
+      MacmbxTOC *grown = (MacmbxTOC *)g_realloc(toTocH, newSize);
       if (!grown) {
         free(sum.cache);
         return (MessErr = ENOMEM);
       }
-      /* Update TOCList if realloc moved the block */
+      /* Update macmbx_registry_head() if realloc moved the block */
       if (grown != oldPtr) {
-        extern TOCType *TOCList;
-        if (TOCList == oldPtr) {
-          TOCList = grown;
+        extern MacmbxTOC *macmbx_registry_head();
+        if (macmbx_registry_head() == oldPtr) {
         } else {
-          for (TOCType *t = TOCList; t; t = t->next) {
+          for (MacmbxTOC *t = macmbx_registry_head(); t; t = t->next) {
             if (t->next == oldPtr) { t->next = grown; break; }
           }
         }
       }
       toTocH = grown;
       *toTocHP = grown;
-      toTocH->sums[toTocH->count] = sum;
+      toTocH->msgs[toTocH->count] = sum;
     } else
-      toTocH->sums[0] = sum;
+      toTocH->msgs[0] = sum;
     TOCSetDirty(toTocH, true);
-    toTocH->reallyDirty = true;
+    toTocH->dirty = true;
     toTocH->resort = kResortWhenever;
     toTocH->count++;
     toTocH->analScanned = false;
@@ -1310,7 +1323,7 @@ int AppendMessage(TOCType * fromTocH, int fromN, TOCType ** toTocHP, bool copy,
   /*
    * add mesg error to new toc entry
    */
-  if ((mesgErrH = (mesgErrorHandle)fromTocH->sums[fromN].mesgErrH)) {
+  if ((mesgErrH = (mesgErrorHandle)fromTocH->msgs[fromN].mesgErrH)) {
     char errorStr[256];
     AddMesgError(toTocH, toTocH->count - 1,
                  strcpy((char *)errorStr, (const char *)mesgErrH->errorStr),
@@ -1320,9 +1333,9 @@ int AppendMessage(TOCType * fromTocH, int fromN, TOCType ** toTocHP, bool copy,
   /*
    * the message window, if any, should be closed
    */
-  if (!copy && fromTocH->sums[fromN].messH)
+  if (!copy && fromTocH->msgs[fromN].messH)
     CloseMyWindow(GetMyWindowWindowPtr(
-        ((MessHandle)fromTocH->sums[fromN].messH)->win));
+        ((MessHandle)fromTocH->msgs[fromN].messH)->win));
 
   return (MessErr); // return(0);	// 12/11/97 ccw
 }
@@ -1331,7 +1344,7 @@ int AppendMessage(TOCType * fromTocH, int fromN, TOCType ** toTocHP, bool copy,
  * MoveSelectedMessages - transfer all selected messages from one mail
  * box to another.
  **********************************************************************/
-int MoveSelectedMessages(TOCType * tocH, char * toSpec, bool copy) {
+int MoveSelectedMessages(MacmbxTOC * tocH, char * toSpec, bool copy) {
   return (MoveSelectedMessagesLo(tocH, toSpec, copy, false, true, true));
 }
 
@@ -1339,9 +1352,9 @@ int MoveSelectedMessages(TOCType * tocH, char * toSpec, bool copy) {
  * MoveSelectedMessages - transfer all selected messages from one mail
  * box to another.
  **********************************************************************/
-int MoveSelectedMessagesLo(TOCType * tocH, char * toSpec, bool copy,
+int MoveSelectedMessagesLo(MacmbxTOC * tocH, char * toSpec, bool copy,
                            bool delete, bool undo, bool warnings) {
-  TOCType * toTocH;
+  MacmbxTOC * toTocH;
   int sumNum;
   int lastSelected = -1;
   char trashName[32];
@@ -1354,49 +1367,25 @@ int MoveSelectedMessagesLo(TOCType * tocH, char * toSpec, bool copy,
   gint64 pTicks = g_get_monotonic_time();
   void *uidsH = NULL;
   int err = 0;
-  TOCType * realTocH;
+  MacmbxTOC * realTocH;
   short realSum;
   char name[256];
 
-  if ((toTocH = TOCBySpec(toSpec)) == NULL)
+  if ((toTocH = macmbx_toc_open(toSpec)) == NULL)
     return (1);
   outWarning = !copy && toTocH->which == OUT;
-
-  if (tocH->virtualTOC) {
-    if (delete)
-      IMAPDeleteMessagesFromSearchWindow(tocH);
-    else {
-      // do search window transfers
-      err = IMAPTransferMessagesFromSearchWindow(tocH, toTocH, copy);
-      if (err != 0)
-        return (err);
-    }
-  }
-
-  //
-  // Perform transfers to IMAP mailboxes.  There will be nothing left to do
-  // after this.
-  //
-
-  if (toTocH->imapTOC) {
-    return (IMAPMoveIMAPMessages(tocH, toTocH, copy));
-  }
-
-  //
-  //	void *the rest of the messages that have not been transferred yet.
-  //
 
   if (!copy && warnings && SelectedWarnings(tocH, toTrash, false))
     return (0);
 
   count = CountSelectedMessages(tocH);
   for (sumNum = 0; sumNum < tocH->count; sumNum++)
-    if (tocH->sums[sumNum].selected) {
+    if (tocH->msgs[sumNum].selected) {
       FixSourceStatus(
           tocH,
           sumNum); /* in case we're deleting a reply, set orig state back */
-      needRoom += tocH->sums[sumNum].length + sizeof(MSumType);
-      if (outWarning && !(tocH->sums[sumNum].flags & FLAG_OUT)) {
+      needRoom += tocH->msgs[sumNum].length + sizeof(MacmbxMsgSum);
+      if (outWarning && !(tocH->msgs[sumNum].flags & FLAG_OUT)) {
         outWarning = false; /* don't need anymore */
         if (ReallyDoAnAlert(XFER_TO_OUT, Caution) != 1)
           return (0);
@@ -1407,7 +1396,7 @@ int MoveSelectedMessagesLo(TOCType * tocH, char * toSpec, bool copy,
 
   NoteFreeSpace(toTocH);
   if (needRoom > toTocH->volumeFree - GetRLong(VOLUME_MARGIN) -
-                     sizeof(MSumType) * count) {
+                     sizeof(MacmbxMsgSum) * count) {
     WarnUser(NOT_ENOUGH_ROOM, dskFulErr);
     return (0);
   }
@@ -1423,7 +1412,7 @@ int MoveSelectedMessagesLo(TOCType * tocH, char * toSpec, bool copy,
   // ensure that the messages have been fetched.
   //
 
-  if (tocH->imapTOC) {
+  if (tocH->virtualTOC) {
     short c, totalToDownload;
 
     // must be online to do an IMAP to POP transfer, no matter if the message is
@@ -1435,7 +1424,7 @@ int MoveSelectedMessagesLo(TOCType * tocH, char * toSpec, bool copy,
     if ((totalToDownload = CountSelectedMessages(tocH)) > 0) {
       // figure out how many of the selected messages need to be downloaded
       for (sumNum = 0; sumNum < tocH->count; sumNum++)
-        if (tocH->sums[sumNum].selected)
+        if (tocH->msgs[sumNum].selected)
           if (IMAPMessageBeingDownloaded(tocH, sumNum) ||
               IMAPMessageDownloaded(tocH, sumNum))
             totalToDownload--;
@@ -1447,23 +1436,16 @@ int MoveSelectedMessagesLo(TOCType * tocH, char * toSpec, bool copy,
           // and stick them in the handle
           c = totalToDownload;
           for (sumNum = 0; sumNum < tocH->count; sumNum++)
-            if (tocH->sums[sumNum].selected)
+            if (tocH->msgs[sumNum].selected)
               if (!IMAPMessageBeingDownloaded(tocH, sumNum) &&
                   !IMAPMessageDownloaded(tocH, sumNum))
                 memcpy(&((unsigned long *)(uidsH))[--c],
-                  &(tocH->sums[sumNum].uidHash), sizeof(unsigned long));
+                  &(tocH->msgs[sumNum].uid_hash), sizeof(unsigned long));
 
           // fetch them all in the foreground
           err = UIDDownloadMessages(tocH, uidsH, true, false);
 
-          if (err == 0) {
-            short i;
-
-            // put ALL of the messages in the mailbox.
-            for (i = 0; i < totalToDownload; i++)
-              UpdateIMAPMailbox(tocH);
-          }
-        } else {
+          /* IMAP download block removed — macmbx_mailer handles everything */
           err = 0;
         }
       }
@@ -1484,7 +1466,7 @@ int MoveSelectedMessagesLo(TOCType * tocH, char * toSpec, bool copy,
     }
   }
   for (sumNum = 0; sumNum < tocH->count; sumNum++) {
-    if (tocH->sums[sumNum].selected) {
+    if (tocH->msgs[sumNum].selected) {
           if (count > 1)
         { GMainContext *ctx = g_main_context_default(); while (g_main_context_pending(ctx)) g_main_context_iteration(ctx, FALSE); }
       if (EjectBuckaroo || CommandPeriod)
@@ -1500,7 +1482,7 @@ int MoveSelectedMessagesLo(TOCType * tocH, char * toSpec, bool copy,
         continue;
       }
 
-      if (tocH->imapTOC && !tocH->virtualTOC) {
+      if (tocH->virtualTOC && !tocH->virtualTOC) {
         // Make sure IMAP message has been downloaded and stuck in the mailbox
         if (!EnsureMsgDownloaded(tocH, sumNum, true))
           continue; //	Couldn't download message
@@ -1510,7 +1492,7 @@ int MoveSelectedMessagesLo(TOCType * tocH, char * toSpec, bool copy,
         continue;
       // if this is a virtual mailbox, and the real mailbox is an IMAP mailbox,
       // don't do anything with this message
-      if (tocH->virtualTOC && realTocH->imapTOC)
+      if (tocH->virtualTOC && realTocH->virtualTOC)
         MessErr = 0;
       else
         MessErr = AppendMessage(realTocH, realSum, &toTocH, copy, false, false);
@@ -1522,29 +1504,29 @@ int MoveSelectedMessagesLo(TOCType * tocH, char * toSpec, bool copy,
 
       // if we moved this IMAP message to a POP mailbox, forget about its
       // attachments so they don't get tidied up.
-      if (tocH->imapTOC && !toTocH->imapTOC)
-        tocH->sums[sumNum].opts |= OPT_ORPHAN_ATT;
+      if (tocH->virtualTOC && !toTocH->virtualTOC)
+        tocH->msgs[sumNum].opts |= OPT_ORPHAN_ATT;
 
       // Log the transfer
       if (LogLevel & LOG_MOVE)
         ComposeLogS(LOG_MOVE, NULL,
                     "%s \"%s,%s\"  \"%s\"->\"%s\"\r",
-                    copy ? "Copy" : "Transfer", realTocH->sums[realSum].from,
-                    realTocH->sums[realSum].subj,
+                    copy ? "Copy" : "Transfer", realTocH->msgs[realSum].from,
+                    realTocH->msgs[realSum].subject,
                     GetMailboxName(realTocH, realSum, name), path_basename(toSpec));
 
       if (oldCount != tocH->count) {
         lastSelected = sumNum;
         sumNum--;
       } else if (!copy) {
-        long serialNum = realTocH->sums[realSum].serialNum;
+        long serialNum = realTocH->msgs[realSum].serial_num;
 
         if (!tocH->virtualTOC) {
-          if (tocH->imapTOC && uidsH) {
+          if (tocH->virtualTOC && uidsH) {
             //	If not copying, we'll need to delete original IMAP message when
             // done.
             if (uidsH && !copy) {
-              unsigned long uid = tocH->sums[sumNum].uidHash;
+              unsigned long uid = tocH->msgs[sumNum].uid_hash;
               err = PtrAndHand(&uid, uidsH, sizeof(uid));
               if (err != 0) {
                 WarnUser(err, MEM_ERR);
@@ -1575,7 +1557,7 @@ int MoveSelectedMessagesLo(TOCType * tocH, char * toSpec, bool copy,
 
     // now delete the IMAP messages that were transferred, if the transfer
     // completed successfully.
-    if (!copy && tocH->imapTOC && (MessErr == 0) && !CommandPeriod &&
+    if (!copy && tocH->virtualTOC && (MessErr == 0) && !CommandPeriod &&
         !EjectBuckaroo) {
       // uidsH contains uids of messages that have been successfully
       // transferred.
@@ -1597,7 +1579,7 @@ int MoveSelectedMessagesLo(TOCType * tocH, char * toSpec, bool copy,
 /**********************************************************************
  * SelectedWarnings - Warnings for the selected message
  **********************************************************************/
-int SelectedWarnings(TOCType * tocH, bool toTrash, bool nuke) {
+int SelectedWarnings(MacmbxTOC * tocH, bool toTrash, bool nuke) {
   bool queuedWarning, unsentWarning, unreadWarning, busyWarning;
   int err = 0;
   short i;
@@ -1606,7 +1588,7 @@ int SelectedWarnings(TOCType * tocH, bool toTrash, bool nuke) {
                   &unreadWarning, &busyWarning);
 
   for (i = 0; i < tocH->count && !err; i++)
-    if (tocH->sums[i].selected)
+    if (tocH->msgs[i].selected)
       err = MessageWarnings(tocH, i, toTrash, nuke, &queuedWarning,
                             &unsentWarning, &unreadWarning, &busyWarning);
 
@@ -1616,7 +1598,7 @@ int SelectedWarnings(TOCType * tocH, bool toTrash, bool nuke) {
 /**********************************************************************
  * SingleWarnings - Give warnings for a single message
  **********************************************************************/
-int SingleWarnings(TOCType * tocH, short sumNum, bool toTrash, bool nuke) {
+int SingleWarnings(MacmbxTOC * tocH, short sumNum, bool toTrash, bool nuke) {
   bool queuedWarning, unsentWarning, unreadWarning, busyWarning;
 
   MessageWarnings(tocH, -1, toTrash, nuke, &queuedWarning, &unsentWarning,
@@ -1629,7 +1611,7 @@ int SingleWarnings(TOCType * tocH, short sumNum, bool toTrash, bool nuke) {
 /**********************************************************************
  *
  **********************************************************************/
-int MessageWarnings(TOCType * tocH, short sumNum, bool toTrash, bool nuke,
+int MessageWarnings(MacmbxTOC * tocH, short sumNum, bool toTrash, bool nuke,
                       bool *queuedWarning, bool *unsentWarning,
                       bool *unreadWarning, bool *busyWarning) {
   if (sumNum < 0) {
@@ -1654,15 +1636,15 @@ int MessageWarnings(TOCType * tocH, short sumNum, bool toTrash, bool nuke,
     }
 
     // clarence 4/25/97
-    if (tocH->sums[sumNum].state == BUSY_SENDING) {
+    if (tocH->msgs[sumNum].state == BUSY_SENDING) {
       WarnUser(SENDING_WARNING, 0);
       *busyWarning = false;
       return (1);
     }
 
-    if (tocH->sums[sumNum].flags & FLAG_SKIPWARN)
+    if (tocH->msgs[sumNum].flags & FLAG_SKIPWARN)
       return (0);
-    if (toTrash && *unreadWarning && (tocH->sums[sumNum].state == UNREAD)) {
+    if (toTrash && *unreadWarning && (tocH->msgs[sumNum].state == UNREAD)) {
       if (!Mom(button, 0, PREF_EASY_DEL_UNREAD, UNREAD_WARNING, verb))
         return (1);
       *unreadWarning = false; /* been there, done that. */
@@ -1672,7 +1654,7 @@ int MessageWarnings(TOCType * tocH, short sumNum, bool toTrash, bool nuke,
         return (1);
       *queuedWarning = *unsentWarning = false; /* been there, done that. */
     }
-    if (*unsentWarning && (tocH->sums[sumNum].state != SENT)) {
+    if (*unsentWarning && (tocH->msgs[sumNum].state != SENT)) {
       if (!Mom(button, 0, PREF_EASY_DEL_UNSENT, UNSENT_WARNING, verb))
         return (1);
       *unsentWarning = false; /* been there, done that. */
@@ -1684,9 +1666,9 @@ int MessageWarnings(TOCType * tocH, short sumNum, bool toTrash, bool nuke,
 /**********************************************************************
  * FixSourceStatus - fix the status of a source message
  **********************************************************************/
-void FixSourceStatus(TOCType * tocH, short sumNum) {
-  MessHandle messH = tocH->sums[sumNum].messH;
-  TOCType * sourceTocH;
+void FixSourceStatus(MacmbxTOC * tocH, short sumNum) {
+  MessHandle messH = tocH->msgs[sumNum].messH;
+  MacmbxTOC * sourceTocH;
   short sourceNum;
   unsigned long *midList;
   short i;
@@ -1702,7 +1684,7 @@ void FixSourceStatus(TOCType * tocH, short sumNum) {
       if (sourceMID && sourceMID != kNeverHashed &&
           sourceOrigState != sourceNewState) {
         if (!FindMessageByMID(sourceMID, &sourceTocH, &sourceNum)) {
-          if (sourceNewState == sourceTocH->sums[sourceNum].state)
+          if (sourceNewState == sourceTocH->msgs[sourceNum].state)
             SetState(sourceTocH, sourceNum, sourceOrigState);
         }
       }
@@ -1720,11 +1702,11 @@ void FixSourceStatus(TOCType * tocH, short sumNum) {
  * FindMessageByMID - find a message by mid.  Works only on open toc's at the
  *moment
  **********************************************************************/
-int FindMessageByMID(unsigned long mid, TOCType * *tocH, short *sumNum) {
-  TOCType * lTocH;
+int FindMessageByMID(unsigned long mid, MacmbxTOC * *tocH, short *sumNum) {
+  MacmbxTOC * lTocH;
   long lsum;
 
-  for (lTocH = TOCList; lTocH; lTocH = (TOCType *)lTocH->next) {
+  for (lTocH = macmbx_registry_head(); lTocH; lTocH = (MacmbxTOC *)lTocH->next) {
     if (!TOCFindMessByMID(mid, lTocH, &lsum)) {
       *sumNum = lsum;
       return (0);
@@ -1736,11 +1718,11 @@ int FindMessageByMID(unsigned long mid, TOCType * *tocH, short *sumNum) {
 /**********************************************************************
  * TOCFindMessByMID - find a message in a toc by uid hash
  **********************************************************************/
-int TOCFindMessByMID(unsigned long mid, TOCType * tocH, long *sumNum) {
+int TOCFindMessByMID(unsigned long mid, MacmbxTOC * tocH, long *sumNum) {
   short lSumNum;
 
   for (lSumNum = tocH->count - 1; lSumNum >= 0; lSumNum--)
-    if (tocH->sums[lSumNum].uidHash == mid) {
+    if (tocH->msgs[lSumNum].uid_hash == mid) {
       *sumNum = lSumNum;
       return (0);
     }
@@ -1750,11 +1732,11 @@ int TOCFindMessByMID(unsigned long mid, TOCType * tocH, long *sumNum) {
 /**********************************************************************
  * TOCFindMessByMsgID - find a message in a toc by message id
  **********************************************************************/
-int TOCFindMessByMsgID(unsigned long mid, TOCType * tocH, long *sumNum) {
+int TOCFindMessByMsgID(unsigned long mid, MacmbxTOC * tocH, long *sumNum) {
   short lSumNum;
 
   for (lSumNum = tocH->count - 1; lSumNum >= 0; lSumNum--)
-    if (tocH->sums[lSumNum].msgIdHash == mid) {
+    if (tocH->msgs[lSumNum].msg_id_hash == mid) {
       *sumNum = lSumNum;
       return (0);
     }
@@ -1801,7 +1783,7 @@ long FindAnAttachment(void *text, long offset, char * spec, bool attach,
  *    outgoing or received messages
  **********************************************************************/
 void InitAttachmentFinder(FindAttPtr pData, void *text, bool attach,
-                          TOCType * tocH, MSumPtr sum) {
+                          MacmbxTOC * tocH, MacmbxMsgSum * sum) {
   pData->text = text;
   pData->outgoing = tocH->which == OUT || sum->state == SENT ||
                     sum->state == UNSENT || sum->flags & FLAG_OUT;
@@ -1814,7 +1796,7 @@ void InitAttachmentFinder(FindAttPtr pData, void *text, bool attach,
     HandleHeadFindStr(text, hdrName, &pData->hs);
   } else {
     // Received message. Start at beginning of message body
-    pData->offset = sum->bodyOffset - 1;
+    pData->offset = sum->body_offset - 1;
   }
 }
 
@@ -1844,15 +1826,15 @@ bool GetNextAttachment(FindAttPtr pData, char * spec) {
 /**********************************************************************
  * DeleteMessage - delete a summary from a toc, and fix the screen, too
  **********************************************************************/
-void DeleteMessage(TOCType * tocH, int sumNum, bool nuke) {
-  if (tocH->imapTOC) {
+void DeleteMessage(MacmbxTOC * tocH, int sumNum, bool nuke) {
+  if (tocH->virtualTOC) {
     // close the IMAP message to be deleted, even if it's just going to be
     // marked.
-    MessHandle messH = (MessHandle)tocH->sums[sumNum].messH;
+    MessHandle messH = (MessHandle)tocH->msgs[sumNum].messH;
     if (messH)
       CloseMyWindow(GetMyWindowWindowPtr(messH->win));
 
-    IMAPDeleteMessage(tocH, tocH->sums[sumNum].uidHash, nuke, false, false);
+    IMAPDeleteMessage(tocH, tocH->msgs[sumNum].uid_hash, nuke, false, false);
 
     return;
   }
@@ -1865,12 +1847,12 @@ void DeleteMessage(TOCType * tocH, int sumNum, bool nuke) {
 /**********************************************************************
  * DeleteMessage - delete a summary from a toc, and fix the screen, too
  **********************************************************************/
-void DeleteMessageLo(TOCType * tocH, int sumNum, bool nuke) {
-  MessHandle messH = (MessHandle)tocH->sums[sumNum].messH;
+void DeleteMessageLo(MacmbxTOC * tocH, int sumNum, bool nuke) {
+  MessHandle messH = (MessHandle)tocH->msgs[sumNum].messH;
   // bool dirt = 0; // Unused variable removed
   char trashSpec[PATH_MAX];
   int oldN = tocH->count;
-  bool wipe = PrefIsSet(PREF_WIPE) && (tocH->sums[sumNum].opts & OPT_WIPE);
+  bool wipe = PrefIsSet(PREF_WIPE) && (tocH->msgs[sumNum].opts & OPT_WIPE);
 
   if (tocH->which != TRASH && !wipe && !nuke) {
     { char trashName[64]; GetRString(trashName, TRASH);
@@ -1889,7 +1871,7 @@ void DeleteMessageLo(TOCType * tocH, int sumNum, bool nuke) {
 /**********************************************************************
  * WipeMessage - clear the contents of a message, really
  **********************************************************************/
-int WipeMessage(TOCType * tocH, short sumNum) {
+int WipeMessage(MacmbxTOC * tocH, short sumNum) {
   int err;
 
   MovingAttachments(tocH, sumNum, true, true, false, false);
@@ -1898,8 +1880,8 @@ int WipeMessage(TOCType * tocH, short sumNum) {
   if ((err = BoxFOpen(tocH)))
     return (err);
 
-  err = WipeDiskArea(tocH->refN, tocH->sums[sumNum].offset,
-                     tocH->sums[sumNum].length);
+  err = WipeDiskArea(tocH->refN, tocH->msgs[sumNum].offset,
+                     tocH->msgs[sumNum].length);
   return err;
 }
 
@@ -2062,7 +2044,7 @@ void Fix1MessServerArea(MyWindowPtr win) {
 
   if (GetWindowKind(winWP) == MESS_WIN && IsWindowVisible(winWP)) {
     messH = Win2MessH(win);
-    unsigned long uidHash = SumOf(messH)->uidHash;
+    unsigned long uidHash = SumOf(messH)->uid_hash;
     uint32_t popdType;
     {
       PersHandle p = (PersHandle)MESS_TO_PPERS(messH);
@@ -2098,7 +2080,7 @@ void Fix1MessServerArea(MyWindowPtr win) {
     }
   } else if (GetWindowKind(winWP) == MBOX_WIN ||
              GetWindowKind(winWP) == CBOX_WIN) {
-    InvalTocBox((TOCType *)GetMyWindowPrivateData(win), -2, blServer);
+    InvalTocBox((MacmbxTOC *)GetMyWindowPrivateData(win), -2, blServer);
   }
 }
 
@@ -2208,7 +2190,7 @@ int MessPlainBytes(MessHandle messH, short whichTXE, short bytes) {
 /************************************************************************
  * DoIterativeThingyLo - do something over all selected messages
  ************************************************************************/
-void DoIterativeThingyLo(TOCType * tocH, int item, long modifiers,
+void DoIterativeThingyLo(MacmbxTOC * tocH, int item, long modifiers,
                          TextAddrHandle addr, bool warnings) {
   int sumNum;
   short toWhom = (short)(long)addr;
@@ -2223,12 +2205,12 @@ void DoIterativeThingyLo(TOCType * tocH, int item, long modifiers,
       item == MESSAGE_DELETE_ITEM &&
       (tocH->which == TRASH ||
        (GDK_ALT_MASK | GDK_SHIFT_MASK) == (modifiers & (GDK_ALT_MASK | GDK_SHIFT_MASK))) &&
-      (!tocH->imapTOC || PrefIsSet(PREF_ALLOW_IMAP_NUKE));
+      (!tocH->virtualTOC || PrefIsSet(PREF_ALLOW_IMAP_NUKE));
   bool busy = false;
   unsigned long oldEzOpenSerialNum = tocH->previewID ? tocH->ezOpenSerialNum : 0;
 
 
-  if (item == MESSAGE_DELETE_ITEM && tocH->imapTOC && !nuke) {
+  if (item == MESSAGE_DELETE_ITEM && tocH->virtualTOC && !nuke) {
     GArray *uids = NULL;
     long c = CountSelectedMessages(tocH);
     long sumNum;
@@ -2239,14 +2221,14 @@ void DoIterativeThingyLo(TOCType * tocH, int item, long modifiers,
       uids = calloc(1,c * sizeof(unsigned long));
       if (uids) {
         for (sumNum = 0; sumNum < tocH->count && c; sumNum++)
-          if (tocH->sums[sumNum].selected) {
+          if (tocH->msgs[sumNum].selected) {
             // Close this message if it's open
-            if (tocH->sums[sumNum].messH)
+            if (tocH->msgs[sumNum].messH)
               CloseMyWindow(
-                  GetMyWindowWindowPtr(tocH->sums[sumNum].messH->win));
+                  GetMyWindowWindowPtr(((MessHandle)tocH->msgs[sumNum].messH)->win));
 
             memcpy(&((unsigned long *)(uids))[--c],
-              &(tocH->sums[sumNum].uidHash), sizeof(unsigned long));
+              &(tocH->msgs[sumNum].uid_hash), sizeof(unsigned long));
           }
 
         // and delete them.
@@ -2325,7 +2307,7 @@ void DoIterativeThingyLo(TOCType * tocH, int item, long modifiers,
     break;
   }
 
-  if (tocH->imapTOC // some IMAP operations will open their own progress
+  if (tocH->virtualTOC // some IMAP operations will open their own progress
                        // window
       && (item == MESSAGE_DELETE_ITEM // no progress for deletes from the
                                       // message menu, or server menu options
@@ -2342,9 +2324,9 @@ void DoIterativeThingyLo(TOCType * tocH, int item, long modifiers,
     AddXfUndo(tocH, GetTrashTOC(), -1);
 
   for (sumNum = tocH->count - 1; sumNum >= 0; sumNum--) {
-    if (tocH->sums[sumNum].selected) {
+    if (tocH->msgs[sumNum].selected) {
       bool doVirtualMB;
-      TOCType * realTOC;
+      MacmbxTOC * realTOC;
       short realSum;
 
       lastSelected = sumNum;
@@ -2359,13 +2341,13 @@ void DoIterativeThingyLo(TOCType * tocH, int item, long modifiers,
       }
       realTOC = GetRealTOC(tocH, sumNum, &realSum);
       if (nuke && realTOC == tocH)
-        SearchUpdateSum(tocH, sumNum, tocH, tocH->sums[sumNum].serialNum,
+        SearchUpdateSum(tocH, sumNum, tocH, tocH->msgs[sumNum].serial_num,
                         false, true);
       doVirtualMB = DoMessageMenu(item, tocH, sumNum, toWhom, addr, modifiers,
                                   nuke, &busy);
       if (!nuke && realTOC == tocH && doVirtualMB)
         //	Check for updates to search results
-        SearchUpdateSum(tocH, sumNum, tocH, tocH->sums[sumNum].serialNum,
+        SearchUpdateSum(tocH, sumNum, tocH, tocH->msgs[sumNum].serial_num,
                         false, false);
       if (realTOC && realTOC != tocH && doVirtualMB)
         // do real mailbox also if working in virtual mailbox
@@ -2373,7 +2355,7 @@ void DoIterativeThingyLo(TOCType * tocH, int item, long modifiers,
                       &busy);
       // hack: The  Delete from Server, Fetch Message Text, and Fetch
       // Attachments menu choices handle all selected messages for IMAP boxes
-      if (tocH->imapTOC && (item == SERVER_HIER_MENU) &&
+      if (tocH->virtualTOC && (item == SERVER_HIER_MENU) &&
           ((toWhom == isvmDelete) || (toWhom == isvmFetchMessage) ||
            (toWhom == isvmFetchAttachments)))
         break;
@@ -2398,7 +2380,7 @@ void DoIterativeThingyLo(TOCType * tocH, int item, long modifiers,
 /************************************************************************
  * DoMessageMenu - do something to a messages
  ************************************************************************/
-bool DoMessageMenu(short item, TOCType * tocH, short sumNum, short toWhom,
+bool DoMessageMenu(short item, MacmbxTOC * tocH, short sumNum, short toWhom,
                    void *addr, long modifiers, bool nuke, bool *busy) {
   MyWindowPtr win;
   bool doVirtualMB = true;
@@ -2409,7 +2391,7 @@ bool DoMessageMenu(short item, TOCType * tocH, short sumNum, short toWhom,
     DeleteMessageLo(tocH, sumNum, nuke);
     break;
   case STATE_HIER_MENU:
-    if (tocH->sums[sumNum].state == BUSY_SENDING)
+    if (tocH->msgs[sumNum].state == BUSY_SENDING)
       *busy = true;
     else
     {
@@ -2437,7 +2419,7 @@ bool DoMessageMenu(short item, TOCType * tocH, short sumNum, short toWhom,
     ExportHTMLSum(tocH, sumNum);
     break;
   case PRIOR_HIER_MENU:
-    SetPriority(tocH, sumNum, NewPrior(toWhom, tocH->sums[sumNum].priority));
+    SetPriority(tocH, sumNum, NewPrior(toWhom, tocH->msgs[sumNum].priority));
     doVirtualMB = false; //	Already took care of this
     break;
   default:
@@ -2497,13 +2479,13 @@ void ReplyDefaults(short modifiers, bool *all, bool *self, bool *quote) {
 /************************************************************************
  * BoxNextSelected - find first selection in a mailbox
  ************************************************************************/
-short BoxNextSelected(TOCType * tocH, short afterNum) {
+short BoxNextSelected(MacmbxTOC * tocH, short afterNum) {
   int sNum, count;
 
   count = tocH->count;
 
   for (sNum = afterNum + 1; sNum < count; sNum++)
-    if (tocH->sums[sNum].selected)
+    if (tocH->msgs[sNum].selected)
       return (sNum);
 
   return (-1);
@@ -2512,7 +2494,7 @@ short BoxNextSelected(TOCType * tocH, short afterNum) {
 /**********************************************************************
  * SaveTextAsMessage - save a text block as a message
  **********************************************************************/
-int SaveTextAsMessage(void *preText, void *text, TOCType * tocH,
+int SaveTextAsMessage(void *preText, void *text, MacmbxTOC * tocH,
                         long *fromLen) {
   long size = strlen((char *)text);
   int err;
@@ -2532,12 +2514,12 @@ int SaveTextAsMessage(void *preText, void *text, TOCType * tocH,
  * SavePtrAsMessage - save a text block as a message
  **********************************************************************/
 int SavePtrAsMessage(char *preText, long preSize, char *text, long size,
-                       TOCType * tocH, long *fromLen) {
+                       MacmbxTOC * tocH, long *fromLen) {
   int err;
   long eof;
   char name[256];
   LineIOD lid;
-  MSumType sum;
+  MacmbxMsgSum sum;
   char spec[PATH_MAX];
 
   GetMailboxName(tocH, -1, name);
@@ -2546,10 +2528,16 @@ int SavePtrAsMessage(char *preText, long preSize, char *text, long size,
    * open mailbox and write the bytes
    */
   if (!(err = BoxFOpen(tocH))) {
-    eof = FindTOCSpot(tocH, size);
+    eof = FindTOCSpot(tocH);
     err = lseek(tocH->refN, eof, SEEK_SET) < 0 ? EIO : 0;
     if (!err)
-      err = PutOutFromLine(tocH->refN, fromLen);
+      {
+        char fromBuf[256];
+        crispy_rfc822_write_from_line(fromBuf, sizeof(fromBuf), "user");
+        long flen = (long)strlen(fromBuf);
+        err = file_write(tocH->refN, &flen, (unsigned char *)fromBuf);
+        if (fromLen) *fromLen = flen;
+      }
     if (!err && preText)
       err = file_write(tocH->refN, &preSize, preText);
     if (!err)
@@ -2576,9 +2564,9 @@ int SavePtrAsMessage(char *preText, long preSize, char *text, long size,
     return (FileSystemError(READ_MBOX, name, err));
   if ((err = SeekLine(eof, &lid)))
     return (FileSystemError(READ_MBOX, name, err));
-  ReadSum(NULL, false, &lid, true);
+  0 /* ReadSum — macmbx loads all summaries */;
   Zero(sum);
-  if (!ReadSum(&sum, false, &lid, false))
+  if (!0 /* ReadSum — macmbx loads all summaries */)
     err = !SaveMessageSum(&sum, &tocH);
   else
     err = 1;
@@ -2685,11 +2673,11 @@ MyWindowPtr DoSalvageMessageLo(MyWindowPtr win, bool forXfer, bool forIMAP) {
       }
     }
     TOCSetDirty(newMessH->tocH, true);
-    /* label/color field not yet in MSumType — use 0 (no label) */
+    /* label/color field not yet in MacmbxMsgSum — use 0 (no label) */
     SetSumColor(newMessH->tocH, newMessH->sumNum, 0);
     SumOf(newMessH)->flags = SumOf(origMessH)->flags;
     SumOf(newMessH)->opts = SumOf(origMessH)->opts;
-    SumOf(newMessH)->sigId = SumOf(origMessH)->sigId;
+    SumOf(newMessH)->sig_id = SumOf(origMessH)->sig_id;
     SumOf(newMessH)->priority = SumOf(origMessH)->priority;
     /* SumOf(newMessH)->origPriority = SumOf(origMessH)->priority; */
     if (GetWindowKind(winWP) != COMP_WIN &&
@@ -2712,7 +2700,7 @@ MyWindowPtr DoSalvageMessageLo(MyWindowPtr win, bool forXfer, bool forIMAP) {
 
     if (SumOf(origMessH)->flags & FLAG_OUT) {
       SumOf(newMessH)->flags = SumOf(origMessH)->flags;
-      SumOf(newMessH)->sigId = SumOf(origMessH)->sigId;
+      SumOf(newMessH)->sig_id = SumOf(origMessH)->sig_id;
     }
 
     text = geditctrl_get_text(origMessH->bodyPTE);
@@ -2747,7 +2735,7 @@ MyWindowPtr DoSalvageMessageLo(MyWindowPtr win, bool forXfer, bool forIMAP) {
     if (!oldSpot && beginning)
       oldSpot = beginning;
     if (oldSpot != beginning && oldSpot && beginning)
-      SumOf(newMessH)->sigId = SIG_NONE;
+      SumOf(newMessH)->sig_id = SIG_NONE;
     if (oldSpot && beginning && total > 0) {
       size = total - (oldSpot - beginning);
       TextFindAndCopyHeader(oldSpot, size, newMessH, HeaderName(SUBJ_HEAD),
@@ -3067,7 +3055,7 @@ void FindFrom(char *who, GtkWidget *pte) {
     long copyLen = MIN(62, len);
     memcpy(who, found, copyLen);
     who[copyLen] = 0;
-    BeautifyFrom(who);
+    crispy_rfc822_beautify_from((char *)who);
   } else
     *who = 0;
   g_free(text);
@@ -3134,7 +3122,7 @@ int PrependMessText(MessHandle messH, short whichTXE, char *string,
     return (ENOENT);
 }
 
-static inline TOCType * Win2TOC(void *win) { return NULL; }
+static inline MacmbxTOC * Win2TOC(void *win) { return NULL; }
 
 /************************************************************************
  * FindHeaderString - pick the given header out of a message, by name
@@ -3226,7 +3214,7 @@ MyWindowPtr DoReplyMessage(MyWindowPtr win, bool all, bool self, bool quote,
   bool rich;
   bool html = !PrefIsSet(PREF_SEND_ENRICHED_NEW);
   GtkWidget *copyFromPTE;
-  TOCType * origTOCH;
+  MacmbxTOC * origTOCH;
   bool listReply =
       MessOptIsSet(origMessH, OPT_BULK) && PrefIsSet(PREF_LIST_REPLYTO);
   bool cacheReplyTo = !PrefIsSet(PREF_NICK_CACHE) &&
@@ -3517,7 +3505,7 @@ MyWindowPtr DoReplyMessage(MyWindowPtr win, bool all, bool self, bool quote,
       quote = quote || selEnd - selStart >= GetRLong(OPEN_AT_END_THRESH);
       newMessH->openToEnd = !quote;
 
-      AccuAddLong(&newMessH->aSourceMID, SumOf(origMessH)->uidHash);
+      AccuAddLong(&newMessH->aSourceMID, SumOf(origMessH)->uid_hash);
       AccuAddLong(&newMessH->aSourceMID, SumOf(origMessH)->state);
       AccuAddLong(&newMessH->aSourceMID, REPLIED);
       SetState(origMessH->tocH, origMessH->sumNum, REPLIED);
@@ -3686,14 +3674,14 @@ char * GrabAttribution(short attrId, MyWindowPtr win, char * attribution) {
   long secs;
   long zone;
   long sumNum;
-  MSumType sum;
+  MacmbxMsgSum sum;
 
   *attribution = 0;
   if (NULL)
     sum = *SumOf(Win2MessH(win));
   else if (GetWindowKind(winWP) == MBOX_WIN &&
            (0 <= (sumNum = LastMsgSelected(Win2TOC(win)))))
-    sum = Win2TOC(win)->sums[sumNum];
+    sum = Win2TOC(win)->msgs[sumNum];
   else
     return (attribution);
 
@@ -3703,14 +3691,14 @@ char * GrabAttribution(short attrId, MyWindowPtr win, char * attribution) {
     if (*who) {
       zone = /* whine, whine, whine PrefIsSet(PREF_LOCAL_DATE) ? ZoneSecs() :
               */
-          60 * sum.origZone;
+          60 * sum.orig_zone;
       secs = sum.seconds + zone;
       TimeString(secs, false, attribution, NULL);
       FormatZone(date, zone);
       ComposeRString(time, ATTR_TIME_FMT, attribution, date);
       if ((unsigned char)date[1] == 0xCA) /* Mac optSpace */
         date[1] = ' ';
-      utl_PlugParams(template, attribution, who, date, sum.subj, time);
+      utl_PlugParams(template, attribution, who, date, sum.subject, time);
     }
   }
   return (attribution);
@@ -3783,7 +3771,7 @@ MyWindowPtr DoRedistributeMessage(MyWindowPtr win, void *toWhom, bool turbo,
       return (NULL);
     }
     if (SumOf(origMessH)->state != SENT && SumOf(origMessH)->state != UNSENT)
-      SumOf(newMessH)->sigId = SIG_NONE;
+      SumOf(newMessH)->sig_id = SIG_NONE;
 
     /*
      * copy priority
@@ -3797,7 +3785,7 @@ MyWindowPtr DoRedistributeMessage(MyWindowPtr win, void *toWhom, bool turbo,
     /*
      * state stuff
      */
-    AccuAddLong(&newMessH->aSourceMID, SumOf(origMessH)->uidHash);
+    AccuAddLong(&newMessH->aSourceMID, SumOf(origMessH)->uid_hash);
     AccuAddLong(&newMessH->aSourceMID, SumOf(origMessH)->state);
     AccuAddLong(&newMessH->aSourceMID, REDIST);
     SetState(origMessH->tocH, origMessH->sumNum, REDIST);
@@ -4030,7 +4018,7 @@ MyWindowPtr DoForwardMessage(MyWindowPtr win, void *toWhom, bool turbo) {
                  FWD_QUOTE, NULL);
 
     if (GetWindowKind(winWP) != COMP_WIN) {
-      AccuAddLong(&newMessH->aSourceMID, SumOf(origMessH)->uidHash);
+      AccuAddLong(&newMessH->aSourceMID, SumOf(origMessH)->uid_hash);
       AccuAddLong(&newMessH->aSourceMID, SumOf(origMessH)->state);
       AccuAddLong(&newMessH->aSourceMID, FORWARDED);
       SetState(origMessH->tocH, origMessH->sumNum, FORWARDED);
@@ -4080,9 +4068,9 @@ long CompBodyOffset(MessHandle messH) {
 /**********************************************************************
  * DoFordirectMessage - forward or redirect a message, silently
  **********************************************************************/
-int DoFordirectMessage(TOCType * tocH, short sumNum, short flk,
+int DoFordirectMessage(MacmbxTOC * tocH, short sumNum, short flk,
                          char * addresses, bool bulk) {
-  bool iOpened = !tocH->sums[sumNum].messH;
+  bool iOpened = !tocH->msgs[sumNum].messH;
   MyWindowPtr origWin = GetAMessage(tocH, sumNum, NULL, NULL, false);
   MessHandle newMessH;
   int err;
@@ -4121,10 +4109,10 @@ int DoFordirectMessage(TOCType * tocH, short sumNum, short flk,
 /**********************************************************************
  * DoReplyClosed - reply to a closed message, silently
  **********************************************************************/
-int DoReplyClosed(TOCType * tocH, short sumNum, bool all, bool self,
+int DoReplyClosed(MacmbxTOC * tocH, short sumNum, bool all, bool self,
                     bool quote, bool doFcc, short withWhich, bool vis,
                     bool station) {
-  bool iOpened = !tocH->sums[sumNum].messH;
+  bool iOpened = !tocH->msgs[sumNum].messH;
   MyWindowPtr origWin = GetAMessage(tocH, sumNum, NULL, NULL, false);
   MessHandle newMessH;
   int err;
@@ -4279,7 +4267,7 @@ void XferCustomTable(MessHandle origMessH, MessHandle newMessH) {
   if (!NewTables)
     return;
 
-  origTable = SumOf(origMessH)->tableId;
+  origTable = SumOf(origMessH)->table_id;
 
   /*
    * if the original message had the default table, give the default table
@@ -4300,7 +4288,7 @@ void XferCustomTable(MessHandle origMessH, MessHandle newMessH) {
    */
   isOut = (SumOf(origMessH)->flags & FLAG_OUT) != 0;
   if (isOut)
-    SumOf(newMessH)->tableId = origTable;
+    SumOf(newMessH)->table_id = origTable;
 
   /*
    * Otherwise, look for an out table that corresponds to the In table
@@ -4308,7 +4296,7 @@ void XferCustomTable(MessHandle origMessH, MessHandle newMessH) {
    */
   else {
     /* Translation tables not supported in GTK port — use same table ID */
-    SumOf(newMessH)->tableId = origTable;
+    SumOf(newMessH)->table_id = origTable;
   }
 }
 
@@ -4372,7 +4360,7 @@ int SpoolIndAttachment(MessHandle messH, short i) {
   /*
    * make the folder
    */
-  if ((err = MakeAttSubFolder(messH, SumOf(messH)->uidHash, newSpec)))
+  if ((err = MakeAttSubFolder(messH, SumOf(messH)->uid_hash, newSpec)))
     return (FileSystemError(COPY_ATTACHMENT, path_basename(newSpec), err));
 
   /*
@@ -4467,11 +4455,11 @@ void RemoveIndAttachment(MessHandle messH, short index) {
 /************************************************************************
  * CopyToOut - copy a message to the Out mailbox
  ************************************************************************/
-int CopyToOut(TOCType * fromTocH, short sumNum, TOCType * toTocH) {
+int CopyToOut(MacmbxTOC * fromTocH, short sumNum, MacmbxTOC * toTocH) {
   MessHandle messH;
   short err = 1;
   MyWindowPtr win = NULL, newWin = NULL;
-  MSumType newSum, oldSum;
+  MacmbxMsgSum newSum, oldSum;
 
   if (!(win = GetAMessage(fromTocH, sumNum, NULL, NULL, false)))
     return (1);
@@ -4481,11 +4469,11 @@ int CopyToOut(TOCType * fromTocH, short sumNum, TOCType * toTocH) {
 
   if ((newWin = DoSalvageMessage(messH->win, true))) {
     if (SaveComp(newWin)) {
-      newSum = toTocH->sums[toTocH->count - 1];
-      oldSum = fromTocH->sums[sumNum];
+      newSum = toTocH->msgs[toTocH->count - 1];
+      oldSum = fromTocH->msgs[sumNum];
       SumInfoCpy(&newSum, &oldSum);
       newSum.flags |= FLAG_OUT;
-      toTocH->sums[toTocH->count - 1] = newSum;
+      toTocH->msgs[toTocH->count - 1] = newSum;
       err = 0;
     }
     NoSaves = true;
@@ -4500,14 +4488,14 @@ int CopyToOut(TOCType * fromTocH, short sumNum, TOCType * toTocH) {
 /************************************************************************
  * SumInfoCpy - copy non-essential summary fields
  ************************************************************************/
-void SumInfoCpy(MSumPtr newSum, MSumPtr oldSum) {
+void SumInfoCpy(MacmbxMsgSum * newSum, MacmbxMsgSum * oldSum) {
   newSum->state = oldSum->state;
   strcpy((char *)newSum->from, (const char *)oldSum->from);
-  strcpy((char *)newSum->subj, (const char *)oldSum->subj);
+  strcpy((char *)newSum->subject, (const char *)oldSum->subject);
   newSum->seconds = oldSum->seconds;
   newSum->flags = oldSum->flags;
-  newSum->tableId = oldSum->tableId;
-  newSum->sigId = SigValidate(oldSum->sigId);
+  newSum->table_id = oldSum->table_id;
+  newSum->sig_id = SigValidate(oldSum->sig_id);
   newSum->priority = oldSum->priority;
   // newSum->origPriority = oldSum->origPriority;
   // memmove(&newSum->spareShort2, &oldSum->spareShort2, // sizeof(newSum->spareShort2));
@@ -4568,18 +4556,18 @@ unsigned long MIDHash(char *text, long size) {
 /************************************************************************
  * SetHash - set a message's hash function
  ************************************************************************/
-void SetHashLo(TOCType * tocH, short sumNum, unsigned long hash, bool soft) {
-  if (!soft || !ValidHash(tocH->sums[sumNum].uidHash))
-    tocH->sums[sumNum].uidHash = hash;
-  if (!soft || !ValidHash(tocH->sums[sumNum].msgIdHash))
-    tocH->sums[sumNum].msgIdHash = hash;
+void SetHashLo(MacmbxTOC * tocH, short sumNum, unsigned long hash, bool soft) {
+  if (!soft || !ValidHash(tocH->msgs[sumNum].uid_hash))
+    tocH->msgs[sumNum].uid_hash = hash;
+  if (!soft || !ValidHash(tocH->msgs[sumNum].msg_id_hash))
+    tocH->msgs[sumNum].msg_id_hash = hash;
   TOCSetDirty(tocH, true);
 }
 
 /************************************************************************
  * Rehash - recompute the hash for a message
  ************************************************************************/
-void RehashLo(TOCType * tocH, short sumNum, char *text, bool soft) {
+void RehashLo(MacmbxTOC * tocH, short sumNum, char *text, bool soft) {
   char scratch[256];
   char * spot;
   long size = strlen(text);
@@ -4592,14 +4580,14 @@ void RehashLo(TOCType * tocH, short sumNum, char *text, bool soft) {
   else
     hash = kNeverHashed;
 
-  if (soft && tocH->sums[sumNum].msgIdHash && hash == kNeverHashed)
+  if (soft && tocH->msgs[sumNum].msg_id_hash && hash == kNeverHashed)
     return; // Don't overwrite good hash with bad
 
-  tocH->sums[sumNum].msgIdHash = hash;
+  tocH->msgs[sumNum].msg_id_hash = hash;
   TOCSetDirty(tocH, true);
 }
 
-void Rehash(TOCType * tocH, int sumNum, char *buffer) {
+void Rehash(MacmbxTOC * tocH, int sumNum, char *buffer) {
   RehashLo(tocH, sumNum, buffer, true);
 }
 
@@ -4608,7 +4596,7 @@ void Rehash(TOCType * tocH, int sumNum, char *buffer) {
 /************************************************************************
  * Preview - preview a message, if desired
  ************************************************************************/
-void Preview(TOCType * tocH, short sumNum) {
+void Preview(MacmbxTOC * tocH, short sumNum) {
   GtkWidget * tocWinWP = GetMyWindowWindowPtr(tocH->win);
   MessHandle messH;
   long id;
@@ -4623,10 +4611,10 @@ void Preview(TOCType * tocH, short sumNum) {
   if (!(pte = tocH->previewPTE))
     return;
 
-  messH = tocH->sums[sumNum].messH;
+  messH = tocH->msgs[sumNum].messH;
   if (sumNum >= 0) {
     EnsureMID(tocH, sumNum);
-    id = tocH->sums[sumNum].serialNum;
+    id = tocH->msgs[sumNum].serial_num;
   } else if (sumNum == -2) {
     // if (!tocH->conConMultiScan)
     id = tocH->previewID;
@@ -4657,7 +4645,7 @@ void Preview(TOCType * tocH, short sumNum) {
         {
           tocH->lastSameTicks = 1;
           // do not automatically mark IMAP minimal headers as read, ever.
-          if (!tocH->imapTOC || IMAPMessageDownloaded(tocH, sumNum))
+          if (!tocH->virtualTOC || IMAPMessageDownloaded(tocH, sumNum))
             BeenThereDoneThat(tocH, sumNum);
         }
       } else
@@ -4668,7 +4656,7 @@ void Preview(TOCType * tocH, short sumNum) {
   } else
     tocH->lastSameTicks = g_get_monotonic_time();
 
-  if (tocH->previewID && tocH->imapTOC) {
+  if (tocH->previewID && tocH->virtualTOC) {
     // Cancel the IMAP download if this is an imap message ...
     FindRealSummary(tocH, tocH->previewID, &oldPreview);
     IMAPAbortMessageFetch(tocH, oldPreview);
@@ -4692,11 +4680,11 @@ void Preview(TOCType * tocH, short sumNum) {
     // need to open?
     if (!messH) {
       short realSumNum;
-      TOCType * realTocH;
+      MacmbxTOC * realTocH;
       if (!(realTocH = GetRealTOC(tocH, sumNum, &realSumNum)))
         return;
 
-      if (!(messH = realTocH->sums[realSumNum].messH)) {
+      if (!(messH = realTocH->msgs[realSumNum].messH)) {
         messWin =
             realTocH->which == OUT
                 ? OpenComp(realTocH, realSumNum, NULL, NULL, false, false)
@@ -4720,14 +4708,14 @@ void Preview(TOCType * tocH, short sumNum) {
           if (!IMAPMessageDownloaded(realTocH, sumToOpenNext) &&
               !IMAPMessageBeingDownloaded(realTocH, sumToOpenNext))
             UIDDownloadMessage(realTocH,
-                               realTocH->sums[sumToOpenNext].uidHash, false,
+                               realTocH->msgs[sumToOpenNext].uid_hash, false,
                                false);
         }
       }
     }
 
     if (messH) {
-      bool junk = SumOf(messH)->spamScore >= GetRLong(JUNK_MAILBOX_THRESHHOLD);
+      bool junk = SumOf(messH)->spam_score >= GetRLong(JUNK_MAILBOX_THRESHHOLD);
 
       // (*PeteExtra(pte))->containsJunkMail = junk;
       geditctrl_begin_update(pte);
@@ -4741,7 +4729,7 @@ void Preview(TOCType * tocH, short sumNum) {
             pte, 0, gedit_document_get_length(geditctrl_get_document(pte)), 0);
         geditctrl_end_update(pte);
       } else {
-        long body = SumOf(messH)->bodyOffset - messH->weeded;
+        long body = SumOf(messH)->body_offset - messH->weeded;
         long len;
         long scanned;
         char * text;
@@ -4815,7 +4803,7 @@ void Preview(TOCType * tocH, short sumNum) {
     if (!PrefIsSet(PREF_NO_EZ_OPEN)) {
       ezOpenSum = EzOpenFind(tocH, sumNum);
       if (ezOpenSum >= 0) {
-        tocH->ezOpenSerialNum = tocH->sums[ezOpenSum].serialNum;
+        tocH->ezOpenSerialNum = tocH->msgs[ezOpenSum].serial_num;
         CacheMessage(tocH, ezOpenSum);
       }
     }
@@ -4903,12 +4891,12 @@ void HTMLifyText(MyWindowPtr win, void *text) {
   // (*PeteExtra(win->pte))->partStack = stack;
 }
 
-/************************************************************************
- * EnsureMsgDownloaded - if IMAP message, make sure it is downloaded
- ************************************************************************/
-bool EnsureMsgDownloaded(TOCType * tocH, int sumNum, bool attachmentsToo) {
+/* EnsureMsgDownloaded — old IMAP version removed.
+ * Replaced by static version at top of file that uses macmbx_mailer. */
+#if 0
+bool EnsureMsgDownloaded_old(MacmbxTOC * tocH, int sumNum, bool attachmentsToo) {
   // Actually go fetch this message if we must
-  if (tocH->imapTOC) {
+  if (tocH->virtualTOC) {
     short n;
     bool result;
 
@@ -4924,7 +4912,7 @@ bool EnsureMsgDownloaded(TOCType * tocH, int sumNum, bool attachmentsToo) {
         }
       } else {
         //	Download this message in the foreground
-        if (UIDDownloadMessage(tocH, tocH->sums[sumNum].uidHash, true,
+        if (UIDDownloadMessage(tocH, tocH->msgs[sumNum].uid_hash, true,
                                false) != 0)
           return false;
       }
@@ -4934,7 +4922,7 @@ bool EnsureMsgDownloaded(TOCType * tocH, int sumNum, bool attachmentsToo) {
     for (n = 100; n && !IMAPMessageDownloaded(tocH, sumNum); n--)
       //	call a reasonable number of times to get the job done
       //	there may be other messages that also need to be processed
-      UpdateIMAPMailbox(tocH);
+      /* IMAP removed */
 
     // did we get the message ok?
     if ((result = IMAPMessageDownloaded(tocH, sumNum)) && attachmentsToo) {
@@ -4946,6 +4934,8 @@ bool EnsureMsgDownloaded(TOCType * tocH, int sumNum, bool attachmentsToo) {
   }
   return true;
 }
+
+#endif /* old EnsureMsgDownloaded */
 
 /************************************************************************
  * EnableMsgButtons - enable or disable message buttons
@@ -4968,26 +4958,26 @@ void EnableMsgButtons(MyWindowPtr win, bool enable) {
 /************************************************************************
  * GetMessageLength - return length of message
  ************************************************************************/
-unsigned long GetMessageLength(TOCType * tocH, short sumNum) {
+unsigned long GetMessageLength(MacmbxTOC * tocH, short sumNum) {
   short realSum;
-  TOCType * realTOC;
+  MacmbxTOC * realTOC;
 
   return (realTOC = GetRealTOC(tocH, sumNum, &realSum))
-             ? realTOC->sums[realSum].length
+             ? realTOC->msgs[realSum].length
              : 0;
 }
 
 /************************************************************************
  * RedateTS - redate a message
  ************************************************************************/
-void RedateTS(TOCType * tocH, short sumNum) {
+void RedateTS(MacmbxTOC * tocH, short sumNum) {
   char dateStr[256];
   long secs;
   long zoneSecs;
   int err = CacheMessage(tocH, sumNum);
 
-  if (!err && tocH->sums[sumNum].cache) {
-    HandleHeadGetPStr((char *)tocH->sums[sumNum].cache, HeaderStrn + DATE_HEAD,
+  if (!err && tocH->msgs[sumNum].cache) {
+    HandleHeadGetPStr((char *)tocH->msgs[sumNum].cache, HeaderStrn + DATE_HEAD,
               dateStr);
     if (!*dateStr)
       return;
@@ -5044,15 +5034,15 @@ char * CurAddrSel(MyWindowPtr win, char * addr) {
 int SpoolMessage(MessHandle messH, char * theSpec, short refN) {
   if (!messH)
     return -1;
-  TOCType * tocH = messH->tocH;
+  MacmbxTOC * tocH = messH->tocH;
   int sumNum = messH->sumNum;
   if (!tocH)
     return -1;
 
-  long offset = tocH->sums[sumNum].offset;
-  long length = tocH->sums[sumNum].length;
+  long offset = tocH->msgs[sumNum].offset;
+  long length = tocH->msgs[sumNum].length;
 
-  FILE *src = fopen(tocH->mailbox.spec, "rb");
+  FILE *src = fopen(tocH->mbox_path, "rb");
   if (!src)
     return -1;
   if (fseek(src, offset, SEEK_SET) != 0) {

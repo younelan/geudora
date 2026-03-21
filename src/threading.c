@@ -63,8 +63,10 @@ ADVISED OF THE POSSIBILITY OF SUCH DAMAGE. */
 #include "StringDefs.h"
 #include "fileutil.h"
 #include "message.h" /* IsQueued */
-#include "sendmail.h"
+/* sendmail.h removed — crispy handles SMTP */
 #include "threading.h"
+#include "macmbx_mailer.h"
+threadDataHandle gThreadData = NULL;
 #include "toc.h" /* WriteTOC, SetState */
 
 #define THREAD_STACK_SIZE 0 // Let pthread use default stack size
@@ -74,10 +76,10 @@ ADVISED OF THE POSSIBILITY OF SUCH DAMAGE. */
 #endif
 
 // External declarations for missing headers
-extern bool IsQueued(TOCType * tocH, short sumNum);
+extern bool IsQueued(MacmbxTOC * tocH, short sumNum);
 extern long ApproxMessageSize(MessHandle messH);
-extern void SetState(TOCType * tocH, short sumNum, short state);
-extern int WriteTOC(TOCType * tocH);
+extern void SetState(MacmbxTOC * tocH, short sumNum, short state);
+extern int macmbx_toc_save(MacmbxTOC * tocH);
 
 // Ensure threadTooManyReqsErr is defined (Mac specific error code)
 #ifndef threadTooManyReqsErr
@@ -91,7 +93,7 @@ extern bool GetPref(int pref);
 extern void GetPrefString(int pref, char *val);
 extern void SetPref(int pref, const char *val);
 extern bool ShouldSMTPAuth(void);
-extern bool DeleteSum(TOCType * tocH, int sumNum);
+extern bool DeleteSum(MacmbxTOC * tocH, int sumNum);
 
 #define threadNotFoundErr (-32767)
 
@@ -224,7 +226,7 @@ static int InitThreadGlobals(threadGlobalsPtr *newThreadGlobals) {
  ************************************************************************/
 static int CopyOutToTemp(void) {
   int ii;
-  TOCType *tocH, *tempTocH;
+  MacmbxTOC *tocH, *tempTocH;
   StateEnum state;
   MessHandle messH;
   int err = 0;
@@ -242,15 +244,15 @@ static int CopyOutToTemp(void) {
     // only copy messages ready to be sent now
     for (ii = 0; ii < tocH->count; ii++) {
       g_print("CopyOutToTemp: msg %d state=%d messH=%p persId=%ld seconds=%lu\n",
-              ii, tocH->sums[ii].state, (void*)tocH->sums[ii].messH,
-              tocH->sums[ii].persId, tocH->sums[ii].seconds);
-      if (!tocH->sums[ii].messH && IsQueued(tocH, ii)) {
-        pers = FindPersById(tocH->sums[ii].persId);
+              ii, tocH->msgs[ii].state, (void*)tocH->msgs[ii].messH,
+              tocH->msgs[ii].pers_id, tocH->msgs[ii].seconds);
+      if (!tocH->msgs[ii].messH && IsQueued(tocH, ii)) {
+        pers = FindPersById(tocH->msgs[ii].pers_id);
         g_print("CopyOutToTemp: msg %d IsQueued=YES pers=%p sendMeNow=%d\n",
                 ii, (void*)pers, pers ? pers->sendMeNow : -1);
         ASSERT(pers);
         if (pers && pers->sendMeNow &&
-            tocH->sums[ii].seconds <= gmtSecs) {
+            tocH->msgs[ii].seconds <= gmtSecs) {
           /*
            * handle open, dirty windows
            */
@@ -259,9 +261,9 @@ static int CopyOutToTemp(void) {
                On the GTK port OpenComp creates a visible window which
                is wrong for background sending.  We only need messH
                for ApproxMessageSize, so skip if not already open. */
-            messH = (MessHandle)tocH->sums[ii].messH;
+            messH = (MessHandle)tocH->msgs[ii].messH;
             MiniEvents();
-            state = tocH->sums[ii].state;
+            state = tocH->msgs[ii].state;
             /* Copy message directly to temp TOC — bypass MoveMessageLo
                which re-looks up the TOC via TOCBySpec and fails */
             err = AppendMessage(tocH, ii, &tempTocH, true, true, false);
@@ -277,7 +279,7 @@ static int CopyOutToTemp(void) {
     }
     g_print("CopyOutToTemp: done, tempTocH->count=%d\n", tempTocH->count);
     BoxFClose(tempTocH, true);
-    WriteTOC(tempTocH);
+    macmbx_toc_save(tempTocH);
   }
   MyThreadEndCritical();
   return err;
@@ -520,7 +522,7 @@ static int DisposeThreadGlobals(threadGlobalsPtr threadGlobals) {
  *move these unlocked messages, we can just clear temp out box
  ************************************************************************/
 void CleanTempOutTOC(void) {
-  TOCType * tempTocH;
+  MacmbxTOC * tempTocH;
   short ii;
   uLong oldForceSend = ForceSend;
 
@@ -538,7 +540,7 @@ void CleanTempOutTOC(void) {
  * CleanRealOutTOC -
  ************************************************************************/
 void CleanRealOutTOC(void) {
-  TOCType *tocH = GetRealOutTOC(), *tempTocH = GetTempOutTOC();
+  MacmbxTOC *tocH = GetRealOutTOC(), *tempTocH = GetTempOutTOC();
   int ii;
   short sum;
 
@@ -550,12 +552,12 @@ void CleanRealOutTOC(void) {
 
   g_print("CleanRealOutTOC: real count=%d temp count=%d\n", tocH->count, tempTocH->count);
   for (ii = tocH->count - 1; ii >= 0; ii--) {
-    g_print("CleanRealOutTOC: msg %d state=%d hash=%u\n", ii, tocH->sums[ii].state, tocH->sums[ii].uidHash);
-    if (tocH->sums[ii].state == BUSY_SENDING) {
-      sum = FindSumByHash(tempTocH, tocH->sums[ii].uidHash);
+    g_print("CleanRealOutTOC: msg %d state=%d hash=%u\n", ii, tocH->msgs[ii].state, tocH->msgs[ii].uid_hash);
+    if (tocH->msgs[ii].state == BUSY_SENDING) {
+      sum = FindSumByHash(tempTocH, tocH->msgs[ii].uid_hash);
       g_print("CleanRealOutTOC: BUSY_SENDING -> found in temp at %d, new state=%d\n",
-              sum, (sum != -1) ? tempTocH->sums[sum].state : SENDABLE);
-      SetState(tocH, ii, (sum != -1) ? tempTocH->sums[sum].state : SENDABLE);
+              sum, (sum != -1) ? tempTocH->msgs[sum].state : SENDABLE);
+      SetState(tocH, ii, (sum != -1) ? tempTocH->msgs[sum].state : SENDABLE);
     }
   }
   fflush(stdout);
@@ -630,9 +632,17 @@ void *XferMailThread(void *threadParameter) {
 #endif
   if (!theError) {
     /* batch delivery is always on — idle tick adjustment not needed */
-    theError = XferMailRun(xferMailParams.check, xferMailParams.send,
-                           xferMailParams.manual, xferMailParams.scripted,
-                           xferMailParams.flags, &imapInfo);
+    /* XferMailRun removed — use macmbx_mailer directly */
+    {
+      extern MacmbxMailer *idle_scheduler_get_mailer(void);
+      MacmbxMailer *mailer = idle_scheduler_get_mailer();
+      if (mailer) {
+        if (xferMailParams.check)
+          theError = macmbx_mailer_check(mailer);
+        if (xferMailParams.send)
+          theError = macmbx_mailer_send(mailer) < 0 ? -1 : 0;
+      }
+    }
     CloseProgress();
     SaveSettingsToMainThread(threadData);
     DeleteSettingsForThread(&SettingsRefN);

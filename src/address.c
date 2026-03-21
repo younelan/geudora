@@ -31,6 +31,8 @@ ADVISED OF THE POSSIBILITY OF SUCH DAMAGE. */
  * Free with g_strfreev().
  */
 
+#include "macmbx.h"
+#include "gtk_mailbox.h"
 #include <string.h>
 #include <stdlib.h>
 #include <stdbool.h>
@@ -436,14 +438,6 @@ bool AutoCheckOK(void)
 }
 
 /************************************************************************
- * GetTrashTOC - get the Trash mailbox TOC
- ************************************************************************/
-extern TOCType *GetSpecialTOC(short nameId);
-
-TOCType *GetTrashTOC(void)
-{
-  return GetSpecialTOC(3 /* MBX_TRASH */);
-}
 
 /************************************************************************
  * IsMe - check if an address matches the current user

@@ -34,7 +34,7 @@ typedef enum {kEuSendNow, kEuSendNext, kEuSendLater, kEuSendNever} SendTypeEnum;
 	do{(flags) &= ~(FLAG_ATYPE_LO|FLAG_ATYPE_HI); (flags) |= (num)<<6;}while(0)
 
 /* Queue and send */
-int QueueMessage(TOCType *tocH, short sumNum, SendTypeEnum st, long secs, bool noSpell, bool noAnalDelay);
+int QueueMessage(MacmbxTOC *tocH, short sumNum, SendTypeEnum st, long secs, bool noSpell, bool noAnalDelay);
 bool ModifyQueue(short *state, uLong *when, bool swap);
 void WarpQueue(uLong secs);
 
@@ -63,8 +63,8 @@ int CompLeaving(MessHandle messH, short head);
 int NickExpandAndCacheHead(MessHandle messH, short head, bool cacheOnly);
 
 /* Signature and attachment type */
-void SetSig(TOCType *tocH, short sumNum, int sigId);
-void SetAttachmentType(TOCType *tocH, short sumNum, short type);
+void SetSig(MacmbxTOC *tocH, short sumNum, int sigId);
+void SetAttachmentType(MacmbxTOC *tocH, short sumNum, short type);
 
 /* Translators */
 int AddMessTranslator(MessHandle messH, long which, void *properties);
@@ -74,7 +74,7 @@ bool InTranslator(TransInfoHandle hTranslators, int transCount, long id);
 /* Stationery */
 uLong ApproxMessageSize(MessHandle messH);
 int SaveStationeryStuff(short refN, MessHandle messH);
-int GetStationerySum(char *text, long textLen, MSumPtr pSum);
+int GetStationerySum(char *text, long textLen, MacmbxMsgSum * pSum);
 void ApplyStationery(MyWindowPtr win, char *spec, bool dontCleanse, bool personality);
 void ApplyStationeryLo(MyWindowPtr win, char *spec, bool dontCleanse, bool personality, bool editStationery);
 void ApplyStationeryHandle(MyWindowPtr win, char *text, long textLen, bool dontCleanse, bool personality, bool editStationery);

@@ -5,14 +5,14 @@
 #include "mailbox.h"
 
 /* Load message-error sidecar for `tocH` and populate
- * `(*tocH)->sums[].mesgErrH`. Returns 0 on success, non-zero on error (file
+ * `(*tocH)->msgs[].mesgErrH`. Returns 0 on success, non-zero on error (file
  * missing is success with no data).
  */
-int mesg_error_store_load(TOCType * tocH);
+int mesg_error_store_load(MacmbxTOC * tocH);
 
 /* Save all in-memory message-error records for `tocH` to a sidecar next to
  * mailbox. Returns 0 on success, non-zero on error.
  */
-int mesg_error_store_save_all(TOCType * tocH);
+int mesg_error_store_save_all(MacmbxTOC * tocH);
 
 #endif

@@ -16,7 +16,7 @@
 #include "gtk_prefs.h"
 #include "gtk_settings.h"
 #include "gtk_toolbar_dock.h"
-#include "mailbox.h" /* For MessageSummary */
+#include "mailbox.h" /* For MacmbxMsgSum */
 #include "mailxfer.h"
 #include "message.h"
 #include "taskProgress.h"
@@ -24,6 +24,10 @@
 #include "threading.h"
 #include "schizo.h"
 #include "toc.h"
+#include "macmbx.h"
+#include "macmbx_mailer.h"
+#include "macmbx_conf.h"
+#include "keychain.h"
 #include "wazoo.h"
 #include "StringUtil.h"
 #include <gtk/gtk.h>
@@ -43,7 +47,11 @@ typedef struct {
   GtkTextBuffer *preview_buffer;
   AppSettings *settings;
   gchar *current_mailbox_path;
-  TOCType *current_toc;  /* Currently displayed TOC */
+  MacmbxTOC *current_toc;       /* Currently displayed TOC (legacy) */
+  MacmbxStore *store;          /* Mailbox store (macmbx) */
+  MacmbxTOC *current_mtoc;    /* Currently displayed macmbx TOC */
+  MacmbxConf *conf;            /* macmbx config (geudora.ini) */
+  MacmbxMailer *mailer;        /* Mail send/receive engine */
 } AppState;
 
 /* Global variables for legacy compatibility */
@@ -71,12 +79,12 @@ static GtkWidget *open_panel_tab_icon(const char *panel_id, const char *title,
  * read_message_raw - Read entire message from mailbox file (headers + body).
  * Returns allocated string (caller must g_free), or NULL on error.
  */
-static gchar *read_message_raw(TOCType *toc, int msg_index) {
+static gchar *read_message_raw(MacmbxTOC *toc, int msg_index) {
   if (!toc || msg_index < 0 || msg_index >= toc->count)
     return NULL;
 
-  MessageSummary *sum = &toc->sums[msg_index];
-  FILE *fp = fopen(toc->mailbox.spec, "rb");
+  MacmbxMsgSum *sum = &toc->msgs[msg_index];
+  FILE *fp = fopen(toc->mbox_path, "rb");
   if (!fp)
     fp = fopen(toc, "rb");
   if (!fp)
@@ -384,12 +392,12 @@ static int get_selected_message_index(void) {
  * extract_reply_address - Extract reply-to address from message headers.
  * Falls back to From header if Reply-To not found.
  */
-static gchar *extract_reply_address(TOCType *toc, int msg_index) {
+static gchar *extract_reply_address(MacmbxTOC *toc, int msg_index) {
   if (!toc || msg_index < 0 || msg_index >= toc->count)
     return NULL;
 
-  MessageSummary *sum = &toc->sums[msg_index];
-  FILE *fp = fopen(toc->mailbox.spec, "rb");
+  MacmbxMsgSum *sum = &toc->msgs[msg_index];
+  FILE *fp = fopen(toc->mbox_path, "rb");
   if (!fp)
     fp = fopen(toc, "rb");
   if (!fp)
@@ -436,15 +444,15 @@ static gchar *extract_reply_address(TOCType *toc, int msg_index) {
  * extract_all_recipients - Extract To and Cc addresses from message headers.
  * For Reply All - returns To and Cc combined.
  */
-static void extract_all_recipients(TOCType *toc, int msg_index,
+static void extract_all_recipients(MacmbxTOC *toc, int msg_index,
                                    gchar **out_to, gchar **out_cc) {
   *out_to = NULL;
   *out_cc = NULL;
   if (!toc || msg_index < 0 || msg_index >= toc->count)
     return;
 
-  MessageSummary *sum = &toc->sums[msg_index];
-  FILE *fp = fopen(toc->mailbox.spec, "rb");
+  MacmbxMsgSum *sum = &toc->msgs[msg_index];
+  FILE *fp = fopen(toc->mbox_path, "rb");
   if (!fp)
     fp = fopen(toc, "rb");
   if (!fp)
@@ -574,9 +582,9 @@ static void on_message_selection_changed(GtkSelectionModel *model,
  * Open a comp.c compose window for an existing outgoing/draft message.
  * Uses OpenComp which parses headers and body from the stored message.
  */
-static void open_comp_window_for_message(TOCType *toc, int sumNum) {
-  bool isSent = (toc->sums[sumNum].state == SENT ||
-                 toc->sums[sumNum].state == BUSY_SENDING);
+static void open_comp_window_for_message(MacmbxTOC *toc, int sumNum) {
+  bool isSent = (toc->msgs[sumNum].state == SENT ||
+                 toc->msgs[sumNum].state == BUSY_SENDING);
   MyWindowPtr win = OpenComp(toc, sumNum, NULL, NULL, true, false);
   if (win && win->window)
     gtk_window_present(GTK_WINDOW(win->window));
@@ -594,11 +602,11 @@ static void on_message_activated(GtkColumnView *col_view, guint position,
   if (!vpaned)
     return;
 
-  TOCType *toc = g_object_get_data(G_OBJECT(vpaned), "toc");
+  MacmbxTOC *toc = g_object_get_data(G_OBJECT(vpaned), "toc");
   if (!toc || (int)position >= toc->count)
     return;
 
-  MessageSummary *sum = &toc->sums[position];
+  MacmbxMsgSum *sum = &toc->msgs[position];
 
   /* Outgoing/draft messages open in the comp.c compose window */
   if (toc->which == MBX_OUT || toc->which == MBX_OUT_TEMP ||
@@ -614,7 +622,7 @@ static void on_message_activated(GtkColumnView *col_view, guint position,
   if (!raw) return;
 
   GtkWidget *win = gtk_window_new();
-  gchar *title = g_strdup_printf("%s — %s", sum->from, sum->subj);
+  gchar *title = g_strdup_printf("%s — %s", sum->from, sum->subject);
   theme_setup_headerbar(win, title);
   g_free(title);
   gtk_window_set_default_size(GTK_WINDOW(win), 700, 550);
@@ -632,7 +640,7 @@ static void on_message_activated(GtkColumnView *col_view, guint position,
 
   /* Mark message as read */
   if (sum->state == UNREAD) {
-    extern void SetState(TOCType *tocH, short sumNum, short state);
+    extern void SetState(MacmbxTOC *tocH, short sumNum, short state);
     SetState(toc, (short)position, READ);
   }
 }
@@ -770,13 +778,13 @@ static void action_reply(GSimpleAction *action, GVariant *parameter,
   (void)user_data;
 
   int idx = get_selected_message_index();
-  TOCType *toc = app_state.current_toc;
+  MacmbxTOC *toc = app_state.current_toc;
   if (idx < 0 || !toc) {
     g_print("Reply: no message selected\n");
     return;
   }
 
-  MessageSummary *sum = &toc->sums[idx];
+  MacmbxMsgSum *sum = &toc->msgs[idx];
   gchar *reply_addr = extract_reply_address(toc, idx);
   gchar *body = ({ gchar *_raw = read_message_raw(toc, idx); gchar *_b = _raw ? g_strdup(find_body(_raw)) : NULL; g_free(_raw); _b; });
 
@@ -788,7 +796,7 @@ static void action_reply(GSimpleAction *action, GVariant *parameter,
     comp_set_field(win, "comp-to", reply_addr);
 
   /* Build Re: subject */
-  const char *subj = sum->subj;
+  const char *subj = sum->subject;
   gchar *re_subj;
   if (subj && (g_ascii_strncasecmp(subj, "Re:", 3) == 0 ||
                g_ascii_strncasecmp(subj, "Re: ", 4) == 0))
@@ -819,13 +827,13 @@ static void action_reply_all(GSimpleAction *action, GVariant *parameter,
   (void)user_data;
 
   int idx = get_selected_message_index();
-  TOCType *toc = app_state.current_toc;
+  MacmbxTOC *toc = app_state.current_toc;
   if (idx < 0 || !toc) {
     g_print("Reply All: no message selected\n");
     return;
   }
 
-  MessageSummary *sum = &toc->sums[idx];
+  MacmbxMsgSum *sum = &toc->msgs[idx];
   gchar *reply_addr = extract_reply_address(toc, idx);
   gchar *orig_to = NULL, *orig_cc = NULL;
   extract_all_recipients(toc, idx, &orig_to, &orig_cc);
@@ -849,7 +857,7 @@ static void action_reply_all(GSimpleAction *action, GVariant *parameter,
     comp_set_field(win, "comp-cc", orig_cc);
   }
 
-  const char *subj = sum->subj;
+  const char *subj = sum->subject;
   gchar *re_subj;
   if (subj && (g_ascii_strncasecmp(subj, "Re:", 3) == 0))
     re_subj = g_strdup(subj);
@@ -881,13 +889,13 @@ static void action_forward(GSimpleAction *action, GVariant *parameter,
   (void)user_data;
 
   int idx = get_selected_message_index();
-  TOCType *toc = app_state.current_toc;
+  MacmbxTOC *toc = app_state.current_toc;
   if (idx < 0 || !toc) {
     g_print("Forward: no message selected\n");
     return;
   }
 
-  MessageSummary *sum = &toc->sums[idx];
+  MacmbxMsgSum *sum = &toc->msgs[idx];
   gchar *body = ({ gchar *_raw = read_message_raw(toc, idx); gchar *_b = _raw ? g_strdup(find_body(_raw)) : NULL; g_free(_raw); _b; });
 
   extern MyWindowPtr DoComposeNew(int type);
@@ -895,7 +903,7 @@ static void action_forward(GSimpleAction *action, GVariant *parameter,
   if (!win || !win->window) { g_free(body); return; }
 
   /* Fwd: subject */
-  const char *subj = sum->subj;
+  const char *subj = sum->subject;
   gchar *fwd_subj = g_strdup_printf("Fwd: %s", subj ? subj : "");
   comp_set_field(win, "comp-subject", fwd_subj);
 
@@ -922,15 +930,15 @@ static void action_delete(GSimpleAction *action, GVariant *parameter,
   (void)user_data;
 
   int idx = get_selected_message_index();
-  TOCType *toc = app_state.current_toc;
+  MacmbxTOC *toc = app_state.current_toc;
   if (idx < 0 || !toc) {
     g_print("Delete: no message selected\n");
     return;
   }
 
   /* Mark the message as deleted in the TOC */
-  toc->sums[idx].opts |= OPT_DELETED;
-  toc->sums[idx].state = MESG_ERR; /* visual indicator */
+  toc->msgs[idx].opts |= OPT_DELETED;
+  toc->msgs[idx].state = MESG_ERR; /* visual indicator */
   TOCSetDirty(toc, true);
 
   /* Remove from the visible list */
@@ -948,7 +956,7 @@ static void action_delete(GSimpleAction *action, GVariant *parameter,
     }
   }
 
-  g_print("Deleted message %d: %s\n", idx, toc->sums[idx].subj);
+  g_print("Deleted message %d: %s\n", idx, toc->msgs[idx].subject);
 }
 
 static void action_check_mail(GSimpleAction *action, GVariant *parameter,
@@ -1106,14 +1114,15 @@ static void on_theme_toggle(GtkButton *btn, gpointer ud) {
   update_theme_tooltip();
 }
 
-/* Create mailbox tree view */
+/* Create mailbox tree view — backed by MacmbxStore */
 static GtkWidget *create_mailbox_tree(void) {
-  /* Create default mailboxes if they don't exist */
-  gtk_mailbox_create_default();
+  /* Ensure default mailboxes exist via macmbx */
+  if (app_state.store)
+    gtk_mailbox_ensure_defaults(app_state.store);
 
-  /* Create and populate the mailbox tree */
+  /* Create and populate the mailbox tree from store */
   GtkWidget *tree = gtk_mailbox_tree_new();
-  gtk_mailbox_tree_load(tree);
+  gtk_mailbox_tree_load(tree, app_state.store);
 
   return tree;
 }
@@ -1140,35 +1149,48 @@ static const char *mb_get_target_dir(void) {
 
 static void on_mb_new_mailbox(GtkButton *btn, gpointer ud) {
   (void)btn; (void)ud;
+  if (!app_state.store) return;
+
+  /* Determine parent relative path (NULL = top level) */
   gchar *dir = (gchar *)mb_get_target_dir();
-  char name[256], path[1024];
+  const char *base = app_state.store->base_path;
+  size_t blen = strlen(base);
+  const char *parent_rel = NULL;
+  if (strncmp(dir, base, blen) == 0 && dir[blen] == '/')
+    parent_rel = dir + blen + 1;
+  /* If dir == base, parent_rel stays NULL (top level) */
+
+  char name[256];
   snprintf(name, sizeof(name), "Untitled Mailbox");
-  snprintf(path, sizeof(path), "%s/%s", dir, name);
   int n = 1;
-  while (g_file_test(path, G_FILE_TEST_EXISTS)) {
+  while (macmbx_store_find_by_name(app_state.store, name)) {
     n++;
     snprintf(name, sizeof(name), "Untitled Mailbox %d", n);
-    snprintf(path, sizeof(path), "%s/%s", dir, name);
   }
-  FILE *f = fopen(path, "w");
-  if (f) fclose(f);
+  macmbx_store_create_mailbox(app_state.store, parent_rel, name);
   g_free(dir);
   gtk_mailbox_tree_refresh(app_state.mailbox_tree);
 }
 
 static void on_mb_new_folder(GtkButton *btn, gpointer ud) {
   (void)btn; (void)ud;
+  if (!app_state.store) return;
+
   gchar *dir = (gchar *)mb_get_target_dir();
-  char name[256], path[1024];
+  const char *base = app_state.store->base_path;
+  size_t blen = strlen(base);
+  const char *parent_rel = NULL;
+  if (strncmp(dir, base, blen) == 0 && dir[blen] == '/')
+    parent_rel = dir + blen + 1;
+
+  char name[256];
   snprintf(name, sizeof(name), "Untitled Folder");
-  snprintf(path, sizeof(path), "%s/%s", dir, name);
   int n = 1;
-  while (g_file_test(path, G_FILE_TEST_EXISTS)) {
+  while (macmbx_store_find_by_name(app_state.store, name)) {
     n++;
     snprintf(name, sizeof(name), "Untitled Folder %d", n);
-    snprintf(path, sizeof(path), "%s/%s", dir, name);
   }
-  g_mkdir_with_parents(path, 0755);
+  macmbx_store_create_folder(app_state.store, parent_rel, name);
   g_free(dir);
   gtk_mailbox_tree_refresh(app_state.mailbox_tree);
 }
@@ -1197,13 +1219,22 @@ static void on_mb_remove_response(GObject *source, GAsyncResult *res, gpointer u
   int choice = gtk_alert_dialog_choose_finish(GTK_ALERT_DIALOG(source), res, &err);
   if (err) { g_error_free(err); g_free(path); return; }
   if (choice == 0) {  /* Remove */
-    if (g_file_test(path, G_FILE_TEST_IS_DIR)) {
-      remove_directory_recursive(path);
+    if (app_state.store) {
+      const char *base = app_state.store->base_path;
+      size_t blen = strlen(base);
+      const char *rel = path;
+      if (strncmp(path, base, blen) == 0 && path[blen] == '/')
+        rel = path + blen + 1;
+      macmbx_store_delete(app_state.store, rel);
     } else {
-      g_unlink(path);
-      char toc[1024];
-      snprintf(toc, sizeof(toc), "%s.toc", path);
-      g_unlink(toc);
+      if (g_file_test(path, G_FILE_TEST_IS_DIR)) {
+        remove_directory_recursive(path);
+      } else {
+        g_unlink(path);
+        char toc[1024];
+        snprintf(toc, sizeof(toc), "%s.toc", path);
+        g_unlink(toc);
+      }
     }
     gtk_mailbox_tree_refresh(app_state.mailbox_tree);
   }
@@ -1218,20 +1249,27 @@ static void on_rename_entry_activate(GtkEntry *entry, gpointer ud) {
   const char *new_name = gtk_editable_get_text(GTK_EDITABLE(entry));
 
   if (new_name && *new_name && old_path) {
-    gchar *parent = g_path_get_dirname(old_path);
-    gchar *new_path = g_build_filename(parent, new_name, NULL);
-
-    if (g_rename(old_path, new_path) == 0) {
-      /* Also rename .toc file if it exists */
-      gchar *old_toc = g_strdup_printf("%s.toc", old_path);
-      gchar *new_toc = g_strdup_printf("%s.toc", new_path);
-      if (g_file_test(old_toc, G_FILE_TEST_EXISTS))
-        g_rename(old_toc, new_toc);
-      g_free(old_toc);
-      g_free(new_toc);
+    if (app_state.store) {
+      const char *base = app_state.store->base_path;
+      size_t blen = strlen(base);
+      const char *rel = old_path;
+      if (strncmp(old_path, base, blen) == 0 && old_path[blen] == '/')
+        rel = old_path + blen + 1;
+      macmbx_store_rename(app_state.store, rel, new_name);
+    } else {
+      gchar *parent = g_path_get_dirname(old_path);
+      gchar *new_path = g_build_filename(parent, new_name, NULL);
+      if (g_rename(old_path, new_path) == 0) {
+        gchar *old_toc = g_strdup_printf("%s.toc", old_path);
+        gchar *new_toc = g_strdup_printf("%s.toc", new_path);
+        if (g_file_test(old_toc, G_FILE_TEST_EXISTS))
+          g_rename(old_toc, new_toc);
+        g_free(old_toc);
+        g_free(new_toc);
+      }
+      g_free(new_path);
+      g_free(parent);
     }
-    g_free(new_path);
-    g_free(parent);
   }
 
   /* Destroy the entry popover and refresh */
@@ -1648,7 +1686,7 @@ static void on_tab_selection_changed(GtkSelectionModel *model,
   (void)position; (void)n_items;
   GtkWidget *vpaned = GTK_WIDGET(user_data);
   GtkWidget *preview_box = g_object_get_data(G_OBJECT(vpaned), "preview-box");
-  TOCType *toc = g_object_get_data(G_OBJECT(vpaned), "toc");
+  MacmbxTOC *toc = g_object_get_data(G_OBJECT(vpaned), "toc");
   GtkSingleSelection *sel = GTK_SINGLE_SELECTION(model);
   if (!preview_box || !toc) return;
 
@@ -1674,7 +1712,7 @@ static void on_tab_selection_changed(GtkSelectionModel *model,
 
 /* Create a mailbox tab: VPaned with message list on top, preview on bottom.
  * Like original Eudora mailbox window. */
-static GtkWidget *create_mailbox_tab_content(TOCType *toc) {
+static GtkWidget *create_mailbox_tab_content(MacmbxTOC *toc) {
   /* Use the real mailbox panel from mailbox.c with all original
      Eudora columns (Status, Priority, Attach, Label, Who, Date,
      Size, Junk, Subject) and preview pane */
@@ -1757,11 +1795,27 @@ static void open_mailbox_tab(const char *name, const char *path) {
     }
   }
 
-  /* Load TOC data only — don't create a separate mailbox window */
-  TOCType *toc = toc_load(path);
+  /* Open TOC via macmbx store if available, fall back to legacy */
+  MacmbxTOC *mtoc = NULL;
+  MacmbxTOC *toc = NULL;
+  GtkWidget *content = NULL;
 
-  /* Create tab content */
-  GtkWidget *content = create_mailbox_tab_content(toc);
+  if (app_state.store) {
+    /* Compute relative path from store base */
+    const char *base = app_state.store->base_path;
+    size_t blen = strlen(base);
+    const char *rel = path;
+    if (strncmp(path, base, blen) == 0 && path[blen] == '/')
+      rel = path + blen + 1;
+    mtoc = macmbx_store_open_mailbox(app_state.store, rel);
+  }
+
+  if (mtoc) {
+    content = CreateMailboxPanelMacmbx(mtoc);
+  } else {
+    toc = macmbx_toc_open(path);
+    content = create_mailbox_tab_content(toc);
+  }
   g_object_set_data_full(G_OBJECT(content), "mailbox-path",
                          g_strdup(path), g_free);
 
@@ -1789,6 +1843,7 @@ static void open_mailbox_tab(const char *name, const char *path) {
 
   /* Update app_state for backward compat */
   app_state.current_toc = toc;
+  app_state.current_mtoc = mtoc;
   g_free(app_state.current_mailbox_path);
   app_state.current_mailbox_path = g_strdup(path);
 }
@@ -1805,6 +1860,9 @@ void eudora_open_mailbox_by_name(const char *name) {
   }
 }
 
+/* ── Accessor for sidebar widget ── */
+GtkWidget *app_get_mailbox_tree(void) { return app_state.mailbox_tree; }
+
 /* ── Refresh open mailbox tabs ── */
 void eudora_refresh_open_mailboxes(void) {
   if (!mailbox_notebook) return;
@@ -1813,24 +1871,32 @@ void eudora_refresh_open_mailboxes(void) {
     GtkWidget *page = gtk_notebook_get_nth_page(GTK_NOTEBOOK(mailbox_notebook), i);
     if (!page) continue;
 
-    /* The page is a vpaned with "toc" and "tree-view" data */
-    TOCType *toc = g_object_get_data(G_OBJECT(page), "toc");
     GtkWidget *tree = g_object_get_data(G_OBJECT(page), "tree-view");
-    if (!toc || !tree) continue;
+    if (!tree) continue;
 
-    /* Reload TOC from disk in case it was updated by the delivery thread */
-    extern TOCType *toc_reload(const char *path);
-    char spec[1024];
-    extern char *GetMailboxSpec(TOCType *tocH, short num, char *outSpec);
-    GetMailboxSpec(toc, -1, spec);
+    /* Check for macmbx-based tab first */
+    MacmbxTOC *mtoc = g_object_get_data(G_OBJECT(page), "macmbx-toc");
+    if (mtoc) {
+      /* Re-read TOC from disk */
+      MacmbxTOC *refreshed = macmbx_toc_open(mtoc->mbox_path);
+      if (refreshed) {
+        /* Repopulate the tree view */
+        GtkTreeModel *model = gtk_tree_view_get_model(GTK_TREE_VIEW(tree));
+        extern void populate_mbox_list_macmbx(GtkListStore *store, MacmbxTOC *mtoc);
+        populate_mbox_list_macmbx(GTK_LIST_STORE(model), refreshed);
+        g_object_set_data(G_OBJECT(page), "macmbx-toc", refreshed);
+      }
+      continue;
+    }
 
-    /* Re-read the TOC */
-    extern int ReadTOC(TOCType *tocH);
-    ReadTOC(toc);
+    /* Legacy MacmbxTOC-based tab */
+    MacmbxTOC *toc = g_object_get_data(G_OBJECT(page), "toc");
+    if (!toc) continue;
 
-    /* Repopulate the tree view */
+    macmbx_toc_open(toc);
+
     GtkTreeModel *model = gtk_tree_view_get_model(GTK_TREE_VIEW(tree));
-    extern void populate_mbox_list(GtkListStore *store, TOCType *toc);
+    extern void populate_mbox_list(GtkListStore *store, MacmbxTOC *toc);
     populate_mbox_list(GTK_LIST_STORE(model), toc);
   }
 }
@@ -1840,18 +1906,20 @@ void eudora_refresh_open_mailboxes(void) {
 /* Welcome CSS is now provided by theme.c */
 static void ensure_welcome_css(void) { /* handled by theme engine */ }
 
-/* Count messages in a .toc file (each summary is fixed-size after header) */
+/* Count messages in a mailbox via macmbx_toc_peek */
 static int count_toc_messages(const char *mailbox_name) {
+  if (app_state.store) {
+    MacmbxNode *node = macmbx_store_find_by_name(app_state.store, mailbox_name);
+    if (node && node->total >= 0) return node->total;
+  }
+  /* Fallback: peek at the TOC file directly */
   const char *mdir = prefs_get_mailboxes_path();
   if (!mdir) return 0;
-  char path[1024];
-  snprintf(path, sizeof(path), "%s/%s.toc", mdir, mailbox_name);
-  struct stat st;
-  if (stat(path, &st) != 0) return 0;
-  /* TOC file: 76-byte header + 224 bytes per message summary */
-  long data = st.st_size - 76;
-  if (data <= 0) return 0;
-  return (int)(data / 224);
+  char mbox_path[1024];
+  snprintf(mbox_path, sizeof(mbox_path), "%s/%s", mdir, mailbox_name);
+  int count = 0;
+  macmbx_toc_peek(mbox_path, &count, NULL, NULL);
+  return count;
 }
 
 /* ── Stat pill widget ── */
@@ -2326,6 +2394,22 @@ static GtkWidget *create_main_layout(void) {
 }
 
 /* Application activation */
+/* Keychain credential callback for macmbx_mailer.
+ * Keychain stores: service="gEudora", account="user@server" */
+static int mailer_keychain_cb(const char *account, const char *server,
+                               char *pw, int pw_size, void *ctx) {
+  (void)ctx;
+  /* Try "user@server" format (how Eudora stores it) */
+  char acct_key[256];
+  snprintf(acct_key, sizeof(acct_key), "%s@%s", account, server);
+  if (keychain_find("gEudora", acct_key, pw, pw_size) == KEYCHAIN_OK)
+    return 0;
+  /* Try just the account name */
+  if (keychain_find("gEudora", account, pw, pw_size) == KEYCHAIN_OK)
+    return 0;
+  return -1;
+}
+
 static void activate(GtkApplication *app, gpointer user_data) {
   (void)user_data;
 
@@ -2351,12 +2435,12 @@ static void activate(GtkApplication *app, gpointer user_data) {
      Use intermediate variable — direct assignment to _Thread_local member
      from struct-returning function miscompiles on ARM64 macOS. */
   {
-    extern TransVector GetTCPTrans(void);
-    extern threadGlobalsRec ThreadGlobals;
-    TransVector tcp = GetTCPTrans();
-    /* Write directly to ThreadGlobals — bypass TLS macro entirely.
-       Struct copies through _Thread_local pointers miscompile on ARM64 macOS. */
-    memcpy(&ThreadGlobals.tCurTrans, &tcp, sizeof(TransVector));
+
+
+
+
+
+
   }
 
   /* Initialize Root (eudora data dir) and MailRoot (mailboxes dir) */
@@ -2372,6 +2456,17 @@ static void activate(GtkApplication *app, gpointer user_data) {
       *last_slash = '\0'; /* .../geudora */
   }
 
+  /* Open mailbox store — Eudora tells macmbx where mailboxes live.
+   * macmbx manages everything below that path. */
+  {
+    const char *mdir = prefs_get_mailboxes_path();
+    if (mdir) {
+      app_state.store = macmbx_store_open(mdir);
+      if (app_state.store)
+        gtk_mailbox_set_store(app_state.store);
+    }
+  }
+
   /* Load settings from disk */
   app_state.settings = prefs_load();
   if (!app_state.settings) {
@@ -2381,6 +2476,21 @@ static void activate(GtkApplication *app, gpointer user_data) {
 
   /* Initialize personalities AFTER prefs are loaded */
   InitPersonalities();
+
+  /* Initialize macmbx mailer — the mail send/receive engine.
+   * Needs conf (geudora.ini) and store (mailboxes). */
+  {
+    char ini_path[1024];
+    snprintf(ini_path, sizeof(ini_path), "%s/geudora.ini", Root.path);
+    app_state.conf = macmbx_conf_load(ini_path);
+    if (app_state.conf && app_state.store) {
+      app_state.mailer = macmbx_mailer_new(app_state.conf, app_state.store);
+      if (app_state.mailer) {
+        macmbx_mailer_set_credentials(app_state.mailer, mailer_keychain_cb, NULL);
+        idle_scheduler_set_mailer(app_state.mailer);
+      }
+    }
+  }
 
   /* Initialize theme system (loads saved theme from prefs) */
   theme_init(app_state.window);

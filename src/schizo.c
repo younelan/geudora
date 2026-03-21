@@ -31,13 +31,14 @@ DAMAGE. */
 #include "ends.h"
 #include "Globals.h"
 #include "threading.h"
-#include "imapmailboxes.h"
+/* imapmailboxes.h removed — crispy_imap handles IMAP */
 #include "message.h"
 #include "comp.h"
-#include "sendmail.h"
-#include "pop.h"
+/* sendmail.h removed — crispy handles SMTP */
+/* pop.h removed — crispy_pop3 handles POP */
 #include "gtk_menus.h"
 #define FILE_NUM 82
+/* M_T1 defined in globals.c */
 /* Copyright (c) 1996 by QUALCOMM Incorporated */
 static int PersCompare(PersHandle *p1, PersHandle *p2);
 static void UpdatePersList(void);
@@ -394,9 +395,7 @@ int PersSetName(PersHandle pers,char * name)
 		UpdatePersList();
 	}
 	
-	// update IMAP mailboxes with new pers id
-	if (IsIMAPPers(pers))
-		IMAPPersIDChanged(pers, pers->mailboxTree);	
+	/* IMAP mailbox update removed — crispy_imap handles IMAP */
 	
 	return(0);
 }
@@ -442,41 +441,41 @@ void DisposePersonalities(void)
 /**********************************************************************
  * SetPers - set the personality of a message
  **********************************************************************/
-int SetPers(TOCType * tocH,short sumNum,PersHandle pers,bool stationery)
+int SetPers(MacmbxTOC * tocH,short sumNum,PersHandle pers,bool stationery)
 {
 	GtkWidget *	messWinWP;
-	MessHandle messH = tocH->sums[sumNum].messH;
+	MessHandle messH = tocH->msgs[sumNum].messH;
 	bool opened = messH==nil;
 	char addr[256];
 	int err = 0;
 	uint32_t sigId;
 	ControlHandle cntl;
-	bool redirected = (tocH->sums[sumNum].opts & OPT_REDIRECTED)!=0;
+	bool redirected = (tocH->msgs[sumNum].opts & OPT_REDIRECTED)!=0;
 	
-	if (tocH->sums[sumNum].persId==pers->persId) return(0);	// nothing to do
+	if (tocH->msgs[sumNum].pers_id==pers->persId) return(0);	// nothing to do
 
 	if (pers!=PersList)
 		UseFeature (featureMultiplePersonalities);
 	
-	tocH->sums[sumNum].persId = pers->persId;
+	tocH->msgs[sumNum].pers_id = pers->persId;
 	TOCSetDirty(tocH,true);
 	
 	SetBGColorsByPers(messH);
 	
-	if (tocH->which==OUT && (tocH->sums[sumNum].state!=SENT && tocH->sums[sumNum].state!=BUSY_SENDING))
+	if (tocH->which==OUT && (tocH->msgs[sumNum].state!=SENT && tocH->msgs[sumNum].state!=BUSY_SENDING))
 	{
 		if (stationery && !redirected)  // if stationery not allowed, don't copy sig
 		{
 			PushPers(pers);
 			sigId = SigValidate(GetPrefLong(PREF_SIGFILE));
 			PopPers();
-			SetSig(tocH,sumNum,sigId);
+			/* SetSig removed — signatures via macmbx */
 		}
 		
 		if (opened)
 		{
 			(void) OpenComp(tocH,sumNum,nil,nil,false,false);
-			messH = tocH->sums[sumNum].messH;
+			messH = tocH->msgs[sumNum].messH;
 		}
 		if (!messH) return(errAENoSuchObject);
 		messWinWP = GetMyWindowWindowPtr(messH->win);
@@ -648,7 +647,7 @@ void CheckPers(MyWindowPtr win,bool all)
 	GtkWidget *	winWP = GetMyWindowWindowPtr(win);
 	MenuHandle mh;
 	MessHandle messH;
-	TOCType * tocH;
+	MacmbxTOC * tocH;
 	short n;
 	bool out;
 	short kind;
@@ -660,7 +659,7 @@ void CheckPers(MyWindowPtr win,bool all)
 	
 	mh = GetMHandle(PERS_HIER_MENU);
 	messH = win?(MessHandle) GetMyWindowPrivateData(win):nil;
-	tocH = win?(TOCType *) GetMyWindowPrivateData(win):nil;
+	tocH = win?(MacmbxTOC *) GetMyWindowPrivateData(win):nil;
 	out=false;
 	kind = winWP ? GetWindowKind(winWP) : 0;
 	
@@ -684,7 +683,7 @@ void CheckPers(MyWindowPtr win,bool all)
 		}
 		else if ((kind==MBOX_WIN || kind==CBOX_WIN) && win->hasSelection)
 		{
-			messPers = PERS_FORCE(FindPersById(tocH->sums[FirstMsgSelected(tocH)].persId));
+			messPers = PERS_FORCE(FindPersById(tocH->msgs[FirstMsgSelected(tocH)].pers_id));
 			out = kind==CBOX_WIN;
 		}
 		else

@@ -32,7 +32,7 @@ DAMAGE. */
 /**********************************************************************
  * Global variables — ported from Mac original.
  * Mac-specific types replaced with portable equivalents:
- *   TOCHandle    -> TOCType *
+ *   TOCHandle    -> MacmbxTOC *
  *   Handle       -> void *  (or typed pointer)
  *   void *      -> void *
  *   GtkWidget *    -> void *
@@ -94,8 +94,8 @@ extern char CheckOnIdle;
 extern char Type2SelString[16];
 extern uLong Type2SelTicks;
 extern short DragSumNum;
-extern TOCType *DragTOCFrom;
-extern TOCType *DragTOCTo;
+extern MacmbxTOC *DragTOCFrom;
+extern MacmbxTOC *DragTOCTo;
 extern short DragModsWere;
 extern uLong DragSequence;
 extern short StationVRef;
@@ -108,7 +108,7 @@ extern long ____RandomFailThresh;
 
 #define kCheck 0x02
 #define kSend 0x01
-extern TOCType *TOCList;
+extern MacmbxTOC *TOCList;
 
 extern struct AliasDStruct *Aliases;
 extern int gAliasCount;
@@ -178,7 +178,7 @@ extern short PrefPlugEnd;
 extern long TypeToOpen;
 extern void *UglyHackFrontWindow;  /* GtkWidget * */
 extern char MyHostname[128];
-extern TOCType *DamagedTOC;
+extern MacmbxTOC *DamagedTOC;
 extern bool ThereIsColor;
 extern bool NoDominant;
 extern void *ICache;               /* void * */

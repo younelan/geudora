@@ -1,6 +1,6 @@
 /* Copyright (c) 2017, Computer History Museum
 All rights reserved. (BSD license — see source)
-Ported to GTK4/GLib. TOCHandle → TOCType*, char * → unsigned char* */
+Ported to GTK4/GLib. TOCHandle → MacmbxTOC*, char * → unsigned char* */
 
 #ifndef BOXACT_H
 #define BOXACT_H
@@ -21,35 +21,35 @@ bool BoxClose(MyWindowPtr win);
 bool BoxFind(MyWindowPtr win, char *what);
 void BoxOpen(MyWindowPtr win);
 bool BoxKey(MyWindowPtr win, void *event);
-void SelectBoxRange(TOCType *tocH, int start, int end, bool cmd,
+void SelectBoxRange(MacmbxTOC *tocH, int start, int end, bool cmd,
                     int eStart, int eEnd);
-void BoxSetSummarySelected(TOCType *tocH, short sumNum, bool selected);
+void BoxSetSummarySelected(MacmbxTOC *tocH, short sumNum, bool selected);
 void BoxCenterSelection(MyWindowPtr win);
 void BoxSelectAfter(MyWindowPtr win, short mNum);
 int BoxPosition(MyWindowPtr win);
-void BoxSelectSame(TOCType *tocH, short item, short clickedSum);
-void MakeMessFileName(TOCType *tocH, short sumNum, unsigned char *name);
+void BoxSelectSame(MacmbxTOC *tocH, short item, short clickedSum);
+void MakeMessFileName(MacmbxTOC *tocH, short sumNum, unsigned char *name);
 void BoxHelp(MyWindowPtr win, Point mouse);
 void BoxDidResize(MyWindowPtr win, Rect *oldContR);
-void BoxListFocus(TOCType *tocH, bool focus);
+void BoxListFocus(MacmbxTOC *tocH, bool focus);
 int BoxGonnaShow(MyWindowPtr win);
-void SetPriority(TOCType *tocH, short sumNum, short priority);
+void SetPriority(MacmbxTOC *tocH, short sumNum, short priority);
 short Item2Status(short item);
 short Status2Item(short status);
-void InvalTocBox(TOCType *tocH, short sumNum, short box);
-bool RedoTOC(TOCType *tocH);
+void InvalTocBox(MacmbxTOC *tocH, short sumNum, short box);
+bool RedoTOC(MacmbxTOC *tocH);
 void RedoAllTOCs(void);
-void MBResort(TOCType *tocH);
+void MBResort(MacmbxTOC *tocH);
 void CheckSortItems(MyWindowPtr win);
 void *MenuItem2Handle(short menu, short item);
-void ServerMenuChoice(TOCType *tocH, short sumNum, short item,
+void ServerMenuChoice(MacmbxTOC *tocH, short sumNum, short item,
                       bool shiftPressed);
-void BeenThereDoneThat(TOCType *tocH, short sumNum);
+void BeenThereDoneThat(MacmbxTOC *tocH, short sumNum);
 bool BoxButton(MyWindowPtr win, GtkWidget *widget, GdkEvent *event);
 bool BoxScroll(MyWindowPtr win, short h, short v);
 bool BoxHasSelection(MyWindowPtr win);
 void BoxIdle(MyWindowPtr win);
-void BoxInitialSelection(TOCType *tocH);
+void BoxInitialSelection(MacmbxTOC *tocH);
 int SubjCompare(unsigned char *s1, unsigned char *s2);
 
 #endif /* BOXACT_H */

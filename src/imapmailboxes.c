@@ -37,6 +37,7 @@ ADVISED OF THE POSSIBILITY OF SUCH DAMAGE. */
  **********************************************************************/
 
 #include "imapmailboxes.h"
+#include "macmbx.h"
 #include "StringDefs.h"
 #include "StringUtil.h"
 /* Note: PREF_IMAP_* undefs now handled in imapmailboxes.h before toc.h */
@@ -3648,8 +3649,14 @@ int CleanHiddenCacheMailbox(TOCType * hidTocH) {
       DeleteIMAPSum(hidTocH, mNum);
     }
 
-    // compact it to be sure to remove all leftovers
-    CompactMailbox(spec, 0);
+    // compact via macmbx
+    {
+      MacmbxTOC *mtoc = macmbx_toc_open(spec);
+      if (mtoc) {
+        macmbx_compact(mtoc);
+        macmbx_toc_save(mtoc);
+      }
+    }
   }
 
   return (err);

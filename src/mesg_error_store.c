@@ -61,7 +61,7 @@ static void json_unescape(const char *in, char *out, size_t outlen) {
   out[oi] = '\0';
 }
 
-int mesg_error_store_save_all(TOCType * tocH) {
+int mesg_error_store_save_all(MacmbxTOC * tocH) {
   if (!tocH)
     return -1;
   FSSpec spec; GetMailboxSpec(tocH, -1, spec);
@@ -72,7 +72,7 @@ int mesg_error_store_save_all(TOCType * tocH) {
   json_builder_begin_array(builder);
 
   for (int i = 0; i < tocH->count; ++i) {
-    mesgErrorHandle h = tocH->sums[i].mesgErrH;
+    mesgErrorHandle h = tocH->msgs[i].mesgErrH;
     if (!h)
       continue;
     json_builder_begin_object(builder);
@@ -112,7 +112,7 @@ int mesg_error_store_save_all(TOCType * tocH) {
   return 0;
 }
 
-int mesg_error_store_load(TOCType * tocH) {
+int mesg_error_store_load(MacmbxTOC * tocH) {
   if (!tocH)
     return -1;
   FSSpec spec; GetMailboxSpec(tocH, -1, spec);
@@ -189,7 +189,7 @@ int mesg_error_store_load(TOCType * tocH) {
         PCSTrim(h->errorStr, (char *)unesc);
         h->uidHash = (uLong)uid;
         h->errorCode = code;
-        tocH->sums[sum].mesgErrH = (void **)h;
+        tocH->msgs[sum].mesgErrH = (void **)h;
       }
     }
   }

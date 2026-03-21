@@ -91,7 +91,7 @@ long PersCount(void);
 int PersSetName(PersHandle pers, char *name);
 void PushPers(PersHandle newCur);
 void PopPers(void);
-int32_t SetPers(TOCType * tocH, short sumNum, PersHandle pers, bool stationery);
+int32_t SetPers(MacmbxTOC * tocH, short sumNum, PersHandle pers, bool stationery);
 void CheckPers(MyWindowPtr win, bool all);
 short Pers2Index(PersHandle goalPers);
 PersHandle Index2Pers(short n);
@@ -107,7 +107,7 @@ bool IsIMAPPers(PersHandle pers);
                               : OLD_POPD_TYPE)
 #define CUR_POPD_TYPE PERS_POPD_TYPE(CurPers)
 #define CUR_STR_TYPE                                                           \
-  ((CurPers && CurPers->persId) ? PERS_TYPE('STR ', CurPers->resEnd)     \
+  ((CurPers && CurPers->pers_id) ? PERS_TYPE('STR ', CurPers->resEnd)     \
                                    : 'STR ')
 
 // Global variables and macros
@@ -115,6 +115,17 @@ bool IsIMAPPers(PersHandle pers);
 /* PersList is always a macro from threading.h: (CurThreadGlobals->tPersList) */
 /* OLD_POPD_TYPE is a macro in MyRes.h: 'popd' */
 
-/* PERS_FORCE and TS_TO_PERS are defined in pop.h */
+/* Personality lookup macros — moved from pop.h (which is removed).
+ * These are personality system macros, not POP-specific. */
+/* M_T1 declared in Globals.h as uLong */
+#ifndef PERS_FORCE
+#define PERS_FORCE(x) ((M_T1 = (long)(x)), (M_T1 ? (PersHandle)M_T1 : PersList))
+#endif
+#define SUM_TO_PERS(sum) (FindPersById((sum)->pers_id))
+#define SUM_TO_PPERS(sum) (FindPersById((sum)->pop_pers_id))
+#define TS_TO_PERS(tocH, sumNum) (SUM_TO_PERS((tocH)->msgs + sumNum))
+#define TS_TO_PPERS(tocH, sumNum) (SUM_TO_PPERS((tocH)->msgs + sumNum))
+#define MESS_TO_PERS(messH) (SUM_TO_PERS(SumOf(messH)))
+#define MESS_TO_PPERS(messH) (SUM_TO_PPERS(SumOf(messH)))
 
 #endif

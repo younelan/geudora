@@ -38,21 +38,21 @@ typedef unsigned long uLong;
 extern int gNFilters;
 extern FilterRecord *gFilterArray;
 
-int FilterSelectedMessages(FilterKeywordEnum fType, TOCType *tocH,
+int FilterSelectedMessages(FilterKeywordEnum fType, MacmbxTOC *tocH,
                            FilterPBPtr fpb);
-int FilterMessagesFrom(FilterKeywordEnum fType, TOCType *tocH, short startWith,
+int FilterMessagesFrom(FilterKeywordEnum fType, MacmbxTOC *tocH, short startWith,
                        FilterPBPtr fpb, bool noXfer);
-int FilterFlaggedMessages(FilterKeywordEnum fType, TOCType *tocH,
+int FilterFlaggedMessages(FilterKeywordEnum fType, MacmbxTOC *tocH,
                           FilterPBPtr fpb);
-int FilterIMAPTocIncrementally(TOCType *tocH, FilterPBPtr fpb, bool noXfer);
-int FilterMessage(FilterKeywordEnum fType, TOCType *tocH, short sumNum);
+int FilterIMAPTocIncrementally(MacmbxTOC *tocH, FilterPBPtr fpb, bool noXfer);
+int FilterMessage(FilterKeywordEnum fType, MacmbxTOC *tocH, short sumNum);
 void GenSpecWindow(CSpecHandle specList);
 int FilterNoteMatch(short filter, long secs);
 uLong FilterLastMatchHi(short filter);
-void NonSequitur(char *subject, TOCType *tocH, short sumNum);
+void NonSequitur(char *subject, MacmbxTOC *tocH, short sumNum);
 void FilterPostprocess(FilterKeywordEnum fType, FilterPBPtr fpb);
 void AddSpecToList(char * spec, CSpecHandle specList);
-bool FilterMatchHi(short f, TOCType *tocH, short sumNum);
+bool FilterMatchHi(short f, MacmbxTOC *tocH, short sumNum);
 #define FU_TYPE 'FU  '
 #define FU_ID 1001
 bool HaveManualFilters(void);
@@ -60,7 +60,7 @@ bool RegenerateFilters(void);
 int ReadFilters(void);
 int SaveFilters(void);
 int InitFPB(FilterPBPtr fpb, bool zapAddrs, bool listsToo);
-int FilterMessageLo(FilterKeywordEnum fType, TOCType *tocH, short sumNum,
+int FilterMessageLo(FilterKeywordEnum fType, MacmbxTOC *tocH, short sumNum,
                     FilterPBPtr fpb, bool noXfer);
 
 #endif

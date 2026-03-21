@@ -206,9 +206,9 @@ typedef struct IMAPAppendStruct IMAPAppendStruct, *IMAPAppendPtr,
 // IMAPTransferRec.  Used to pass IMAP parameters into check mail thread.
 struct IMAPTransferRec_ {
   FSSpec targetSpec;   // the interesting file
-  TOCType * sourceToc; // handle to TOC where messages are ocming from
-  TOCType * destToc;   // handle to TOC for messge to be downloaded into
-  TOCType * delToc;    // handle to TOC from which message is to be deleted.
+  MacmbxTOC * sourceToc; // handle to TOC where messages are ocming from
+  MacmbxTOC * destToc;   // handle to TOC for messge to be downloaded into
+  MacmbxTOC * delToc;    // handle to TOC from which message is to be deleted.
   short sumNum;        // sumNum of message to be operated on
   bool nuke;           // don't copy the message to the trash
   bool expunge;        // expunge the mailbox

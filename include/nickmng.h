@@ -258,7 +258,7 @@ int GatherCompAddresses(MyWindowPtr win, char *addrList);
 int AddTextToNick(short which, char *name, void *text, bool append);
 short ChangeNameOfNick(short which, char *oldName,
                        char *newName);
-int GatherBoxAddresses(TOCType * tocH, short modifiers, short from, short to,
+int GatherBoxAddresses(MacmbxTOC * tocH, short modifiers, short from, short to,
                        void ***addresses, bool caching);
 void ReadNickFileList(char *pSpec, AddressBookType type, bool reread);
 void ReadPluginNickFiles(bool reread);
@@ -301,7 +301,7 @@ PrimaryLocationType GetPrimaryLocation(void *notes);
 
 short FindAddressBookType(AddressBookType type);
 int WhiteListAddr(TextAddrHandle addr);
-int WhiteListTS(TOCType * tocH, short sumNum);
+int WhiteListTS(MacmbxTOC * tocH, short sumNum);
 
 char **UniqBinAddr(char **addresses);
 char **SortBinAddr(char **addresses);

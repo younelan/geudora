@@ -45,16 +45,16 @@ bool IsRoot(const char *path) {
 extern void MBOpenFolder(void *hStringList, bool isIMAP);
 #include <fcntl.h>
 #include <sys/stat.h>
-#include "junk.h"
+/* junk.h removed — macmbx_junk handles junk */
 #include "lineio.h"
 #include "mesg_error_store.h"
 #include "mydefs.h"
 #include "MyRes.h"
-#include "pop.h"
+/* pop.h removed — crispy_pop3 handles POP */
 #include "sort.h"
 #include "toc.h"
 #include "gtk_prefs.h"
-#include "trans.h"
+/* trans.h removed — crispy handles network */
 #include <assert.h>
 #include <stdarg.h>
 #include <sys/stat.h>
@@ -64,9 +64,9 @@ extern void MBOpenFolder(void *hStringList, bool isIMAP);
 #endif
 #include "gtk_menus.h"
 #include "boxact.h"
-#include "imapmailboxes.h" /* For IsIMAPCacheFolder */
+/* imapmailboxes.h removed — crispy_imap handles IMAP */
 #include "threading.h"
-int AddMesgError(TOCType * tocH, short sum, char *errorStr,
+int AddMesgError(MacmbxTOC * tocH, short sum, char *errorStr,
                  int errorCode);
 #include "message.h"  /* For MyWindow struct */
 #include "prefdefs.h" /* For PREF_THREADING_OFF */
@@ -76,8 +76,14 @@ int AddMesgError(TOCType * tocH, short sum, char *errorStr,
 #include "gtk_menus.h"
 #include "log.h"
 #include "theme.h"
-#include "uudecode.h"
+/* uudecode.h removed — crispy handles encoding */
+#include "macmbx.h"
+#include "gtk_mailbox.h"
+#include "StringUtil.h"
+#include "StringDefs.h"
 #include <stdbool.h>
+
+/* IMAP removed — crispy_imap + macmbx handle everything. */
 int ReallyDoAnAlert(int templ, int which);
 #ifndef kStatReceivedMail
 #define kStatReceivedMail 0
@@ -93,7 +99,7 @@ int ReallyDoAnAlert(int templ, int which);
 #ifndef smSystemScript
 enum { smSystemScript = 0 };
 #endif
-extern short BoxMapCount;
+static short BoxMapCount = 0;
 enum { kStatReadMsg = 0 };
 #ifndef nil
 #define nil 0
@@ -141,21 +147,20 @@ int BoxMatchMenuItemsIn1Menu(MenuHandle mh, AccuPtr a, unsigned char *name,
   { size_t _mpl = ( *name - ((char *)spot - name)); memcpy(leaf,  spot + 1, _mpl); ((char*)(leaf))[_mpl] = '\0'; }
 char *MailboxSpecAlias(const char *specPath, char *name);
 void BuildBoxMenus(void);
-bool DeleteSum(TOCType * tocH, int sumNum);
-void MakeMessTitle(unsigned char *name, TOCType * tocH, int sumNum, bool b);
-bool IsQueued(TOCType * tocH, int sumNum);
+bool DeleteSum(MacmbxTOC * tocH, int sumNum);
+void MakeMessTitle(unsigned char *name, MacmbxTOC * tocH, int sumNum, bool b);
+bool IsQueued(MacmbxTOC * tocH, int sumNum);
 
 /* New Missing Decls */
 void MBTickle(void *u1, void *u2);
 void AddBoxHigh(const char *specPath);
-/* AttIsSelected declared in messact.h (via junk.h) */
 unsigned char *PeteSelectedString(void *u1, void *pte);
 bool MenuItemIsSeparator(MenuHandle mh, short item);
 /* CollapseLWSP declared in StringUtil.h as char *CollapseLWSP(char *s) */
 void AppendMenu(MenuHandle mh, const unsigned char *item);
 void SetMenuItemCommandID(MenuHandle mh, short item, long id);
 void SetMenuItemHierarchicalMenu(MenuHandle mh, short item, MenuHandle subMenu);
-void SelectBoxRange(TOCType * tocH, int start, int end, bool add, int u1,
+void SelectBoxRange(MacmbxTOC * tocH, int start, int end, bool add, int u1,
                     int u2);
 
 /* Restored declarations */
@@ -163,14 +168,14 @@ void SelectBoxRange(TOCType * tocH, int start, int end, bool add, int u1,
 /* HGetState/HSetState provided by legacy_shim.h */
 char *FindHeaderString(char *text, char *headerName, long *size, bool bodyToo);
 void MBDrawerOpen(MyWindowPtr win);
-/* TOCType * GetOutTOC(void); - Redundant macro conflict */
-void BeautifyFrom(unsigned char *who);
+/* MacmbxTOC * GetOutTOC(void); - Redundant macro conflict */
+/* BeautifyFrom → crispy_rfc822_beautify_from in crispy_rfc822.h */
 MyWindowPtr GetNewMyDialog(short id, void *w, void *h, void *behind);
 void CycleBalls(void);
 long GetPrefLong(short pref);
 /* SetWTitle declared in mailbox.h */
 /* GetAMessage declared in message.h */
-void RemoveUTF8FromSum(MSumPtr sum);
+void RemoveUTF8FromSum(MacmbxMsgSum * sum);
 /* SetHandleBig declared in util.h */
 long TempMaxMem(long *grow);
 short FindDirLevel(short vRefNum, long dirID);
@@ -185,12 +190,9 @@ GtkWidget * GetDialogWindow(DialogPtr dp);
 #define GetMyWindowDialogPtr(win) ((DialogPtr)GetMyWindowWindowPtr(win))
 /* Legacy Dialog Functions */
 /* CloseMyWindow provided by legacy_shim.h */
-TOCType * FindTOC(const char *path);
-void Box2TOCSpec(char * spec, char * tocSpec);
+MacmbxTOC * macmbx_registry_find(const char *path);
 void utl_SaveWindowPos(GtkWidget * win, Rect *r, bool *zoomed);
-char *GetMailboxName(TOCType * tocH, short sum, char *name);
-/* UpdateIMAPMailbox declared in mailbox.h */
-
+char *GetMailboxName(MacmbxTOC * tocH, short sum, char *name);
 /* Port/window helpers are provided by platform headers or central stubs; remove
   redundant prototypes here to avoid duplicate declarations. */
 typedef struct BoxMapStruct BoxCountElem; /* Guessing same layout */
@@ -218,7 +220,6 @@ void EndMovableModal(DialogPtr dp);
 void MyDisposeDialog(DialogPtr dp);
 short HRename(short vRefNum, long dirID, const unsigned char *oldName,
               const unsigned char *newName);
-/* Note is already #defined as 1 in headers */
 struct BoxMapStruct {
   short vRef;
   long dirId;
@@ -235,27 +236,18 @@ bool IsQueuedState(int state);
 void MenuID2VD(short menuID, short *vRef, long *dirID);
 
 #define LOG_FILT 6 /* Stub */
-bool DeleteSum(TOCType * tocH, int sumNum);
+bool DeleteSum(MacmbxTOC * tocH, int sumNum);
 void CycleBalls(void);
 long GetPrefLong(short pref);
 /* SetWTitle, ShowMyWindow, UserSelectWindow, GetNewMyWindow, OpenMailbox,
    InitMailboxWin, MyDisposeWindow — all declared in mailbox.h */
 /* `IsWindowVisible` is an inline in include/mailbox.h */
-long TOCDelDup(TOCType * tocH);
-TOCType * CheckTOC(char * spec);
-TOCType * GetTOCFromSearchWin(char * spec);
+long TOCDelDup(MacmbxTOC * tocH);
+MacmbxTOC * GetTOCFromSearchWin(char * spec);
 
 /* Map legacy types to shim types */
 /* mesgErrorPtr and MesgErrorType moved to top */
 /* mesgErrorHandle is defined in legacy_shim.h */
-
-typedef enum {
-  kDoAdd,
-  kDoDelete,
-  kDoUpdate,
-  kDoDeleteAttachments,
-  kDoCopy
-} IMAPUpdateType;
 
 typedef struct MenuAndScore {
   short menu;
@@ -263,7 +255,7 @@ typedef struct MenuAndScore {
   long score;
 } MenuAndScore, *MenuAndScorePtr, *MenuAndScoreHandle;
 
-void ZeroMailbox(TOCType * tocH);
+void ZeroMailbox(MacmbxTOC * tocH);
 int AddBoxMap(short vRef, long dirId);
 bool WantRebuildTOC(unsigned char * boxName, int why);
 void AddBox(short function, unsigned char * name, short level, bool unread);
@@ -275,26 +267,22 @@ int Path2Box(char *path, char * box);
  */
 /* AddMesgError implementation is below */
 int BoxSpecByNameInMenu(MenuHandle mh, char * spec, unsigned char *name);
-long TOCDelEmpty(TOCType * tocH);
+long TOCDelEmpty(MacmbxTOC * tocH);
 short FindBoxByNameIn1Menu(MenuHandle mh, unsigned char *name);
-int RedoWho(TOCType * tocH, short sumNum);
+int RedoWho(MacmbxTOC * tocH, short sumNum);
 int ChainTrash(char * spec);
-void SetSumColorLo(TOCType * tocH, short sumNum, short color);
-void SetStateLo(TOCType * tocH, int sumNum, int state);
-void SetState(TOCType * tocH, int sumNum, int state);
+void SetSumColorLo(MacmbxTOC * tocH, short sumNum, short color);
+void SetStateLo(MacmbxTOC * tocH, int sumNum, int state);
+void SetState(MacmbxTOC * tocH, int sumNum, int state);
 
 int BoxMatchScore(unsigned char *name, unsigned char *candidate);
-bool IsFromLine(unsigned char *line);
+/* IsFromLine → crispy_rfc822_is_from_line */
+#include "crispy_rfc822.h"
 int BoxMatchMenuItemsIn1Menu(MenuHandle mh, AccuPtr a, unsigned char *name,
                              int score());
 int CompareMAS(MenuAndScorePtr mas1, MenuAndScorePtr mas2);
 void SwapMAS(MenuAndScorePtr mas1, MenuAndScorePtr mas2);
-static void ProcessIMAPChanges(void *sumList, int sumCount, TOCType * toc,
-                               IMAPUpdateType message);
-static int IMAPRecvLine(TransStream stream, unsigned char * buffer, long *size);
-void DeleteIMAPSum(TOCType * tocH, int sumNum);
-void DeleteMessageLo(TOCType * tocH, int sumNum, bool nuke);
-void DecodeIMAPMessages(TOCType * tocH, char * spec);
+void DeleteMessageLo(MacmbxTOC * tocH, int sumNum, bool nuke);
 
 /* Allocate/free helpers that replace legacy "Handle" based NuHandle
  * allocation. These keep mailbox.c self-contained and use standard
@@ -306,15 +294,13 @@ void DecodeIMAPMessages(TOCType * tocH, char * spec);
  */
 #define MESG_ERR_BUF_SIZE (sizeof(uLong) + 256 + sizeof(int))
 
-static LineIOP Lip;
-static long gIMAPMsgEnd;
 
 /************************************************************************
  * TOCSetDirty - set the dirty bit
  ************************************************************************/
-void TOCSetDirty(TOCType * tocH, bool dirty) {
+void TOCSetDirty(MacmbxTOC * tocH, bool dirty) {
   if (!tocH) return;
-  tocH->durty = dirty;
+  tocH->dirty = dirty;
   AnyTOCDirty++;
 }
 
@@ -323,8 +309,8 @@ void TOCSetDirty(TOCType * tocH, bool dirty) {
  ************************************************************************/
 int AddOutgoingMesgError(short sumNum, uLong uidHash, int errorCode,
                          int template, ...) {
-  TOCType * tocH = NULL;
-  TOCType * tempTocH = NULL;
+  MacmbxTOC * tocH = NULL;
+  MacmbxTOC * tempTocH = NULL;
   short outSumNum = sumNum;
   char fmtdError[256], error[256];
   va_list args;
@@ -360,13 +346,13 @@ int AddOutgoingMesgError(short sumNum, uLong uidHash, int errorCode,
  * DeleteMesgError
  ************************************************************************/
 
-int DeleteMesgError(TOCType * tocH, short sum) {
+int DeleteMesgError(MacmbxTOC * tocH, short sum) {
   mesgErrorHandle mesgErrH;
 
-  if ((mesgErrH = (mesgErrorHandle)tocH->sums[sum].mesgErrH)) {
+  if ((mesgErrH = (mesgErrorHandle)tocH->msgs[sum].mesgErrH)) {
     /* Free the flat mesgError struct */
     free(mesgErrH);
-    tocH->sums[sum].mesgErrH = NULL;
+    tocH->msgs[sum].mesgErrH = NULL;
     /* persist changes to sidecar */
     mesg_error_store_save_all(tocH);
   }
@@ -377,20 +363,20 @@ int DeleteMesgError(TOCType * tocH, short sum) {
  * AddMesgError
  ************************************************************************/
 
-int AddMesgError(TOCType * tocH, short sum, char *errorStr,
+int AddMesgError(MacmbxTOC * tocH, short sum, char *errorStr,
                  int errorCode) {
   int err = 0;
   (void)err; /* Error ignored according to legacy comment below */
   mesgErrorHandle mesgErrH = NULL;
 
   /* tocH and sum should be valid, mesgErrH should be empty */
-  ASSERT(tocH && (sum != -1) && !tocH->sums[sum].mesgErrH &&
+  ASSERT(tocH && (sum != -1) && !tocH->msgs[sum].mesgErrH &&
          (sum < tocH->count));
   if (!(tocH && (sum != -1) && (sum < tocH->count)))
     return -1;
 
   /* if for some reason, mesgErrH isn't empty, overwrite it */
-  mesgErrH = (mesgErrorHandle)tocH->sums[sum].mesgErrH;
+  mesgErrH = (mesgErrorHandle)tocH->msgs[sum].mesgErrH;
   if (!mesgErrH) {
     mesgErrH = (mesgErrorHandle)calloc(1, sizeof(MesgErrorType));
     if (!mesgErrH)
@@ -404,14 +390,14 @@ int AddMesgError(TOCType * tocH, short sum, char *errorStr,
      */
     if (errorStr)
       PCopyTrim(mesgErrH->errorStr, errorStr, sizeof(mesgErrH->errorStr));
-    mesgErrH->uidHash = tocH->sums[sum].uidHash;
+    mesgErrH->uidHash = tocH->msgs[sum].uid_hash;
     mesgErrH->errorCode = errorCode;
   }
   // let's ignore the error since we can set the mesg state
-  tocH->sums[sum].state = MESG_ERR;
-  tocH->sums[sum].mesgErrH = (void *)mesgErrH;
+  tocH->msgs[sum].state = MESG_ERR;
+  tocH->msgs[sum].mesgErrH = (void *)mesgErrH;
   TOCSetDirty(tocH, true);
-  tocH->reallyDirty = true;
+  tocH->dirty = true;
   /* persist current mesg error state to sidecar */
   mesg_error_store_save_all(tocH);
   return (0);
@@ -421,7 +407,7 @@ int AddMesgError(TOCType * tocH, short sum, char *errorStr,
  * FillMesgErrors - fill toc
  ************************************************************************/
 
-int FillMesgErrors(TOCType * tocH) {
+int FillMesgErrors(MacmbxTOC * tocH) {
   /* Load per-mailbox JSON sidecar and populate in-memory mesgErrH entries.
    * Legacy resource-fork persistence removed during GTK port.
    */
@@ -435,7 +421,7 @@ int FillMesgErrors(TOCType * tocH) {
  * GetMailbox - put a mailbox window frontmost; open if necessary
  **********************************************************************/
 int GetMailbox(const char *path, bool showIt) {
-  TOCType * toc;
+  MacmbxTOC * toc;
   FSSpec tmpSpec;
 
   /* Build a temporary FSSpec from the POSIX path for legacy helpers */
@@ -444,26 +430,13 @@ int GetMailbox(const char *path, bool showIt) {
   if (ResolveAliasOrElse(&tmpSpec, nil, nil))
     return (ECANCELED);
 
-  /* if this is an IMAP folder we're going to open, adjust the spec so it points
-     to the mailbox inside */
-  if (IsIMAPCacheFolder(&tmpSpec))
-
-  if ((toc = FindTOC(tmpSpec))) {
+  if ((toc = macmbx_registry_find(tmpSpec))) {
     GtkWidget * tocWinWP;
     tocWinWP = GetMyWindowWindowPtr(toc->win);
     UsingWindow(tocWinWP);
     if (showIt) {
       if (!IsWindowVisible(tocWinWP)) {
         ShowMyWindow(tocWinWP);
-
-        // if we're showing an IMAP mailbox, resync it.
-        if (toc->imapTOC) {
-          (void)FetchNewMessages(toc, true, false, true, false);
-          UpdateIMAPMailbox(toc);
-        } else {
-          // resync the mailbox when it's convenient
-          FlagForResync(toc);
-        }
       }
     }
     UserSelectWindow(tocWinWP);
@@ -476,7 +449,7 @@ int GetMailbox(const char *path, bool showIt) {
 /**********************************************************************
  * OpenMailbox - open the named mailbox
  **********************************************************************/
-int OpenMailbox(const char *path, bool showIt, TOCType * toc) {
+int OpenMailbox(const char *path, bool showIt, MacmbxTOC * toc) {
   MyWindow *win;
   GtkWidget * winWP;
   FSSpec tmpSpec;
@@ -503,7 +476,7 @@ int OpenMailbox(const char *path, bool showIt, TOCType * toc) {
    * read or build toc for window if we don't have it yet
    */
   if (!toc & !(toc = GetTOCFromSearchWin(&tmpSpec))) {
-    toc = CheckTOC(&tmpSpec);
+    toc = macmbx_toc_open(&tmpSpec);
     if (toc == nil) {
       DisposeWindow_(winWP);
       MyThreadEndCritical();
@@ -531,9 +504,9 @@ int OpenMailbox(const char *path, bool showIt, TOCType * toc) {
     if (toc->drawer & !toc->drawerWin) {
       // Don't open draw if there is one already open
       // Open drawer
-      TOCType * tocTemp;
+      MacmbxTOC * tocTemp;
 
-      for (tocTemp = TOCList; tocTemp; tocTemp = tocTemp->next) {
+      for (tocTemp = macmbx_registry_head(); tocTemp; tocTemp = tocTemp->next) {
         if (tocTemp->drawerWin) {
           // Found another one. Don't open this one.
           toc->drawer = false;
@@ -549,19 +522,8 @@ int OpenMailbox(const char *path, bool showIt, TOCType * toc) {
   /*
    * push it onto list of open toc's
    */
-  toc->next = TOCList;
-  TOCList = toc;
 
   MyThreadEndCritical();
-
-  // if we're opening and showing an IMAP mailbox, fetch new messages
-  if (showIt && toc->imapTOC && AutoCheckOK() && !StartingUp) {
-    (void)FetchNewMessages(toc, true, false, true, false);
-    UpdateIMAPMailbox(toc);
-  } else {
-    // resync the mailbox when it's convenient
-    FlagForResync(toc);
-  }
 
   return 0;
 }
@@ -576,7 +538,7 @@ void MBDrawerOpen(MyWindowPtr win) {
   GtkWidget *parent = GetMyWindowWindowPtr(win);
   if (!parent) return;
 
-  TOCType *toc = (TOCType *)GetMyWindowPrivateData(win);
+  MacmbxTOC *toc = (MacmbxTOC *)GetMyWindowPrivateData(win);
   if (!toc) return;
   if (toc->drawerWin) return; /* already open */
 
@@ -617,7 +579,7 @@ enum {
 
 /* Context for message list selection callback */
 typedef struct {
-  TOCType *toc;
+  MacmbxTOC *toc;
   GtkWidget *preview;      /* Preview container box */
   GtkWidget *preview_hdr;  /* Header grid container */
   GtkWidget *preview_body; /* Body GtkTextView */
@@ -626,12 +588,12 @@ typedef struct {
 /* Forward declarations for callbacks */
 static void on_mbox_row_activated(GtkTreeView *tree_view, GtkTreePath *path,
                                   GtkTreeViewColumn *column, gpointer data);
-static void attach_mbox_context_menu(GtkWidget *tree, TOCType *toc);
+static void attach_mbox_context_menu(GtkWidget *tree, MacmbxTOC *toc);
 
 /* Forward declarations for shared header helpers */
-static char *read_raw_headers(TOCType *tocH, int sumNum, long *hdr_len);
+static char *read_raw_headers(MacmbxTOC *tocH, int sumNum, long *hdr_len);
 static gchar *extract_header(const char *text, long textLen, const char *name);
-static GtkWidget *build_header_grid(const char *raw, long hdr_len, MSumPtr sum);
+static GtkWidget *build_header_grid(const char *raw, long hdr_len, MacmbxMsgSum * sum);
 
 /* Message list selection callback */
 /* Find blank line separating headers from body.
@@ -681,7 +643,7 @@ static gchar *extract_header(const char *text, long textLen, const char *name) {
 
 static void on_mbox_msg_selected(GtkTreeSelection *sel, gpointer data) {
   MboxSelCtx *ctx = (MboxSelCtx *)data;
-  TOCType *toc = ctx->toc;
+  MacmbxTOC *toc = ctx->toc;
   GtkWidget *preview = ctx->preview;
   GtkTreeModel *model;
   GtkTreeIter iter;
@@ -691,7 +653,7 @@ static void on_mbox_msg_selected(GtkTreeSelection *sel, gpointer data) {
   if (idx < 0 || idx >= toc->count) return;
 
   /* Read the message from the mailbox file — same path as full view */
-  MSumPtr sum = &toc->sums[idx];
+  MacmbxMsgSum * sum = &toc->msgs[idx];
   GtkWidget *hdr_box = ctx->preview_hdr;
   GtkWidget *body_tv = ctx->preview_body;
   if (!hdr_box || !body_tv) return;
@@ -799,11 +761,11 @@ static const char *label_color_str(int label) {
   return (label < 8) ? colors[label] : "";
 }
 
-void populate_mbox_list(GtkListStore *store, TOCType *toc) {
+void populate_mbox_list(GtkListStore *store, MacmbxTOC *toc) {
   gtk_list_store_clear(store);
   bool isOut = (toc->which == OUT);
   for (int i = 0; i < toc->count; i++) {
-    MSumPtr sum = &toc->sums[i];
+    MacmbxMsgSum * sum = &toc->msgs[i];
     /* Format date */
     char datebuf[32] = "";
     if (sum->seconds > 0) {
@@ -827,12 +789,12 @@ void populate_mbox_list(GtkListStore *store, TOCType *toc) {
 
     /* Junk score */
     char junkbuf[8] = "";
-    if (sum->spamScore > 0)
-      snprintf(junkbuf, sizeof(junkbuf), "%ld", (long)sum->spamScore);
+    if (sum->spam_score > 0)
+      snprintf(junkbuf, sizeof(junkbuf), "%ld", (long)sum->spam_score);
 
     /* Ensure UTF-8 for display strings */
     gchar *safe_who = ensure_utf8(sum->from);
-    gchar *safe_subj = ensure_utf8(sum->subj);
+    gchar *safe_subject = ensure_utf8(sum->subject);
 
     GtkTreeIter iter;
     gtk_list_store_append(store, &iter);
@@ -845,12 +807,12 @@ void populate_mbox_list(GtkListStore *store, TOCType *toc) {
                        COL_DATE,     datebuf,
                        COL_SIZE,     sizebuf,
                        COL_JUNK,     junkbuf,
-                       COL_SUBJECT,  safe_subj,
+                       COL_SUBJECT,  safe_subject,
                        COL_INDEX,    i,
                        COL_LABEL_COLOR, label > 0 ? label_color_str(label) : NULL,
                        -1);
     g_free(safe_who);
-    g_free(safe_subj);
+    g_free(safe_subject);
   }
 }
 
@@ -873,7 +835,7 @@ static void label_color_cell_func(GtkTreeViewColumn *col, GtkCellRenderer *cell,
   g_free(color);
 }
 
-void InitMailboxWin(MyWindowPtr win, TOCType * toc, bool showIt) {
+void InitMailboxWin(MyWindowPtr win, MacmbxTOC * toc, bool showIt) {
   GtkWidget *winWP = GetMyWindowWindowPtr(win);
   if (!winWP) return;
 
@@ -888,7 +850,7 @@ void InitMailboxWin(MyWindowPtr win, TOCType * toc, bool showIt) {
   toc->win = win;
 
   /* Set window title from mailbox name */
-  const char *title = spec_name(toc->mailbox.spec);
+  const char *title = spec_name(toc->mbox_path);
   if (title && *title)
     theme_setup_headerbar(winWP, title);
 
@@ -1009,9 +971,9 @@ void InitMailboxWin(MyWindowPtr win, TOCType * toc, bool showIt) {
 
 /* Read raw message headers from disk. Caller must g_free the result.
  * Sets *hdr_len to byte length of headers (up to body start). */
-static char *read_raw_headers(TOCType *tocH, int sumNum, long *hdr_len) {
-  MSumPtr sum = &tocH->sums[sumNum];
-  FILE *fp = fopen(tocH->mailbox.spec, "r");
+static char *read_raw_headers(MacmbxTOC *tocH, int sumNum, long *hdr_len) {
+  MacmbxMsgSum * sum = &tocH->msgs[sumNum];
+  FILE *fp = fopen(tocH->mbox_path, "r");
   if (!fp) { *hdr_len = 0; return NULL; }
   fseek(fp, sum->offset, SEEK_SET);
   long rawLen = sum->length;
@@ -1019,7 +981,7 @@ static char *read_raw_headers(TOCType *tocH, int sumNum, long *hdr_len) {
   size_t nrd = fread(raw, 1, rawLen, fp);
   fclose(fp);
   raw[nrd] = '\0';
-  long body_off = sum->bodyOffset;
+  long body_off = sum->body_offset;
   if (body_off <= 0 || body_off > (long)nrd)
     body_off = find_body_start(raw, nrd);
   *hdr_len = (body_off > 0) ? body_off : (long)nrd;
@@ -1028,7 +990,7 @@ static char *read_raw_headers(TOCType *tocH, int sumNum, long *hdr_len) {
 
 /* Build a normal (weeded) header grid from raw message text.
  * Uses extract_header() — same path as preview, single code path. */
-static GtkWidget *build_header_grid(const char *raw, long hdr_len, MSumPtr sum) {
+static GtkWidget *build_header_grid(const char *raw, long hdr_len, MacmbxMsgSum * sum) {
   GtkWidget *grid = gtk_grid_new();
   gtk_grid_set_column_spacing(GTK_GRID(grid), 8);
   gtk_grid_set_row_spacing(GTK_GRID(grid), 3);
@@ -1047,8 +1009,8 @@ static GtkWidget *build_header_grid(const char *raw, long hdr_len, MSumPtr sum) 
     /* Fallback to TOC summary for Subject/From if not found in raw */
     if (!vstr || !vstr[0]) {
       g_free(vstr);
-      if (fields[i].isSubject & sum->subj[0])
-        vstr = ensure_utf8(sum->subj);
+      if (fields[i].isSubject & sum->subject[0])
+        vstr = ensure_utf8(sum->subject);
       else if (i == 1 & sum->from[0])  /* From */
         vstr = ensure_utf8(sum->from);
       else
@@ -1150,9 +1112,9 @@ static void on_blahblah_toggled(GtkToggleButton *btn, gpointer ud) {
   if (!messH || !messH->tocH) return;
 
   bool showAll = gtk_toggle_button_get_active(btn);
-  TOCType *tocH = messH->tocH;
+  MacmbxTOC *tocH = messH->tocH;
   int sumNum = messH->sumNum;
-  MSumPtr sum = &tocH->sums[sumNum];
+  MacmbxMsgSum * sum = &tocH->msgs[sumNum];
 
   if (showAll)
     SetMessFlag(messH, FLAG_SHOW_ALL);
@@ -1221,8 +1183,8 @@ static void on_msg_delete(GtkButton *btn, gpointer ud) {
   (void)ud;
   MessHandle messH = g_object_get_data(G_OBJECT(btn), "messH");
   if (!messH || !messH->tocH) return;
-  extern void DeleteMessage(TOCType *tocH, int sumNum, bool nuke);
-  TOCType *tocH = messH->tocH;
+  extern void DeleteMessage(MacmbxTOC *tocH, int sumNum, bool nuke);
+  MacmbxTOC *tocH = messH->tocH;
   int sumNum = messH->sumNum;
   GtkWidget *win = messH->win ? messH->win->window : NULL;
   DeleteMessage(tocH, sumNum, false);
@@ -1245,7 +1207,7 @@ static void on_fixed_toggled(GtkToggleButton *btn, gpointer ud) {
 static void on_mbox_row_activated(GtkTreeView *tree_view, GtkTreePath *path,
                                   GtkTreeViewColumn *column, gpointer data) {
   (void)column;
-  TOCType *toc = (TOCType *)data;
+  MacmbxTOC *toc = (MacmbxTOC *)data;
   if (!toc) return;
 
   GtkTreeModel *model = gtk_tree_view_get_model(tree_view);
@@ -1256,7 +1218,7 @@ static void on_mbox_row_activated(GtkTreeView *tree_view, GtkTreePath *path,
   gtk_tree_model_get(model, &iter, COL_INDEX, &idx, -1);
   if (idx < 0 || idx >= toc->count) return;
 
-  MSumPtr sum = &toc->sums[idx];
+  MacmbxMsgSum * sum = &toc->msgs[idx];
 
   /* Outgoing/draft messages open in compose window */
   if (toc->which == OUT ||
@@ -1271,7 +1233,7 @@ static void on_mbox_row_activated(GtkTreeView *tree_view, GtkTreePath *path,
 
   /* Incoming messages: use OpenMessage which handles header weeding,
    * rich text, IMAP download, and all the original Eudora logic */
-  extern MyWindowPtr OpenMessage(TOCType *tocH, short sumNum, GtkWidget *winWP,
+  extern MyWindowPtr OpenMessage(MacmbxTOC *tocH, short sumNum, GtkWidget *winWP,
                                   MyWindowPtr win, bool showIt, bool preview);
   MyWindowPtr mwin = OpenMessage(toc, idx, NULL, NULL, false, false);
   if (!mwin || !mwin->pte) return;
@@ -1432,10 +1394,10 @@ static int mbox_tree_selected_index(GtkTreeView *tree) {
 }
 
 /* Read raw message from mailbox file */
-static gchar *mbox_read_raw(TOCType *toc, int idx) {
+static gchar *mbox_read_raw(MacmbxTOC *toc, int idx) {
   if (!toc || idx < 0 || idx >= toc->count) return NULL;
-  MSumPtr sum = &toc->sums[idx];
-  FILE *fp = fopen(toc->mailbox.spec, "rb");
+  MacmbxMsgSum * sum = &toc->msgs[idx];
+  FILE *fp = fopen(toc->mbox_path, "rb");
   if (!fp) fp = fopen(toc, "rb");
   if (!fp) return NULL;
   if (fseek(fp, sum->offset, SEEK_SET) != 0) { fclose(fp); return NULL; }
@@ -1493,11 +1455,11 @@ static gchar *mbox_quote_text(const char *text) {
 static void on_ctx_reply(GSimpleAction *a, GVariant *p, gpointer ud) {
   (void)a; (void)p;
   GtkTreeView *tree = GTK_TREE_VIEW(ud);
-  TOCType *toc = g_object_get_data(G_OBJECT(tree), "toc");
+  MacmbxTOC *toc = g_object_get_data(G_OBJECT(tree), "toc");
   int idx = mbox_tree_selected_index(tree);
   if (idx < 0 || !toc) return;
 
-  MSumPtr sum = &toc->sums[idx];
+  MacmbxMsgSum * sum = &toc->msgs[idx];
   gchar *raw = mbox_read_raw(toc, idx);
   const char *body = mbox_find_body(raw);
 
@@ -1505,7 +1467,7 @@ static void on_ctx_reply(GSimpleAction *a, GVariant *p, gpointer ud) {
   if (!win || !win->window) { g_free(raw); return; }
 
   comp_set_field(win, "comp-to", sum->from);
-  const char *subj = sum->subj;
+  const char *subj = sum->subject;
   gchar *re_subj = (subj && g_ascii_strncasecmp(subj, "Re:", 3) == 0)
       ? g_strdup(subj) : g_strdup_printf("Re: %s", subj ? subj : "");
   comp_set_field(win, "comp-subject", re_subj);
@@ -1522,18 +1484,18 @@ static void on_ctx_reply(GSimpleAction *a, GVariant *p, gpointer ud) {
 static void on_ctx_forward(GSimpleAction *a, GVariant *p, gpointer ud) {
   (void)a; (void)p;
   GtkTreeView *tree = GTK_TREE_VIEW(ud);
-  TOCType *toc = g_object_get_data(G_OBJECT(tree), "toc");
+  MacmbxTOC *toc = g_object_get_data(G_OBJECT(tree), "toc");
   int idx = mbox_tree_selected_index(tree);
   if (idx < 0 || !toc) return;
 
-  MSumPtr sum = &toc->sums[idx];
+  MacmbxMsgSum * sum = &toc->msgs[idx];
   gchar *raw = mbox_read_raw(toc, idx);
   const char *body = mbox_find_body(raw);
 
   MyWindowPtr win = DoComposeNew(0);
   if (!win || !win->window) { g_free(raw); return; }
 
-  const char *subj = sum->subj;
+  const char *subj = sum->subject;
   gchar *fwd_subj = g_strdup_printf("Fwd: %s", subj ? subj : "");
   comp_set_field(win, "comp-subject", fwd_subj);
 
@@ -1549,16 +1511,17 @@ static void on_ctx_forward(GSimpleAction *a, GVariant *p, gpointer ud) {
   g_free(raw); g_free(fwd_subj);
 }
 
+/* Forward declarations for macmbx helpers used by context menu */
+static bool ctx_get_sel(gpointer ud, GtkTreeView **tree, MacmbxTOC **mtoc, int *idx);
+static const char *macmbx_state_str(uint8_t s);
+
 static void on_ctx_delete(GSimpleAction *a, GVariant *p, gpointer ud) {
   (void)a; (void)p;
-  GtkTreeView *tree = GTK_TREE_VIEW(ud);
-  TOCType *toc = g_object_get_data(G_OBJECT(tree), "toc");
-  int idx = mbox_tree_selected_index(tree);
-  if (idx < 0 || !toc) return;
+  GtkTreeView *tree; MacmbxTOC *mtoc; int idx;
+  if (!ctx_get_sel(ud, &tree, &mtoc, &idx)) return;
 
-  toc->sums[idx].opts |= OPT_DELETED;
-  toc->sums[idx].state = MESG_ERR;
-  TOCSetDirty(toc, true);
+  macmbx_delete_message(mtoc, idx);
+  macmbx_toc_save(mtoc);
 
   /* Remove from visible list */
   GtkTreeModel *model = gtk_tree_view_get_model(tree);
@@ -1590,34 +1553,38 @@ static void mbox_update_row(GtkTreeView *tree, int idx, int col, const char *val
   } while (gtk_tree_model_iter_next(model, &iter));
 }
 
-/* Helper: get TOC + selected index from tree, return false if none */
-static bool ctx_get_sel(gpointer ud, GtkTreeView **tree, TOCType **toc, int *idx) {
+/* Helper: get MacmbxTOC + selected index from tree */
+static bool ctx_get_sel(gpointer ud, GtkTreeView **tree, MacmbxTOC **mtoc, int *idx) {
   *tree = GTK_TREE_VIEW(ud);
-  *toc = g_object_get_data(G_OBJECT(*tree), "toc");
+  /* Walk up to the vpaned parent which has the macmbx-toc data */
+  GtkWidget *vpaned = gtk_widget_get_ancestor(GTK_WIDGET(*tree), GTK_TYPE_PANED);
+  *mtoc = vpaned ? g_object_get_data(G_OBJECT(vpaned), "macmbx-toc") : NULL;
+  if (!*mtoc) {
+    /* Fallback: open via path stored on tree */
+    const char *path = g_object_get_data(G_OBJECT(*tree), "mbox-path");
+    if (path) *mtoc = macmbx_toc_open(path);
+  }
   *idx = mbox_tree_selected_index(*tree);
-  return (*idx >= 0 && *toc);
+  return (*idx >= 0 && *mtoc && *idx < (*mtoc)->count);
 }
 
 /* --- Change Status actions --- */
 
 static void on_ctx_set_state(GSimpleAction *a, GVariant *p, gpointer ud) {
   (void)p;
-  GtkTreeView *tree; TOCType *toc; int idx;
-  if (!ctx_get_sel(ud, &tree, &toc, &idx)) return;
+  GtkTreeView *tree; MacmbxTOC *mtoc; int idx;
+  if (!ctx_get_sel(ud, &tree, &mtoc, &idx)) return;
 
-  /* Determine state from action name */
   const char *name = g_action_get_name(G_ACTION(a));
-  short state = READ;
-  if (strcmp(name, "mark-unread") == 0)    state = UNREAD;
-  else if (strcmp(name, "mark-read") == 0) state = READ;
-  else if (strcmp(name, "mark-replied") == 0) state = REPLIED;
-  else if (strcmp(name, "mark-forwarded") == 0) state = FORWARDED;
+  uint8_t state = MACMBX_READ;
+  if (strcmp(name, "mark-unread") == 0)      state = MACMBX_UNREAD;
+  else if (strcmp(name, "mark-read") == 0)   state = MACMBX_READ;
+  else if (strcmp(name, "mark-replied") == 0) state = MACMBX_REPLIED;
+  else if (strcmp(name, "mark-forwarded") == 0) state = MACMBX_FORWARDED;
 
-  toc->sums[idx].state = state;
-  TOCSetDirty(toc, true);
-  extern int WriteTOC(TOCType *tocH);
-  WriteTOC(toc);
-  mbox_update_row(tree, idx, COL_STATUS, state_str(state));
+  macmbx_set_state(mtoc, idx, state);
+  macmbx_toc_save(mtoc);
+  mbox_update_row(tree, idx, COL_STATUS, macmbx_state_str(state));
 }
 
 /* on_ctx_mark_read/unread now handled by on_ctx_set_state */
@@ -1626,8 +1593,8 @@ static void on_ctx_set_state(GSimpleAction *a, GVariant *p, gpointer ud) {
 
 static void on_ctx_set_priority(GSimpleAction *a, GVariant *p, gpointer ud) {
   (void)p;
-  GtkTreeView *tree; TOCType *toc; int idx;
-  if (!ctx_get_sel(ud, &tree, &toc, &idx)) return;
+  GtkTreeView *tree; MacmbxTOC *mtoc; int idx;
+  if (!ctx_get_sel(ud, &tree, &mtoc, &idx)) return;
 
   const char *name = g_action_get_name(G_ACTION(a));
   uint8_t pri = 3;
@@ -1637,10 +1604,8 @@ static void on_ctx_set_priority(GSimpleAction *a, GVariant *p, gpointer ud) {
   else if (strcmp(name, "priority-low") == 0) pri = 4;
   else if (strcmp(name, "priority-lowest") == 0) pri = 5;
 
-  toc->sums[idx].priority = pri;
-  TOCSetDirty(toc, true);
-  extern int WriteTOC(TOCType *tocH);
-  WriteTOC(toc);
+  macmbx_set_priority(mtoc, idx, pri);
+  macmbx_toc_save(mtoc);
   mbox_update_row(tree, idx, COL_PRIORITY, priority_str(pri));
 }
 
@@ -1648,32 +1613,36 @@ static void on_ctx_set_priority(GSimpleAction *a, GVariant *p, gpointer ud) {
 
 static void on_ctx_transfer(GSimpleAction *a, GVariant *p, gpointer ud) {
   (void)p;
-  GtkTreeView *tree; TOCType *toc; int idx;
-  if (!ctx_get_sel(ud, &tree, &toc, &idx)) return;
+  GtkTreeView *tree; MacmbxTOC *mtoc; int idx;
+  if (!ctx_get_sel(ud, &tree, &mtoc, &idx)) return;
 
   const char *mbName = g_object_get_data(G_OBJECT(a), "mailbox-name");
   if (!mbName) return;
 
-  char spec[PATH_MAX];
-  extern int BoxSpecByName(char *spec, char *name);
-  if (BoxSpecByName(spec, (char *)mbName) == 0) {
-    extern int MoveMessageLo(TOCType *tocH, int sumNum, char *spec,
-                             bool copy, bool stranded, bool wantstranded);
-    MoveMessageLo(toc, idx, spec, false, false, false);
+  /* Open destination via macmbx store */
+  MacmbxStore *store = gtk_mailbox_get_store();
+  if (!store) return;
+  MacmbxNode *dst_node = macmbx_store_find_by_name(store, mbName);
+  if (!dst_node || dst_node->type != MACMBX_NODE_MAILBOX) return;
+  MacmbxTOC *dst = macmbx_toc_open(dst_node->path);
+  if (!dst) return;
 
-    /* Remove from visible list */
-    GtkTreeModel *model = gtk_tree_view_get_model(tree);
-    GtkTreeIter iter;
-    if (gtk_tree_model_get_iter_first(model, &iter)) {
-      do {
-        int row_idx = -1;
-        gtk_tree_model_get(model, &iter, COL_INDEX, &row_idx, -1);
-        if (row_idx == idx) {
-          gtk_list_store_remove(GTK_LIST_STORE(model), &iter);
-          break;
-        }
-      } while (gtk_tree_model_iter_next(model, &iter));
-    }
+  macmbx_transfer(mtoc, idx, dst, false /* move, not copy */);
+  macmbx_toc_save(mtoc);
+  macmbx_toc_save(dst);
+
+  /* Remove from visible list */
+  GtkTreeModel *model = gtk_tree_view_get_model(tree);
+  GtkTreeIter iter;
+  if (gtk_tree_model_get_iter_first(model, &iter)) {
+    do {
+      int row_idx = -1;
+      gtk_tree_model_get(model, &iter, COL_INDEX, &row_idx, -1);
+      if (row_idx == idx) {
+        gtk_list_store_remove(GTK_LIST_STORE(model), &iter);
+        break;
+      }
+    } while (gtk_tree_model_iter_next(model, &iter));
   }
 }
 
@@ -1681,23 +1650,17 @@ static void on_ctx_transfer(GSimpleAction *a, GVariant *p, gpointer ud) {
 
 static void on_ctx_set_label(GSimpleAction *a, GVariant *p, gpointer ud) {
   (void)p;
-  GtkTreeView *tree; TOCType *toc; int idx;
-  if (!ctx_get_sel(ud, &tree, &toc, &idx)) return;
+  GtkTreeView *tree; MacmbxTOC *mtoc; int idx;
+  if (!ctx_get_sel(ud, &tree, &mtoc, &idx)) return;
 
   const char *name = g_action_get_name(G_ACTION(a));
   int label = 0;
   if (sscanf(name, "label-%d", &label) != 1) label = 0;
 
-  /* Clear old label bits (FLAG_HUE1-3 at bits 14-16) and set new */
-  toc->sums[idx].flags &= ~(FLAG_HUE1 | FLAG_HUE2 | FLAG_HUE3);
-  if (label & 1) toc->sums[idx].flags |= FLAG_HUE1;
-  if (label & 2) toc->sums[idx].flags |= FLAG_HUE2;
-  if (label & 4) toc->sums[idx].flags |= FLAG_HUE3;
-  TOCSetDirty(toc, true);
-  extern int WriteTOC(TOCType *tocH);
-  WriteTOC(toc);
+  macmbx_set_label(mtoc, idx, (uint8_t)label);
+  macmbx_toc_save(mtoc);
 
-  const char *labelbuf = (label > 0) ? "\xe2\x97\x8f" : ""; /* ● */
+  const char *labelbuf = (label > 0) ? "\xe2\x97\x8f" : "";
   mbox_update_row(tree, idx, COL_LABEL, labelbuf);
 
   /* Update row color */
@@ -1720,21 +1683,23 @@ static void on_ctx_set_label(GSimpleAction *a, GVariant *p, gpointer ud) {
 
 static void on_ctx_junk(GSimpleAction *a, GVariant *p, gpointer ud) {
   (void)a; (void)p;
-  GtkTreeView *tree; TOCType *toc; int idx;
-  if (!ctx_get_sel(ud, &tree, &toc, &idx)) return;
-  toc->sums[idx].spamScore = 100;
-  TOCSetDirty(toc, true);
-  { extern int WriteTOC(TOCType *tocH); WriteTOC(toc); }
+  GtkTreeView *tree; MacmbxTOC *mtoc; int idx;
+  if (!ctx_get_sel(ud, &tree, &mtoc, &idx)) return;
+  MacmbxJunkConfig jcfg;
+  macmbx_junk_config_init(&jcfg);
+  macmbx_junk_mark(&jcfg, mtoc, idx, true, gtk_mailbox_get_store());
+  macmbx_toc_save(mtoc);
   mbox_update_row(tree, idx, COL_JUNK, "100");
 }
 
 static void on_ctx_not_junk(GSimpleAction *a, GVariant *p, gpointer ud) {
   (void)a; (void)p;
-  GtkTreeView *tree; TOCType *toc; int idx;
-  if (!ctx_get_sel(ud, &tree, &toc, &idx)) return;
-  toc->sums[idx].spamScore = 0;
-  TOCSetDirty(toc, true);
-  { extern int WriteTOC(TOCType *tocH); WriteTOC(toc); }
+  GtkTreeView *tree; MacmbxTOC *mtoc; int idx;
+  if (!ctx_get_sel(ud, &tree, &mtoc, &idx)) return;
+  MacmbxJunkConfig jcfg;
+  macmbx_junk_config_init(&jcfg);
+  macmbx_junk_mark(&jcfg, mtoc, idx, false, gtk_mailbox_get_store());
+  macmbx_toc_save(mtoc);
   mbox_update_row(tree, idx, COL_JUNK, "");
 }
 
@@ -1751,7 +1716,7 @@ static void on_mbox_right_click(GtkGestureClick *gesture, int n_press,
 }
 
 /* Build and attach a right-click context menu to the tree view */
-static void attach_mbox_context_menu(GtkWidget *tree, TOCType *toc) {
+static void attach_mbox_context_menu(GtkWidget *tree, MacmbxTOC *toc) {
   g_object_set_data(G_OBJECT(tree), "toc", toc);
 
   /* Action group for context menu */
@@ -1920,7 +1885,7 @@ static void attach_mbox_context_menu(GtkWidget *tree, TOCType *toc) {
   gtk_widget_add_controller(tree, GTK_EVENT_CONTROLLER(gesture));
 }
 
-GtkWidget *CreateMailboxPanel(TOCType *toc) {
+GtkWidget *CreateMailboxPanel(MacmbxTOC *toc) {
   if (!toc) return gtk_label_new("No mailbox loaded.");
 
   GtkWidget *vpaned = gtk_paned_new(GTK_ORIENTATION_VERTICAL);
@@ -2024,25 +1989,420 @@ GtkWidget *CreateMailboxPanel(TOCType *toc) {
   return vpaned;
 }
 
+/* ====================================================================
+ * MacmbxTOC-based mailbox panel — uses macmbx library for all data.
+ * Replaces CreateMailboxPanel when opening via MacmbxStore.
+ * ==================================================================== */
+
+/* Context for macmbx message list selection callback */
+typedef struct {
+  MacmbxTOC *mtoc;
+  GtkWidget *preview;
+  GtkWidget *preview_hdr;
+  GtkWidget *preview_body;
+} MacmbxSelCtx;
+
+/* State display string (same icons, reads MacmbxState) */
+static const char *macmbx_state_str(uint8_t s) {
+  switch (s) {
+    case MACMBX_UNREAD:       return "\xe2\x97\x8f"; /* ● */
+    case MACMBX_READ:         return "";
+    case MACMBX_REPLIED:      return "\xe2\x86\xa9"; /* ↩ */
+    case MACMBX_FORWARDED:    return "\xe2\x86\x92"; /* → */
+    case MACMBX_REDIRECTED:   return "\xe2\x87\x89"; /* ⇉ */
+    case MACMBX_UNSENDABLE:   return "\xe2\x9c\x8f"; /* ✏ */
+    case MACMBX_SENDABLE:     return "\xe2\x9c\x93"; /* ✓ */
+    case MACMBX_QUEUED:       return "\xe2\x8f\xb3"; /* ⏳ */
+    case MACMBX_SENT:         return "\xe2\x9c\x89"; /* ✉ */
+    case MACMBX_UNSENT:       return "\xe2\x9c\x8f"; /* ✏ */
+    case MACMBX_TIMED:        return "\xe2\x8f\xb0"; /* ⏰ */
+    case MACMBX_BUSY_SENDING: return "\xe2\x87\xa7"; /* ⇧ */
+    case MACMBX_MESG_ERR:     return "\xe2\x9a\xa0"; /* ⚠ */
+    case MACMBX_REBUILT:      return "";
+    default:                  return "";
+  }
+}
+
+/* Label number from macmbx flags */
+static int macmbx_label_from_flags(uint32_t flags) {
+  return (int)((flags & MACMBX_FLAG_LABEL_MASK) >> MACMBX_FLAG_LABEL_SHIFT);
+}
+
+/* Populate message list from MacmbxTOC */
+void populate_mbox_list_macmbx(GtkListStore *store, MacmbxTOC *mtoc) {
+  gtk_list_store_clear(store);
+  bool isOut = (mtoc->which == MACMBX_TYPE_OUT);
+  for (int i = 0; i < mtoc->count; i++) {
+    MacmbxMsgSum *msg = &mtoc->msgs[i];
+
+    /* Format date */
+    char datebuf[32] = "";
+    if (msg->seconds > 0) {
+      time_t t = (time_t)msg->seconds;
+      struct tm *tm = localtime(&t);
+      if (tm) strftime(datebuf, sizeof(datebuf), "%Y-%m-%d %H:%M", tm);
+    }
+    /* Format size */
+    char sizebuf[16];
+    if (msg->length >= 1024)
+      snprintf(sizebuf, sizeof(sizebuf), "%ldK", msg->length / 1024);
+    else
+      snprintf(sizebuf, sizeof(sizebuf), "%ld", msg->length);
+
+    /* Attachment */
+    const char *attach = (msg->flags & MACMBX_FLAG_ATTACHMENT) ? "\xf0\x9f\x93\x8e" : "";
+
+    /* Label */
+    int label = macmbx_label_from_flags(msg->flags);
+    const char *labelbuf = (label > 0) ? "\xe2\x97\x8f" : "";
+
+    /* Junk score */
+    char junkbuf[8] = "";
+    if (msg->spam_score > 0)
+      snprintf(junkbuf, sizeof(junkbuf), "%d", (int)msg->spam_score);
+
+    gchar *safe_who = ensure_utf8(msg->from);
+    gchar *safe_subj = ensure_utf8(msg->subject);
+
+    GtkTreeIter iter;
+    gtk_list_store_append(store, &iter);
+    gtk_list_store_set(store, &iter,
+                       COL_STATUS,   macmbx_state_str(msg->state),
+                       COL_PRIORITY, priority_str(msg->priority),
+                       COL_ATTACH,   attach,
+                       COL_LABEL,    labelbuf,
+                       COL_WHO,      safe_who,
+                       COL_DATE,     datebuf,
+                       COL_SIZE,     sizebuf,
+                       COL_JUNK,     junkbuf,
+                       COL_SUBJECT,  safe_subj,
+                       COL_INDEX,    i,
+                       COL_LABEL_COLOR, label > 0 ? label_color_str(label) : NULL,
+                       -1);
+    g_free(safe_who);
+    g_free(safe_subj);
+  }
+}
+
+/* Build header grid from raw message text (macmbx version) */
+static GtkWidget *build_macmbx_header_grid(MacmbxTOC *mtoc, int idx) {
+  GtkWidget *grid = gtk_grid_new();
+  gtk_grid_set_column_spacing(GTK_GRID(grid), 8);
+  gtk_grid_set_row_spacing(GTK_GRID(grid), 3);
+  gtk_widget_set_margin_start(grid, 12);
+  gtk_widget_set_margin_end(grid, 12);
+  gtk_widget_set_margin_top(grid, 8);
+  gtk_widget_set_margin_bottom(grid, 8);
+  int row = 0;
+
+  MacmbxMsgSum *msg = &mtoc->msgs[idx];
+  struct { const char *label; const char *field; bool isSubj; } fields[] = {
+    {"Subject:", "Subject", true}, {"From:", "From", false},
+    {"To:", "To", false}, {"Cc:", "Cc", false}, {"Date:", "Date", false},
+  };
+  for (int i = 0; i < 5; i++) {
+    char *val = macmbx_read_header_field(mtoc, idx, fields[i].field);
+    /* Fallback to summary for Subject/From */
+    if (!val || !val[0]) {
+      free(val);
+      if (fields[i].isSubj && msg->subject[0])
+        val = strdup(msg->subject);
+      else if (i == 1 && msg->from[0])
+        val = strdup(msg->from);
+      else
+        continue;
+    }
+    if (!val || !val[0]) { free(val); continue; }
+
+    gchar *utf8_val = ensure_utf8(val);
+    free(val);
+
+    GtkWidget *lbl = gtk_label_new(fields[i].label);
+    gtk_widget_add_css_class(lbl, "msg-hdr-label");
+    gtk_widget_set_halign(lbl, GTK_ALIGN_END);
+    gtk_widget_set_valign(lbl, GTK_ALIGN_START);
+    gtk_grid_attach(GTK_GRID(grid), lbl, 0, row, 1, 1);
+
+    GtkWidget *vlbl = gtk_label_new(utf8_val);
+    gtk_label_set_wrap(GTK_LABEL(vlbl), TRUE);
+    gtk_label_set_selectable(GTK_LABEL(vlbl), TRUE);
+    gtk_widget_set_halign(vlbl, GTK_ALIGN_START);
+    gtk_widget_set_hexpand(vlbl, TRUE);
+    if (fields[i].isSubj)
+      gtk_widget_add_css_class(vlbl, "msg-subject-value");
+    gtk_grid_attach(GTK_GRID(grid), vlbl, 1, row, 1, 1);
+    g_free(utf8_val);
+    row++;
+  }
+  return grid;
+}
+
+/* Message selection callback — reads body via macmbx */
+static void on_macmbx_msg_selected(GtkTreeSelection *sel, gpointer data) {
+  MacmbxSelCtx *ctx = (MacmbxSelCtx *)data;
+  MacmbxTOC *mtoc = ctx->mtoc;
+  GtkTreeModel *model;
+  GtkTreeIter iter;
+  if (!gtk_tree_selection_get_selected(sel, &model, &iter)) return;
+  int idx = -1;
+  gtk_tree_model_get(model, &iter, COL_INDEX, &idx, -1);
+  if (idx < 0 || idx >= mtoc->count) return;
+
+  GtkWidget *hdr_box = ctx->preview_hdr;
+  GtkWidget *body_tv = ctx->preview_body;
+  if (!hdr_box || !body_tv) return;
+
+  /* Clear previous header grid */
+  GtkWidget *child;
+  while ((child = gtk_widget_get_first_child(hdr_box)))
+    gtk_box_remove(GTK_BOX(hdr_box), child);
+
+  /* Clear previous body */
+  geditDocument *doc = geditctrl_get_document(body_tv);
+  gint docLen = gedit_document_get_length(doc);
+  if (docLen > 0) gedit_document_delete_range(doc, 0, docLen);
+
+  /* Build header grid */
+  GtkWidget *grid = build_macmbx_header_grid(mtoc, idx);
+  gtk_box_append(GTK_BOX(hdr_box), grid);
+
+  /* Load body */
+  long body_len = 0;
+  char *body = macmbx_read_body(mtoc, idx, &body_len);
+  if (body && body_len > 0) {
+    gchar *body_utf8 = ensure_utf8(body);
+    bool isHTML = (mtoc->msgs[idx].opts & MACMBX_OPT_HTML) != 0;
+    if (isHTML)
+      gedit_document_insert_markup(doc, 0, body_utf8);
+    else
+      gedit_document_insert_text(doc, 0, body_utf8);
+    g_free(body_utf8);
+  }
+  free(body);
+
+  /* Mark as read */
+  if (mtoc->msgs[idx].state == MACMBX_UNREAD) {
+    macmbx_set_state(mtoc, idx, MACMBX_READ);
+    /* Update the status column in the tree view */
+    gtk_list_store_set(GTK_LIST_STORE(model), &iter,
+                       COL_STATUS, macmbx_state_str(MACMBX_READ), -1);
+  }
+}
+
+/* Double-click opens message — compose for Out, read-only for In */
+static void on_macmbx_row_activated(GtkTreeView *tree_view, GtkTreePath *path,
+                                     GtkTreeViewColumn *column, gpointer data) {
+  (void)column;
+  MacmbxTOC *mtoc = (MacmbxTOC *)data;
+  GtkTreeModel *model = gtk_tree_view_get_model(tree_view);
+  GtkTreeIter iter;
+  if (!gtk_tree_model_get_iter(model, &iter, path)) return;
+  int idx = -1;
+  gtk_tree_model_get(model, &iter, COL_INDEX, &idx, -1);
+  if (idx < 0 || idx >= mtoc->count) return;
+
+  MacmbxMsgSum *msg = &mtoc->msgs[idx];
+
+  /* Outgoing/draft messages open in compose window via legacy path.
+   * The Out TOC is still managed by MacmbxTOC for compose operations. */
+  if (mtoc->which == MACMBX_TYPE_OUT ||
+      msg->state == MACMBX_UNSENT || msg->state == MACMBX_SENDABLE ||
+      msg->state == MACMBX_QUEUED || msg->state == MACMBX_TIMED) {
+    /* Get the legacy TOC and open in compose */
+    extern MacmbxTOC *TOCByPath(const char *path);
+    MacmbxTOC *toc = TOCByPath(mtoc->mbox_path);
+    if (toc && idx < toc->count) {
+      MyWindowPtr win = OpenComp(toc, idx, NULL, NULL, true, false);
+      if (win && win->window)
+        gtk_window_present(GTK_WINDOW(win->window));
+    }
+    return;
+  }
+
+  /* Incoming messages: use legacy OpenMessage which handles everything */
+  {
+    extern MacmbxTOC *TOCByPath(const char *path);
+    MacmbxTOC *toc = TOCByPath(mtoc->mbox_path);
+    if (toc && idx < toc->count) {
+      extern MyWindowPtr OpenMessage(MacmbxTOC *tocH, short sumNum,
+                                      GtkWidget *winWP, MyWindowPtr win,
+                                      bool showIt, bool preview);
+      MyWindowPtr mwin = OpenMessage(toc, idx, NULL, NULL, true, false);
+      if (mwin && mwin->window)
+        gtk_window_present(GTK_WINDOW(mwin->window));
+    }
+    return;
+  }
+
+  /* Fallback read-only viewer (if legacy path unavailable) */
+  long msg_len = 0;
+  char *raw = macmbx_read_message(mtoc, idx, &msg_len);
+  if (!raw) return;
+
+  GtkWidget *win = gtk_window_new();
+  gchar *title_utf8 = ensure_utf8(msg->subject);
+  gtk_window_set_title(GTK_WINDOW(win), title_utf8 ? title_utf8 : "Message");
+  g_free(title_utf8);
+  gtk_window_set_default_size(GTK_WINDOW(win), 700, 500);
+
+  GtkWidget *vbox = gtk_box_new(GTK_ORIENTATION_VERTICAL, 0);
+
+  /* Header grid */
+  GtkWidget *hdr = build_macmbx_header_grid(mtoc, idx);
+  gtk_box_append(GTK_BOX(vbox), hdr);
+  gtk_box_append(GTK_BOX(vbox), gtk_separator_new(GTK_ORIENTATION_HORIZONTAL));
+
+  /* Body */
+  GtkWidget *body_view = geditctrl_new();
+  geditctrl_set_editable(body_view, FALSE);
+  gtk_widget_set_vexpand(body_view, TRUE);
+  theme_apply_to_editor(body_view);
+
+  long body_len = 0;
+  char *body = macmbx_read_body(mtoc, idx, &body_len);
+  if (body && body_len > 0) {
+    geditDocument *doc = geditctrl_get_document(body_view);
+    gchar *body_utf8 = ensure_utf8(body);
+    bool isHTML = (msg->opts & MACMBX_OPT_HTML) != 0;
+    if (isHTML)
+      gedit_document_insert_markup(doc, 0, body_utf8);
+    else
+      gedit_document_insert_text(doc, 0, body_utf8);
+    g_free(body_utf8);
+  }
+  free(body);
+  free(raw);
+
+  GtkWidget *scroll = gtk_scrolled_window_new();
+  gtk_scrolled_window_set_child(GTK_SCROLLED_WINDOW(scroll), body_view);
+  gtk_widget_set_vexpand(scroll, TRUE);
+  gtk_box_append(GTK_BOX(vbox), scroll);
+
+  gtk_window_set_child(GTK_WINDOW(win), vbox);
+  gtk_window_present(GTK_WINDOW(win));
+}
+
+/* Create a mailbox panel backed by MacmbxTOC */
+GtkWidget *CreateMailboxPanelMacmbx(MacmbxTOC *mtoc) {
+  if (!mtoc) return gtk_label_new("No mailbox loaded.");
+
+  GtkWidget *vpaned = gtk_paned_new(GTK_ORIENTATION_VERTICAL);
+  gtk_paned_set_position(GTK_PANED(vpaned), 250);
+
+  /* --- Message list (GtkTreeView) --- */
+  GtkListStore *store = gtk_list_store_new(NUM_MBOX_COLS,
+      G_TYPE_STRING, G_TYPE_STRING, G_TYPE_STRING, G_TYPE_STRING,
+      G_TYPE_STRING, G_TYPE_STRING, G_TYPE_STRING, G_TYPE_STRING,
+      G_TYPE_STRING, G_TYPE_INT, G_TYPE_STRING);
+  GtkWidget *tree = gtk_tree_view_new_with_model(GTK_TREE_MODEL(store));
+  g_object_unref(store);
+
+  bool isOut = (mtoc->which == MACMBX_TYPE_OUT);
+
+  struct { const char *title; int col; int width; bool visible; } cols[] = {
+    {"",         COL_STATUS,   28,  true},
+    {"!",        COL_PRIORITY, 28,  true},
+    {"\xf0\x9f\x93\x8e", COL_ATTACH, 28, true},
+    {"Label",    COL_LABEL,    40,  true},
+    {isOut ? "To" : "From", COL_WHO, 150, true},
+    {"Date",     COL_DATE,    130,  true},
+    {"Size",     COL_SIZE,     60,  true},
+    {"Junk",     COL_JUNK,     40,  false},
+    {"Subject",  COL_SUBJECT,  -1,  true},
+  };
+  int ncols = sizeof(cols) / sizeof(cols[0]);
+  for (int c = 0; c < ncols; c++) {
+    GtkCellRenderer *r = gtk_cell_renderer_text_new();
+    GtkTreeViewColumn *col = gtk_tree_view_column_new_with_attributes(
+        cols[c].title, r, "text", cols[c].col, NULL);
+    gtk_tree_view_column_set_cell_data_func(col, r, label_color_cell_func,
+                                             GINT_TO_POINTER(cols[c].col), NULL);
+    gtk_tree_view_column_set_resizable(col, TRUE);
+    gtk_tree_view_column_set_reorderable(col, TRUE);
+    if (cols[c].width > 0)
+      gtk_tree_view_column_set_fixed_width(col, cols[c].width);
+    else
+      gtk_tree_view_column_set_expand(col, TRUE);
+    gtk_tree_view_column_set_visible(col, cols[c].visible);
+    gtk_tree_view_column_set_sort_column_id(col, cols[c].col);
+    gtk_tree_view_append_column(GTK_TREE_VIEW(tree), col);
+  }
+  gtk_tree_view_set_headers_visible(GTK_TREE_VIEW(tree), TRUE);
+
+  populate_mbox_list_macmbx(store, mtoc);
+
+  GtkWidget *scroll1 = gtk_scrolled_window_new();
+  gtk_scrolled_window_set_child(GTK_SCROLLED_WINDOW(scroll1), tree);
+  gtk_widget_set_vexpand(scroll1, TRUE);
+  gtk_paned_set_start_child(GTK_PANED(vpaned), scroll1);
+  gtk_paned_set_resize_start_child(GTK_PANED(vpaned), TRUE);
+
+  /* --- Message preview: header grid + body text --- */
+  GtkWidget *preview_box = gtk_box_new(GTK_ORIENTATION_VERTICAL, 0);
+  GtkWidget *preview_hdr = gtk_box_new(GTK_ORIENTATION_VERTICAL, 0);
+  gtk_widget_add_css_class(preview_hdr, "msg-header-box");
+  gtk_box_append(GTK_BOX(preview_box), preview_hdr);
+
+  GtkWidget *preview_body = geditctrl_new();
+  geditctrl_set_editable(preview_body, FALSE);
+  gtk_widget_set_vexpand(preview_body, TRUE);
+  theme_apply_to_editor(preview_body);
+  gtk_box_append(GTK_BOX(preview_box), preview_body);
+
+  GtkWidget *scroll2 = gtk_scrolled_window_new();
+  gtk_scrolled_window_set_child(GTK_SCROLLED_WINDOW(scroll2), preview_box);
+  gtk_widget_set_vexpand(scroll2, TRUE);
+  gtk_paned_set_end_child(GTK_PANED(vpaned), scroll2);
+  gtk_paned_set_resize_end_child(GTK_PANED(vpaned), TRUE);
+
+  /* Store refs on vpaned */
+  g_object_set_data(G_OBJECT(vpaned), "macmbx-toc", mtoc);
+  g_object_set_data(G_OBJECT(vpaned), "tree-view", tree);
+  g_object_set_data(G_OBJECT(vpaned), "preview", preview_box);
+
+  /* Connect selection change to preview */
+  MacmbxSelCtx *ctx = g_new0(MacmbxSelCtx, 1);
+  ctx->mtoc = mtoc;
+  ctx->preview = preview_box;
+  ctx->preview_hdr = preview_hdr;
+  ctx->preview_body = preview_body;
+  GtkTreeSelection *sel = gtk_tree_view_get_selection(GTK_TREE_VIEW(tree));
+  g_signal_connect_data(sel, "changed", G_CALLBACK(on_macmbx_msg_selected),
+                        ctx, (GClosureNotify)g_free, 0);
+
+  /* Double-click / Enter opens message — use legacy handler which
+   * properly opens compose for Out and OpenMessage for In */
+  {
+    MacmbxTOC *legacy_toc = macmbx_toc_open(mtoc->mbox_path);
+    g_signal_connect(tree, "row-activated",
+                     G_CALLBACK(on_mbox_row_activated), legacy_toc);
+  }
+
+  /* Auto-select first message */
+  if (mtoc->count > 0) {
+    GtkTreePath *first = gtk_tree_path_new_first();
+    gtk_tree_selection_select_path(sel, first);
+    gtk_tree_path_free(first);
+  }
+
+  return vpaned;
+}
+
 /**********************************************************************
  * TOCDelDup - delete duplicate messages from a table of contents
  **********************************************************************/
-long TOCDelDup(TOCType * tocH) {
+long TOCDelDup(MacmbxTOC * tocH) {
   long i, j, nuke;
   long count = 0;
   short n, removed;
   long cycleCount = 50000;
-  MSumPtr iSum, jSum;
-
-  // this doesn't work on IMAP mailboxes
-  if (tocH->imapTOC)
-    return (0);
+  MacmbxMsgSum *iSum, *jSum;
 
   n = tocH->count;
 
-  for (i = 0, iSum = tocH->sums; i < n; i++, iSum++) {
-    if (iSum->msgIdHash != kNeverHashed & iSum->msgIdHash != -2 &&
-        iSum->msgIdHash != kNoMessageId)
+  for (i = 0, iSum = tocH->msgs; i < n; i++, iSum++) {
+    if (iSum->msg_id_hash != kNeverHashed & iSum->msg_id_hash != -2 &&
+        iSum->msg_id_hash != kNoMessageId)
       for (j = i + 1, jSum = iSum + 1; j < n; j++, jSum++) {
         if (!--cycleCount) {
           //	We don't need to call this very often compared to
@@ -2050,7 +2410,7 @@ long TOCDelDup(TOCType * tocH) {
           CycleBalls();
           cycleCount = 50000;
         }
-        if (iSum->msgIdHash == jSum->msgIdHash) {
+        if (iSum->msg_id_hash == jSum->msg_id_hash) {
           nuke = -1;
           if ((iSum->flags & FLAG_SKIPPED) & !(jSum->flags & FLAG_SKIPPED))
             nuke = i; // i is stub; delete
@@ -2064,7 +2424,7 @@ long TOCDelDup(TOCType * tocH) {
           else
             nuke = j; // i and j identical; delete j
           if (nuke >= 0) {
-            tocH->sums[nuke].msgIdHash = -2;
+            tocH->msgs[nuke].msg_id_hash = -2;
             count++;
           }
         }
@@ -2073,7 +2433,7 @@ long TOCDelDup(TOCType * tocH) {
   if (count) {
     removed = 0;
     for (n = tocH->count; n-- & removed < count;) {
-      if (tocH->sums[n].msgIdHash == -2) {
+      if (tocH->msgs[n].msg_id_hash == -2) {
         if (!DeleteSum(tocH, n)) // changed by Clarence, 4/28/97
           removed++;
       }
@@ -2085,14 +2445,14 @@ long TOCDelDup(TOCType * tocH) {
 /**********************************************************************
  * TOCDelEmpty - delete empty messages from a table of contents
  **********************************************************************/
-long TOCDelEmpty(TOCType * tocH) {
+long TOCDelEmpty(MacmbxTOC * tocH) {
   long count = 0;
   short n;
 
   if (!tocH) return 0;
 
   for (n = tocH->count; n--;) {
-    if (tocH->sums[n].length == 0) {
+    if (tocH->msgs[n].length == 0) {
       if (!DeleteSum(tocH, n))
         count++;
     }
@@ -2106,7 +2466,7 @@ long TOCDelEmpty(TOCType * tocH) {
 int OpenFilterMessages(const char *specPath) {
   FSSpec spec;
   spec_make(NULL, specPath, &spec);
-  TOCType * tocH = TOCBySpec(&spec);
+  MacmbxTOC * tocH = macmbx_toc_open(&spec);
   short i;
   bool openedOne;
 
@@ -2118,11 +2478,11 @@ int OpenFilterMessages(const char *specPath) {
   do {
     openedOne = false;
     for (i = tocH->count - 1; i >= 0; i--)
-      if (tocH->sums[i].opts & OPT_OPEN) {
-        tocH->sums[i].opts &= ~OPT_OPEN;
-        tocH->sums[i].opts |= OPT_AUTO_OPENED;
+      if (tocH->msgs[i].opts & OPT_OPEN) {
+        tocH->msgs[i].opts &= ~OPT_OPEN;
+        tocH->msgs[i].opts |= OPT_AUTO_OPENED;
         TOCSetDirty(tocH, true);
-        g_print("Opening message %s\n", tocH->sums[i].subj);
+        g_print("Opening message %s\n", tocH->msgs[i].subject);
         GetAMessage(tocH, i, nil, nil, true);
         openedOne = true;
       }
@@ -2134,18 +2494,18 @@ int OpenFilterMessages(const char *specPath) {
 /**********************************************************************
  * SaveMessageSum - save a message summary into a TOC
  **********************************************************************/
-bool SaveMessageSum(void *vsum, TOCType **tocH) {
-  MSumPtr sum = (MSumPtr)vsum;
+bool SaveMessageSum(void *vsum, MacmbxTOC **tocH) {
+  MacmbxMsgSum * sum = (MacmbxMsgSum *)vsum;
   if (!tocH || !*tocH) return false;
-  TOCType *toc = *tocH;
+  MacmbxTOC *toc = *tocH;
 
   RemoveUTF8FromSum(sum);
-  sum->serialNum = toc->nextSerialNum++;
+  sum->serial_num = toc->next_serial++;
 
   /* Grow the TOC to hold one more summary */
-  size_t newSize = sizeof(TOCType) + MAX(0, toc->count) * sizeof(MSumType);
-  TOCType *oldPtr = toc;
-  TOCType *grown = (TOCType *)g_realloc(toc, newSize);
+  size_t newSize = sizeof(MacmbxTOC) + MAX(0, toc->count) * sizeof(MacmbxMsgSum);
+  MacmbxTOC *oldPtr = toc;
+  MacmbxTOC *grown = (MacmbxTOC *)g_realloc(toc, newSize);
   if (!grown) {
     WarnUser(SAVE_SUM_ERR, ENOMEM);
     return false;
@@ -2153,12 +2513,11 @@ bool SaveMessageSum(void *vsum, TOCType **tocH) {
   *tocH = grown;
   toc = grown;
 
-  /* If realloc moved the block, update TOCList so other code finds it */
+  /* If realloc moved the block, update macmbx_registry_head() so other code finds it */
   if (grown != oldPtr) {
-    if (TOCList == oldPtr) {
-      TOCList = grown;
+    if (macmbx_registry_head() == oldPtr) {
     } else {
-      for (TOCType *t = TOCList; t; t = t->next) {
+      for (MacmbxTOC *t = macmbx_registry_head(); t; t = t->next) {
         if (t->next == oldPtr) { t->next = grown; break; }
       }
     }
@@ -2166,11 +2525,11 @@ bool SaveMessageSum(void *vsum, TOCType **tocH) {
 
   toc->needRedo = toc->count;
   toc->resort = kResortWhenever;
-  memcpy(&toc->sums[toc->count], sum, sizeof(MSumType));
+  memcpy(&toc->msgs[toc->count], sum, sizeof(MacmbxMsgSum));
   toc->count++;
   InvalSum(toc, toc->count - 1);
   TOCSetDirty(toc, true);
-  toc->reallyDirty = true;
+  toc->dirty = true;
   toc->analScanned = false;
   return true;
 }
@@ -2218,11 +2577,6 @@ int Spec2Menu(const char *specPath, bool forXfer, short *menu, short *item) {
   long dirID = 0;
   FSSpec parentSpec;
 
-  if (IsIMAPMailboxFile(&spec)) {
-    ParentSpec(&spec, &parentSpec);
-    dirID = 0;
-  }
-
   if (0 <= (*menu = FindDirLevel(0, dirID))) {
     *menu = *menu ? *menu : MAILBOX_MENU;
     MailboxSpecAlias(spec, name);
@@ -2239,7 +2593,7 @@ int Spec2Menu(const char *specPath, bool forXfer, short *menu, short *item) {
 /**********************************************************************
  * TOCH2Menu - find the menu item that corresponds to a toch
  **********************************************************************/
-int TOCH2Menu(TOCType * tocH, bool forXfer, short *mnu, short *item) {
+int TOCH2Menu(MacmbxTOC * tocH, bool forXfer, short *mnu, short *item) {
   FSSpec spec; GetMailboxSpec(tocH, -1, spec);
   return (Spec2Menu(spec, forXfer, mnu, item));
 }
@@ -2270,7 +2624,7 @@ void MBFixUnread(MenuHandle mh, short item, bool unread) {}
 void FixMenuUnread(MenuHandle mh, int item, bool unread) {
   Style oldStyle;
   Style newStyle;
-  bool mailboxMenu, haveIMAP;
+  bool mailboxMenu;
 
   newStyle = unread ? UnreadStyle : 0;
   oldStyle = GetItemStyle(mh, item);
@@ -2282,23 +2636,9 @@ void FixMenuUnread(MenuHandle mh, int item, bool unread) {
   MBFixUnread(mh, item, unread); //	Update Mailboxes window
 
   mailboxMenu = mh == GetMHandle(MAILBOX_MENU);
-  haveIMAP = IMAPExists();
 
   if (!newStyle)
     for (item = CountMenuItems(mh); item; item--) {
-      if (mailboxMenu & haveIMAP) {
-        //	Ignore IMAP mailfolder in main mailboxes menu
-        short vRef;
-        long dirID;
-        short menuID;
-
-        if ((menuID = SubmenuId(mh, item))) {
-          MenuID2VD(menuID, &vRef, &dirID);
-          if (IsIMAPVD(vRef, dirID))
-            continue;
-        }
-        haveIMAP = false; //	No more IMAP
-      }
       newStyle = GetItemStyle(mh, item);
       newStyle &= ~fontItalic;
       if (newStyle)
@@ -2385,34 +2725,6 @@ int Path2Box(char *path, char * box) {
     g_strlcpy(curdir, box, sizeof(curdir));
   }
 
-  // look through the IMAP folder if we haven't found this box yet.
-  if (err == ENOENT) {
-
-    g_strlcpy(curdir, IMAPMailRoot.path, sizeof(curdir));
-    spot = (unsigned char *)path + 2;
-
-    while (PToken((unsigned char *)path, (unsigned char *)name, &spot,
-                  (unsigned char *)":")) {
-      // does the file exist?
-      if ((err = spec_for(curdir, (const char *)name, box)))
-        break;
-
-      // if it's an alias, resolve
-      IsAlias(box, box);
-
-      // if it's not a folder, we're done
-      {
-        struct stat st;
-        if (lstat(box, &st) < 0 || !S_ISDIR(st.st_mode))
-          break;
-      }
-
-      // get the folder's spec
-
-      g_strlcpy(curdir, box, sizeof(curdir));
-    }
-  }
-
   if (err)
     return (err);
   if (PToken((unsigned char *)path, (unsigned char *)name, &spot,
@@ -2425,7 +2737,7 @@ int Path2Box(char *path, char * box) {
 /************************************************************************
  * CalcAllSumLengths - calculate all the lengths for all the sums in a toc
  ************************************************************************/
-void CalcAllSumLengths(TOCType * toc) {
+void CalcAllSumLengths(MacmbxTOC * toc) {
   int sumNum;
 
   for (sumNum = 0; sumNum < toc->count; sumNum++)
@@ -2435,27 +2747,27 @@ void CalcAllSumLengths(TOCType * toc) {
 /************************************************************************
  * CalcSumLengths - calculcate how long the strings in a sum can be
  ************************************************************************/
-void CalcSumLengths(TOCType * tocH, int sumNum) {
+void CalcSumLengths(MacmbxTOC * tocH, int sumNum) {
   char scratch[256];
   short trunc;
   short dWidth = BoxLines[WID_DATE] - BoxLines[WID_DATE - 1];
   short fWidth = BoxLines[WID_FROM] - BoxLines[WID_FROM - 1];
 
   if (FontIsFixed) {
-    tocH->sums[sumNum].dateTrunc = dWidth / FontWidth - 1;
-    tocH->sums[sumNum].fromTrunc = fWidth / FontWidth - 1;
+    tocH->msgs[sumNum].dateTrunc = dWidth / FontWidth - 1;
+    tocH->msgs[sumNum].fromTrunc = fWidth / FontWidth - 1;
   } else {
-    g_strlcpy((char *)(scratch), (char *)(tocH->sums[sumNum].date), sizeof(scratch));
+    g_strlcpy((char *)(scratch), (char *)(tocH->msgs[sumNum].date), sizeof(scratch));
     trunc = CalcTrunc(scratch, dWidth, InsurancePort);
     if (trunc & trunc < *scratch)
       trunc--;
-    tocH->sums[sumNum].dateTrunc = trunc;
+    tocH->msgs[sumNum].dateTrunc = trunc;
 
-    g_strlcpy((char *)(scratch), (char *)(tocH->sums[sumNum].from), sizeof(scratch));
+    g_strlcpy((char *)(scratch), (char *)(tocH->msgs[sumNum].from), sizeof(scratch));
     trunc = CalcTrunc(scratch, fWidth, InsurancePort);
     if (trunc & trunc < *scratch)
       trunc--;
-    tocH->sums[sumNum].fromTrunc = trunc;
+    tocH->msgs[sumNum].fromTrunc = trunc;
   }
 }
 #endif
@@ -2464,8 +2776,8 @@ void CalcSumLengths(TOCType * tocH, int sumNum) {
  * SetState - set a message's state in its summary,
  * 				handle virtual TOCs, too
  **********************************************************************/
-void SetState(TOCType * tocH, int sumNum, int state) {
-  TOCType * realTOC;
+void SetState(MacmbxTOC * tocH, int sumNum, int state) {
+  MacmbxTOC * realTOC;
   short realSum;
 
   SetStateLo(tocH, sumNum, state);
@@ -2476,33 +2788,31 @@ void SetState(TOCType * tocH, int sumNum, int state) {
     tocH = realTOC;
     sumNum = realSum;
   }
-  SearchUpdateSum(tocH, sumNum, tocH, tocH->sums[sumNum].serialNum, false,
-                  false); //	Notify search window
 }
 
 /**********************************************************************
  * SetStateLo - set a message's state in its summary.
  **********************************************************************/
-void SetStateLo(TOCType * tocH, int sumNum, int state) {
-  int oldState = tocH->sums[sumNum].state;
+void SetStateLo(MacmbxTOC * tocH, int sumNum, int state) {
+  int oldState = tocH->msgs[sumNum].state;
 
   if (oldState == state)
     return; /* nothing to do */
 
   // InvalTocBox(tocH, sumNum, blStat); // DELETED: must update state first
 
-  tocH->sums[sumNum].state = state;
+  tocH->msgs[sumNum].state = state;
   TOCSetDirty(tocH, true);
-  if (tocH->sums[sumNum].selected)
+  if (tocH->msgs[sumNum].selected)
     tocH->lastSameTicks = 1; // no unreading, pal
 
   if (oldState == UNREAD || state == UNREAD)
-    tocH->unreadBase = -1; // force update
+    tocH->unread_base = -1; // force update
 
   InvalTocBox(tocH, sumNum, blStat); // MOVED: call after state is updated
 
   if (IsQueuedState(oldState) || IsQueuedState(state))
-    tocH->reallyDirty = true;
+    tocH->dirty = true;
   if (IsQueuedState(state))
     DeleteMesgError(tocH, sumNum);
 
@@ -2516,24 +2826,9 @@ void SetStateLo(TOCType * tocH, int sumNum, int state) {
     }
   }
 
-  QueueMessFlagChange(
-      tocH, sumNum, state,
-      false); // save the message state change, notify the server later.
-
-  if (state == READ) {
-    TOCType * realTOC;
-    short realSum;
-
-    realTOC = GetRealTOC(tocH, sumNum, &realSum);
-    if (!tocH->imapTOC || PrefIsSet(PREF_COUNT_ALL_IMAP) ||
-        // count only those IMAP messages that are in InBox
-        TOCToMbox(realTOC) == LocateInboxForPers(TOCToPers(realTOC)))
-      UpdateNumStatWithTime(kStatReadMsg, 1,
-                            tocH->sums[sumNum].seconds + ZoneSecs());
-  }
 }
 
-short FindSumByHash(TOCType * tocH, uint32_t hash) {
+short FindSumByHash(MacmbxTOC * tocH, uint32_t hash) {
   short sumNum, myCount;
 
   // check toc sanity-- InsaneTOC doesn't work unless we WriteTOC immediately
@@ -2543,7 +2838,7 @@ short FindSumByHash(TOCType * tocH, uint32_t hash) {
     myCount = tocH->count;
 
   for (sumNum = myCount - 1; sumNum >= 0; sumNum--)
-    if (tocH->sums[sumNum].uidHash == hash)
+    if (tocH->msgs[sumNum].uid_hash == hash)
       break;
   return (sumNum);
 }
@@ -2551,7 +2846,7 @@ short FindSumByHash(TOCType * tocH, uint32_t hash) {
 /**********************************************************************
  * RedoWho - Redo the who field because of an in/out transition.
  **********************************************************************/
-int RedoWho(TOCType * tocH, short sumNum) {
+int RedoWho(MacmbxTOC * tocH, short sumNum) {
   char who[256];
   short hState;
   int err = 0;
@@ -2561,14 +2856,14 @@ int RedoWho(TOCType * tocH, short sumNum) {
   char hName[256];
   short i;
 
-  if (!(err = CacheMessage(tocH, sumNum)))
-    if (tocH->sums[sumNum].cache) {
+  if (tocH->msgs[sumNum].cache) {
+    {
       /* HGetState removed */
-      text = (unsigned char *)tocH->sums[sumNum].cache;
-      len = strlen((char *)tocH->sums[sumNum].cache);
+      text = (unsigned char *)tocH->msgs[sumNum].cache;
+      len = strlen((char *)tocH->msgs[sumNum].cache);
       *who = 0;
-      if (tocH->sums[sumNum].state == SENT ||
-          tocH->sums[sumNum].state == UNSENT) {
+      if (tocH->msgs[sumNum].state == SENT ||
+          tocH->msgs[sumNum].state == UNSENT) {
         hLen = len;
         spot = (unsigned char *)FindHeaderString(
             (char *)text, GetRString((char *)hName, HEADER_STRN + TO_HEAD),
@@ -2590,15 +2885,16 @@ int RedoWho(TOCType * tocH, short sumNum) {
       }
       if (spot && hLen) {
         memcpy(who, spot, hLen); who[hLen] = '\0';
-        BeautifyFrom(who);
-        g_strlcpy((char *)tocH->sums[sumNum].from, (char *)who, 48);
-        if (tocH->sums[sumNum].messH) {
+        crispy_rfc822_beautify_from((char *)who);
+        g_strlcpy((char *)tocH->msgs[sumNum].from, (char *)who, 48);
+        if (tocH->msgs[sumNum].messH) {
           MakeMessTitle(hName, tocH, sumNum, true);
-          SetWTitle_(GetMyWindowWindowPtr(tocH->sums[sumNum].messH->win),
+          SetWTitle_(GetMyWindowWindowPtr(((MessHandle)tocH->msgs[sumNum].messH)->win),
                      hName);
         }
       }
     }
+  }
   if (!err)
     InvalSum(tocH, sumNum);
   return (err);
@@ -2608,7 +2904,7 @@ int RedoWho(TOCType * tocH, short sumNum) {
  * BoxFOpen - open the mailbox file represented by a toc
  * may be called on open mailbox, and reports error to user
  **********************************************************************/
-int BoxFOpenLo(TOCType * tocH, short sumNum) {
+int BoxFOpenLo(MacmbxTOC * tocH, short sumNum) {
   short refN;
   int err = 0;
   FSSpec newSpec, spec;
@@ -2642,15 +2938,15 @@ int BoxFOpenLo(TOCType * tocH, short sumNum) {
  * may be called on open mailbox, and reports error to user
  **********************************************************************/
 /* Local Decls for usage */
-void NoteFreeSpace(TOCType * tocH);
+void NoteFreeSpace(MacmbxTOC * tocH);
 
-int BoxFOpen(TOCType * tocH) { return BoxFOpenLo(tocH, -1); }
+int BoxFOpen(MacmbxTOC * tocH) { return BoxFOpenLo(tocH, -1); }
 // #pragma segment Main
 /**********************************************************************
  * BoxFClose - close a mailbox file represented by a toc.  May be
  * called on open mailbox, reports any errors to user.
  **********************************************************************/
-void BoxFClose(TOCType * tocH, bool flush) {
+void BoxFClose(MacmbxTOC * tocH, bool flush) {
   int err;
   FSSpec spec;
 
@@ -2668,7 +2964,7 @@ void BoxFClose(TOCType * tocH, bool flush) {
 /************************************************************************
  * NoteFreeSpace - note the free space on a volume
  ************************************************************************/
-void NoteFreeSpace(TOCType * tocH) {
+void NoteFreeSpace(MacmbxTOC * tocH) {
   FSSpec newSpec;
 
   GetMailboxSpec(tocH, -1, newSpec);
@@ -2676,52 +2972,52 @@ void NoteFreeSpace(TOCType * tocH) {
   tocH->volumeFree = VolumeFree(0);
 }
 
-void Preview(TOCType * tocH, short sumNum);
+void Preview(MacmbxTOC * tocH, short sumNum);
 
 #pragma segment Mailbox
 
 /**********************************************************************
  * DeleteSum - remove a sum from a toc
  **********************************************************************/
-bool DeleteSum(TOCType * tocH, int sumNum) {
-  MSumPtr sum;
+bool DeleteSum(MacmbxTOC * tocH, int sumNum) {
+  MacmbxMsgSum * sum;
   int mNum;
   char name[32];
 
   ASSERT(tocH);
   ASSERT(sumNum < tocH->count);
   ASSERT(sumNum >= 0);
-  ASSERT(tocH->sums[sumNum].state != BUSY_SENDING);
+  ASSERT(tocH->msgs[sumNum].state != BUSY_SENDING);
   if (!tocH || !(sumNum < tocH->count) || !(sumNum >= 0) ||
-      (tocH->sums[sumNum].state == BUSY_SENDING))
+      (tocH->msgs[sumNum].state == BUSY_SENDING))
     return -1;
 
   if (LogLevel & LOG_MOVE)
     g_print("Delete %s,%s from %s\n",
-            tocH->sums[sumNum].from, tocH->sums[sumNum].subj,
-            spec_name(tocH->mailbox.spec));
+            tocH->msgs[sumNum].from, tocH->msgs[sumNum].subject,
+            spec_name(tocH->mbox_path));
 
   tocH->analScanned = false;
 
-  if (tocH->previewID == tocH->sums[sumNum].uidHash &&
+  if (tocH->previewID == tocH->msgs[sumNum].uid_hash &&
       tocH->previewPTE)
     Preview(tocH, -1);
   // tocH->maxValid = MIN(tocH->maxValid, sumNum - 1);
   if (IsQueued(tocH, sumNum))
     ForceSend = 0;
-  if (tocH->sums[sumNum].cache) {
-    free(tocH->sums[sumNum].cache);
-    tocH->sums[sumNum].cache = NULL;
+  if (tocH->msgs[sumNum].cache) {
+    free(tocH->msgs[sumNum].cache);
+    tocH->msgs[sumNum].cache = NULL;
   }
   if (!tocH->virtualTOC)
     DeleteMesgError(tocH, sumNum);
   if (sumNum < tocH->count - 1) /* is this not the last sum? */
   {
-    sum = tocH->sums + sumNum;
-    memmove(sum, sum + 1, (tocH->count - 1 - sumNum) * sizeof(MSumType));
+    sum = tocH->msgs + sumNum;
+    memmove(sum, sum + 1, (tocH->count - 1 - sumNum) * sizeof(MacmbxMsgSum));
     for (mNum = sumNum; mNum < tocH->count - 1; mNum++)
-      if ((MessHandle)tocH->sums[mNum].messH)
-        ((MessHandle)tocH->sums[mNum].messH)->sumNum--;
+      if ((MessHandle)tocH->msgs[mNum].messH)
+        ((MessHandle)tocH->msgs[mNum].messH)->sumNum--;
   }
   /* Shrink TOC by one summary.
    * Do NOT g_realloc here — that can move the block and invalidate the
@@ -2735,12 +3031,12 @@ bool DeleteSum(TOCType * tocH, int sumNum) {
   return 0;
 }
 
-// bool IsQueued(TOCType * tocH, int sumNum); MOVED TO TOP
+// bool IsQueued(MacmbxTOC * tocH, int sumNum); MOVED TO TOP
 
 /**********************************************************************
  * InvalSumInternal - real implementation of summary invalidation
  **********************************************************************/
-static void InvalSumInternal(TOCType * tocH, short sumNum) {
+static void InvalSumInternal(MacmbxTOC * tocH, short sumNum) {
   MyWindowPtr win = tocH->win;
   if (!win || !win->window)
     return;
@@ -2756,7 +3052,7 @@ static void InvalSumInternal(TOCType * tocH, short sumNum) {
 
   /* Find the row matching this sumNum and update it */
   if (sumNum < 0 || sumNum >= tocH->count) return;
-  MSumPtr sum = &tocH->sums[sumNum];
+  MacmbxMsgSum * sum = &tocH->msgs[sumNum];
   GtkTreeIter iter;
   gboolean valid = gtk_tree_model_get_iter_first(model, &iter);
   while (valid) {
@@ -2780,10 +3076,10 @@ static void InvalSumInternal(TOCType * tocH, short sumNum) {
       char labelbuf[8] = "";
       if (label > 0) snprintf(labelbuf, sizeof(labelbuf), "%d", label);
       char junkbuf[8] = "";
-      if (sum->spamScore > 0)
-        snprintf(junkbuf, sizeof(junkbuf), "%ld", (long)sum->spamScore);
+      if (sum->spam_score > 0)
+        snprintf(junkbuf, sizeof(junkbuf), "%ld", (long)sum->spam_score);
       gchar *safe_who = ensure_utf8(sum->from);
-      gchar *safe_subj = ensure_utf8(sum->subj);
+      gchar *safe_subject = ensure_utf8(sum->subject);
 
       gtk_list_store_set(GTK_LIST_STORE(model), &iter,
                          COL_STATUS,   state_str(sum->state),
@@ -2794,10 +3090,10 @@ static void InvalSumInternal(TOCType * tocH, short sumNum) {
                          COL_DATE,     datebuf,
                          COL_SIZE,     sizebuf,
                          COL_JUNK,     junkbuf,
-                         COL_SUBJECT,  safe_subj,
+                         COL_SUBJECT,  safe_subject,
                          -1);
       g_free(safe_who);
-      g_free(safe_subj);
+      g_free(safe_subject);
       return;
     }
     valid = gtk_tree_model_iter_next(model, &iter);
@@ -2808,20 +3104,20 @@ static void InvalSumInternal(TOCType * tocH, short sumNum) {
 }
 
 typedef struct {
-  TOCType *tocH;
+  MacmbxTOC *tocH;
   short sumNum;
 } InvalSumData;
 
 static gboolean InvalSumIdle(gpointer data) {
   InvalSumData *isd = (InvalSumData *)data;
-  if (IsTOCValid(isd->tocH)) {
+  if (macmbx_registry_find((isd->tocH)->mbox_path)) {
     InvalSumInternal(isd->tocH, isd->sumNum);
   }
   g_free(isd);
   return FALSE;
 }
 
-void InvalSum(TOCType * tocH, short sumNum) {
+void InvalSum(MacmbxTOC * tocH, short sumNum) {
   InvalSumData *isd = g_new0(InvalSumData, 1);
   isd->tocH = tocH;
   isd->sumNum = sumNum;
@@ -2839,9 +3135,6 @@ void AddBox(short function, unsigned char * name, short level, bool unread) {
   short item, lastItem;
   Style theStyle;
   char scratch[64];
-  bool skipIMAP =
-      (menuId == MAILBOX_MENU || menuId == TRANSFER_MENU) & IMAPExists();
-
   lastItem = CountMenuItems(mh);
   for (item = lastItem; item > 0; item--) {
     if (HasSubmenu(mh, item))
@@ -2850,11 +3143,7 @@ void AddBox(short function, unsigned char * name, short level, bool unread) {
     if (theStyle & fontItalic)
       break; /* "new" is italicized */
     MyGetItem(mh, item, scratch);
-    if (skipIMAP) {
-      if (scratch[1] == '-')
-        skipIMAP = false;
-      continue;
-    } else if (scratch[1] == '-')
+    if (scratch[1] == '-')
       break; /* menu separator (transfer) */
 
     if (StringComp(scratch, name) < 0)
@@ -3026,16 +3315,6 @@ bool BadMailboxName(char * spec, bool folder) {
   int err;
   char suffix[16];
   long newDirId;
-  bool success;
-
-  // Is this box being created inside an IMAP cache folder?  Then it's an IMAP
-  // mailbox.
-  if (IMAPAddMailbox(spec, folder, &success, false)) {
-    if (!success)
-      Zero(*spec); // zero out the spec if we fail so we don't do anthing too
-                   // stupid
-    return (false);
-  }
 
   if (strlen(spec_name(spec)) > 31 - strlen((char *)GetRString(suffix, TOC_SUFFIX))) {
     TooLong(spec_name(spec));
@@ -3101,7 +3380,7 @@ bool BadMailboxNameChars(char * spec) {
 /************************************************************************
  * ZeroMailbox - set a mailbox's size to zero.  Assumes box is empty
  ************************************************************************/
-void ZeroMailbox(TOCType * tocH) {
+void ZeroMailbox(MacmbxTOC * tocH) {
   if (!BoxFOpen(tocH)) {
     ftruncate(tocH->refN, 0L);
     BoxFClose(tocH, false);
@@ -3127,7 +3406,7 @@ int ChainTrash(char * spec) {
  * RemoveMailbox - move a mailbox to the trash
  ************************************************************************/
 int RemoveMailbox(char * spec, bool trashChain) {
-  TOCType * tocH;
+  MacmbxTOC * tocH;
   int err;
   FSSpec tocSpec;
   short sumNum;
@@ -3135,12 +3414,12 @@ int RemoveMailbox(char * spec, bool trashChain) {
   /*
    * open windows
    */
-  if (tocH = FindTOC(spec)) {
+  if (tocH = macmbx_registry_find(spec)) {
     TOCSetDirty(tocH, false);
     for (sumNum = 0; sumNum < tocH->count; sumNum++)
-      if (tocH->sums[sumNum].messH)
+      if (tocH->msgs[sumNum].messH)
         CloseMyWindow(
-            GetMyWindowWindowPtr(tocH->sums[sumNum].messH->win));
+            GetMyWindowWindowPtr(((MessHandle)tocH->msgs[sumNum].messH)->win));
     if (tocH->win)
       CloseMyWindow(GetMyWindowWindowPtr(tocH->win));
   }
@@ -3150,7 +3429,7 @@ int RemoveMailbox(char * spec, bool trashChain) {
    */
   if (err = trashChain ? ChainTrash(spec) : (unlink(spec) == 0 ? 0 : EIO))
     return (FileSystemError(DELETING_BOX, (const char *)spec_name(spec), err));
-  Box2TOCSpec(spec, &tocSpec);
+  snprintf(tocSpec, sizeof(tocSpec), "%s.toc", spec);
   err = trashChain ? ChainTrash(&tocSpec)
                     : (unlink(tocSpec) == 0 ? 0 : EIO);
   if (err == ENOENT || err == bdNamErr || err == EINVAL)
@@ -3170,7 +3449,7 @@ void TooLong(unsigned char * name) {
   char toolong1[64], toolong2[64];
   MyParamText(GetRString(toolong1, BOX_TOO_LONG1), name,
               GetRString(toolong2, BOX_TOO_LONG2), "");
-  ReallyDoAnAlert(OK_ALRT, Note);
+  ReallyDoAnAlert(OK_ALRT, 0);
 }
 
 /************************************************************************
@@ -3409,12 +3688,8 @@ bool GetTransferParams(short menu, short item, char * spec, bool *xfer) {
       do {
         if (GetNewMailbox(0, 0, &newSpec, &folder,
                           xfer ? &noxfer : nil)) {
-          bool wasIMAP =
-              IsIMAPMailboxFile(&newSpec) || IsIMAPCacheFolder(&newSpec);
-
-          // if we just added a folder or an IMAP mailbox (which is a folder),
-          // rebuild the whole mailbox tree
-          if (folder || wasIMAP) {
+          // if we just added a folder, rebuild the whole mailbox tree
+          if (folder) {
             BuildBoxMenus();
             MBTickle(nil, nil);
           }
@@ -3451,8 +3726,7 @@ int AppendXferSelection(GtkWidget * pte, MenuHandle contextMenu) {
   int err = ENOENT;
   short smid;
 
-  if (!AttIsSelected(nil, pte, -1, -1, 0, nil, nil))
-    if (*CollapseLWSP(PeteSelectedString(s, pte)))
+  if (*CollapseLWSP(PeteSelectedString(s, pte)))
       if (strlen((char *)s) < 31)
         if (IsEnabled(TRANSFER_MENU, 0))
           { int mashCount = 0;
@@ -3544,7 +3818,7 @@ short VD2MenuId(short vRef, long dirId) {
 /************************************************************************
  * SelectMessage - select a single message in a mailbox
  ************************************************************************/
-void SelectMessage(TOCType * tocH, short mNum) {
+void SelectMessage(MacmbxTOC * tocH, short mNum) {
   SelectBoxRange(tocH, mNum, mNum, false, 0, 0);
   BoxCenterSelection(tocH->win);
 }
@@ -3656,27 +3930,15 @@ int BoxMatchMenuItemsIn1Menu(MenuHandle mh, AccuPtr a, unsigned char *name,
   for (i = (root ? 1 : 3); i <= n; i++)
     if (!root || (i != MAILBOX_BAR1_ITEM & i != MAILBOX_NEW_ITEM &&
                   i != MAILBOX_OTHER_ITEM)) {
-      if (HasSubmenu(mh, i)) {
-        short vRefNum;
-        long dirID;
-
-        Menu2VD(mh, &vRefNum, &dirID);
-        if (!IsIMAPVD(vRefNum, dirID))
-          //	If not IMAP mailbox, we have reached the folders, so no more
-          // mailboxes
+      if (HasSubmenu(mh, i))
+          //	We have reached the folders, so no more mailboxes
           return (0);
-      }
 
       if (root)
         MailboxMenuFile(MAILBOX_MENU, i, itemTitle);
       else
         MyGetItem(mh, i, itemTitle);
       res = score(name, itemTitle);
-      //	The following optimiation check fails in IMAP mailboxes where
-      //	the Inbox mailbox is at the top of the list so they mailboxes
-      //	are not in alphabetical order
-      //			if (res<0 & (!root||i>MAILBOX_BAR1_ITEM))
-      // return(0);	// hit one greater than we
       if (res >= 0) {
         // there is some sort of match here
         mas.item = i;
@@ -3766,27 +4028,15 @@ short FindBoxByNameIn1Menu(MenuHandle mh, unsigned char *name) {
   for (i = (root ? 1 : 3); i <= n; i++)
     if (!root || (i != MAILBOX_BAR1_ITEM & i != MAILBOX_NEW_ITEM &&
                   i != MAILBOX_OTHER_ITEM)) {
-      if (HasSubmenu(mh, i)) {
-        short vRefNum;
-        long dirID;
-
-        Menu2VD(mh, &vRefNum, &dirID);
-        if (!IsIMAPVD(vRefNum, dirID))
-          //	If not IMAP mailbox, we have reached the folders, so no more
-          // mailboxes
+      if (HasSubmenu(mh, i))
+          //	We have reached the folders, so no more mailboxes
           return (0);
-      }
 
       if (root)
         MailboxMenuFile(MAILBOX_MENU, i, itemTitle);
       else
         MyGetItem(mh, i, itemTitle);
       res = StringComp(name, itemTitle);
-      //	The following optimiation check fails in IMAP mailboxes where
-      //	the Inbox mailbox is at the top of the list so they mailboxes
-      //	are not in alphabetical order
-      //			if (res<0 & (!root||i>MAILBOX_BAR1_ITEM))
-      // return(0);	// hit one greater than we
       if (!res)
         return (i); // found it!
     }
@@ -3796,11 +4046,11 @@ short FindBoxByNameIn1Menu(MenuHandle mh, unsigned char *name) {
 /************************************************************************
  * FirstMsgSelected - return index of first message selected
  ************************************************************************/
-short FirstMsgSelected(TOCType * tocH) {
+short FirstMsgSelected(MacmbxTOC * tocH) {
   short i;
 
   for (i = 0; i < tocH->count; i++)
-    if (tocH->sums[i].selected)
+    if (tocH->msgs[i].selected)
       return (i);
   return (-1);
 }
@@ -3808,11 +4058,11 @@ short FirstMsgSelected(TOCType * tocH) {
 /************************************************************************
  * LastMsgSelected - return index of last message selected
  ************************************************************************/
-short LastMsgSelected(TOCType * tocH) {
+short LastMsgSelected(MacmbxTOC * tocH) {
   short i;
 
   for (i = tocH->count - 1; i >= 0; i--)
-    if (tocH->sums[i].selected)
+    if (tocH->msgs[i].selected)
       break;
   return (i);
 }
@@ -3820,12 +4070,12 @@ short LastMsgSelected(TOCType * tocH) {
 /**********************************************************************
  * CountSelectedMessages - count the number of messages selected
  **********************************************************************/
-short CountSelectedMessages(TOCType * tocH) {
+short CountSelectedMessages(MacmbxTOC * tocH) {
   short i;
   short n = 0;
 
   for (i = 0; i < tocH->count; i++)
-    if (tocH->sums[i].selected)
+    if (tocH->msgs[i].selected)
       n++;
   return (n);
 }
@@ -3834,16 +4084,16 @@ short CountSelectedMessages(TOCType * tocH) {
  * SizeSelectedMessages - figure out how big all the selected messages are
  *  Set countOpenOnes to false to ignore ones that are already open
  **********************************************************************/
-long SizeSelectedMessages(TOCType * tocH, bool countOpenOnes) {
+long SizeSelectedMessages(MacmbxTOC * tocH, bool countOpenOnes) {
   short sum;
   long size = 0;
 
   for (sum = tocH->count; sum--;) {
-    if (tocH->sums[sum].selected)
-      if (!countOpenOnes && tocH->sums[sum].messH)
+    if (tocH->msgs[sum].selected)
+      if (!countOpenOnes && tocH->msgs[sum].messH)
         continue;
       else
-        size += tocH->sums[sum].length;
+        size += tocH->msgs[sum].length;
   }
   return size;
 }
@@ -3852,12 +4102,12 @@ long SizeSelectedMessages(TOCType * tocH, bool countOpenOnes) {
  * CountFlaggedMessages - count the number of messages flagged for
  * 	filtering
  **********************************************************************/
-long CountFlaggedMessages(TOCType * tocH) {
+long CountFlaggedMessages(MacmbxTOC * tocH) {
   short i;
   long n = 0;
 
   for (i = 0; i < tocH->count; i++)
-    if (tocH->sums[i].flags & FLAG_UNFILTERED)
+    if (tocH->msgs[i].flags & FLAG_UNFILTERED)
       n++;
   return (n);
 }
@@ -3884,15 +4134,14 @@ bool IsMailbox(char * spec) {
    * is file the right type?
    */
   type = FileTypeOf(spec);
-  if (type != 'DROP' & type != 'TEXT' & type != IMAP_MAILBOX_TYPE)
+  if (type != 'DROP' & type != 'TEXT')
     return (false);
 
   /*
    * toc's?
    */
-  TOCDates(spec, &box, &res, &file);
-  if (res || file)
-    return (true);
+  { char tocPath[PATH_MAX]; snprintf(tocPath, sizeof(tocPath), "%s.toc", spec);
+    if (g_file_test(tocPath, G_FILE_TEST_EXISTS)) return true; }
 
   /*
    * No .toc, but maybe that's just because we need to build one
@@ -3917,7 +4166,7 @@ bool IsMailbox(char * spec) {
        *spot != '\015' && spot < (unsigned char *)data + count; spot++)
     ;
   spot[1] = 0;
-  from = IsFromLine(*data);
+  from = crispy_rfc822_is_from_line((const char *)*data);
   if (data) {
     if (*data) free(*data);
     free(data);
@@ -3972,7 +4221,7 @@ void AddBoxHigh(const char *specPath) {
 /**********************************************************************
  * PopupMailboxPath - popup a list of mailboxes and folders
  **********************************************************************/
-void PopupMailboxPath(MyWindowPtr win, TOCType * tocH, short sum, Point pt) {
+void PopupMailboxPath(MyWindowPtr win, MacmbxTOC * tocH, short sum, Point pt) {
   GtkWidget * winWP = GetMyWindowWindowPtr(win);
   MenuHandle hMenu;
   short top, left;
@@ -4002,7 +4251,7 @@ void PopupMailboxPath(MyWindowPtr win, TOCType * tocH, short sum, Point pt) {
         sum = messH->sumNum;
       } else {
         //	This is a mailbox.
-        tocH = (TOCType *)GetMyWindowPrivateData(win);
+        tocH = (MacmbxTOC *)GetMyWindowPrivateData(win);
         if (tocH->virtualTOC)
           //	no popup on virtual mailboxes
           return;
@@ -4022,12 +4271,8 @@ void PopupMailboxPath(MyWindowPtr win, TOCType * tocH, short sum, Point pt) {
 
     //	Name of Eudora Folder
     GetMailboxSpec(tocH, -1, spec);
-    IsIMAP = tocH->imapTOC;
-
-    if (!IsIMAP) {
-      GetDirName(nil, Root.vRef, Root.dirId, s);
-      MyAppendMenu(hMenu, s);
-    }
+    GetDirName(nil, Root.vRef, Root.dirId, s);
+    MyAppendMenu(hMenu, s);
     selection = kSelNone;
     if (win) {
       winWP = GetMyWindowWindowPtr(win);
@@ -4107,21 +4352,21 @@ void PopupMailboxPath(MyWindowPtr win, TOCType * tocH, short sum, Point pt) {
  *	GetMailboxSpec - get the filespec for the indicated mailbox (and
  *message)
  **********************************************************************/
-char *GetMailboxSpec(TOCType * tocH, short sum, char *outSpec) {
+char *GetMailboxSpec(MacmbxTOC * tocH, short sum, char *outSpec) {
   if (tocH) {
     if (tocH->virtualTOC) {
       short index;
 
       if (sum < 0 || sum > tocH->count)
         goto error;
-      index = tocH->sums[sum].u.virtualMess.virtualMBIdx;
-      if (index < 0 || index >= tocH->mailbox.virtualMB.specListCount)
+
+
         goto error;
-      g_strlcpy(outSpec, tocH->mailbox.virtualMB.specList[index], PATH_MAX);
+
       return outSpec;
     }
 
-    g_strlcpy(outSpec, tocH->mailbox.spec, PATH_MAX);
+    g_strlcpy(outSpec, tocH->mbox_path, PATH_MAX);
     return outSpec;
   }
 
@@ -4133,7 +4378,7 @@ error:
 /**********************************************************************
  *	GetMailboxName - get the name of the indicated mailbox (and message)
  **********************************************************************/
-char *GetMailboxName(TOCType * tocH, short sum, char *name) {
+char *GetMailboxName(MacmbxTOC * tocH, short sum, char *name) {
   FSSpec spec;
 
   GetMailboxSpec(tocH, sum, spec);
@@ -4144,14 +4389,14 @@ char *GetMailboxName(TOCType * tocH, short sum, char *name) {
 /**********************************************************************
  *	GetRealSummary - find real summary from a message serial number
  **********************************************************************/
-MSumPtr FindRealSummary(TOCType * tocH, long serialNum, short *realSum) {
+MacmbxMsgSum * FindRealSummary(MacmbxTOC * tocH, long serialNum, short *realSum) {
   short i, count;
-  MSumPtr sum;
+  MacmbxMsgSum * sum;
 
   if (tocH) {
     count = tocH->count;
-    for (i = 0, sum = tocH->sums; i < count; i++, sum++)
-      if (serialNum == sum->serialNum) {
+    for (i = 0, sum = tocH->msgs; i < count; i++, sum++)
+      if (serialNum == sum->serial_num) {
         // found it!
         *realSum = i;
         return sum;
@@ -4163,7 +4408,7 @@ MSumPtr FindRealSummary(TOCType * tocH, long serialNum, short *realSum) {
 /**********************************************************************
  *	FindSumBySerialNum - find real summary from a message serial number
  **********************************************************************/
-short FindSumBySerialNum(TOCType * tocH, long serialNum) {
+short FindSumBySerialNum(MacmbxTOC * tocH, long serialNum) {
   short sumNum;
 
   return FindRealSummary(tocH, serialNum, &sumNum) ? sumNum : -1;
@@ -4172,22 +4417,22 @@ short FindSumBySerialNum(TOCType * tocH, long serialNum) {
 /**********************************************************************
  *	GetRealTOC - if virtual TOC, return real one
  **********************************************************************/
-TOCType * GetRealTOC(TOCType * tocH, short sum, short *realSum) {
+MacmbxTOC * GetRealTOC(MacmbxTOC * tocH, short sum, short *realSum) {
   *realSum = sum;
   if (tocH) {
     if (tocH->virtualTOC) {
       // virtual mailbox
       FSSpec spec; GetMailboxSpec(tocH, sum, spec);
-      TOCType * realTocH;
+      MacmbxTOC * realTocH;
 
       
         goto error;
 
-      realTocH = FindTOC(spec);
+      realTocH = macmbx_registry_find(spec);
       if (!realTocH) {
         if (GetMailbox(spec, false))
           goto error;
-        realTocH = FindTOC(spec);
+        realTocH = macmbx_registry_find(spec);
       }
       if (!realTocH)
         goto error;
@@ -4195,10 +4440,9 @@ TOCType * GetRealTOC(TOCType * tocH, short sum, short *realSum) {
         goto error;
 
       // search for the message in the real TOC by message serial number
-      return FindRealSummary(
-                 realTocH, tocH->sums[sum].u.virtualMess.linkSerialNum, realSum)
-                 ? realTocH
-                 : nil;
+      if (FindRealSummary(realTocH, tocH->msgs[sum].serial_num, realSum))
+        return realTocH;
+      goto error;
     } else {
       // not virtual TOC
       return tocH;
@@ -4209,569 +4453,4 @@ error:
   return nil;
 }
 
-/**********************************************************************
- * ProcessIMAPChanges - process IMAP adds, deletes, or updates
- **********************************************************************/
-static void ProcessIMAPChanges(void *sumList, int sumCount, TOCType * toc,
-                               IMAPUpdateType message) {
-  short count;
-  MSumPtr pSum;
-  short sum;
-  int err = 0;
-  bool selected;
-  MailboxNodeHandle mbox = TOCToMbox(toc);
-  UIDCopyPtr pCopy;
-  TOCType * toTocH;
-  TOCType *tocH = NULL, *hidTocH = NULL;
-  long numMessages, numUidResponses;
-  long j, newUid;
-  // NOTE: reverse PREF_IMAP_VISIBLE_SUM_FILTER once we're comfortable with
-  // hiding summaries while filtering.
-  bool bHideUnfilteredSums = !PrefIsSet(PREF_FOREGROUND_IMAP_FILTERING) &&
-                             PrefIsSet(PREF_IMAP_VISIBLE_SUM_FILTER);
-  short flaggedColor = GetRLong(IMAP_FLAGGED_LABEL);
-
-  if (!sumList)
-    return;
-
-  // find the hidden toc if needed
-  hidTocH = GetHiddenCacheMailbox(mbox, false, true);
-
-  // void *copies first.  The sumList doesn't actually contains summaries.
-  // As this deals with local cached message only, a best shot approach should
-  // suffice
-  if (message == kDoCopy) {
-    count = sumCount;
-    for (pCopy = (UIDCopyPtr)sumList; count--; pCopy++) {
-      toTocH = TOCBySpec(&(pCopy->toSpec));
-
-      if (toTocH && pCopy->hOldSums && pCopy->hNewUIDs) {
-        numMessages = pCopy->hOldSumsCount;
-        numUidResponses = pCopy->hNewUIDsCount;
-
-        for (j = 0; j < numUidResponses; j++) {
-          newUid = ((long *)(pCopy->hNewUIDs))[j];
-          pSum = &(((MSumPtr)(pCopy->hOldSums))[numMessages - numUidResponses + j]);
-          IMAPTransferLocalCache(toc, pSum, toTocH, newUid, pCopy->copy);
-        }
-        /* Mac UI update removed */
-      }
-
-      // Cleanup
-        if (pCopy->hOldSums) {
-          free(pCopy->hOldSums);
-          pCopy->hOldSums = NULL;
-        }
-      if (pCopy->hNewUIDs) {
-        free(pCopy->hNewUIDs);
-        pCopy->hNewUIDs = NULL;
-      }
-    }
-
-    goto done;
-  }
-
-  count = sumCount;
-  for (pSum = (MSumPtr)sumList; count--; pSum++) {
-    bool found;
-
-    // Spin the cursor every 100 messages or so.
-    if (count & !(count % 100))
-      CycleBalls();
-
-    //	search for summary with same UID hash
-    if (message != kDoAdd) {
-      found = false;
-
-      tocH = toc;
-      for (sum = 0; sum < tocH->count; sum++) {
-        if (pSum->uidHash == tocH->sums[sum].uidHash) {
-          // found it!
-          found = true;
-          break;
-        }
-      }
-
-      // look in the hidden toc if appropriate
-      if (!found && hidTocH) {
-        tocH = hidTocH;
-        for (sum = 0; sum < tocH->count; sum++) {
-          if (pSum->uidHash == tocH->sums[sum].uidHash) {
-            // found it!
-            found = true;
-            break;
-          }
-        }
-      }
-    }
-
-    switch (message) {
-    case kDoAdd:
-      // does this message already exist in the cache?  Maybe it was copied.
-      // Skip it.
-      if ((FindSumByHash(toc, pSum->uidHash) != -1) ||
-          (hidTocH && (FindSumByHash(hidTocH, pSum->uidHash) != -1)))
-        break;
-
-      // is this message a deleted or unfiltered message and should we hide it?
-      if (hidTocH && ((pSum->opts && OPT_DELETED) ||
-                      (bHideUnfilteredSums & (pSum->flags & FLAG_UNFILTERED))))
-        tocH = hidTocH;
-      else
-        tocH = toc;
-
-      if (!SaveMessageSum(pSum, &tocH)) {
-        // end the resync
-        IMAPAbortResync(toc);
-        goto done;
-      }
-
-      // did we add a deleted message?
-      if (pSum->opts && OPT_DELETED)
-        SetIMAPMailboxNeeds(TOCToMbox(tocH), kNeedsAutoExp, true);
-
-      if (PrefIsSet(PREF_COUNT_ALL_IMAP) ||
-          // count only those messages received in InBox
-          TOCToMbox(toc) == LocateInboxForPers(TOCToPers(toc)))
-        UpdateNumStatWithTime(kStatReceivedMail, 1, pSum->seconds + ZoneSecs());
-      break;
-
-    case kDoDeleteAttachments:
-      // go trash this message's attachments, if we should
-      if (found)
-        CleanUpAttachmentsAfterIMAPTransfer(tocH, sum);
-      break;
-
-    case kDoDelete:
-      if (found) {
-        selected = tocH->sums[sum].selected;
-        DeleteIMAPSum(tocH, sum); // delete the summary
-
-        // select the next summary if we oughtta
-        if (tocH->win && selected && !IMAPFilteringUnderway())
-          BoxSelectAfter(tocH->win, sum);
-      }
-      break;
-
-    case kDoUpdate:
-      // Don't update this message if it's in the list of pending changes.
-      if (found & !PendingMessFlagChange(tocH->sums[sum].uidHash, mbox)) {
-        // update the message state, unless it's in a state we want to keep
-        if (UpdatableIMAPState(tocH->sums[sum].state))
-          tocH->sums[sum].state = pSum->state;
-
-        // update the message label if we ought to
-        if (SumColor(pSum) ==
-            flaggedColor) // new label is flagged, update the existing label
-          SetSumColor(tocH, sum, flaggedColor);
-        else if (SumColor(tocH->sums + sum) ==
-                 flaggedColor) // old label is flagged, new label is not, turn
-                               // off label
-          SetSumColor(tocH, sum, 0);
-        // else
-        //  leave the label alone
-
-        // update the deleted status
-        if (pSum->opts && OPT_DELETED)
-          MarkSumAsDeleted(tocH, sum, true);
-        else
-          MarkSumAsDeleted(tocH, sum, false);
-        ;
-
-        // make sure the summary is in the right toc.
-        if (hidTocH)
-          HideShowSummary(tocH, toc, hidTocH, sum);
-
-        // redraw the summary
-        InvalSum(tocH, sum);
-
-        // save the changes
-        TOCSetDirty(tocH, true);
-      }
-      break;
-    }
-  }
-
-done:
-  if (message != kDoDeleteAttachments)
-    if (sumList) {
-      free(sumList);
-      sumList = NULL;
-    }
-}
-
-/************************************************************************
- * IMAPRecvLine - read a line at a time from the spool file. Returns ".\015"
- * at the ends of messages.
- ************************************************************************/
-static int IMAPRecvLine(TransStream stream, unsigned char * buffer, long *size) {
-  static bool wasFrom;
-  static bool wasNl = true;
-  short lineType;
-
-  if (!buffer) {
-    bool retVal = wasFrom;
-    wasFrom = false;
-    return (retVal);
-  }
-  wasFrom = false;
-  (*size)--;
-
-  lineType = GetLine(buffer, *size, size, Lip);
-  if (*buffer == '\012') {
-    //	remove linefeed char
-    memmove(buffer, buffer + 1, *size - 1);
-    (*size)--;
-    buffer[*size] = 0;
-  }
-  if (!*size || !lineType ||
-      /*wasNl&(wasFrom=IsFromLine(buffer)) ||*/ TellLine(Lip) >= gIMAPMsgEnd) {
-    //	signal end-of-message
-    *size = 2;
-    buffer[0] = '.';
-    buffer[1] = '\015';
-    buffer[2] = 0;
-  } else if (lineType & wasNl & *buffer == '.') {
-    //	insert '.' at beginning of line
-    memmove(buffer + 1, buffer, *size);
-    (*size)++;
-    *buffer = '.';
-    buffer[*size] = 0;
-  }
-  wasNl = !lineType || buffer[*size - 1] == '\015';
-  return (0);
-}
-
-/**********************************************************************
- * UpdateIMAPMailbox - check for any changes to the local IMAP mailbox
- **********************************************************************/
-int UpdateIMAPMailbox(TOCType * toc) {
-  void *toAdd = nil, *toUpdate = nil, *toDelete = nil, *toCopy = nil;
-  IMAPSResultHandle results = nil;
-  short sumNum;
-  MailboxNodeHandle mbox = nil;
-  FSSpec spec;
-  bool filter = false;
-  bool checkAttachments = false;
-
-  //
-  //	Resync this mailbox if it needs it, and filtering is NOT currently
-  // underway
-  //
-
-  if (!IMAPFilteringUnderway() && (mbox = TOCToMbox(toc))) {
-    if (DoesIMAPMailboxNeed(mbox, kNeedsResync)) {
-      // wait if there's already a resync operation underway
-      if (!IsIMAPOperationUnderway(IMAPResyncTask)) {
-        if (PrefIsSet(PREF_FOREGROUND_IMAP_FILTERING))
-          SetIMAPMailboxNeeds(mbox, kNeedsResync, false);
-
-        // is it visible?
-        LockMailboxNodeHandle(mbox);
-        if (toc->win && IsWindowVisible(GetMyWindowWindowPtr(toc->win))) {
-          FetchNewMessages(toc, true, false, true, false);
-          SetIMAPMailboxNeeds(mbox, kNeedsResync, false);
-        }
-        UnlockMailboxNodeHandle(mbox);
-      }
-    }
-  }
-
-  //
-  //	Check for changes to TOC summaries
-  //
-
-  { int addCount = 0, updateCount = 0, deleteCount = 0, copyCount = 0;
-  if (IMAPDelivery(toc, &toAdd, &addCount, &toUpdate, &updateCount,
-                   &toDelete, &deleteCount, &toCopy, &copyCount,
-                   &filter, &results, &mbox, &checkAttachments)) {
-    //	Install IMAP summary changes
-
-    // process copies first.  Deletes could step on them later.
-    ProcessIMAPChanges(toCopy, copyCount, toc, kDoCopy);
-
-    if (toDelete == MSUM_DELETE_ALL) {
-      //	delete everything
-      for (sumNum = toc->count; sumNum--;)
-        DeleteIMAPSum(toc, sumNum);
-    } else {
-      if (checkAttachments)
-        ProcessIMAPChanges(toDelete, deleteCount, toc, kDoDeleteAttachments);
-      ProcessIMAPChanges(toDelete, deleteCount, toc, kDoDelete);
-    }
-
-    ProcessIMAPChanges(toAdd, addCount, toc, kDoAdd);
-    ProcessIMAPChanges(toUpdate, updateCount, toc, kDoUpdate);
-
-    // if we succeeded ...
-    if (mbox) {
-      // update the mailbox information ...
-      g_strlcpy(spec, toc->mailbox.spec, sizeof(spec));
-      WriteIMAPMailboxInfo(&spec, mbox);
-
-      if (toc && toc->win &&
-          IsWindowVisible(GetMyWindowWindowPtr(toc->win))) {
-        // resort mailbox if needed
-        if (toc->resort)
-          MBResort(toc);
-
-        /// do message selection
-        if (DoesIMAPMailboxNeed(mbox, kNeedsSelect)) {
-          SetIMAPMailboxNeeds(mbox, kNeedsSelect, true);
-
-          // make selection if nothing is selected.
-          if (LastMsgSelected(toc) < 0)
-            ShowBoxAt(toc, toc->previewPTE ? -1 : FumLub(toc),
-                      GetMyWindowWindowPtr(toc->win));
-        }
-      }
-    }
-  }
-  } /* count scope */
-
-  //
-  //	move downloaded messages from their spool file to the mailbox
-  //
-
-  while (IMAPMessagesWaiting(toc, &spec)) {
-    TOCType * hidTocH = NULL;
-
-    // first, decode messages in the visible portion of the toc
-    DecodeIMAPMessages(toc, &spec);
-
-    // next, do the messages in the hidden tocH
-    if ((hidTocH = GetHiddenCacheMailbox(mbox, false, false)) != NULL)
-      DecodeIMAPMessages(hidTocH, &spec);
-
-    // mark this temp file as having been processed ...
-    MarkAsProcessed(&spec);
-
-    //	Don't need spool file anymore
-    unlink(spec);
-  }
-
-  //
-  // do filtering
-  //
-
-  if (filter) {
-    // the user has asked us filter the old fashioned foreground way
-    if (PrefIsSet(PREF_FOREGROUND_IMAP_FILTERING)) {
-      PersHandle oldPers = CurPers;
-
-      // Make sure this personality is set to filter incoming IMAP mail
-      mbox = TOCToMbox(toc);
-      CurPers = TOCToPers(toc);
-
-      if (CurPers && !PrefIsSet(PREF_IMAP_NO_FILTER_INBOX)) {
-        // if there are any no new mail alerts pending, forget them.
-        NoNewMailMe = false;
-
-        // filter the mailbox, display the mail alerts
-        NotifyNewMail(1, false, toc, nil);
-      }
-
-      CurPers = oldPers;
-
-      // reset the filter flags on all messages, whether filtering happened or
-      // not.
-      ResetFilterFlags(toc);
-    } else {
-      // start background IMAP filtering ...
-      NeedToFilterIMAP = true;
-    }
-  }
-}
-
-/**********************************************************************
- * DeleteIMAPSum - remove an IMAP summary from a toc
- **********************************************************************/
-void DeleteIMAPSum(TOCType * tocH, int sumNum) {
-  SearchUpdateSum(tocH, sumNum, tocH, tocH->sums[sumNum].serialNum, false,
-                  true);
-  DeleteMessageLo(tocH, sumNum, true);
-}
-
-/**********************************************************************
- * UpdateIMAPMailbox - check for any changes to the local IMAP mailbox
- **********************************************************************/
-bool IsMailboxSubmenu(short menu) {
-  return g16bitSubMenuIDs ? menu >= BOX_MENU_START & menu < BOX_MENU_LIMIT
-                          : menu >= 1 & menu < FIND_HIER_MENU;
-}
-
-/**********************************************************************
- * UpdateIMAPMailbox - check for any changes to the local IMAP mailbox
- *
- *	Note, this needs to be COMPLETELY REMOVED.  This is extremely slow
- *	and should be done another way.  That's  abig project for another
- *	day, though.
- **********************************************************************/
-void DecodeIMAPMessages(TOCType * toc, char * spec) {
-  int err;
-  short count;
-  short fileRef;
-  IndexStruct IMAPIdx;
-  IndexStruct **hIMAPIndex;
-  short curIMAPIndex;
-  short countIMAP;
-  TransVector saveCurTrans = CurTrans;
-  short saveRefN = 0;
-  PersHandle oldPers = CurPers;
-  static TransVector IMAPTrans = {nil, nil, nil, nil,          nil, nil,
-                                  nil, nil, nil,
-                                  (int (*)(TransStream, char *, long *))IMAPRecvLine,
-                                  nil};
-  MailboxNodeHandle mbox = TOCToMbox(toc);
-  short sumNum;
-
-  /*
-   * allocate the lineio pointer
-   */
-  if (!Lip)
-    Lip = calloc(1, sizeof(*Lip));
-  if (!Lip) {
-    (WarnUser(MEM_ERR, 0));
-    goto msgDone;
-  }
-  if (FSpOpenLine(spec, O_RDWR, Lip))
-    goto msgDone;
-
-  // CurPers must be set to the owning personality
-  mbox = TOCToMbox(toc);
-  CurPers = TOCToPers(toc);
-
-  // just trash this file if the personality it belongs to has gone away.
-  if (!CurPers)
-    goto msgDone;
-
-  //	Get the IMAP index resource
-  hIMAPIndex = nil;
-  if ((fileRef = -1) != -1) {
-    hIMAPIndex = (IndexStruct **)NULL;
-    close(fileRef);
-  }
-  if (!hIMAPIndex)
-    goto msgDone;
-
-  // now, grab messages
-  TOCSetDirty(toc, true);
-  countIMAP = malloc_size(hIMAPIndex) / sizeof(IndexStruct);
-
-  // open the destination mailbox
-  err = BoxFOpen(toc);
-  if (err != 0) {
-    FileSystemError(OPEN_MBOX, spec_name(toc->mailbox.spec), err);
-  } else {
-    for (curIMAPIndex = 0; curIMAPIndex < countIMAP; curIMAPIndex++) {
-      BadBinHex = false;
-      BadEncoding = 0;
-      GrowBuf_Reset(&AttachedFiles);
-
-      IMAPIdx = (*hIMAPIndex)[curIMAPIndex];
-      //	search for the summary
-      count = 0;
-      for (sumNum = 0; sumNum < toc->count; sumNum++) {
-        if (toc->sums[sumNum].uidHash == IMAPIdx.uid) {
-          MessHandle messH;
-          MyWindowPtr win;
-
-          SeekLine(IMAPIdx.offset, Lip);
-          gIMAPMsgEnd = IMAPIdx.offset + IMAPIdx.length;
-          CurTrans = IMAPTrans;
-          count = FetchMessageTextLo(nil, toc->sums[sumNum].length, nil,
-                                     sumNum, toc, true, false);
-          CurTrans = saveCurTrans;
-          GrowBuf_Reset(&AttachedFiles);
-          SaveAbomination(nil, 0);
-#ifdef BAD_ENCODING_HANDLING
-          if (BadBinHex || BadEncoding)
-            NoAttachments = true;
-          else
-#endif
-            NoAttachments = false;
-
-          // set the sum options if this message needs to have an attachment
-          // downloaded.
-          if (HasStubFileAttachment(toc, sumNum))
-            toc->sums[sumNum].opts |= 0x1000;
-          else
-            toc->sums[sumNum].opts &= ~0x1000;
-
-          // moodmail?
-          if (false)
-          // spamwatch?
-          if (HasFeature(featureJunk) & JunkPrefBoxHold() & false) {
-            // only score message if it hasn't been manually scored before
-            if (toc->sums[sumNum].spamBecause != JUNK_BECAUSE_USER)
-              JunkScoreIMAPBox(toc, sumNum, sumNum, false);
-          }
-
-          // redraw the summary
-          InvalSum(toc, sumNum);
-
-          //	Redisplay message
-          if ((messH = toc->sums[sumNum].messH) && messH->bodyPTE &&
-              (win = messH->win))
-            RedisplayIMAPMessage(win);
-
-          //	Update the preview pane.
-          if (toc->previewID == toc->sums[sumNum].serialNum)
-            toc->previewID = 0; // redraw previewed message
-          else
-            toc->conConMultiScan = true; // run concentrator.
-
-          // delete the message if a translator has asked us to
-          if (ETLDeleteRequest) {
-            toc->sums[sumNum].opts |=
-                OPT_ORPHAN_ATT; // don't delete its attachments
-
-            // jdboyd 7/30/04
-            //
-            // No matter what the download options and fitlering type are, this
-            // message gets deleted during the filtering process.  Turning off
-            // the unfiltered flag keeps it around.  I don't know what this was
-            // there before, but it's causing problems removing ESP commands.
-            //
-            // toc->sums[sumNum].flags &= ~FLAG_UNFILTERED;
-            // // don't run filters on this message
-
-            toc->sums[sumNum].opts |=
-                OPT_EMSR_DELETE_REQUESTED; // mark this message so we know to
-                                           // delete later
-            ETLDeleteRequest = false;
-          }
-
-          // mark this toc as dirty so the changes get saved.
-          TOCSetDirty(toc, true);
-
-          break;
-        }
-      }
-    }
-  }
-
-  // close and flush the new messages to disk
-  err = 0; // BoxFClose is void
-  BoxFClose(toc, true);
-
-msgDone:
-  if (Lip && Lip->fd) {
-    CloseLine(Lip);
-    free(Lip);
-    Lip = nil;
-  }
-  NoAttachments = false;
-  if (hIMAPIndex) {
-    if (*hIMAPIndex) free(*hIMAPIndex);
-    free(hIMAPIndex);
-    hIMAPIndex = NULL;
-  }
-
-  /* UseResFile removed */
-
-  CurPers = oldPers;
-
-  // take care of any registration files that may have come with this message
-  ProcessReceivedRegFiles();
-}
+/* IMAP code removed — crispy_imap + macmbx handle all IMAP operations. */

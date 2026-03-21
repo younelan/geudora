@@ -41,27 +41,27 @@ ADVISED OF THE POSSIBILITY OF SUCH DAMAGE. */
 #include "lineio.h"
 
 /* Function prototypes */
-void BeautifySum(MSumPtr sum);
-TOCType * BuildTOC(const char *path);
-TOCType * BuildTOC_Path(const char *path);
-TOCType * RebuildTOC(const char *path, TOCType * oldTocH, bool resource,
+void BeautifySum(MacmbxMsgSum * sum);
+MacmbxTOC * BuildTOC(const char *path);
+MacmbxTOC * BuildTOC_Path(const char *path);
+MacmbxTOC * RebuildTOC(const char *path, MacmbxTOC * oldTocH, bool resource,
                      bool tempToc);
-int ReadSum(MSumPtr sum, bool isOut, LineIOP lip, bool lookEnvelope);
-int SumToFrom(MSumPtr sum, char *fromLine);
+int ReadSum(MacmbxMsgSum * sum, bool isOut, LineIOP lip, bool lookEnvelope);
+int SumToFrom(MacmbxMsgSum * sum, char *fromLine);
 void CopyHeaderLine(char *to, int size, char *from);
-long FindTOCSpot(TOCType * tocH, long length);
+long FindTOCSpot(MacmbxTOC * tocH, long length);
 void BeautifyFrom(char *fromStr);
 uint32_t BeautifyDate(char *dateStr, long *zoneSecs);
 uint32_t UnixDate2Secs(const char *date);
 void BeautifySubj(char *subject, short size);
 bool IsFromLine(char *line);
 bool IsBulk(char *line);
-void GleanFrom(char *line, MSumPtr sum);
+void GleanFrom(char *line, MacmbxMsgSum * sum);
 short MonthNum(const char *cp);
 long CStr2Zone(const char *s);
 char *TrimWrap(char *str, int openC, int closeC);
 char *TrimNonWord(char *str);
-short SalvageTOC(TOCType * oldToc, TOCType * newToc);
+short SalvageTOC(MacmbxTOC * oldToc, MacmbxTOC * newToc);
 
 /* Unicode / UTF-8 helpers (GLib-based portable implementations) */
 bool HasUnicode(void);

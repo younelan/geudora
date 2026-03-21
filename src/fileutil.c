@@ -2700,7 +2700,6 @@ int SubFolderSpec(short nameId, char *spec) {
 
   // not in cache.  Go look for it
   GetRString(string, nameId);
-  g_print("SubFolderSpec: nameId=%d string='%s' Root.path='%s'\n", nameId, string, Root.path);
   if (!string[0]) {
     spec[0] = '\0';
     return ENOENT;

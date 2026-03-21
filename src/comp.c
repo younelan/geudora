@@ -25,7 +25,7 @@ ADVISED OF THE POSSIBILITY OF SUCH DAMAGE. */
 
 #include "fileutil.h"
 #include "comp.h"
-#include "sendmail.h"
+/* sendmail.h removed — crispy_smtp handles SMTP, HeadSpec now in comp.h */
 #include "MyRes.h"
 #define SEND_ITEM 100
 #define SAVE_ITEM 101
@@ -38,6 +38,7 @@ ADVISED OF THE POSSIBILITY OF SUCH DAMAGE. */
 #include "theme.h"
 #include "StringDefs.h"
 #include "gtk_prefs.h"
+#include "macmbx_mailer.h"
 #include "mailbox.h"
 #include "message.h"
 #include "prefdefs.h"
@@ -64,8 +65,8 @@ int SetWinMinSize(MyWindowPtr win, int width, int height);
 bool IsColorWin(void *winWP);
 int MessFind(MyWindowPtr win);
 int MessagePosition(MyWindowPtr win);
-int GetMessageLength(TOCType * tocH, int sumNum);
-int ReadMessage(TOCType * tocH, int sumNum, unsigned char *buffer);
+int GetMessageLength(MacmbxTOC * tocH, int sumNum);
+int ReadMessage(MacmbxTOC * tocH, int sumNum, unsigned char *buffer);
 bool ShowMyWindow(void *winWP);
 /* AWrite renamed to file_write — included via fileutil.h */
 
@@ -86,7 +87,7 @@ bool ShowMyWindow(void *winWP);
  * private function declarations - ported to use gEditCtrl instead of Pete
  ************************************************************************/
 int GetCompTexts(MessHandle messH, bool new);
-void MakeCompTitle(char *string, TOCType * tocH, MessHandle messH, int sumNum);
+void MakeCompTitle(char *string, MacmbxTOC * tocH, MessHandle messH, int sumNum);
 int WriteComp(MessHandle messH, short refN, long offset);
 char *GetMyHostname(char *hostname);
 int CompStripHeaderReturns(MessHandle messH);
@@ -520,7 +521,7 @@ static void on_comp_encoding_changed(GObject *dd, GParamSpec *pspec, gpointer ud
   if (!messH) return;
   guint sel = gtk_drop_down_get_selected(GTK_DROP_DOWN(dd));
   /* 0=MIME 1=BinHex 2=Uuencode */
-  SumOf(messH)->tableId = (short)sel;
+  SumOf(messH)->table_id = (short)sel;
 }
 static void on_comp_signature_changed(GObject *dd, GParamSpec *pspec, gpointer ud) {
   (void)pspec;
@@ -528,7 +529,7 @@ static void on_comp_signature_changed(GObject *dd, GParamSpec *pspec, gpointer u
   if (!messH) return;
   guint sel = gtk_drop_down_get_selected(GTK_DROP_DOWN(dd));
   /* 0=None 1=Standard 2=Alternate */
-  SumOf(messH)->sigId = (short)sel;
+  SumOf(messH)->sig_id = (short)sel;
 }
 
 /* ── Attachment management ── */
@@ -640,9 +641,9 @@ static void on_comp_queue_clicked(GtkButton *btn, gpointer ud) {
   MessHandle messH = (MessHandle)ud;
   if (!messH) return;
   if (CompSave(messH)) {
-    TOCType *tocH = messH->tocH;
+    MacmbxTOC *tocH = messH->tocH;
     int sumNum = messH->sumNum;
-    tocH->sums[sumNum].state = QUEUED;
+    tocH->msgs[sumNum].state = QUEUED;
     TOCSetDirty(tocH, true);
     MyWindowPtr win = messH->win;
     if (win && win->window)
@@ -665,7 +666,7 @@ static void on_comp_queue_clicked(GtkButton *btn, gpointer ud) {
  * they can be locked/unlocked individually, matching original behaviour.
  * The gEditCtrl holds only the message body.
  **********************************************************************/
-MyWindowPtr OpenComp(TOCType * tocH, int sumNum, GtkWidget *winWP,
+MyWindowPtr OpenComp(MacmbxTOC * tocH, int sumNum, GtkWidget *winWP,
                      MyWindowPtr win, bool showIt, bool new) {
   char title[256];
   MessHandle messH;
@@ -686,7 +687,7 @@ MyWindowPtr OpenComp(TOCType * tocH, int sumNum, GtkWidget *winWP,
 
   winWP = (GtkWidget *)GetMyWindowWindowPtr(win);
 
-  tocH->sums[sumNum].messH = messH;
+  tocH->msgs[sumNum].messH = messH;
   MakeCompTitle(title, tocH, messH, sumNum);
 
   messH->win = win;
@@ -698,12 +699,12 @@ MyWindowPtr OpenComp(TOCType * tocH, int sumNum, GtkWidget *winWP,
 
   messH->next = MessList; MessList = messH;
 
-  tocH->sums[sumNum].flags |= FLAG_ICON_BAR;
+  tocH->msgs[sumNum].flags |= FLAG_ICON_BAR;
   if (PrefIsSet(PREF_COMP_TOOLBAR))
     SetMessOpt(messH, OPT_COMP_TOOLBAR_VISIBLE);
 
-  bool isSent = (tocH->sums[sumNum].state == SENT ||
-                 tocH->sums[sumNum].state == BUSY_SENDING);
+  bool isSent = (tocH->msgs[sumNum].state == SENT ||
+                 tocH->msgs[sumNum].state == BUSY_SENDING);
 
   /* ── CSS for flat toolbar buttons ── */
   {
@@ -806,7 +807,7 @@ MyWindowPtr OpenComp(TOCType * tocH, int sumNum, GtkWidget *winWP,
   /* Encoding dropdown */
   const char *enc_types[] = {"MIME", "BinHex", "Uuencode", NULL};
   GtkWidget *enc_dd = gtk_drop_down_new_from_strings(enc_types);
-  gtk_drop_down_set_selected(GTK_DROP_DOWN(enc_dd), SumOf(messH)->tableId);
+  gtk_drop_down_set_selected(GTK_DROP_DOWN(enc_dd), SumOf(messH)->table_id);
   gtk_widget_set_tooltip_text(enc_dd, "Attachment encoding");
   g_signal_connect(enc_dd, "notify::selected", G_CALLBACK(on_comp_encoding_changed), messH);
   gtk_box_append(GTK_BOX(toolbar), enc_dd);
@@ -824,7 +825,7 @@ MyWindowPtr OpenComp(TOCType * tocH, int sumNum, GtkWidget *winWP,
   /* Signature dropdown */
   const char *sigs[] = {"None", "Standard", "Alternate", NULL};
   GtkWidget *sig_dd = gtk_drop_down_new_from_strings(sigs);
-  { short sig = SumOf(messH)->sigId;
+  { short sig = SumOf(messH)->sig_id;
     gtk_drop_down_set_selected(GTK_DROP_DOWN(sig_dd),
       (sig >= 0 && sig <= 2) ? (guint)sig : 1); }
   gtk_widget_set_tooltip_text(sig_dd, "Signature");
@@ -992,7 +993,7 @@ MyWindowPtr OpenComp(TOCType * tocH, int sumNum, GtkWidget *winWP,
     if (buffer) {
       short len = CreateMessageBody(buffer, &uidHash);
       buffer = g_realloc(buffer, len + 1);
-      SumOf(messH)->uidHash = SumOf(messH)->msgIdHash = uidHash;
+      SumOf(messH)->uid_hash = SumOf(messH)->msg_id_hash = uidHash;
     }
   } else {
     bufferSize = GetMessageLength(tocH, sumNum) + 1;
@@ -1303,8 +1304,8 @@ MyWindowPtr OpenComp(TOCType * tocH, int sumNum, GtkWidget *winWP,
  **********************************************************************/
 MyWindowPtr DoComposeNew(int type) {
   (void)type;
-  TOCType *tocH;
-  MSumType sum;
+  MacmbxTOC *tocH;
+  MacmbxMsgSum sum;
   MyWindowPtr newWin;
   bool oldReallyDirty;
 
@@ -1316,13 +1317,13 @@ MyWindowPtr DoComposeNew(int type) {
   memset(&sum, 0, sizeof(sum));
   sum.state = UNSENDABLE;
   sum.flags = 0;
-  sum.tableId = 0;
-  sum.origZone = ZoneSecs() / 60;
+  sum.table_id = 0;
+  sum.orig_zone = ZoneSecs() / 60;
   sum.seconds = GMTDateTime();
-  sum.persId = CurPers->persId;
-  sum.sigId = 0;
+  sum.pers_id = CurPers->persId;
+  sum.sig_id = 0;
 
-  oldReallyDirty = tocH->reallyDirty;
+  oldReallyDirty = tocH->dirty;
   if (!SaveMessageSum(&sum, &tocH)) {
     g_print("DoComposeNew: SaveMessageSum failed\n");
     return NULL;
@@ -1417,7 +1418,7 @@ int GetCompTexts(MessHandle messH, bool new) {
   MyWindowPtr messWin = messH->win;
   GtkWidget *messWinWP = (GtkWidget *)GetMyWindowWindowPtr(messWin);
   int sumNum = messH->sumNum;
-  TOCType * tocH = messH->tocH;
+  MacmbxTOC * tocH = messH->tocH;
   char *buffer = NULL;
   Accumulator extras;
   int which;
@@ -1460,7 +1461,7 @@ int GetCompTexts(MessHandle messH, bool new) {
   } else {
     len = CreateMessageBody(buffer, &uidHash);
     buffer = g_realloc(buffer, len + 1);
-    SumOf(messH)->uidHash = SumOf(messH)->msgIdHash = uidHash;
+    SumOf(messH)->uid_hash = SumOf(messH)->msg_id_hash = uidHash;
   }
 
   /*
@@ -1597,7 +1598,7 @@ failure:
  * MakeCompTitle - make a reasonable composition title
  * Ported to use standard C strings instead of Pascal strings
  **********************************************************************/
-void MakeCompTitle(char *string, TOCType * tocH, MessHandle messH, int sumNum) {
+void MakeCompTitle(char *string, MacmbxTOC * tocH, MessHandle messH, int sumNum) {
   char subject[256] = "";
   char to[256] = "";
   char pattern[64];
@@ -1605,7 +1606,7 @@ void MakeCompTitle(char *string, TOCType * tocH, MessHandle messH, int sumNum) {
   // Get subject from message
   if (messH && messH->win && messH->win->pte) {
     // Extract subject from headers (simplified)
-    g_strlcpy(subject, tocH->sums[sumNum].subj, sizeof(subject));
+    g_strlcpy(subject, tocH->msgs[sumNum].subject, sizeof(subject));
   }
 
   // Get To address (simplified)
@@ -1706,20 +1707,22 @@ int WriteComp(MessHandle messH, short refN, long offset) {
   char dateStr[64];
   strftime(dateStr, sizeof(dateStr), "%a %b %d %H:%M:%S %Y", localtime(&now));
 
-  char *msg = g_strdup_printf(
+  /* Build headers first so we can measure bodyOffset */
+  char *headers = g_strdup_printf(
       "From %s %s\r\n"
       "To: %s\r\n"
       "From: %s\r\n"
       "Subject: %s\r\n"
       "Cc: %s\r\n"
       "Bcc: %s\r\n"
-      "\r\n"
-      "%s\r\n",
+      "\r\n",
       from[0] ? from : "user", dateStr,
-      to, from, subject, cc, bcc,
-      body ? body : "");
+      to, from, subject, cc, bcc);
 
+  long hdr_len = strlen(headers);
+  char *msg = g_strdup_printf("%s%s\r\n", headers, body ? body : "");
   long count = strlen(msg);
+  g_free(headers);
 
   /* Seek to the write position */
   if (lseek(refN, offset, SEEK_SET) < 0) {
@@ -1732,19 +1735,20 @@ int WriteComp(MessHandle messH, short refN, long offset) {
 
   /* Update the summary with the actual message length */
   if (!err) {
-    TOCType *tocH = messH->tocH;
+    MacmbxTOC *tocH = messH->tocH;
     int sumNum = messH->sumNum;
-    tocH->sums[sumNum].offset = offset;
-    tocH->sums[sumNum].length = count;
+    tocH->msgs[sumNum].offset = offset;
+    tocH->msgs[sumNum].length = count;
+    tocH->msgs[sumNum].body_offset = (int)hdr_len;
 
     /* Update summary fields for display in message list */
     if (subject && subject[0])
-      g_strlcpy(tocH->sums[sumNum].subj, subject,
-                 sizeof(tocH->sums[sumNum].subj));
+      g_strlcpy(tocH->msgs[sumNum].subject, subject,
+                 sizeof(tocH->msgs[sumNum].subject));
     if (to && to[0])
-      g_strlcpy(tocH->sums[sumNum].from, to,
-                 sizeof(tocH->sums[sumNum].from));
-    tocH->sums[sumNum].seconds = (unsigned long)time(NULL);
+      g_strlcpy(tocH->msgs[sumNum].from, to,
+                 sizeof(tocH->msgs[sumNum].from));
+    tocH->msgs[sumNum].seconds = (unsigned long)time(NULL);
     InvalSum(tocH, sumNum);
   }
 
@@ -2057,62 +2061,102 @@ bool CompClose(MyWindowPtr win) {
 }
 
 /**********************************************************************
- * CompSend - send the composition
+ * CompSend - send the composition via macmbx_mailer
+ *
+ * Builds the RFC822 message from the compose window fields,
+ * hands it to macmbx_mailer_send_now() for immediate delivery.
+ * Also saves a copy to Out mailbox for the sent-mail record.
  **********************************************************************/
 bool CompSend(MessHandle messH) {
   MyWindowPtr win = messH->win;
-  if (!win || !win->pte)
+  if (!win || !win->pte || !win->window)
     return false;
 
-  /* Save the message first */
-  if (!CompSave(messH))
-    return false;
+  /* Gather headers from widgets */
+  GtkWidget *winWP = win->window;
+  const char *to = "", *from = "", *subject = "", *cc = "", *bcc = "";
+  GtkWidget *e;
+  if ((e = g_object_get_data(G_OBJECT(winWP), "comp-to")))
+    to = gtk_editable_get_text(GTK_EDITABLE(e));
+  if ((e = g_object_get_data(G_OBJECT(winWP), "comp-from"))) {
+    GtkStringObject *sel = GTK_STRING_OBJECT(
+        gtk_drop_down_get_selected_item(GTK_DROP_DOWN(e)));
+    if (sel) from = gtk_string_object_get_string(sel);
+  }
+  if ((e = g_object_get_data(G_OBJECT(winWP), "comp-subject")))
+    subject = gtk_editable_get_text(GTK_EDITABLE(e));
+  if ((e = g_object_get_data(G_OBJECT(winWP), "comp-cc")))
+    cc = gtk_editable_get_text(GTK_EDITABLE(e));
+  if ((e = g_object_get_data(G_OBJECT(winWP), "comp-bcc")))
+    bcc = gtk_editable_get_text(GTK_EDITABLE(e));
 
-  TOCType *tocH = messH->tocH;
-  int sumNum = messH->sumNum;
+  /* Get body from editor */
+  geditDocument *doc = geditctrl_get_document(win->pte);
+  char *body = gedit_document_get_text(doc);
 
-  /* Set persId from the From dropdown selection */
+  /* Build RFC822 message */
+  time_t now = time(NULL);
+  char dateBuf[64];
+  struct tm *tm = localtime(&now);
+  strftime(dateBuf, sizeof(dateBuf), "%a, %d %b %Y %H:%M:%S %z", tm);
+
+  /* Extract bare email for From */
+  char fromBare[256] = "";
   {
-    GtkWidget *fromDD = messH->headerWidgets[FROM_HEAD];
-    if (fromDD && GTK_IS_DROP_DOWN(fromDD)) {
-      guint sel = gtk_drop_down_get_selected(GTK_DROP_DOWN(fromDD));
-      if (sel == 0) {
-        /* Dominant personality */
-        tocH->sums[sumNum].persId = 0;
-      } else {
-        /* Non-dominant: find matching personality by index */
-        PrefsAccount accounts[16];
-        int n = prefs_load_accounts(accounts, 16);
-        if (sel - 1 < (guint)n) {
-          tocH->sums[sumNum].persId = Hash(accounts[sel - 1].name);
-        }
-      }
+    const char *lt = strchr(from, '<');
+    if (lt) {
+      lt++;
+      const char *gt = strchr(lt, '>');
+      int len = gt ? (int)(gt - lt) : (int)strlen(lt);
+      if (len >= (int)sizeof(fromBare)) len = sizeof(fromBare) - 1;
+      memcpy(fromBare, lt, len);
+      fromBare[len] = '\0';
+    } else if (strchr(from, '@')) {
+      g_strlcpy(fromBare, from, sizeof(fromBare));
     }
   }
 
-  /* Mark as queued for sending */
-  tocH->sums[sumNum].state = QUEUED;
-  TOCSetDirty(tocH, true);
+  GString *msg = g_string_sized_new(1024);
+  g_string_append_printf(msg, "From: %s\r\n", from);
+  g_string_append_printf(msg, "To: %s\r\n", to);
+  if (cc[0]) g_string_append_printf(msg, "Cc: %s\r\n", cc);
+  if (bcc[0]) g_string_append_printf(msg, "Bcc: %s\r\n", bcc);
+  g_string_append_printf(msg, "Subject: %s\r\n", subject);
+  g_string_append_printf(msg, "Date: %s\r\n", dateBuf);
+  g_string_append(msg, "MIME-Version: 1.0\r\n");
+  g_string_append(msg, "Content-Type: text/plain; charset=utf-8\r\n");
+  g_string_append(msg, "\r\n");
+  if (body) g_string_append(msg, body);
+  g_free(body);
 
-  extern int WriteTOC(TOCType *tocH);
-  WriteTOC(tocH);
+  /* Get the mailer — it handles everything: send, save to Out, state */
+  extern MacmbxMailer *idle_scheduler_get_mailer(void);
+  MacmbxMailer *mailer = idle_scheduler_get_mailer();
+  int err = -1;
 
-  g_print("CompSend: queued sum %d, persId=%u, tocH=%p count=%d\n",
-          sumNum, tocH->sums[sumNum].persId, (void*)tocH, tocH->count);
+  if (mailer) {
+    /* Send immediately — macmbx connects SMTP, sends the message,
+     * saves a copy to Out with state SENT, updates the TOC. */
+    err = macmbx_mailer_send_now(mailer, msg->str, (long)msg->len,
+                                   fromBare, NULL);
+    g_print("CompSend: macmbx_mailer_send_now returned %d\n", err);
 
-  /* Detach messH from summary so send thread can pick it up */
-  tocH->sums[sumNum].messH = NULL;
+    if (err != 0) {
+      /* Send failed — queue it for later retry */
+      macmbx_mailer_queue(mailer, msg->str, (long)msg->len, fromBare, NULL);
+      g_print("CompSend: queued for retry\n");
+    }
+  } else {
+    g_warning("CompSend: no mailer instance");
+  }
+
+  g_string_free(msg, TRUE);
 
   /* Close the compose window */
   if (win->window)
     gtk_window_close(GTK_WINDOW(win->window));
 
-  /* Trigger immediate mail transfer for queued messages */
-  extern short XferMail(bool check, bool send, bool manual, bool scripted,
-                        bool thread, short modifiers);
-  XferMail(false, true, true, false, true, 0);
-
-  return true;
+  return (err == 0);
 }
 
 /**********************************************************************
@@ -2120,23 +2164,23 @@ bool CompSend(MessHandle messH) {
  **********************************************************************/
 bool CompSave(MessHandle messH) {
   MyWindowPtr win = messH->win;
-  TOCType * tocH = messH->tocH;
+  MacmbxTOC * tocH = messH->tocH;
   int sumNum = messH->sumNum;
 
   if (!win || !win->pte)
     return false;
 
   /* Ensure the mailbox file is open */
-  extern int BoxFOpen(TOCType *tocH);
-  extern int WriteTOC(TOCType *tocH);
+  extern int BoxFOpen(MacmbxTOC *tocH);
+  extern int macmbx_toc_save(MacmbxTOC *tocH);
   if (tocH->refN == 0)
     BoxFOpen(tocH);
   if (tocH->refN <= 0)
     return false;
 
   /* For new/unsaved messages, append at end of mailbox file */
-  long offset = tocH->sums[sumNum].offset;
-  if (offset == 0 && tocH->sums[sumNum].length == 0) {
+  long offset = tocH->msgs[sumNum].offset;
+  if (offset == 0 && tocH->msgs[sumNum].length == 0) {
     off_t end = lseek(tocH->refN, 0, SEEK_END);
     if (end < 0) return false;
     offset = (long)end;
@@ -2146,17 +2190,18 @@ bool CompSave(MessHandle messH) {
 
   if (!err) {
     TOCSetDirty(tocH, true);
-    tocH->reallyDirty = true;
-    WriteTOC(tocH);
+    tocH->dirty = true;
+    macmbx_toc_save(tocH);
     win->isDirty = false;
 
     /* Update the mailbox list to reflect the saved message */
-    extern void InvalSum(TOCType *tocH, short sumNum);
+    extern void InvalSum(MacmbxTOC *tocH, short sumNum);
     InvalSum(tocH, sumNum);
 
     /* Also refresh the Out mailbox TreeView if it's open */
-    if (tocH->win && tocH->win->window) {
-      GtkWidget *tree = g_object_get_data(G_OBJECT(tocH->win->window), "mbox-tree");
+    MyWindowPtr tocWin = (MyWindowPtr)tocH->win;
+    if (tocWin && tocWin->window) {
+      GtkWidget *tree = g_object_get_data(G_OBJECT(tocWin->window), "mbox-tree");
       if (tree && GTK_IS_TREE_VIEW(tree)) {
         GtkListStore *store = GTK_LIST_STORE(gtk_tree_view_get_model(GTK_TREE_VIEW(tree)));
         if (store) {
@@ -2632,4 +2677,89 @@ char *HandleHeadGetPStr(char *text, short head, char *val) {
     val[len] = '\0';
   }
   return val;
+}
+
+/************************************************************************
+ * Attachment functions — moved from compact.c (compose UI operations)
+ ************************************************************************/
+
+void AttachSelect(MessHandle messH) {
+  if (!messH) return;
+  long selStart = 0, selEnd = 0;
+  HeadSpec hs;
+  GtkWidget *pte = TheBody ? TheBody : messH->win->pte;
+  selStart = geditctrl_get_caret_offset(pte);
+  selEnd = selStart;
+  if (selStart < 0) return;
+  if (!CompHeadFind(messH, ATTACH_HEAD, &hs)) return;
+  if (selEnd < hs.value || selStart > hs.stop) return;
+  long mid = (selStart + selEnd) / 2;
+  if (mid - 2 > hs.value)
+    geditctrl_select_range(pte, mid - 2, mid + 2);
+  else if (mid + 4 < hs.stop)
+    geditctrl_select_range(pte, mid, mid + 4);
+}
+
+void CompAttachSpec(MyWindowPtr win, char *spec) {
+  MessHandle messH = (MessHandle)GetMyWindowPrivateData(win);
+  if (!messH || !win->pte) return;
+  HeadSpec hs;
+  if (!CompHeadFind(messH, ATTACH_HEAD, &hs)) return;
+  char attachText[1024];
+  snprintf(attachText, sizeof(attachText), "%s", (char *)spec_name(spec));
+  GtkWidget *pte = TheBody ? TheBody : win->pte;
+  if (hs.stop != hs.value) CompHeadAppendPtr(pte, &hs, " ", 1);
+  CompHeadAppendPtr(pte, &hs, attachText, strlen(attachText));
+  AttachSelect(messH);
+  win->isDirty = true;
+}
+
+void CompDelAttachment(MessHandle messH, void *hsPtr) {
+  HSPtr hs = (HSPtr)hsPtr;
+  GtkWidget *pte = TheBody ? TheBody : messH->win->pte;
+  long sel;
+  HeadSpec hSpec;
+  if (!pte) return;
+  if (hs) {
+    geditctrl_delete_range(pte, hs->start, hs->stop - hs->start);
+    sel = hs->start;
+  } else {
+    sel = geditctrl_get_caret_offset(pte);
+  }
+  CompHeadFind(messH, ATTACH_HEAD, &hSpec);
+  geditDocument *doc = geditctrl_get_document(pte);
+  gchar *textStr = doc ? gedit_document_get_text(doc) : NULL;
+  if (textStr) {
+    long len = strlen(textStr);
+    if (sel > hSpec.value && sel >= 2 && sel <= len &&
+        textStr[sel-1] == ' ' && textStr[sel-2] == ' ') {
+      geditctrl_delete_range(pte, sel-1, 1);
+      sel--; hSpec.stop--;
+    }
+    g_free(textStr);
+  }
+}
+
+int GetIndAttachmentLo(void *text, short index, char *spec, void *where, void *hs) {
+  /* Find the Nth attachment reference in text.
+   * Text contains attachment paths separated by spaces in the Attach: header. */
+  (void)where; (void)hs;
+  if (!text || !spec) return -1;
+  const char *p = (const char *)text;
+  int count = 0;
+  while (*p) {
+    while (*p == ' ' || *p == '\t') p++;
+    if (!*p) break;
+    const char *start = p;
+    while (*p && *p != ' ' && *p != '\t' && *p != '\r' && *p != '\n') p++;
+    count++;
+    if (count == index) {
+      int len = (int)(p - start);
+      if (len >= PATH_MAX) len = PATH_MAX - 1;
+      memcpy(spec, start, len);
+      spec[len] = '\0';
+      return 0;
+    }
+  }
+  return -1;
 }
