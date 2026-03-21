@@ -23,6 +23,7 @@
 #include "theme.h"
 #include "threading.h"
 #include "schizo.h"
+#include "Globals.h"
 #include "toc.h"
 #include "macmbx.h"
 #include "macmbx_mailer.h"
@@ -1114,6 +1115,35 @@ static void on_theme_toggle(GtkButton *btn, gpointer ud) {
   update_theme_tooltip();
 }
 
+/* Offline toggle */
+#define PREFS_GROUP_OFFLINE "offline"
+#define PREFS_KEY_OFFLINE   "offline_mode"
+
+static GtkWidget *offline_toggle_btn = NULL;
+
+void update_offline_button(void) {
+  if (!offline_toggle_btn) return;
+  bool off = idle_scheduler_is_offline();
+  gtk_button_set_icon_name(GTK_BUTTON(offline_toggle_btn),
+                           off ? "network-offline-symbolic"
+                               : "network-transmit-receive-symbolic");
+  gtk_widget_set_tooltip_text(offline_toggle_btn,
+                              off ? "Offline (click to go online)"
+                                  : "Online (click to go offline)");
+  if (off)
+    gtk_widget_add_css_class(offline_toggle_btn, "offline-active");
+  else
+    gtk_widget_remove_css_class(offline_toggle_btn, "offline-active");
+}
+
+static void on_offline_toggle(GtkButton *btn, gpointer ud) {
+  (void)btn; (void)ud;
+  bool now_offline = !idle_scheduler_is_offline();
+  idle_scheduler_set_offline(now_offline);
+  prefs_set_bool(PREFS_GROUP_OFFLINE, PREFS_KEY_OFFLINE, now_offline);
+  update_offline_button();
+}
+
 /* Create mailbox tree view — backed by MacmbxStore */
 static GtkWidget *create_mailbox_tree(void) {
   /* Ensure default mailboxes exist via macmbx */
@@ -1492,6 +1522,12 @@ static void create_toolbars(GtkBox *toolbar_container) {
   toolbar_add_separator(app_state.main_toolbar);
   toolbar_add_button(app_state.main_toolbar, tb_btn(ICON_PRINT,        "Print",       G_CALLBACK(tb_print)));
   toolbar_add_separator(app_state.main_toolbar);
+
+  /* Offline toggle button */
+  offline_toggle_btn = gtk_button_new_from_icon_name("network-transmit-receive-symbolic");
+  gtk_button_set_has_frame(GTK_BUTTON(offline_toggle_btn), FALSE);
+  g_signal_connect(offline_toggle_btn, "clicked", G_CALLBACK(on_offline_toggle), NULL);
+  toolbar_add_button(app_state.main_toolbar, offline_toggle_btn);
 
   /* Theme toggle button */
   theme_toggle_btn = gtk_button_new_from_icon_name("preferences-desktop-appearance-symbolic");
@@ -2607,6 +2643,12 @@ static void activate(GtkApplication *app, gpointer user_data) {
   /* Initialize theme system (loads saved theme from prefs) */
   theme_init(app_state.window);
   update_theme_tooltip();
+
+  /* Restore offline mode from prefs */
+  if (prefs_get_bool(PREFS_GROUP_OFFLINE, PREFS_KEY_OFFLINE, FALSE)) {
+    Offline = true;
+  }
+  update_offline_button();
 
   /* Set some defaults if not already set */
   if (app_state.settings->check_interval == 0) {

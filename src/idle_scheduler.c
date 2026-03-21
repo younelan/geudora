@@ -23,6 +23,7 @@
 
 #include <stdio.h>
 #include <string.h>
+#include <strings.h>
 
 /* ── External mailer instance (set up by main_eudora.c) ── */
 
@@ -91,8 +92,20 @@ static void notify_new_mail(void) {
 
 /* ── Send queued messages (async via background thread) ── */
 
-void idle_scheduler_request_send(void) { need_send = true; }
-void idle_scheduler_request_check(void) { need_check = true; }
+void idle_scheduler_request_send(void) {
+  if (Offline) {
+    eudora_status_set("Offline", "", "Message queued — will send when online", -1);
+    return;
+  }
+  need_send = true;
+}
+void idle_scheduler_request_check(void) {
+  if (Offline) {
+    eudora_status_set("Offline", "", "Cannot check mail while offline", -1);
+    return;
+  }
+  need_check = true;
+}
 
 /* ── Check mail (async via background thread) ── */
 
@@ -141,7 +154,8 @@ static gboolean check_done_cb(gpointer data) {
 static gpointer check_thread_func(gpointer data) {
   MacmbxMailer *mailer = (MacmbxMailer *)data;
 
-  /* Check each account individually so we can report per-account errors */
+  /* Check each account individually so we can report per-account errors.
+   * Skip IMAP accounts that have IDLE active — they get push updates. */
   MacmbxConf *conf = macmbx_mailer_get_conf(mailer);
   int acct_count = macmbx_conf_count_accounts(conf);
   int total = 0;
@@ -149,27 +163,30 @@ static gpointer check_thread_func(gpointer data) {
 
   /* Dominant */
   {
-    int n = macmbx_mailer_check_account(mailer, 0);
-    if (n >= 0) {
-      total += n;
-      /* Update task line: done */
-      if (acct_idx < g_check_task_count) {
+    if (macmbx_mailer_idle_active(mailer, 0)) {
+      /* IDLE handles this account — skip */
+      acct_idx++;
+    } else {
+      int n = macmbx_mailer_check_account(mailer, 0);
+      if (n >= 0) {
+        total += n;
+        if (acct_idx < g_check_task_count) {
+          TaskUpdate *u = g_new0(TaskUpdate, 1);
+          snprintf(u->text, sizeof(u->text), "Done — %d message(s)", n);
+          u->task_id = g_check_task_ids[acct_idx];
+          g_idle_add(check_task_update_cb, u);
+        }
+      } else {
+        MacmbxAccount acct;
+        macmbx_conf_get_dominant(conf, &acct);
         TaskUpdate *u = g_new0(TaskUpdate, 1);
-        snprintf(u->text, sizeof(u->text), "Done — %d message(s)", n);
-        u->task_id = g_check_task_ids[acct_idx];
+        snprintf(u->text, sizeof(u->text), "Check failed: %s (%s)",
+                 acct.name[0] ? acct.name : acct.email, acct.server);
+        u->is_error = true;
         g_idle_add(check_task_update_cb, u);
       }
-    } else {
-      /* Error — add error line */
-      MacmbxAccount acct;
-      macmbx_conf_get_dominant(conf, &acct);
-      TaskUpdate *u = g_new0(TaskUpdate, 1);
-      snprintf(u->text, sizeof(u->text), "Check failed: %s (%s)",
-               acct.name[0] ? acct.name : acct.email, acct.server);
-      u->is_error = true;
-      g_idle_add(check_task_update_cb, u);
+      acct_idx++;
     }
-    acct_idx++;
   }
 
   /* Personalities */
@@ -177,6 +194,11 @@ static gpointer check_thread_func(gpointer data) {
     MacmbxAccount acct;
     if (macmbx_conf_get_account(conf, i, &acct) != 0) continue;
     if (!acct.enabled || !acct.server[0]) continue;
+
+    if (macmbx_mailer_idle_active(mailer, i)) {
+      acct_idx++;
+      continue; /* IDLE handles this account */
+    }
 
     int n = macmbx_mailer_check_account(mailer, i);
     if (n >= 0) {
@@ -341,6 +363,149 @@ static gboolean idle_scheduler_tick(gpointer user_data) {
   return G_SOURCE_CONTINUE;
 }
 
+/* ── IMAP IDLE callback ──
+ *
+ * Fired from macmbx_mailer's IDLE thread when the server pushes
+ * an update. We dispatch to GTK main thread via g_idle_add. */
+
+typedef struct {
+  int account_index;
+  int new_msgs;
+} IdleNotify;
+
+static gboolean idle_notify_cb(gpointer data) {
+  IdleNotify *n = (IdleNotify *)data;
+
+  if (n->new_msgs > 0) {
+    char buf[64];
+    snprintf(buf, sizeof(buf), "%d new message(s)", n->new_msgs);
+    eudora_status_set("Ready", "", buf, -1);
+
+    extern void eudora_open_mailbox_by_name(const char *name);
+    extern void eudora_refresh_open_mailboxes(void);
+    eudora_open_mailbox_by_name("In");
+    eudora_refresh_open_mailboxes();
+  }
+
+  /* Refresh sidebar */
+  MacmbxStore *store = gtk_mailbox_get_store();
+  if (store) {
+    macmbx_store_update_counts(store);
+    extern GtkWidget *app_get_mailbox_tree(void);
+    GtkWidget *tree = app_get_mailbox_tree();
+    if (tree) gtk_mailbox_tree_refresh(tree);
+  }
+
+  g_free(n);
+  return G_SOURCE_REMOVE;
+}
+
+static void on_imap_idle(int account_index, int new_msgs,
+                          int deleted, int flag_updated, void *ctx) {
+  (void)deleted; (void)flag_updated; (void)ctx;
+  IdleNotify *n = g_new0(IdleNotify, 1);
+  n->account_index = account_index;
+  n->new_msgs = new_msgs;
+  g_idle_add(idle_notify_cb, n);
+}
+
+static void start_imap_idle(void); /* forward decl */
+
+/* Prompt when going online with queued messages.
+ * Three choices: Send All Queue, Go Online (don't send), Stay Offline. */
+enum { RESP_SEND_ALL = 1, RESP_GO_ONLINE = 2, RESP_STAY_OFFLINE = 3 };
+
+static void on_queue_prompt_response(GObject *source, GAsyncResult *res, gpointer ud) {
+  GtkAlertDialog *dlg = GTK_ALERT_DIALOG(source);
+  int btn = gtk_alert_dialog_choose_finish(dlg, res, NULL);
+
+  if (btn == 0) {
+    /* Send All Queue */
+    need_send = true;
+  } else if (btn == 1) {
+    /* Go Online — already online, do nothing */
+  } else {
+    /* Stay Offline (btn == 2 or cancelled) */
+    Offline = true;
+    if (g_mailer) {
+      macmbx_mailer_idle_stop(g_mailer, -1);
+      macmbx_mailer_disconnect(g_mailer);
+    }
+    eudora_status_set("Offline", "", "No connections", -1);
+    /* Notify UI to update the button */
+    extern void update_offline_button(void);
+    update_offline_button();
+    extern void prefs_set_bool(const char *, const char *, gboolean);
+    prefs_set_bool("offline", "offline_mode", TRUE);
+  }
+}
+
+static void prompt_queued_on_online(void) {
+  int queued = macmbx_mailer_queued_count(g_mailer);
+  char msg[128];
+  snprintf(msg, sizeof(msg), "%d message(s) waiting in the queue.", queued);
+
+  const char *buttons[] = { "Send All Queue", "Go Online", "Stay Offline", NULL };
+  GtkAlertDialog *dlg = gtk_alert_dialog_new("%s", msg);
+  gtk_alert_dialog_set_detail(dlg, "What would you like to do?");
+  gtk_alert_dialog_set_buttons(dlg, buttons);
+  gtk_alert_dialog_set_cancel_button(dlg, 2);
+  gtk_alert_dialog_set_default_button(dlg, 0);
+
+  extern GtkWidget *get_main_window(void);
+  gtk_alert_dialog_choose(dlg, GTK_WINDOW(get_main_window()),
+                           NULL, on_queue_prompt_response, NULL);
+  g_object_unref(dlg);
+}
+
+void idle_scheduler_set_offline(bool offline) {
+  Offline = offline;
+  if (offline) {
+    /* Stop all IDLE sessions and disconnect */
+    if (g_mailer) {
+      macmbx_mailer_idle_stop(g_mailer, -1);
+      macmbx_mailer_disconnect(g_mailer);
+    }
+    eudora_status_set("Offline", "", "No connections", -1);
+  } else {
+    /* Go back online — restart IDLE for IMAP accounts */
+    start_imap_idle();
+    eudora_status_set("Ready", "", "Online", -1);
+
+    /* If there are queued messages, prompt the user */
+    if (g_mailer && macmbx_mailer_queued_count(g_mailer) > 0)
+      prompt_queued_on_online();
+  }
+}
+
+bool idle_scheduler_is_offline(void) { return Offline; }
+
+/* Start IDLE for all IMAP accounts. Called once at startup. */
+static void start_imap_idle(void) {
+  if (!g_mailer) return;
+  MacmbxConf *conf = macmbx_mailer_get_conf(g_mailer);
+  if (!conf) return;
+
+  preload_passwords();
+
+  /* Dominant account */
+  MacmbxAccount acct;
+  if (macmbx_conf_get_dominant(conf, &acct) == 0 &&
+      acct.server[0] && strcasecmp(acct.type, "IMAP") == 0) {
+    macmbx_mailer_idle_start(g_mailer, 0, on_imap_idle, NULL);
+  }
+
+  /* Personalities */
+  int n = macmbx_conf_count_accounts(conf);
+  for (int i = 1; i <= n; i++) {
+    if (macmbx_conf_get_account(conf, i, &acct) == 0 &&
+        acct.enabled && acct.server[0] &&
+        strcasecmp(acct.type, "IMAP") == 0) {
+      macmbx_mailer_idle_start(g_mailer, i, on_imap_idle, NULL);
+    }
+  }
+}
+
 /* ── Public API ── */
 
 void IdleSchedulerStart(void) {
@@ -349,11 +514,20 @@ void IdleSchedulerStart(void) {
 
   idle_timer_id = g_timeout_add(500, idle_scheduler_tick, NULL);
   scheduler_running = true;
+
+  /* Start IMAP IDLE for accounts that support it.
+   * POP accounts still use the timer-based check. */
+  start_imap_idle();
 }
 
 void IdleSchedulerStop(void) {
   if (!scheduler_running)
     return;
+
+  /* Stop all IDLE sessions */
+  if (g_mailer)
+    macmbx_mailer_idle_stop(g_mailer, -1);
+
   g_source_remove(idle_timer_id);
   idle_timer_id = 0;
   scheduler_running = false;
