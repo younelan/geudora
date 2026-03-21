@@ -1,0 +1,12 @@
+From: Bob Builder <bob@dev.local>
+To: Team <dev-list@company.com>
+Subject: Re: Critical Bug in Production: User Dashboard not loading
+Date: Fri, 06 Mar 2026 21:45:48 +0000
+Message-ID: <thread.4.25409@company.com>
+In-Reply-To: <thread.3.94931@company.com>
+References: <thread.0.96093@company.com> <thread.1.89587@company.com> <thread.2.90938@company.com> <thread.3.94931@company.com>
+X-Priority: 2 (High)
+MIME-Version: 1.0
+Content-Type: text/html; charset="UTF-8"
+
+<html><body><p>Found it! There's a <i>long-running query</i> blocking other connections.</p><p>I am killing the process now.</p></body></html>

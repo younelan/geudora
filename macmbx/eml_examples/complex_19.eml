@@ -1,0 +1,19 @@
+From: Support Team <support@service.io>
+To: Youness <youness@eudora.local>
+Subject: Multipart/Mixed with Attachment #19
+Date: Mon, 02 Mar 2026 23:03:59 +0000
+MIME-Version: 1.0
+Content-Type: multipart/mixed; boundary="boundary_mixed_19_6169"
+
+--boundary_mixed_19_6169
+Content-Type: text/plain; charset="UTF-8"
+
+Please find the attached report for sample 19.
+
+--boundary_mixed_19_6169
+Content-Type: text/plain; name="report_19.txt"
+Content-Disposition: attachment; filename="report_data.txt"
+Content-Transfer-Encoding: base64
+
+U2FtcGxlIGRhdGEgZm9yIHJlcG9ydCAxOS4gR2VuZXJhdGVkIGZvciB0ZXN0aW5nIHB1cnBvc2VzLg==
+--boundary_mixed_19_6169--

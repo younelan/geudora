@@ -1,0 +1,10 @@
+From: MAILER-DAEMON <mailer-daemon@mx1.provider.net>
+To: Youness <youness@eudora.local>
+Subject: Delivery Status Notification (Failure)
+Date: Fri, 06 Mar 2026 14:06:34 +0000
+Content-Type: message/delivery-status
+
+Reporting-MTA: dns; mx1.provider.net
+Action: failed
+Status: 5.1.1
+Diagnostic-Code: smtp; 550 User unknown

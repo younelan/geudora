@@ -1,0 +1,18 @@
+From: Charlie Client <charlie@external.net>
+To: Youness <youness@eudora.local>
+Subject: Multipart/Alternative Sample #10
+Date: Fri, 06 Mar 2026 23:03:59 +0000
+MIME-Version: 1.0
+Content-Type: multipart/alternative; boundary="boundary_alt_10_9990"
+
+--boundary_alt_10_9990
+Content-Type: text/plain; charset="UTF-8"
+
+This is the plain text version of sample 10.
+It is used when the client cannot render HTML.
+
+--boundary_alt_10_9990
+Content-Type: text/html; charset="UTF-8"
+
+<html><body><h1>HTML Version #10</h1><p>This is <b>bold</b> and this is <i>italic</i>.</p></body></html>
+--boundary_alt_10_9990--

@@ -1,0 +1,29 @@
+From: Charlie Client <charlie@external.net>
+To: Youness <youness@eudora.local>
+Subject: Meeting Invite: sync session #3
+Date: Fri, 06 Mar 2026 23:05:09 +0000
+MIME-Version: 1.0
+Content-Type: multipart/alternative; boundary="boundary_invite_3_5805"
+
+--boundary_invite_3_5805
+Content-Type: text/plain; charset="UTF-8"
+
+Please join the meeting: Meeting Invite: sync session #3 at 2026-03-09 10:05.
+
+--boundary_invite_3_5805
+Content-Type: text/calendar; method=REQUEST; charset="UTF-8"
+Content-Transfer-Encoding: 7bit
+
+BEGIN:VCALENDAR
+VERSION:2.0
+PRODID:-//Eudora Test//NONSGML v1.0//EN
+BEGIN:VEVENT
+UID:uid_3_6129@eudora.local
+DTSTAMP:20260306T230509Z
+DTSTART:20260309T100509Z
+DTEND:20260309T110509Z
+SUMMARY:Meeting Invite: sync session #3
+DESCRIPTION:Generated meeting invite for testing.
+END:VEVENT
+END:VCALENDAR
+--boundary_invite_3_5805--

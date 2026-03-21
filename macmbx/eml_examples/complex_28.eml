@@ -1,0 +1,9 @@
+From: Alice Admin <alice@company.com>
+To: Youness <youness@eudora.local>
+Subject: Encoded Email (base64) #28
+Date: Sun, 01 Mar 2026 23:03:59 +0000
+MIME-Version: 1.0
+Content-Type: text/plain; charset="UTF-8"
+Content-Transfer-Encoding: base64
+
+VGhpcyBpcyBhbiBlbWFpbCBlbmNvZGVkIHVzaW5nIGJhc2U2NC4gSXQgY29udGFpbnMgc29tZSBzcGVjaWFsIGNoYXJhY3RlcnM6IMOhw6nDrcOzw7ogw7Egwqkgwq4u

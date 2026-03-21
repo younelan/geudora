@@ -1,0 +1,9 @@
+From: Charlie Client <charlie@external.net>
+To: Youness <youness@eudora.local>
+Subject: Encoded Email (quoted-printable) #29
+Date: Thu, 05 Mar 2026 23:03:59 +0000
+MIME-Version: 1.0
+Content-Type: text/plain; charset="UTF-8"
+Content-Transfer-Encoding: quoted-printable
+
+This is an email encoded using quoted-printable. It contains some special characters: á=C3=A9íóú ñ =C2=A9 ®.

@@ -1,0 +1,18 @@
+From: Newsletter <news@tech-info.com>
+To: Youness <youness@eudora.local>
+Subject: Weekly Tech Digest #2
+Date: Thu, 26 Feb 2026 23:06:34 +0000
+MIME-Version: 1.0
+Content-Type: multipart/related; boundary="boundary_news_2"
+
+--boundary_news_2
+Content-Type: text/html; charset="UTF-8"
+
+<html><body><h1>Top Stories this Week</h1><p>Check out our latest post: <img src="cid:logo_2">.</p></body></html>
+--boundary_news_2
+Content-Type: image/png
+Content-ID: <logo_2>
+Content-Transfer-Encoding: base64
+
+iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8BQDwAEhQGAhKmMIQAAAABJRU5ErkJggg==
+--boundary_news_2--

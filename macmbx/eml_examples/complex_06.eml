@@ -1,0 +1,18 @@
+From: Marketing Dept <marketing@fastmail.com>
+To: Youness <youness@eudora.local>
+Subject: Multipart/Alternative Sample #6
+Date: Wed, 04 Mar 2026 23:03:59 +0000
+MIME-Version: 1.0
+Content-Type: multipart/alternative; boundary="boundary_alt_6_4774"
+
+--boundary_alt_6_4774
+Content-Type: text/plain; charset="UTF-8"
+
+This is the plain text version of sample 6.
+It is used when the client cannot render HTML.
+
+--boundary_alt_6_4774
+Content-Type: text/html; charset="UTF-8"
+
+<html><body><h1>HTML Version #6</h1><p>This is <b>bold</b> and this is <i>italic</i>.</p></body></html>
+--boundary_alt_6_4774--
