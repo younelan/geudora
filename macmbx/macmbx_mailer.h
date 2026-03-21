@@ -54,6 +54,9 @@ MacmbxMailer *macmbx_mailer_new(MacmbxConf *conf, MacmbxStore *store);
 /* Free mailer. Closes any open connections. */
 void macmbx_mailer_free(MacmbxMailer *m);
 
+/* Get the config associated with this mailer. */
+MacmbxConf *macmbx_mailer_get_conf(MacmbxMailer *m);
+
 /* Register optional callbacks. */
 void macmbx_mailer_set_progress(MacmbxMailer *m, MacmbxMailerProgressFn fn, void *ctx);
 void macmbx_mailer_set_credentials(MacmbxMailer *m, MacmbxMailerCredentialFn fn, void *ctx);

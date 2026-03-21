@@ -17,7 +17,9 @@
 #include "toc.h"
 #include "macmbx.h"
 #include "macmbx_mailer.h"
+#include "macmbx_conf.h"
 #include "gtk_mailbox.h"
+#include "taskProgress.h"
 
 #include <stdio.h>
 #include <string.h>
@@ -96,8 +98,30 @@ void idle_scheduler_request_check(void) { need_check = true; }
 
 static int g_check_result = 0;
 
+/* Task IDs for check progress (one per account) */
+#define MAX_CHECK_TASKS 16
+static int g_check_task_ids[MAX_CHECK_TASKS];
+static int g_check_task_count = 0;
+
+typedef struct { char text[256]; int task_id; bool is_error; } TaskUpdate;
+
+static gboolean check_task_update_cb(gpointer data) {
+  TaskUpdate *u = (TaskUpdate *)data;
+  if (u->is_error)
+    tp_add_error("dialog-error-symbolic", u->text);
+  else
+    tp_update_task(u->task_id, u->text);
+  g_free(u);
+  return G_SOURCE_REMOVE;
+}
+
 static gboolean check_done_cb(gpointer data) {
   (void)data;
+  /* Remove all check task lines */
+  for (int i = 0; i < g_check_task_count; i++)
+    tp_remove_task(g_check_task_ids[i]);
+  g_check_task_count = 0;
+
   if (g_check_result > 0) {
     char buf[64];
     snprintf(buf, sizeof(buf), "%d new message(s)", g_check_result);
@@ -110,12 +134,101 @@ static gboolean check_done_cb(gpointer data) {
 
 static gpointer check_thread_func(gpointer data) {
   MacmbxMailer *mailer = (MacmbxMailer *)data;
-  g_check_result = macmbx_mailer_check(mailer);
-  g_print("Check thread: macmbx_mailer_check returned %d\n", g_check_result);
+
+  /* Check each account individually so we can report per-account errors */
+  MacmbxConf *conf = macmbx_mailer_get_conf(mailer);
+  int acct_count = macmbx_conf_count_accounts(conf);
+  int total = 0;
+  int acct_idx = 0;
+
+  /* Dominant */
+  {
+    int n = macmbx_mailer_check_account(mailer, 0);
+    if (n >= 0) {
+      total += n;
+      /* Update task line: done */
+      if (acct_idx < g_check_task_count) {
+        TaskUpdate *u = g_new0(TaskUpdate, 1);
+        snprintf(u->text, sizeof(u->text), "Done — %d message(s)", n);
+        u->task_id = g_check_task_ids[acct_idx];
+        g_idle_add(check_task_update_cb, u);
+      }
+    } else {
+      /* Error — add error line */
+      MacmbxAccount acct;
+      macmbx_conf_get_dominant(conf, &acct);
+      TaskUpdate *u = g_new0(TaskUpdate, 1);
+      snprintf(u->text, sizeof(u->text), "Check failed: %s (%s)",
+               acct.name[0] ? acct.name : acct.email, acct.server);
+      u->is_error = true;
+      g_idle_add(check_task_update_cb, u);
+    }
+    acct_idx++;
+  }
+
+  /* Personalities */
+  for (int i = 1; i <= acct_count; i++) {
+    MacmbxAccount acct;
+    if (macmbx_conf_get_account(conf, i, &acct) != 0) continue;
+    if (!acct.enabled || !acct.server[0]) continue;
+
+    int n = macmbx_mailer_check_account(mailer, i);
+    if (n >= 0) {
+      total += n;
+      if (acct_idx < g_check_task_count) {
+        TaskUpdate *u = g_new0(TaskUpdate, 1);
+        snprintf(u->text, sizeof(u->text), "%s — %d message(s)", acct.name, n);
+        u->task_id = g_check_task_ids[acct_idx];
+        g_idle_add(check_task_update_cb, u);
+      }
+    } else {
+      TaskUpdate *u = g_new0(TaskUpdate, 1);
+      snprintf(u->text, sizeof(u->text), "Check failed: %s (%s)",
+               acct.name[0] ? acct.name : acct.email, acct.server);
+      u->is_error = true;
+      g_idle_add(check_task_update_cb, u);
+    }
+    acct_idx++;
+  }
+
+  g_check_result = total;
+  g_print("Check thread: total %d new messages\n", total);
   check_in_progress = false;
   need_notify = true;
   g_idle_add(check_done_cb, NULL);
   return NULL;
+}
+
+/* Add task lines for each personality before launching check */
+static gboolean add_check_tasks_cb(gpointer data) {
+  (void)data;
+  MacmbxConf *conf = g_mailer ? macmbx_mailer_get_conf(g_mailer) : NULL;
+  if (!conf) return G_SOURCE_REMOVE;
+
+  g_check_task_count = 0;
+
+  /* Dominant account */
+  MacmbxAccount acct;
+  if (macmbx_conf_get_dominant(conf, &acct) == 0 && acct.server[0]) {
+    char desc[256];
+    snprintf(desc, sizeof(desc), "Checking %s (%s)...",
+             acct.name[0] ? acct.name : acct.email, acct.server);
+    g_check_task_ids[g_check_task_count++] =
+        tp_add_task("mail-inbox-symbolic", desc);
+  }
+
+  /* Personalities */
+  int n = macmbx_conf_count_accounts(conf);
+  for (int i = 1; i <= n && g_check_task_count < MAX_CHECK_TASKS; i++) {
+    if (macmbx_conf_get_account(conf, i, &acct) == 0 && acct.enabled && acct.server[0]) {
+      char desc[256];
+      snprintf(desc, sizeof(desc), "Checking %s (%s)...",
+               acct.name[0] ? acct.name : acct.email, acct.server);
+      g_check_task_ids[g_check_task_count++] =
+          tp_add_task("mail-inbox-symbolic", desc);
+    }
+  }
+  return G_SOURCE_REMOVE;
 }
 
 static void process_check(void) {
@@ -123,6 +236,8 @@ static void process_check(void) {
   need_check = false;
   check_in_progress = true;
   eudora_status_set("Checking mail...", "", "Connecting...", -1);
+  /* Add task lines on main thread, then start check thread */
+  add_check_tasks_cb(NULL);
   g_thread_new("check-mail", check_thread_func, g_mailer);
 }
 

@@ -63,6 +63,8 @@ MacmbxMailer *macmbx_mailer_new(MacmbxConf *conf, MacmbxStore *store) {
   return m;
 }
 
+MacmbxConf *macmbx_mailer_get_conf(MacmbxMailer *m) { return m ? m->conf : NULL; }
+
 void macmbx_mailer_free(MacmbxMailer *m) {
   if (!m) return;
   free(m->signature);
@@ -214,19 +216,46 @@ static Pop3Session *connect_pop3(MacmbxMailer *m, MacmbxAccount *acct) {
   Pop3Session *pop = (Pop3Session *)calloc(1, sizeof(Pop3Session));
   if (!pop) return NULL;
 
+  /* Read POP-specific SSL setting from config */
+  int pop_ssl = 0;
+  if (m->conf) {
+    pop_ssl = macmbx_conf_get_int(m->conf, "ssl", "ssl_pop_mode", 0);
+    if (acct->index > 0) {
+      char sec[32]; snprintf(sec, sizeof(sec), "account_%d", acct->index);
+      pop_ssl = macmbx_conf_get_int(m->conf, sec, "ssl_mode", pop_ssl);
+    }
+  }
+
+  /* Port: 110 default, 995 if alt port SSL */
   int port = 110;
   Pop3Security security = POP3_PLAIN;
-  if (acct->ssl_mode == 1) { security = POP3_SSL; port = 995; }
+  if (pop_ssl & 4) { security = POP3_SSL; port = 995; }  /* esslUseAltPort */
+  else if (pop_ssl & 2) security = POP3_STLS;             /* esslUseTLS = STLS */
+  else if (pop_ssl & 1) security = POP3_STLS;             /* esslOptional = try STLS */
+
+  /* Set up TLS certificate handling */
+  crispy_transport_set_cert_callback(&tp, mailer_cert_callback, m);
+
+  fprintf(stderr, "connect_pop3: server=%s port=%d ssl=%d\n", acct->server, port, pop_ssl);
 
   crispy_pop3_init(pop, tp);
   int err = crispy_pop3_connect(pop, acct->server, port, security);
-  if (err) { free(pop); return NULL; }
+  if (err) {
+    fprintf(stderr, "connect_pop3: connect failed err=%d\n", err);
+    free(pop); return NULL;
+  }
 
   char pw[256] = "";
-  if (get_password(m, acct, pw, sizeof(pw)) != 0) { free(pop); return NULL; }
+  if (get_password(m, acct, pw, sizeof(pw)) != 0) {
+    fprintf(stderr, "connect_pop3: no password for %s\n", acct->username);
+    free(pop); return NULL;
+  }
   const char *user = acct->username[0] ? acct->username : acct->email;
   err = crispy_pop3_auth(pop, user, pw);
-  if (err) { crispy_pop3_close(pop); free(pop); return NULL; }
+  if (err) {
+    fprintf(stderr, "connect_pop3: auth failed for %s\n", user);
+    crispy_pop3_close(pop); free(pop); return NULL;
+  }
 
   return pop;
 }
@@ -527,20 +556,59 @@ int macmbx_mailer_queued_count(MacmbxMailer *m) {
  * Inbound — check and receive
  * ================================================================ */
 
+/* Per-account check thread data */
+typedef struct {
+  MacmbxMailer *m;
+  int account_index;
+  int result;
+} CheckThreadData;
+
+#include <pthread.h>
+
+static void *check_account_thread(void *arg) {
+  CheckThreadData *d = (CheckThreadData *)arg;
+  d->result = macmbx_mailer_check_account(d->m, d->account_index);
+  return NULL;
+}
+
 int macmbx_mailer_check(MacmbxMailer *m) {
   if (!m) return -1;
-  int total = 0;
 
-  /* Check dominant */
-  int n = macmbx_mailer_check_dominant(m);
-  if (n > 0) total += n;
-
-  /* Check each personality */
   int acct_count = macmbx_conf_count_accounts(m->conf);
-  for (int i = 1; i <= acct_count; i++) {
-    n = macmbx_mailer_check_account(m, i);
-    if (n > 0) total += n;
+  int total_accounts = 1 + acct_count; /* dominant + personalities */
+
+  /* Allocate thread data for all accounts */
+  CheckThreadData *data = (CheckThreadData *)calloc(total_accounts, sizeof(CheckThreadData));
+  pthread_t *threads = (pthread_t *)calloc(total_accounts, sizeof(pthread_t));
+  if (!data || !threads) { free(data); free(threads); return -1; }
+
+  /* Launch all checks in parallel */
+  for (int i = 0; i < total_accounts; i++) {
+    data[i].m = m;
+    data[i].account_index = i; /* 0 = dominant, 1+ = personalities */
+    data[i].result = 0;
+
+    MacmbxAccount acct;
+    if (get_account(m, i, &acct) != 0) continue;
+
+    /* Only check enabled accounts with a server configured */
+    if (!acct.enabled || !acct.server[0]) continue;
+
+    progress(m, acct.name[0] ? acct.name : "Checking mail...", i, total_accounts);
+    pthread_create(&threads[i], NULL, check_account_thread, &data[i]);
   }
+
+  /* Wait for all to finish */
+  int total = 0;
+  for (int i = 0; i < total_accounts; i++) {
+    if (threads[i]) {
+      pthread_join(threads[i], NULL);
+      if (data[i].result > 0) total += data[i].result;
+    }
+  }
+
+  free(data);
+  free(threads);
   return total;
 }
 

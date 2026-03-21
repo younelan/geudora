@@ -823,3 +823,116 @@ void TaskProgressRefresh(void) {
   tp_update_status(); /* tp_update_status already handles InAThread */
 }
 
+
+/* ================================================================
+ * Simple task line API — for check/send progress in wazoo Tasks tab
+ * ================================================================ */
+
+static int tp_next_id = 1;
+
+static GtkWidget *make_task_row(const char *icon_name, const char *text) {
+  GtkWidget *row = gtk_list_box_row_new();
+  GtkWidget *hbox = gtk_box_new(GTK_ORIENTATION_HORIZONTAL, 6);
+  gtk_widget_set_margin_start(hbox, 6);
+  gtk_widget_set_margin_end(hbox, 6);
+  gtk_widget_set_margin_top(hbox, 3);
+  gtk_widget_set_margin_bottom(hbox, 3);
+
+  if (icon_name) {
+    GtkWidget *icon = gtk_image_new_from_icon_name(icon_name);
+    gtk_image_set_pixel_size(GTK_IMAGE(icon), 16);
+    gtk_box_append(GTK_BOX(hbox), icon);
+  }
+
+  GtkWidget *spinner = gtk_spinner_new();
+  gtk_spinner_set_spinning(GTK_SPINNER(spinner), TRUE);
+  gtk_box_append(GTK_BOX(hbox), spinner);
+
+  GtkWidget *label = gtk_label_new(text);
+  gtk_label_set_xalign(GTK_LABEL(label), 0);
+  gtk_label_set_ellipsize(GTK_LABEL(label), PANGO_ELLIPSIZE_END);
+  gtk_widget_set_hexpand(label, TRUE);
+  gtk_box_append(GTK_BOX(hbox), label);
+
+  gtk_list_box_row_set_child(GTK_LIST_BOX_ROW(row), hbox);
+  g_object_set_data(G_OBJECT(row), "task-label", label);
+  g_object_set_data(G_OBJECT(row), "task-spinner", spinner);
+  return row;
+}
+
+int tp_add_task(const char *icon_name, const char *text) {
+  if (!tp_task_list) return -1;
+  int id = tp_next_id++;
+  GtkWidget *row = make_task_row(icon_name, text);
+  g_object_set_data(G_OBJECT(row), "task-id", GINT_TO_POINTER(id));
+  gtk_list_box_append(GTK_LIST_BOX(tp_task_list), row);
+  tp_update_status();
+  return id;
+}
+
+void tp_update_task(int task_id, const char *text) {
+  if (!tp_task_list) return;
+  for (GtkWidget *child = gtk_widget_get_first_child(tp_task_list);
+       child; child = gtk_widget_get_next_sibling(child)) {
+    int id = GPOINTER_TO_INT(g_object_get_data(G_OBJECT(child), "task-id"));
+    if (id == task_id) {
+      GtkWidget *label = g_object_get_data(G_OBJECT(child), "task-label");
+      if (label) gtk_label_set_text(GTK_LABEL(label), text);
+      return;
+    }
+  }
+}
+
+void tp_remove_task(int task_id) {
+  if (!tp_task_list) return;
+  for (GtkWidget *child = gtk_widget_get_first_child(tp_task_list);
+       child; child = gtk_widget_get_next_sibling(child)) {
+    int id = GPOINTER_TO_INT(g_object_get_data(G_OBJECT(child), "task-id"));
+    if (id == task_id) {
+      gtk_list_box_remove(GTK_LIST_BOX(tp_task_list), child);
+      tp_update_status();
+      return;
+    }
+  }
+}
+
+void tp_clear_tasks(void) {
+  if (!tp_task_list) return;
+  GtkWidget *child;
+  while ((child = gtk_widget_get_first_child(tp_task_list)))
+    gtk_list_box_remove(GTK_LIST_BOX(tp_task_list), child);
+  tp_update_status();
+}
+
+void tp_add_error(const char *icon_name, const char *text) {
+  if (!tp_error_list) return;
+  GtkWidget *row = gtk_list_box_row_new();
+  GtkWidget *hbox = gtk_box_new(GTK_ORIENTATION_HORIZONTAL, 6);
+  gtk_widget_set_margin_start(hbox, 6);
+  gtk_widget_set_margin_end(hbox, 6);
+  gtk_widget_set_margin_top(hbox, 3);
+  gtk_widget_set_margin_bottom(hbox, 3);
+
+  GtkWidget *icon = gtk_image_new_from_icon_name(
+    icon_name ? icon_name : "dialog-error-symbolic");
+  gtk_image_set_pixel_size(GTK_IMAGE(icon), 16);
+  gtk_box_append(GTK_BOX(hbox), icon);
+
+  GtkWidget *label = gtk_label_new(text);
+  gtk_label_set_xalign(GTK_LABEL(label), 0);
+  gtk_label_set_wrap(GTK_LABEL(label), TRUE);
+  gtk_widget_set_hexpand(label, TRUE);
+  gtk_box_append(GTK_BOX(hbox), label);
+
+  gtk_list_box_row_set_child(GTK_LIST_BOX_ROW(row), hbox);
+  gtk_list_box_append(GTK_LIST_BOX(tp_error_list), row);
+  tp_update_status();
+}
+
+void tp_clear_errors(void) {
+  if (!tp_error_list) return;
+  GtkWidget *child;
+  while ((child = gtk_widget_get_first_child(tp_error_list)))
+    gtk_list_box_remove(GTK_LIST_BOX(tp_error_list), child);
+  tp_update_status();
+}

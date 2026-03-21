@@ -38,4 +38,24 @@ void InitPrbl(ProgressBlock **prbl, short vert, ControlHandle *stopButton);
 void TaskProgressRefresh(void);
 int TPAddHelpButton(taskErrHandle taskErrs);
 
+/* ── Simple task line API for check/send operations ── */
+
+/* Add a task line with icon + text. Returns an ID for updating/removing. */
+int tp_add_task(const char *icon_name, const char *text);
+
+/* Update a task line's text. */
+void tp_update_task(int task_id, const char *text);
+
+/* Remove a task line by ID. */
+void tp_remove_task(int task_id);
+
+/* Remove all task lines. */
+void tp_clear_tasks(void);
+
+/* Add a persistent error line (stays until cleared). */
+void tp_add_error(const char *icon_name, const char *text);
+
+/* Clear all errors. */
+void tp_clear_errors(void);
+
 #endif
