@@ -314,17 +314,10 @@ short XferMail(bool check, bool send, bool manual, bool scripted, bool thread,
     return -1;
   }
 
-  /* Check mail — macmbx_mailer handles the entire pipeline:
-   * connect → download → deliver to In → filter → junk score */
+  /* Check mail — async via idle scheduler background thread */
   if (check) {
-    g_print("XferMail: calling macmbx_mailer_check...\n");
-    err = macmbx_mailer_check(mailer);
-    g_print("XferMail: macmbx_mailer_check returned %d\n", err);
-    if (err >= 0) {
-      NeedToNotify = true;
-      gNewMessages += err;
-      err = 0;
-    }
+    extern void idle_scheduler_request_check(void);
+    idle_scheduler_request_check();
   }
 
   /* Send queued — async via idle scheduler background thread */

@@ -133,6 +133,25 @@ static int get_password(MacmbxMailer *m, MacmbxAccount *acct, char *pw, int sz) 
   return -1;
 }
 
+/* TLS certificate callback — called by crispy_transport when server presents a cert.
+ * Returns 0 to accept, nonzero to reject.
+ * If the mailer has a cert_fn callback (from Eudora UI), use it to prompt the user.
+ * Otherwise accept (for headless/automated use). */
+static bool mailer_cert_callback(const char *host, const char *cert_pem,
+                                  const char *error_msg, void *userdata) {
+  MacmbxMailer *m = (MacmbxMailer *)userdata;
+  (void)cert_pem;
+
+  if (m && m->cert_fn) {
+    int result = m->cert_fn(host, error_msg ? error_msg : "Unknown certificate",
+                             m->cert_ctx);
+    return (result >= 0); /* true = accept */
+  }
+
+  /* No UI callback — accept all (local/automated use) */
+  return true;
+}
+
 /* Create and connect SMTP session for an account */
 static SmtpSession *connect_smtp(MacmbxMailer *m, MacmbxAccount *acct) {
   SmtpTransport tp = crispy_transport_new();
@@ -140,10 +159,38 @@ static SmtpSession *connect_smtp(MacmbxMailer *m, MacmbxAccount *acct) {
   if (!smtp) return NULL;
 
   const char *server = acct->smtp_server[0] ? acct->smtp_server : acct->server;
-  int port = 587;
-  SmtpSecurity security = SMTP_STARTTLS;
-  if (acct->ssl_mode == 1) { security = SMTP_SSL; port = 465; }
-  else if (acct->ssl_mode == 0) { security = SMTP_PLAIN; port = 25; }
+
+  /* Read SMTP-specific SSL setting from config */
+  int smtp_ssl = 0;
+  if (m->conf) {
+    smtp_ssl = macmbx_conf_get_int(m->conf, "ssl", "ssl_smtp_mode", 0);
+    /* Also check per-account */
+    if (acct->index > 0) {
+      char sec[32]; snprintf(sec, sizeof(sec), "account_%d", acct->index);
+      smtp_ssl = macmbx_conf_get_int(m->conf, sec, "ssl_mode", smtp_ssl);
+    }
+  }
+
+  /* Port: 25 default, 587 if submission port enabled */
+  bool use_submission = m->conf ? macmbx_conf_get_bool(m->conf, "sending_mail", "use_submission_port", false) : false;
+  int port = use_submission ? 587 : 25;
+
+  /* SSL/TLS mode (matches Eudora ESSLSetting bitmask):
+   *   0 = plain, no TLS
+   *   1 = optional STARTTLS (try, fall back to plain)
+   *   2 = required STARTTLS
+   *   3 = required STARTTLS
+   *   4 = implicit SSL (alt port)
+   *   6 = implicit SSL (alt port) + required */
+  SmtpSecurity security = SMTP_PLAIN;
+  if (smtp_ssl & 4) { security = SMTP_SSL; port = 465; }  /* esslUseAltPort */
+  else if (smtp_ssl & 2) security = SMTP_STARTTLS;         /* esslUseTLS */
+  else if (smtp_ssl & 1) security = SMTP_STARTTLS;         /* esslOptional — try STARTTLS */
+
+  fprintf(stderr, "connect_smtp: server=%s port=%d ssl=%d\n", server, port, smtp_ssl);
+
+  /* Set up TLS certificate handling */
+  crispy_transport_set_cert_callback(&tp, mailer_cert_callback, m);
 
   crispy_smtp_init(smtp, tp, "localhost");
   int err = crispy_smtp_connect(smtp, server, port, security);
@@ -417,19 +464,36 @@ int macmbx_mailer_send_now(MacmbxMailer *m, const char *message, long len,
 int macmbx_mailer_send_now_as(MacmbxMailer *m, int account_index,
                                 const char *message, long len,
                                 const char *from, const char **rcpts) {
-  if (!m || !message || !from || !rcpts) return -1;
+  if (!m || !message || !from) return -1;
   if (len < 0) len = (long)strlen(message);
 
   MacmbxAccount acct;
-  if (get_account(m, account_index, &acct) != 0) return -1;
+  if (get_account(m, account_index, &acct) != 0) {
+    fprintf(stderr, "mailer_send_now: get_account(%d) failed\n", account_index);
+    return -1;
+  }
 
   SmtpSession *smtp = connect_smtp(m, &acct);
-  if (!smtp) return -1;
+  if (!smtp) {
+    fprintf(stderr, "mailer_send_now: SMTP connect failed to %s\n", acct.smtp_server);
+    return -1;
+  }
 
   char fromBare[256];
   extract_bare_email(from, fromBare, sizeof(fromBare));
 
-  int err = crispy_smtp_send(smtp, fromBare, rcpts, message, len);
+  /* If recipients not provided, extract from message headers */
+  const char **use_rcpts = rcpts;
+  bool own_rcpts = false;
+  if (!rcpts) {
+    collect_recipients(message, &use_rcpts);
+    own_rcpts = true;
+  }
+
+  int err = crispy_smtp_send(smtp, fromBare, use_rcpts, message, len);
+  if (err) fprintf(stderr, "mailer_send_now: crispy_smtp_send returned %d\n", err);
+
+  if (own_rcpts) free_rcpts(use_rcpts);
   crispy_smtp_close(smtp);
   free(smtp);
   return err;

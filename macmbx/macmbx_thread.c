@@ -512,3 +512,179 @@ int macmbx_import_mbox(MacmbxTOC *toc, const char *mbox_path, bool dedup) {
   macmbx_toc_close(src);
   return imported;
 }
+
+/* ================================================================
+ * Batch export — single file per mailbox (Unix mbox format)
+ * ================================================================ */
+
+int macmbx_export_mbox(MacmbxTOC *toc, const char *output_path) {
+  if (!toc || !output_path) return -1;
+  FILE *out = fopen(output_path, "wb");
+  if (!out) return -1;
+
+  int exported = 0;
+  for (int i = 0; i < toc->count; i++) {
+    long len = 0;
+    char *msg = macmbx_read_message(toc, i, &len);
+    if (!msg) continue;
+
+    /* Ensure starts with From line */
+    if (len > 5 && strncmp(msg, "From ", 5) != 0) {
+      char from_line[256];
+      macmbx_write_from_line(from_line, sizeof(from_line),
+                              toc->msgs[i].from[0] ? toc->msgs[i].from : "unknown");
+      fputs(from_line, out);
+    }
+    fwrite(msg, 1, len, out);
+    /* Ensure ends with newline */
+    if (len > 0 && msg[len - 1] != '\n') fputc('\n', out);
+    free(msg);
+    exported++;
+  }
+
+  fclose(out);
+  return exported;
+}
+
+/* Mozilla flag mapping */
+#define MOZ_FLAG_READ     0x0001
+#define MOZ_FLAG_REPLIED  0x0002
+#define MOZ_FLAG_MARKED   0x0004
+#define MOZ_FLAG_EXPUNGED 0x0008
+#define MOZ_FLAG_FORWARDED 0x1000
+
+static unsigned long macmbx_state_to_mozilla(uint8_t state, uint8_t priority) {
+  unsigned long flags = 0;
+  switch (state) {
+    case 2: flags |= MOZ_FLAG_READ; break;                     /* READ */
+    case 3: flags |= MOZ_FLAG_READ | MOZ_FLAG_REPLIED; break;  /* REPLIED */
+    case 8: flags |= MOZ_FLAG_READ | MOZ_FLAG_FORWARDED; break;/* FORWARDED */
+    default: break;
+  }
+  /* Mozilla stores priority in bits 13-15 */
+  if (priority > 0 && priority <= 5)
+    flags |= ((unsigned long)(priority)) << 13;
+  return flags;
+}
+
+int macmbx_export_mbox_mozilla(MacmbxTOC *toc, const char *output_path) {
+  if (!toc || !output_path) return -1;
+  FILE *out = fopen(output_path, "wb");
+  if (!out) return -1;
+
+  int exported = 0;
+  for (int i = 0; i < toc->count; i++) {
+    long len = 0;
+    char *msg = macmbx_read_message(toc, i, &len);
+    if (!msg) continue;
+
+    MacmbxMsgSum *sum = &toc->msgs[i];
+
+    /* From line */
+    if (len < 5 || strncmp(msg, "From ", 5) != 0) {
+      char from_line[256];
+      macmbx_write_from_line(from_line, sizeof(from_line),
+                              sum->from[0] ? sum->from : "unknown");
+      fputs(from_line, out);
+    }
+
+    /* Find end of first line (From line) and insert Mozilla headers after it */
+    char *nl = strchr(msg, '\n');
+    if (nl) {
+      fwrite(msg, 1, nl - msg + 1, out);
+      /* Insert Mozilla status headers */
+      unsigned long moz_flags = macmbx_state_to_mozilla(sum->state, sum->priority);
+      fprintf(out, "X-Mozilla-Status: %04lx\r\n", moz_flags & 0xFFFF);
+      fprintf(out, "X-Mozilla-Status2: %08lx\r\n", 0UL);
+      /* Write rest of message */
+      fwrite(nl + 1, 1, len - (nl - msg + 1), out);
+    } else {
+      fwrite(msg, 1, len, out);
+    }
+
+    if (len > 0 && msg[len - 1] != '\n') fputc('\n', out);
+    free(msg);
+    exported++;
+  }
+
+  fclose(out);
+  return exported;
+}
+
+int macmbx_export_store(MacmbxStore *store, const char *output_dir) {
+  if (!store || !output_dir) return -1;
+
+  /* Create output directory */
+  struct stat st;
+  if (stat(output_dir, &st) != 0)
+    mkdir(output_dir, 0755);
+
+  MacmbxNode *root = macmbx_store_root(store);
+  int exported = 0;
+
+  for (MacmbxNode *n = root; n; n = n->next) {
+    if (n->type == MACMBX_NODE_MAILBOX) {
+      MacmbxTOC *toc = macmbx_toc_open(n->path);
+      if (toc && toc->count > 0) {
+        char out_path[PATH_MAX];
+        snprintf(out_path, sizeof(out_path), "%s/%s.mbox", output_dir, n->name);
+        macmbx_export_mbox(toc, out_path);
+        exported++;
+      }
+    }
+    /* TODO: recurse into folders */
+  }
+
+  return exported;
+}
+
+/* ================================================================
+ * Signature import
+ * ================================================================ */
+
+int macmbx_sig_import_dir(const char *sig_dir, const char *import_from) {
+  if (!sig_dir || !import_from) return -1;
+
+  DIR *d = opendir(import_from);
+  if (!d) return -1;
+
+  /* Create sig_dir if needed */
+  struct stat st;
+  if (stat(sig_dir, &st) != 0)
+    mkdir(sig_dir, 0755);
+
+  int imported = 0;
+  struct dirent *entry;
+  while ((entry = readdir(d)) != NULL) {
+    if (entry->d_name[0] == '.') continue;
+
+    char src_path[PATH_MAX], dst_path[PATH_MAX];
+    snprintf(src_path, sizeof(src_path), "%s/%s", import_from, entry->d_name);
+    snprintf(dst_path, sizeof(dst_path), "%s/%s", sig_dir, entry->d_name);
+
+    /* Only import regular files */
+    struct stat fst;
+    if (stat(src_path, &fst) != 0 || !S_ISREG(fst.st_mode)) continue;
+
+    /* Read source */
+    FILE *in = fopen(src_path, "rb");
+    if (!in) continue;
+    char *buf = (char *)malloc(fst.st_size + 1);
+    if (!buf) { fclose(in); continue; }
+    size_t nread = fread(buf, 1, fst.st_size, in);
+    fclose(in);
+    buf[nread] = '\0';
+
+    /* Write to sig_dir */
+    FILE *out = fopen(dst_path, "wb");
+    if (out) {
+      fwrite(buf, 1, nread, out);
+      fclose(out);
+      imported++;
+    }
+    free(buf);
+  }
+
+  closedir(d);
+  return imported;
+}

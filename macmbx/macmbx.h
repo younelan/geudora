@@ -547,6 +547,26 @@ int macmbx_import_maildir(MacmbxTOC *toc, const char *maildir_path);
  * Optionally dedup by Message-ID. */
 int macmbx_import_mbox(MacmbxTOC *toc, const char *mbox_path, bool dedup);
 
+/* ── Batch export (whole mailbox as single text file) ── */
+
+/* Export a mailbox as a single concatenated text file.
+ * Each message starts with a "From " envelope line.
+ * This is standard Unix mbox format. */
+int macmbx_export_mbox(MacmbxTOC *toc, const char *output_path);
+
+/* Export with Mozilla-compatible headers (X-Mozilla-Status/Status2).
+ * Maps message state and priority to Mozilla flag format. */
+int macmbx_export_mbox_mozilla(MacmbxTOC *toc, const char *output_path);
+
+/* Export all mailboxes in a store to a directory (one file per mailbox). */
+int macmbx_export_store(MacmbxStore *store, const char *output_dir);
+
+/* ── Signature import ── */
+
+/* Import signatures from a directory of text files.
+ * Each file becomes a named signature. Returns count imported. */
+int macmbx_sig_import_dir(const char *sig_dir, const char *import_from);
+
 /* ================================================================
  * Filters — rule-based message routing
  *

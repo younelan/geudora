@@ -1863,6 +1863,45 @@ void eudora_open_mailbox_by_name(const char *name) {
 /* ── Accessor for sidebar widget ── */
 GtkWidget *app_get_mailbox_tree(void) { return app_state.mailbox_tree; }
 
+/* ── Status bar API ── */
+void eudora_status_set(const char *title, const char *subtitle,
+                        const char *message, double progress) {
+  GtkWidget *sbar = app_state.status_bar;
+  if (!sbar) return;
+
+  GtkWidget *spinner = g_object_get_data(G_OBJECT(sbar), "spinner");
+  GtkWidget *title_lbl = g_object_get_data(G_OBJECT(sbar), "title");
+  GtkWidget *subtitle_lbl = g_object_get_data(G_OBJECT(sbar), "subtitle");
+  GtkWidget *msg_lbl = g_object_get_data(G_OBJECT(sbar), "message");
+  GtkWidget *pbar = g_object_get_data(G_OBJECT(sbar), "progress");
+
+  if (title) gtk_label_set_text(GTK_LABEL(title_lbl), title);
+  if (subtitle) gtk_label_set_text(GTK_LABEL(subtitle_lbl), subtitle);
+  if (message) gtk_label_set_text(GTK_LABEL(msg_lbl), message);
+
+  if (progress >= 0) {
+    gtk_progress_bar_set_fraction(GTK_PROGRESS_BAR(pbar), progress);
+    gtk_widget_set_visible(pbar, TRUE);
+  } else {
+    gtk_widget_set_visible(pbar, FALSE);
+  }
+
+  bool active = (title && title[0] && strcmp(title, "Ready") != 0);
+  gtk_spinner_set_spinning(GTK_SPINNER(spinner), active);
+}
+
+void eudora_status_count(const char *text) {
+  GtkWidget *sbar = app_state.status_bar;
+  if (!sbar) return;
+  GtkWidget *count_lbl = g_object_get_data(G_OBJECT(sbar), "count");
+  if (count_lbl) gtk_label_set_text(GTK_LABEL(count_lbl), text ? text : "");
+}
+
+void eudora_status_clear(void) {
+  eudora_status_set("Ready", "", "", -1);
+  eudora_status_count("");
+}
+
 /* ── Refresh open mailbox tabs ── */
 void eudora_refresh_open_mailboxes(void) {
   if (!mailbox_notebook) return;
@@ -2389,6 +2428,66 @@ static GtkWidget *create_main_layout(void) {
   gtk_box_append(GTK_BOX(main_box), main_hpaned);
   gtk_widget_set_vexpand(main_hpaned, TRUE);
   gtk_widget_set_hexpand(main_hpaned, TRUE);
+
+  /* ── Status bar — multi-slot like original Eudora ──
+   * Slots: [icon] [title] [subtitle] [message] [progress] [count] */
+  {
+    GtkWidget *sbar = gtk_box_new(GTK_ORIENTATION_HORIZONTAL, 8);
+    gtk_widget_add_css_class(sbar, "eudora-statusbar");
+    gtk_widget_set_margin_start(sbar, 8);
+    gtk_widget_set_margin_end(sbar, 8);
+    gtk_widget_set_margin_top(sbar, 2);
+    gtk_widget_set_margin_bottom(sbar, 2);
+
+    /* Activity spinner */
+    GtkWidget *spinner = gtk_spinner_new();
+    gtk_box_append(GTK_BOX(sbar), spinner);
+
+    /* Title slot — "Checking mail..." / "Sending..." / idle */
+    GtkWidget *title_lbl = gtk_label_new("Ready");
+    gtk_widget_add_css_class(title_lbl, "status-title");
+    gtk_label_set_xalign(GTK_LABEL(title_lbl), 0);
+    gtk_box_append(GTK_BOX(sbar), title_lbl);
+
+    /* Separator */
+    gtk_box_append(GTK_BOX(sbar), gtk_separator_new(GTK_ORIENTATION_VERTICAL));
+
+    /* Subtitle slot — personality/account name */
+    GtkWidget *subtitle_lbl = gtk_label_new("");
+    gtk_widget_add_css_class(subtitle_lbl, "status-subtitle");
+    gtk_label_set_xalign(GTK_LABEL(subtitle_lbl), 0);
+    gtk_box_append(GTK_BOX(sbar), subtitle_lbl);
+
+    /* Message slot — detail text, expands */
+    GtkWidget *msg_lbl = gtk_label_new("");
+    gtk_widget_add_css_class(msg_lbl, "status-message");
+    gtk_label_set_xalign(GTK_LABEL(msg_lbl), 0);
+    gtk_label_set_ellipsize(GTK_LABEL(msg_lbl), PANGO_ELLIPSIZE_END);
+    gtk_widget_set_hexpand(msg_lbl, TRUE);
+    gtk_box_append(GTK_BOX(sbar), msg_lbl);
+
+    /* Progress bar */
+    GtkWidget *pbar = gtk_progress_bar_new();
+    gtk_widget_set_size_request(pbar, 120, -1);
+    gtk_widget_set_valign(pbar, GTK_ALIGN_CENTER);
+    gtk_box_append(GTK_BOX(sbar), pbar);
+
+    /* Message count slot */
+    GtkWidget *count_lbl = gtk_label_new("");
+    gtk_widget_add_css_class(count_lbl, "status-count");
+    gtk_box_append(GTK_BOX(sbar), count_lbl);
+
+    gtk_box_append(GTK_BOX(main_box), sbar);
+
+    /* Store refs for updating */
+    app_state.status_bar = sbar;
+    g_object_set_data(G_OBJECT(sbar), "spinner", spinner);
+    g_object_set_data(G_OBJECT(sbar), "title", title_lbl);
+    g_object_set_data(G_OBJECT(sbar), "subtitle", subtitle_lbl);
+    g_object_set_data(G_OBJECT(sbar), "message", msg_lbl);
+    g_object_set_data(G_OBJECT(sbar), "progress", pbar);
+    g_object_set_data(G_OBJECT(sbar), "count", count_lbl);
+  }
 
   return main_box;
 }
