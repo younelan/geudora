@@ -13,6 +13,7 @@ Original: filtwin.c + filtmng.c persistence logic. */
 #include "schizo.h"
 #include "messact.h"
 #include "nickmng.h"
+#include "gtk_autocomplete.h"
 #include "mydefs.h"
 #include "fileutil.h"
 /* imapmailboxes.h removed — crispy_imap handles IMAP */
@@ -1140,6 +1141,10 @@ short FAflkForward(FACallEnum callType, FActionHandle action, Rect *r,
       data->entry = gtk_entry_new();
       gtk_editable_set_text(GTK_EDITABLE(data->entry), data->addresses);
       gtk_entry_set_placeholder_text(GTK_ENTRY(data->entry), "email@example.com");
+      /* Attach nickname autocomplete to address entry */
+      extern MacmbxAddressBooks *get_address_books(void);
+      MacmbxAddressBooks *abs_fwd = get_address_books();
+      if (abs_fwd) gtk_autocomplete_attach(data->entry, abs_fwd);
     }
     break;
   case faeClose:
@@ -1702,6 +1707,10 @@ static void populate_action_value(int idx) {
       }
       gtk_widget_set_hexpand(entry, TRUE);
       gtk_box_append(GTK_BOX(vbox), entry);
+      /* Attach nickname autocomplete */
+      extern MacmbxAddressBooks *get_address_books(void);
+      MacmbxAddressBooks *abs_fl = get_address_books();
+      if (abs_fl) gtk_autocomplete_attach(entry, abs_fl);
       break;
     }
     case flkReply: {

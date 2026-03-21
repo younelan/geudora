@@ -1,19 +1,14 @@
 /*
  * nickwin.c - Address Book window, ported from Mac Eudora's nickwin.c.
  *
- * Original used Carbon ListViews, ControlHandles, DLOG resources, and
- * tab controls. This GTK4 port uses GtkTreeView for the nickname list
- * and GtkNotebook for the tabbed detail view.
- *
- * Nickname file format (from nickmng.c):
- *   alias <name> <expansion>\n
- *   note <name> <content>\n
- * Names with spaces are quoted. Lines can be continued with \.
+ * Data layer uses macmbx address book API exclusively.
+ * UI is GTK4 with tabs, forms, photo support, CSS classes, hero header.
  */
 
 #include "mailbox.h"
 #include "mydefs.h"
-#include <dirent.h>
+#include "macmbx.h"
+#include "gtk_autocomplete.h"
 #include <gtk/gtk.h>
 #include <stdio.h>
 #include <stdlib.h>
@@ -21,81 +16,14 @@
 #include <sys/stat.h>
 
 extern const char *prefs_get_mailboxes_path(void);
+extern MacmbxAddressBooks *get_address_books(void);
 
-/* ─── Nickname data structures ───────────────────────────────────────── */
+/* ─── macmbx-backed field helpers ──────────────────────────────────── */
 
-typedef struct NickEntry {
-  char *name;      /* Nickname */
-  char *addresses; /* Expansion addresses */
-  char *notes;     /* Notes content */
-  struct NickEntry *next;
-} NickEntry;
-
-typedef struct NickFile {
-  char *path;     /* Path to nickname file */
-  char *label;    /* Display name */
-  NickEntry *entries;
-  struct NickFile *next;
-} NickFile;
-
-/* ─── Tagged field helpers (original <tag:value> format) ──────────────── */
-
-/* Get a tagged field value from a notes string. Returns malloc'd string or NULL. */
-static char *get_tagged_field(const char *notes, const char *tag) {
-  if (!notes || !tag) return NULL;
-  size_t tlen = strlen(tag);
-  const char *p = notes;
-  while ((p = strchr(p, '<')) != NULL) {
-    p++;
-    if (strncmp(p, tag, tlen) == 0 && p[tlen] == ':') {
-      const char *val = p + tlen + 1;
-      const char *end = strchr(val, '>');
-      if (end) return g_strndup(val, end - val);
-    }
-  }
-  return NULL;
-}
-
-/* Set a tagged field value in a notes string. Returns new malloc'd string. */
-static char *set_tagged_field(const char *notes, const char *tag, const char *value) {
-  GString *out = g_string_new("");
-  size_t tlen = strlen(tag);
-  bool replaced = false;
-
-  if (notes) {
-    const char *p = notes;
-    while (*p) {
-      if (*p == '<') {
-        const char *s = p + 1;
-        if (strncmp(s, tag, tlen) == 0 && s[tlen] == ':') {
-          /* Skip existing tag */
-          const char *end = strchr(s, '>');
-          if (end) { p = end + 1; continue; }
-        }
-      }
-      g_string_append_c(out, *p);
-      p++;
-    }
-  }
-
-  /* Append new value if non-empty */
-  if (value && value[0]) {
-    g_string_append_printf(out, "<%s:%s>", tag, value);
-    replaced = true;
-  }
-  (void)replaced;
-  return g_string_free(out, FALSE);
-}
-
-/* Bulk set: apply multiple tag/value pairs to notes. tags is NULL-terminated. */
-static char *set_tagged_fields(const char *notes, const char **tags, const char **values) {
-  char *cur = g_strdup(notes ? notes : "");
-  for (int i = 0; tags[i]; i++) {
-    char *next = set_tagged_field(cur, tags[i], values[i]);
-    g_free(cur);
-    cur = next;
-  }
-  return cur;
+/* Get a note field from macmbx nickname. Returns value (do not free) or "". */
+static const char *mb_get_field(MacmbxAddressBook *book, int nick_idx, const char *field) {
+  const char *v = macmbx_nick_get_field(book, nick_idx, field);
+  return v ? v : "";
 }
 
 /* ─── Address Book window state ──────────────────────────────────────── */
@@ -107,7 +35,6 @@ typedef struct {
   GtkWidget *addr_view;     /* Address text view */
   GtkWidget *notes_view;    /* Notes text view */
   GtkWidget *notebook;      /* Tab notebook */
-  NickFile *files;
   bool inited;
 
   /* Personal tab */
@@ -155,214 +82,8 @@ static ABState AB = {0};
 
 /* GObject data keys for list rows */
 #define AB_KEY_IS_FILE  "ab-is-file"
-#define AB_KEY_FILE_IDX "ab-file-idx"
+#define AB_KEY_BOOK_IDX "ab-book-idx"
 #define AB_KEY_NICK_IDX "ab-nick-idx"
-
-/* ─── Nickname file path ─────────────────────────────────────────────── */
-
-static const char *get_nicknames_dir(void) {
-  static char dir[1024] = {0};
-  if (!dir[0]) {
-    const char *prefs_path = prefs_get_mailboxes_path();
-    if (prefs_path && prefs_path[0]) {
-      /* Put nicknames alongside mailboxes in parent dir */
-      char *slash = strrchr(prefs_path, '/');
-      if (slash) {
-        size_t len = slash - prefs_path;
-        snprintf(dir, sizeof(dir), "%.*s/Nicknames", (int)len, prefs_path);
-      } else {
-        snprintf(dir, sizeof(dir), "%s/Nicknames", prefs_path);
-      }
-    } else {
-      const char *home = g_get_home_dir();
-      snprintf(dir, sizeof(dir), "%s/.local/share/geudora/Nicknames", home);
-    }
-    g_mkdir_with_parents(dir, 0755);
-  }
-  return dir;
-}
-
-/* ─── Nickname file parsing ──────────────────────────────────────────── */
-
-/* Parse a nickname name — may be quoted or unquoted */
-static const char *parse_nick_name(const char *p, char *out, size_t out_len) {
-  while (*p == ' ' || *p == '\t')
-    p++;
-
-  size_t i = 0;
-  if (*p == '"') {
-    p++; /* skip opening quote */
-    while (*p && *p != '"' && i < out_len - 1)
-      out[i++] = *p++;
-    if (*p == '"')
-      p++;
-  } else {
-    while (*p && *p != ' ' && *p != '\t' && i < out_len - 1)
-      out[i++] = *p++;
-  }
-  out[i] = '\0';
-
-  /* Skip whitespace after name */
-  while (*p == ' ' || *p == '\t')
-    p++;
-
-  return p;
-}
-
-/* Find or create a nick entry by name in a NickFile */
-static NickEntry *find_or_create_nick(NickFile *nf, const char *name) {
-  NickEntry *e = nf->entries;
-  while (e) {
-    if (strcmp(spec_name(e), name) == 0)
-      return e;
-    e = e->next;
-  }
-  /* Create new */
-  e = g_new0(NickEntry, 1);
-  e->name = g_strdup(name);
-  e->next = nf->entries;
-  nf->entries = e;
-  return e;
-}
-
-/* Read a nickname file (Eudora format) */
-static NickFile *read_nick_file(const char *path, const char *label) {
-  FILE *fp = fopen(path, "r");
-  if (!fp)
-    return NULL;
-
-  NickFile *nf = g_new0(NickFile, 1);
-  nf = g_strdup(path);
-  nf->label = g_strdup(label);
-
-  char line[4096];
-  while (fgets(line, sizeof(line), fp)) {
-    /* Strip trailing newline/CR */
-    size_t len = strlen(line);
-    while (len > 0 && (line[len - 1] == '\n' || line[len - 1] == '\r'))
-      line[--len] = '\0';
-
-    if (strncmp(line, "alias ", 6) == 0) {
-      char name[256];
-      const char *rest = parse_nick_name(line + 6, name, sizeof(name));
-      if (name[0]) {
-        NickEntry *e = find_or_create_nick(nf, name);
-        g_free(e->addresses);
-        e->addresses = g_strdup(rest);
-      }
-    } else if (strncmp(line, "note ", 5) == 0) {
-      char name[256];
-      const char *rest = parse_nick_name(line + 5, name, sizeof(name));
-      if (name[0]) {
-        NickEntry *e = find_or_create_nick(nf, name);
-        g_free(e->notes);
-        e->notes = g_strdup(rest);
-      }
-    }
-  }
-
-  fclose(fp);
-  return nf;
-}
-
-/* Write a nickname file back to disk */
-static void write_nick_file(NickFile *nf) {
-  if (!nf || !nf)
-    return;
-
-  FILE *fp = fopen(nf, "w");
-  if (!fp)
-    return;
-
-  /* Write all alias lines first, then all note lines (like original) */
-  NickEntry *we;
-  for (we = nf->entries; we; we = we->next) {
-    const char *addr = (we->addresses && we->addresses[0]) ? we->addresses : "";
-    if (strchr(spec_name(we), ' '))
-      fprintf(fp, "alias \"%s\" %s\n", spec_name(we), addr);
-    else
-      fprintf(fp, "alias %s %s\n", spec_name(we), addr);
-  }
-  for (we = nf->entries; we; we = we->next) {
-    if (we->notes && we->notes[0]) {
-      if (strchr(spec_name(we), ' '))
-        fprintf(fp, "note \"%s\" %s\n", spec_name(we), we->notes);
-      else
-        fprintf(fp, "note %s %s\n", spec_name(we), we->notes);
-    }
-  }
-
-  fclose(fp);
-}
-
-static void free_nick_file(NickFile *nf) {
-  if (!nf)
-    return;
-  NickEntry *e = nf->entries;
-  while (e) {
-    NickEntry *next = e->next;
-    g_free(spec_name(e));
-    g_free(e->addresses);
-    g_free(e->notes);
-    g_free(e);
-    e = next;
-  }
-  g_free(nf);
-  g_free(nf->label);
-  g_free(nf);
-}
-
-static void free_all_nick_files(void) {
-  NickFile *nf = AB.files;
-  while (nf) {
-    NickFile *next = nf->next;
-    free_nick_file(nf);
-    nf = next;
-  }
-  AB.files = NULL;
-}
-
-/* ─── Load all nickname files ────────────────────────────────────────── */
-
-static void load_nick_files(void) {
-  free_all_nick_files();
-
-  const char *dir = get_nicknames_dir();
-
-  /* Create default "Eudora Nicknames" file if nothing exists */
-  char default_path[1024];
-  snprintf(default_path, sizeof(default_path), "%s/Eudora Nicknames", dir);
-  if (!g_file_test(default_path, G_FILE_TEST_EXISTS)) {
-    FILE *f = fopen(default_path, "w");
-    if (f)
-      fclose(f);
-  }
-
-  /* Scan for all nickname files */
-  DIR *d = opendir(dir);
-  if (!d)
-    return;
-
-  struct dirent *ent;
-  while ((ent = readdir(d)) != NULL) {
-    if (ent->d_name[0] == '.')
-      continue;
-
-    char path[1024];
-    snprintf(path, sizeof(path), "%s/%s", dir, ent->d_name);
-
-    struct stat st;
-    if (stat(path, &st) != 0 || !S_ISREG(st.st_mode))
-      continue;
-
-    NickFile *nf = read_nick_file(path, ent->d_name);
-    if (nf) {
-      nf->next = AB.files;
-      AB.files = nf;
-    }
-  }
-  closedir(d);
-}
 
 /* ─── Populate list box ──────────────────────────────────────────────── */
 
@@ -372,10 +93,15 @@ static void ab_fill_list(void) {
   while ((child = gtk_widget_get_first_child(AB.list_view)) != NULL)
     gtk_list_box_remove(GTK_LIST_BOX(AB.list_view), child);
 
-  int file_idx = 0;
-  for (NickFile *nf = AB.files; nf; nf = nf->next, file_idx++) {
+  MacmbxAddressBooks *abs = get_address_books();
+  if (!abs) return;
+
+  for (int bi = 0; bi < abs->count; bi++) {
+    MacmbxAddressBook *book = macmbx_nick_get_book(abs, bi);
+    if (!book) continue;
+
     /* Section header row (non-selectable) */
-    GtkWidget *hdr_label = gtk_label_new(nf->label);
+    GtkWidget *hdr_label = gtk_label_new(book->name);
     gtk_label_set_xalign(GTK_LABEL(hdr_label), 0);
     gtk_widget_add_css_class(hdr_label, "ab-section-title");
     GtkWidget *hdr_row = gtk_list_box_row_new();
@@ -383,58 +109,33 @@ static void ab_fill_list(void) {
     gtk_list_box_row_set_activatable(GTK_LIST_BOX_ROW(hdr_row), FALSE);
     gtk_list_box_row_set_child(GTK_LIST_BOX_ROW(hdr_row), hdr_label);
     g_object_set_data(G_OBJECT(hdr_row), AB_KEY_IS_FILE, GINT_TO_POINTER(1));
-    g_object_set_data(G_OBJECT(hdr_row), AB_KEY_FILE_IDX, GINT_TO_POINTER(file_idx));
+    g_object_set_data(G_OBJECT(hdr_row), AB_KEY_BOOK_IDX, GINT_TO_POINTER(bi));
     gtk_list_box_append(GTK_LIST_BOX(AB.list_view), hdr_row);
 
-    int nick_idx = 0;
-    for (NickEntry *e = nf->entries; e; e = e->next, nick_idx++) {
-      GtkWidget *nick_label = gtk_label_new(spec_name(e));
+    for (int ni = 0; ni < book->count; ni++) {
+      if (book->entries[ni].deleted) continue;
+
+      GtkWidget *nick_label = gtk_label_new(book->entries[ni].name);
       gtk_label_set_xalign(GTK_LABEL(nick_label), 0);
       gtk_widget_set_margin_start(nick_label, 12);
       GtkWidget *nick_row = gtk_list_box_row_new();
       gtk_list_box_row_set_child(GTK_LIST_BOX_ROW(nick_row), nick_label);
       g_object_set_data(G_OBJECT(nick_row), AB_KEY_IS_FILE, GINT_TO_POINTER(0));
-      g_object_set_data(G_OBJECT(nick_row), AB_KEY_FILE_IDX, GINT_TO_POINTER(file_idx));
-      g_object_set_data(G_OBJECT(nick_row), AB_KEY_NICK_IDX, GINT_TO_POINTER(nick_idx));
+      g_object_set_data(G_OBJECT(nick_row), AB_KEY_BOOK_IDX, GINT_TO_POINTER(bi));
+      g_object_set_data(G_OBJECT(nick_row), AB_KEY_NICK_IDX, GINT_TO_POINTER(ni));
       gtk_list_box_append(GTK_LIST_BOX(AB.list_view), nick_row);
     }
   }
 }
 
-/* ─── Find nick entry by indices ─────────────────────────────────────── */
-
-static NickEntry *get_nick_by_indices(int file_idx, int nick_idx) {
-  int fi = 0;
-  for (NickFile *nf = AB.files; nf; nf = nf->next, fi++) {
-    if (fi == file_idx) {
-      int ni = 0;
-      for (NickEntry *e = nf->entries; e; e = e->next, ni++) {
-        if (ni == nick_idx)
-          return e;
-      }
-      return NULL;
-    }
-  }
-  return NULL;
-}
-
-static NickFile *get_nick_file_by_index(int file_idx) {
-  int fi = 0;
-  for (NickFile *nf = AB.files; nf; nf = nf->next, fi++) {
-    if (fi == file_idx)
-      return nf;
-  }
-  return NULL;
-}
-
-/* Get file_idx and nick_idx from the currently selected list box row.
+/* Get book_idx and nick_idx from the currently selected list box row.
  * Returns false if nothing is selected or a file header is selected. */
-static bool ab_get_selected(int *file_idx_out, int *nick_idx_out) {
+static bool ab_get_selected(int *book_idx_out, int *nick_idx_out) {
   GtkListBoxRow *row = gtk_list_box_get_selected_row(GTK_LIST_BOX(AB.list_view));
   if (!row) return false;
   int is_file = GPOINTER_TO_INT(g_object_get_data(G_OBJECT(row), AB_KEY_IS_FILE));
   if (is_file) return false;
-  *file_idx_out = GPOINTER_TO_INT(g_object_get_data(G_OBJECT(row), AB_KEY_FILE_IDX));
+  *book_idx_out = GPOINTER_TO_INT(g_object_get_data(G_OBJECT(row), AB_KEY_BOOK_IDX));
   *nick_idx_out = GPOINTER_TO_INT(g_object_get_data(G_OBJECT(row), AB_KEY_NICK_IDX));
   return true;
 }
@@ -451,12 +152,11 @@ static void ab_update_selected_label(const char *text) {
 /* Forward declarations */
 static void display_photo(const char *path);
 
-/* ─── Helper: set entry text or clear ────────────────────────────────── */
+/* ─── Helper: set entry text from macmbx field ───────────────────────── */
 
-static void set_entry_from_tag(GtkWidget *entry, const char *notes, const char *tag) {
-  char *val = get_tagged_field(notes, tag);
-  gtk_editable_set_text(GTK_EDITABLE(entry), val ? val : "");
-  g_free(val);
+static void set_entry_from_macmbx(GtkWidget *entry, MacmbxAddressBook *book,
+                                   int nick_idx, const char *field) {
+  gtk_editable_set_text(GTK_EDITABLE(entry), mb_get_field(book, nick_idx, field));
 }
 
 static void clear_all_detail_fields(void) {
@@ -523,154 +223,147 @@ static void on_ab_selection_changed(GtkListBox *box, GtkListBoxRow *row,
     return;
   }
 
-  int file_idx = GPOINTER_TO_INT(g_object_get_data(G_OBJECT(row), AB_KEY_FILE_IDX));
+  int book_idx = GPOINTER_TO_INT(g_object_get_data(G_OBJECT(row), AB_KEY_BOOK_IDX));
   int nick_idx = GPOINTER_TO_INT(g_object_get_data(G_OBJECT(row), AB_KEY_NICK_IDX));
 
-  NickEntry *e = get_nick_by_indices(file_idx, nick_idx);
-  if (!e)
-    return;
+  MacmbxAddressBooks *abs = get_address_books();
+  if (!abs) return;
+  MacmbxAddressBook *book = macmbx_nick_get_book(abs, book_idx);
+  if (!book || nick_idx < 0 || nick_idx >= book->count) return;
 
-  gtk_editable_set_text(GTK_EDITABLE(AB.nick_entry), spec_name(e) ? spec_name(e) : "");
+  /* Nickname name */
+  gtk_editable_set_text(GTK_EDITABLE(AB.nick_entry), book->entries[nick_idx].name);
 
-  GtkTextBuffer *addr_buf =
-      gtk_text_view_get_buffer(GTK_TEXT_VIEW(AB.addr_view));
-  gtk_text_buffer_set_text(addr_buf, e->addresses ? e->addresses : "", -1);
-
-  /* Populate tagged fields from notes */
-  const char *notes = e->notes ? e->notes : "";
+  /* Addresses */
+  const char *addrs = macmbx_nick_get_addresses(book, nick_idx);
+  GtkTextBuffer *addr_buf = gtk_text_view_get_buffer(GTK_TEXT_VIEW(AB.addr_view));
+  gtk_text_buffer_set_text(addr_buf, addrs ? addrs : "", -1);
 
   /* Personal */
-  set_entry_from_tag(AB.full_name, notes, "name");
-  set_entry_from_tag(AB.first_name, notes, "first");
-  set_entry_from_tag(AB.last_name, notes, "last");
+  set_entry_from_macmbx(AB.full_name,  book, nick_idx, "name");
+  set_entry_from_macmbx(AB.first_name, book, nick_idx, "first");
+  set_entry_from_macmbx(AB.last_name,  book, nick_idx, "last");
 
   /* Home */
-  set_entry_from_tag(AB.h_address, notes, "address");
-  set_entry_from_tag(AB.h_city, notes, "city");
-  set_entry_from_tag(AB.h_state, notes, "state");
-  set_entry_from_tag(AB.h_zip, notes, "zip");
-  set_entry_from_tag(AB.h_country, notes, "country");
-  set_entry_from_tag(AB.h_phone, notes, "phone");
-  set_entry_from_tag(AB.h_fax, notes, "fax");
-  set_entry_from_tag(AB.h_mobile, notes, "mobile");
-  set_entry_from_tag(AB.h_web, notes, "web");
+  set_entry_from_macmbx(AB.h_address, book, nick_idx, "address");
+  set_entry_from_macmbx(AB.h_city,    book, nick_idx, "city");
+  set_entry_from_macmbx(AB.h_state,   book, nick_idx, "state");
+  set_entry_from_macmbx(AB.h_zip,     book, nick_idx, "zip");
+  set_entry_from_macmbx(AB.h_country, book, nick_idx, "country");
+  set_entry_from_macmbx(AB.h_phone,   book, nick_idx, "phone");
+  set_entry_from_macmbx(AB.h_fax,     book, nick_idx, "fax");
+  set_entry_from_macmbx(AB.h_mobile,  book, nick_idx, "mobile");
+  set_entry_from_macmbx(AB.h_web,     book, nick_idx, "web");
 
   /* Work */
-  set_entry_from_tag(AB.w_title, notes, "title");
-  set_entry_from_tag(AB.w_company, notes, "company");
-  set_entry_from_tag(AB.w_address, notes, "address2");
-  set_entry_from_tag(AB.w_city, notes, "city2");
-  set_entry_from_tag(AB.w_state, notes, "state2");
-  set_entry_from_tag(AB.w_zip, notes, "zip2");
-  set_entry_from_tag(AB.w_country, notes, "country2");
-  set_entry_from_tag(AB.w_phone, notes, "phone2");
-  set_entry_from_tag(AB.w_fax, notes, "fax2");
-  set_entry_from_tag(AB.w_mobile, notes, "mobile2");
-  set_entry_from_tag(AB.w_web, notes, "web2");
+  set_entry_from_macmbx(AB.w_title,   book, nick_idx, "title");
+  set_entry_from_macmbx(AB.w_company, book, nick_idx, "company");
+  set_entry_from_macmbx(AB.w_address, book, nick_idx, "address2");
+  set_entry_from_macmbx(AB.w_city,    book, nick_idx, "city2");
+  set_entry_from_macmbx(AB.w_state,   book, nick_idx, "state2");
+  set_entry_from_macmbx(AB.w_zip,     book, nick_idx, "zip2");
+  set_entry_from_macmbx(AB.w_country, book, nick_idx, "country2");
+  set_entry_from_macmbx(AB.w_phone,   book, nick_idx, "phone2");
+  set_entry_from_macmbx(AB.w_fax,     book, nick_idx, "fax2");
+  set_entry_from_macmbx(AB.w_mobile,  book, nick_idx, "mobile2");
+  set_entry_from_macmbx(AB.w_web,     book, nick_idx, "web2");
 
   /* Other */
-  set_entry_from_tag(AB.other_email, notes, "otheremail");
-  set_entry_from_tag(AB.other_phone, notes, "otherphone");
-  set_entry_from_tag(AB.other_web, notes, "otherweb");
+  set_entry_from_macmbx(AB.other_email, book, nick_idx, "otheremail");
+  set_entry_from_macmbx(AB.other_phone, book, nick_idx, "otherphone");
+  set_entry_from_macmbx(AB.other_web,   book, nick_idx, "otherweb");
 
-  /* Notes — strip tagged fields, show remaining plain text */
-  GtkTextBuffer *notes_buf =
-      gtk_text_view_get_buffer(GTK_TEXT_VIEW(AB.notes_view));
-  char *note_val = get_tagged_field(notes, "note");
-  gtk_text_buffer_set_text(notes_buf, note_val ? note_val : "", -1);
-  g_free(note_val);
+  /* Notes */
+  GtkTextBuffer *notes_buf = gtk_text_view_get_buffer(GTK_TEXT_VIEW(AB.notes_view));
+  gtk_text_buffer_set_text(notes_buf, mb_get_field(book, nick_idx, "note"), -1);
 
   /* Photo */
   g_free(AB.photo_path);
-  AB.photo_path = get_tagged_field(notes, "picture");
+  const char *pic = macmbx_nick_get_field(book, nick_idx, "picture");
+  AB.photo_path = (pic && pic[0]) ? g_strdup(pic) : NULL;
   display_photo(AB.photo_path);
 }
 
-/* ─── Save current entry back to data ────────────────────────────────── */
+/* ─── Save current entry back to macmbx ──────────────────────────────── */
+
+static void save_field_from_entry(MacmbxAddressBook *book, int nick_idx,
+                                   const char *field, GtkWidget *entry) {
+  const char *val = gtk_editable_get_text(GTK_EDITABLE(entry));
+  macmbx_nick_set_field(book, nick_idx, field, val ? val : "");
+}
 
 static void save_current_entry(void) {
-  int file_idx, nick_idx;
-  if (!ab_get_selected(&file_idx, &nick_idx))
+  int book_idx, nick_idx;
+  if (!ab_get_selected(&book_idx, &nick_idx))
     return;
 
-  NickEntry *e = get_nick_by_indices(file_idx, nick_idx);
-  NickFile *nf = get_nick_file_by_index(file_idx);
-  if (!e || !nf)
-    return;
+  MacmbxAddressBooks *abs = get_address_books();
+  if (!abs) return;
+  MacmbxAddressBook *book = macmbx_nick_get_book(abs, book_idx);
+  if (!book || nick_idx < 0 || nick_idx >= book->count) return;
 
-  /* Update nickname name */
+  /* Update nickname name (rename) */
   const char *new_name = gtk_editable_get_text(GTK_EDITABLE(AB.nick_entry));
-  if (new_name && new_name[0] && strcmp(spec_name(e), new_name) != 0) {
-    g_free(spec_name(e));
-    e->name = g_strdup(new_name);
+  if (new_name && new_name[0] && strcmp(book->entries[nick_idx].name, new_name) != 0) {
+    macmbx_nick_rename(book, nick_idx, new_name);
     ab_update_selected_label(new_name);
   }
 
   /* Update addresses */
-  GtkTextBuffer *addr_buf =
-      gtk_text_view_get_buffer(GTK_TEXT_VIEW(AB.addr_view));
+  GtkTextBuffer *addr_buf = gtk_text_view_get_buffer(GTK_TEXT_VIEW(AB.addr_view));
   GtkTextIter start, end;
   gtk_text_buffer_get_bounds(addr_buf, &start, &end);
   char *addr_text = gtk_text_buffer_get_text(addr_buf, &start, &end, FALSE);
-  g_free(e->addresses);
-  e->addresses = addr_text;
+  macmbx_nick_set_addresses(book, nick_idx, addr_text ? addr_text : "");
+  g_free(addr_text);
 
-  /* Update notes: get plain note text, then set all tagged fields */
-  GtkTextBuffer *notes_buf =
-      gtk_text_view_get_buffer(GTK_TEXT_VIEW(AB.notes_view));
+  /* Personal */
+  save_field_from_entry(book, nick_idx, "name",  AB.full_name);
+  save_field_from_entry(book, nick_idx, "first", AB.first_name);
+  save_field_from_entry(book, nick_idx, "last",  AB.last_name);
+
+  /* Home */
+  save_field_from_entry(book, nick_idx, "address", AB.h_address);
+  save_field_from_entry(book, nick_idx, "city",    AB.h_city);
+  save_field_from_entry(book, nick_idx, "state",   AB.h_state);
+  save_field_from_entry(book, nick_idx, "zip",     AB.h_zip);
+  save_field_from_entry(book, nick_idx, "country", AB.h_country);
+  save_field_from_entry(book, nick_idx, "phone",   AB.h_phone);
+  save_field_from_entry(book, nick_idx, "fax",     AB.h_fax);
+  save_field_from_entry(book, nick_idx, "mobile",  AB.h_mobile);
+  save_field_from_entry(book, nick_idx, "web",     AB.h_web);
+
+  /* Work */
+  save_field_from_entry(book, nick_idx, "title",    AB.w_title);
+  save_field_from_entry(book, nick_idx, "company",  AB.w_company);
+  save_field_from_entry(book, nick_idx, "address2", AB.w_address);
+  save_field_from_entry(book, nick_idx, "city2",    AB.w_city);
+  save_field_from_entry(book, nick_idx, "state2",   AB.w_state);
+  save_field_from_entry(book, nick_idx, "zip2",     AB.w_zip);
+  save_field_from_entry(book, nick_idx, "country2", AB.w_country);
+  save_field_from_entry(book, nick_idx, "phone2",   AB.w_phone);
+  save_field_from_entry(book, nick_idx, "fax2",     AB.w_fax);
+  save_field_from_entry(book, nick_idx, "mobile2",  AB.w_mobile);
+  save_field_from_entry(book, nick_idx, "web2",     AB.w_web);
+
+  /* Other */
+  save_field_from_entry(book, nick_idx, "otheremail", AB.other_email);
+  save_field_from_entry(book, nick_idx, "otherphone", AB.other_phone);
+  save_field_from_entry(book, nick_idx, "otherweb",   AB.other_web);
+
+  /* Notes */
+  GtkTextBuffer *notes_buf = gtk_text_view_get_buffer(GTK_TEXT_VIEW(AB.notes_view));
   gtk_text_buffer_get_bounds(notes_buf, &start, &end);
   char *note_text = gtk_text_buffer_get_text(notes_buf, &start, &end, FALSE);
-
-  /* All tags to save */
-  const char *tags[] = {
-    "name", "first", "last",
-    "address", "city", "state", "zip", "country",
-    "phone", "fax", "mobile", "web",
-    "title", "company",
-    "address2", "city2", "state2", "zip2", "country2",
-    "phone2", "fax2", "mobile2", "web2",
-    "otheremail", "otherphone", "otherweb",
-    "note", "picture", NULL
-  };
-  const char *values[] = {
-    gtk_editable_get_text(GTK_EDITABLE(AB.full_name)),
-    gtk_editable_get_text(GTK_EDITABLE(AB.first_name)),
-    gtk_editable_get_text(GTK_EDITABLE(AB.last_name)),
-    gtk_editable_get_text(GTK_EDITABLE(AB.h_address)),
-    gtk_editable_get_text(GTK_EDITABLE(AB.h_city)),
-    gtk_editable_get_text(GTK_EDITABLE(AB.h_state)),
-    gtk_editable_get_text(GTK_EDITABLE(AB.h_zip)),
-    gtk_editable_get_text(GTK_EDITABLE(AB.h_country)),
-    gtk_editable_get_text(GTK_EDITABLE(AB.h_phone)),
-    gtk_editable_get_text(GTK_EDITABLE(AB.h_fax)),
-    gtk_editable_get_text(GTK_EDITABLE(AB.h_mobile)),
-    gtk_editable_get_text(GTK_EDITABLE(AB.h_web)),
-    gtk_editable_get_text(GTK_EDITABLE(AB.w_title)),
-    gtk_editable_get_text(GTK_EDITABLE(AB.w_company)),
-    gtk_editable_get_text(GTK_EDITABLE(AB.w_address)),
-    gtk_editable_get_text(GTK_EDITABLE(AB.w_city)),
-    gtk_editable_get_text(GTK_EDITABLE(AB.w_state)),
-    gtk_editable_get_text(GTK_EDITABLE(AB.w_zip)),
-    gtk_editable_get_text(GTK_EDITABLE(AB.w_country)),
-    gtk_editable_get_text(GTK_EDITABLE(AB.w_phone)),
-    gtk_editable_get_text(GTK_EDITABLE(AB.w_fax)),
-    gtk_editable_get_text(GTK_EDITABLE(AB.w_mobile)),
-    gtk_editable_get_text(GTK_EDITABLE(AB.w_web)),
-    gtk_editable_get_text(GTK_EDITABLE(AB.other_email)),
-    gtk_editable_get_text(GTK_EDITABLE(AB.other_phone)),
-    gtk_editable_get_text(GTK_EDITABLE(AB.other_web)),
-    note_text,
-    AB.photo_path ? AB.photo_path : "",
-    NULL
-  };
-
-  /* Build notes string from tags — start fresh (no old notes to preserve) */
-  g_free(e->notes);
-  e->notes = set_tagged_fields("", tags, values);
+  macmbx_nick_set_field(book, nick_idx, "note", note_text ? note_text : "");
   g_free(note_text);
 
+  /* Photo */
+  macmbx_nick_set_field(book, nick_idx, "picture",
+                         AB.photo_path ? AB.photo_path : "");
+
   /* Write back to disk */
-  write_nick_file(nf);
+  macmbx_nick_save_book(book);
 }
 
 /* ─── Button callbacks ───────────────────────────────────────────────── */
@@ -679,24 +372,19 @@ static void on_ab_new_clicked(GtkButton *button, gpointer user_data) {
   (void)button;
   (void)user_data;
 
-  /* Find the first address book file, or create one */
-  NickFile *nf = AB.files;
-  if (!nf) {
-    const char *dir = get_nicknames_dir();
-    char path[1024];
-    snprintf(path, sizeof(path), "%s/Eudora Nicknames", dir);
-    nf = g_new0(NickFile, 1);
-    nf = g_strdup(path);
-    nf->label = g_strdup("Eudora Nicknames");
-    nf->next = AB.files;
-    AB.files = nf;
-  }
+  MacmbxAddressBooks *abs = get_address_books();
+  if (!abs || abs->count == 0) return;
+
+  /* Add to the first book */
+  MacmbxAddressBook *book = macmbx_nick_get_book(abs, 0);
+  if (!book) return;
 
   /* Generate unique "New Nickname" name */
   char name[64];
   int n = 0;
-  for (NickEntry *check = nf->entries; check; check = check->next) {
-    if (strncmp(spec_name(check), "New Nickname", 12) == 0)
+  for (int i = 0; i < book->count; i++) {
+    if (!book->entries[i].deleted &&
+        strncmp(book->entries[i].name, "New Nickname", 12) == 0)
       n++;
   }
   if (n == 0)
@@ -704,15 +392,8 @@ static void on_ab_new_clicked(GtkButton *button, gpointer user_data) {
   else
     snprintf(name, sizeof(name), "New Nickname %d", n + 1);
 
-  NickEntry *e = g_new0(NickEntry, 1);
-
-  e->name = g_strdup(name);
-  e->addresses = g_strdup("");
-  e->notes = g_strdup("");
-  e->next = nf->entries;
-  nf->entries = e;
-
-  write_nick_file(nf);
+  macmbx_nick_add(book, name, "");
+  macmbx_nick_save_book(book);
   ab_fill_list();
 }
 
@@ -720,32 +401,17 @@ static void on_ab_delete_clicked(GtkButton *button, gpointer user_data) {
   (void)button;
   (void)user_data;
 
-  int file_idx, nick_idx;
-  if (!ab_get_selected(&file_idx, &nick_idx))
+  int book_idx, nick_idx;
+  if (!ab_get_selected(&book_idx, &nick_idx))
     return;
 
-  NickFile *nf = get_nick_file_by_index(file_idx);
-  if (!nf)
-    return;
+  MacmbxAddressBooks *abs = get_address_books();
+  if (!abs) return;
+  MacmbxAddressBook *book = macmbx_nick_get_book(abs, book_idx);
+  if (!book) return;
 
-  /* Remove entry from linked list */
-  NickEntry **pp = &nf->entries;
-  int ni = 0;
-  while (*pp) {
-    if (ni == nick_idx) {
-      NickEntry *doomed = *pp;
-      *pp = doomed->next;
-      g_free(spec_name(doomed));
-      g_free(doomed->addresses);
-      g_free(doomed->notes);
-      g_free(doomed);
-      break;
-    }
-    pp = &(*pp)->next;
-    ni++;
-  }
-
-  write_nick_file(nf);
+  macmbx_nick_remove(book, nick_idx);
+  macmbx_nick_save_book(book);
   ab_fill_list();
 }
 
@@ -754,20 +420,26 @@ static void on_ab_recipient_clicked(GtkButton *button, gpointer user_data) {
   const char *field = (const char *)user_data; /* "to", "cc", or "bcc" */
   (void)button;
 
-  int file_idx, nick_idx;
-  if (!ab_get_selected(&file_idx, &nick_idx))
+  int book_idx, nick_idx;
+  if (!ab_get_selected(&book_idx, &nick_idx))
     return;
 
-  NickEntry *e = get_nick_by_indices(file_idx, nick_idx);
-  if (!e || !e->addresses || !e->addresses[0])
+  MacmbxAddressBooks *abs = get_address_books();
+  if (!abs) return;
+  MacmbxAddressBook *book = macmbx_nick_get_book(abs, book_idx);
+  if (!book) return;
+
+  const char *addrs = macmbx_nick_get_addresses(book, nick_idx);
+  if (!addrs || !addrs[0])
     return;
 
   /* Copy address to clipboard with field indicator */
   GdkClipboard *clipboard =
       gdk_display_get_clipboard(gdk_display_get_default());
-  gdk_clipboard_set_text(clipboard, e->addresses);
+  gdk_clipboard_set_text(clipboard, addrs);
 
-  g_print("Address Book: copied %s address for %s field\n", spec_name(e), field);
+  g_print("Address Book: copied %s address for %s field\n",
+          book->entries[nick_idx].name, field);
 }
 
 /* ─── Build form row: label + entry ──────────────────────────────────── */
@@ -789,14 +461,19 @@ static GtkWidget *form_row(const char *label_text, GtkWidget **out_entry) {
 static const char *get_photos_dir(void) {
   static char dir[1024] = {0};
   if (!dir[0]) {
-    const char *nick_dir = get_nicknames_dir();
-    /* Photos dir alongside Nicknames */
-    char *slash = strrchr(nick_dir, '/');
-    if (slash) {
-      size_t len = slash - nick_dir;
-      snprintf(dir, sizeof(dir), "%.*s/Photos", (int)len, nick_dir);
+    MacmbxAddressBooks *abs = get_address_books();
+    if (abs && abs->dir_path[0]) {
+      /* Photos dir alongside Nicknames */
+      char *slash = strrchr(abs->dir_path, '/');
+      if (slash) {
+        size_t len = (size_t)(slash - abs->dir_path);
+        snprintf(dir, sizeof(dir), "%.*s/Photos", (int)len, abs->dir_path);
+      } else {
+        snprintf(dir, sizeof(dir), "%s/Photos", abs->dir_path);
+      }
     } else {
-      snprintf(dir, sizeof(dir), "%s/Photos", nick_dir);
+      const char *home = g_get_home_dir();
+      snprintf(dir, sizeof(dir), "%s/.local/share/geudora/Photos", home);
     }
     g_mkdir_with_parents(dir, 0755);
   }
@@ -1083,8 +760,6 @@ void OpenABWin(void) {
     return;
   }
 
-  load_nick_files();
-
   AB.window = gtk_window_new();
   gtk_window_set_title(GTK_WINDOW(AB.window), "Address Book");
   gtk_window_set_default_size(GTK_WINDOW(AB.window), 700, 500);
@@ -1184,7 +859,14 @@ void OpenABWin(void) {
   /* Populate */
   ab_fill_list();
 
-  /* void *window close */
+  /* Attach autocomplete to address fields */
+  MacmbxAddressBooks *abs = get_address_books();
+  if (abs) {
+    gtk_autocomplete_attach(AB.nick_entry, abs);
+    gtk_autocomplete_attach(AB.other_email, abs);
+  }
+
+  /* Window close */
   g_signal_connect(AB.window, "close-request",
                    G_CALLBACK(on_ab_window_close), NULL);
 
@@ -1196,8 +878,6 @@ void OpenABWin(void) {
  * CreateAddressBookPanel — embeddable panel for the main notebook
  ************************************************************************/
 GtkWidget *CreateAddressBookPanel(void) {
-  load_nick_files();
-
   GtkWidget *outer = gtk_box_new(GTK_ORIENTATION_VERTICAL, 0);
   gtk_widget_add_css_class(outer, "ab-panel");
 
@@ -1220,8 +900,17 @@ GtkWidget *CreateAddressBookPanel(void) {
 
   /* Contact count pill */
   int total = 0;
-  for (NickFile *nf = AB.files; nf; nf = nf->next)
-    for (NickEntry *e = nf->entries; e; e = e->next) total++;
+  MacmbxAddressBooks *abs = get_address_books();
+  if (abs) {
+    for (int bi = 0; bi < abs->count; bi++) {
+      MacmbxAddressBook *book = macmbx_nick_get_book(abs, bi);
+      if (book) {
+        for (int ni = 0; ni < book->count; ni++) {
+          if (!book->entries[ni].deleted) total++;
+        }
+      }
+    }
+  }
   char count_str[32];
   snprintf(count_str, sizeof(count_str), "%d contacts", total);
   GtkWidget *count_pill = gtk_label_new(count_str);
@@ -1317,6 +1006,13 @@ GtkWidget *CreateAddressBookPanel(void) {
   gtk_box_append(GTK_BOX(outer), hpaned);
 
   ab_fill_list();
+
+  /* Attach autocomplete to address fields */
+  if (abs) {
+    gtk_autocomplete_attach(AB.nick_entry, abs);
+    gtk_autocomplete_attach(AB.other_email, abs);
+  }
+
   AB.inited = true;
 
   return outer;

@@ -39,6 +39,7 @@ ADVISED OF THE POSSIBILITY OF SUCH DAMAGE. */
 #include "util.h"
 /* imapdownload.h removed — crispy_imap handles IMAP */
 #include "threading.h"
+#include "macmbx.h"
 #include <gtk/gtk.h>
 #include "gtk_dialogs.h"
 #include "macmbx.h"
@@ -121,10 +122,67 @@ void FixURLPtr(char *query, long *queryLen) { /* stub */ }
 bool AliasWinIsOpen(void) { return false; /* stub */ }
 void AliasWinRefresh(void) { /* stub */ }
 int ExpandAliases(void **h, void *raw, int n, bool deep) {
-  (void)raw;
   (void)n;
   (void)deep;
-  return 0; /* stub */
+  if (!h || !raw) return 0;
+
+  /* raw is a char* with comma-separated addresses/nicknames.
+   * For each token, try macmbx_nick_expand. If it resolves, use the
+   * expansion. Otherwise keep the original. Build result as a single
+   * comma-separated string in *h. */
+  extern MacmbxAddressBooks *get_address_books(void);
+  MacmbxAddressBooks *abs = get_address_books();
+  if (!abs) { *h = NULL; return 0; }
+
+  const char *input = (const char *)raw;
+  size_t out_cap = 1024;
+  char *out = (char *)malloc(out_cap);
+  if (!out) { *h = NULL; return -1; }
+  out[0] = '\0';
+  size_t out_len = 0;
+
+  const char *p = input;
+  while (*p) {
+    /* Skip whitespace/commas */
+    while (*p == ' ' || *p == ',' || *p == '\t' || *p == '\n') p++;
+    if (!*p) break;
+
+    /* Extract one token (up to comma or end) */
+    const char *start = p;
+    while (*p && *p != ',') p++;
+    /* Trim trailing whitespace */
+    const char *end = p;
+    while (end > start && (end[-1] == ' ' || end[-1] == '\t')) end--;
+
+    size_t tok_len = end - start;
+    if (tok_len == 0) continue;
+
+    char token[512];
+    if (tok_len >= sizeof(token)) tok_len = sizeof(token) - 1;
+    memcpy(token, start, tok_len);
+    token[tok_len] = '\0';
+
+    /* Try expanding as nickname */
+    char *expanded = macmbx_nick_expand(abs, token);
+    const char *to_add = expanded ? expanded : token;
+    size_t add_len = strlen(to_add);
+
+    /* Grow buffer if needed */
+    while (out_len + add_len + 3 > out_cap) {
+      out_cap *= 2;
+      out = (char *)realloc(out, out_cap);
+    }
+
+    if (out_len > 0) { out[out_len++] = ','; out[out_len++] = ' '; }
+    memcpy(out + out_len, to_add, add_len);
+    out_len += add_len;
+    out[out_len] = '\0';
+
+    free(expanded);
+  }
+
+  *h = out;
+  return 0;
 }
 void GetTime(unsigned long *time) { *time = 0; /* stub */ }
 char *CopyBytesAndMovePtr(char *dest, void *src, long len) {
@@ -137,7 +195,11 @@ bool ValidAddressBook(short which) { return true; /* stub */ }
 bool ValidHash(unsigned long h) { return h != 0; /* stub */ }
 /* JunkSetScore is implemented in junk.c */
 bool AppearsInAliasFile(unsigned char *addr, short which) {
-  return false; /* stub */
+  (void)which;
+  extern MacmbxAddressBooks *get_address_books(void);
+  MacmbxAddressBooks *abs = get_address_books();
+  if (!abs || !addr) return false;
+  return macmbx_nick_contains_address(abs, (const char *)addr);
 }
 void NickSuggest(unsigned char *name, unsigned char *addr) { /* stub */ }
 int NewNickLow(short which, unsigned char *name, void **addr, void **notes,

@@ -45,6 +45,7 @@ ADVISED OF THE POSSIBILITY OF SUCH DAMAGE. */
 #include "crispy_richtext.h"
 
 #include "Globals.h"
+#include "gtk_autocomplete.h"
 #include "MyRes.h"
 #include "StrnDefs.h"
 #include "comp.h"
@@ -185,6 +186,13 @@ void DoMakeFilter(MyWindowPtr win) {
 
   /* Create button: build the rule and save */
   g_signal_connect_swapped(create_btn, "clicked", G_CALLBACK(on_make_filter_create), dialog);
+
+  /* Attach autocomplete to address fields */
+  extern MacmbxAddressBooks *get_address_books(void);
+  MacmbxAddressBooks *abs = get_address_books();
+  if (abs) {
+    gtk_autocomplete_attach(match_entry, abs);
+  }
 
   gtk_window_set_child(GTK_WINDOW(dialog), vbox);
   gtk_window_present(GTK_WINDOW(dialog));

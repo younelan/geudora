@@ -53,6 +53,7 @@ typedef struct {
   MacmbxTOC *current_mtoc;    /* Currently displayed macmbx TOC */
   MacmbxConf *conf;            /* macmbx config (geudora.ini) */
   MacmbxMailer *mailer;        /* Mail send/receive engine */
+  MacmbxAddressBooks *nicknames; /* Address books for autocomplete */
 } AppState;
 
 /* Global variables for legacy compatibility */
@@ -67,6 +68,11 @@ static AppState app_state = {0};
 /* Accessor for the main window (used by modal dialogs in other files) */
 GtkWidget *get_main_window(void) {
   return app_state.window;
+}
+
+/* Accessor for address books (used by autocomplete in comp.c etc.) */
+MacmbxAddressBooks *get_address_books(void) {
+  return app_state.nicknames;
 }
 
 /* Forward declarations */
@@ -2599,6 +2605,16 @@ static void activate(GtkApplication *app, gpointer user_data) {
       app_state.store = macmbx_store_open(mdir);
       if (app_state.store)
         gtk_mailbox_set_store(app_state.store);
+    }
+  }
+
+  /* Load address books from Nicknames dir via macmbx */
+  {
+    const char *mdir = prefs_get_mailboxes_path();
+    if (mdir) {
+      char nick_dir[1024];
+      snprintf(nick_dir, sizeof(nick_dir), "%s/../Nicknames", mdir);
+      app_state.nicknames = macmbx_nick_open(nick_dir);
     }
   }
 

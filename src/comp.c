@@ -46,6 +46,7 @@ ADVISED OF THE POSSIBILITY OF SUCH DAMAGE. */
 #include "emoticon.h"
 #include "util.h"
 #include "threading.h"
+#include "gtk_autocomplete.h"
 #include <gdk/gdk.h>
 #include <gtk/gtk.h>
 #include <stdbool.h>
@@ -1206,6 +1207,16 @@ MyWindowPtr OpenComp(MacmbxTOC * tocH, int sumNum, GtkWidget *winWP,
   g_object_set_data(G_OBJECT(winWP), "comp-cc", header_entries[3]);
   g_object_set_data(G_OBJECT(winWP), "comp-bcc", header_entries[4]);
   g_object_set_data(G_OBJECT(winWP), "comp-attach-flow", attach_flow);
+
+  /* Attach nickname autocomplete to address fields (To, Cc, Bcc).
+   * All matching logic lives in macmbx_nick_complete — we just show results. */
+  extern MacmbxAddressBooks *get_address_books(void);
+  MacmbxAddressBooks *abs = get_address_books();
+  if (abs) {
+    gtk_autocomplete_attach(header_entries[0], abs); /* To */
+    gtk_autocomplete_attach(header_entries[3], abs); /* Cc */
+    gtk_autocomplete_attach(header_entries[4], abs); /* Bcc */
+  }
 
   /* Vertical paned: headers on top, body below */
   GtkWidget *paned = gtk_paned_new(GTK_ORIENTATION_VERTICAL);
