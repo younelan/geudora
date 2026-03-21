@@ -10,6 +10,7 @@
 #include "macmbx_conf.h"
 #include "crispy_smtp.h"
 #include "crispy_pop3.h"
+#include "crispy_imap.h"
 #include "crispy_transport.h"
 #include <stdio.h>
 #include <stdlib.h>
@@ -618,13 +619,153 @@ int macmbx_mailer_check_dominant(MacmbxMailer *m) {
   return macmbx_mailer_check_account(m, 0);
 }
 
+/* ================================================================
+ * IMAP check — connect, select INBOX, fetch new messages
+ * ================================================================ */
+
+static int macmbx_mailer_check_imap(MacmbxMailer *m, int account_index,
+                                      MacmbxAccount *acct) {
+  /* Read IMAP SSL setting */
+  int imap_ssl = 0;
+  if (m->conf) {
+    imap_ssl = macmbx_conf_get_int(m->conf, "ssl", "ssl_imap_mode", 0);
+    if (acct->index > 0) {
+      char sec[32]; snprintf(sec, sizeof(sec), "account_%d", acct->index);
+      imap_ssl = macmbx_conf_get_int(m->conf, sec, "ssl_mode", imap_ssl);
+    }
+  }
+
+  int port = 143;
+  ImapSecurity security = IMAP_PLAIN;
+  if (imap_ssl & 4) { security = IMAP_SSL; port = 993; }
+  else if (imap_ssl & 2) security = IMAP_STARTTLS;
+  else if (imap_ssl & 1) security = IMAP_STARTTLS;
+
+  fprintf(stderr, "check_imap[%d]: server=%s port=%d ssl=%d\n",
+          account_index, acct->server, port, imap_ssl);
+
+  ImapTransport tp = crispy_transport_new();
+  crispy_transport_set_cert_callback(&tp, mailer_cert_callback, m);
+
+  ImapSession imap;
+  crispy_imap_init(&imap, tp);
+  int err = crispy_imap_connect(&imap, acct->server, port, security);
+  if (err) {
+    fprintf(stderr, "check_imap[%d]: connect failed\n", account_index);
+    return -1;
+  }
+
+  /* Authenticate */
+  char pw[256] = "";
+  if (get_password(m, acct, pw, sizeof(pw)) != 0) {
+    crispy_imap_close(&imap);
+    return -1;
+  }
+  const char *user = acct->username[0] ? acct->username : acct->email;
+  err = crispy_imap_login(&imap, user, pw);
+  if (err) {
+    fprintf(stderr, "check_imap[%d]: login failed for %s\n", account_index, user);
+    crispy_imap_close(&imap);
+    return -1;
+  }
+
+  /* Select INBOX */
+  err = crispy_imap_select(&imap, "INBOX");
+  if (err) {
+    fprintf(stderr, "check_imap[%d]: SELECT INBOX failed\n", account_index);
+    crispy_imap_close(&imap);
+    return -1;
+  }
+  fprintf(stderr, "check_imap[%d]: INBOX selected, %d messages, %d recent\n",
+          account_index, imap.selected.exists, imap.selected.recent);
+
+  if (imap.selected.exists == 0) {
+    crispy_imap_close(&imap);
+    return 0;
+  }
+
+  /* Search for UNSEEN messages */
+  unsigned long *uids = NULL;
+  int uid_count = crispy_imap_search(&imap, "UNSEEN", &uids);
+  fprintf(stderr, "check_imap[%d]: SEARCH UNSEEN → %d messages\n",
+          account_index, uid_count);
+  if (uid_count <= 0) {
+    free(uids);
+    crispy_imap_close(&imap);
+    return 0;
+  }
+
+  /* Open inbox */
+  MacmbxNode *in_node = macmbx_store_find_special(m->store, MACMBX_TYPE_IN);
+  if (!in_node) { free(uids); crispy_imap_close(&imap); return -1; }
+  MacmbxTOC *inbox = macmbx_toc_open(in_node->path);
+  if (!inbox) { free(uids); crispy_imap_close(&imap); return -1; }
+
+  /* Fetch each unseen message */
+  int downloaded = 0;
+  for (int i = 0; i < uid_count; i++) {
+    progress(m, "Downloading...", i + 1, uid_count);
+
+    long msgLen = 0;
+    char *msg = crispy_imap_fetch_message(&imap, uids[i], &msgLen);
+    if (!msg || msgLen <= 0) { free(msg); continue; }
+
+    fprintf(stderr, "check_imap[%d]: FETCH UID %lu → %ld bytes\n",
+            account_index, uids[i], msgLen);
+
+    /* Dedup */
+    if (macmbx_is_duplicate(inbox, msg, msgLen) >= 0) { free(msg); continue; }
+
+    /* Append to inbox */
+    int idx = macmbx_append_message(inbox, msg, msgLen, NULL, MACMBX_UNREAD, 3);
+    if (idx >= 0) {
+      if (account_index > 0)
+        macmbx_tag_personality(inbox, idx, acct->name);
+      downloaded++;
+
+      /* Mark as \Seen on server */
+      char uid_str[32];
+      snprintf(uid_str, sizeof(uid_str), "%lu", uids[i]);
+      ImapFlags seen_flags = {0};
+      seen_flags.seen = true;
+      crispy_imap_store_flags(&imap, uid_str, "+FLAGS", seen_flags);
+    }
+    free(msg);
+  }
+
+  free(uids);
+  crispy_imap_close(&imap);
+
+  fprintf(stderr, "check_imap[%d]: downloaded %d messages\n",
+          account_index, downloaded);
+  macmbx_toc_save(inbox);
+
+  /* Post-receive: run filters */
+  if (m->filters && downloaded > 0) {
+    macmbx_filter_apply_all(m->filters, inbox, MACMBX_WHEN_INCOMING,
+                              m->store, NULL, NULL);
+    macmbx_toc_save(inbox);
+  }
+
+  /* Post-receive: junk scoring */
+  if (m->junk && downloaded > 0) {
+    macmbx_junk_score_box(m->junk, inbox);
+    macmbx_junk_move_spam(m->junk, inbox, m->store);
+    macmbx_toc_save(inbox);
+  }
+
+  return downloaded;
+}
+
 int macmbx_mailer_check_account(MacmbxMailer *m, int account_index) {
   if (!m) return -1;
   MacmbxAccount acct;
   if (get_account(m, account_index, &acct) != 0) return -1;
   if (!acct.enabled) return 0;
 
-  /* Only POP for now (IMAP would use crispy_imap) */
+  /* Dispatch by account type */
+  if (strcasecmp(acct.type, "IMAP") == 0 || strcasecmp(acct.type, "imap") == 0)
+    return macmbx_mailer_check_imap(m, account_index, &acct);
   if (strcasecmp(acct.type, "POP") != 0 && strcasecmp(acct.type, "pop") != 0)
     return 0;
 
@@ -831,7 +972,6 @@ void macmbx_mailer_disconnect(MacmbxMailer *m) {
  * On-demand fetch — headers-only / leave-on-server mode
  * ================================================================ */
 
-#include "crispy_imap.h"
 
 static const char *mailer_basename(const char *path) {
   const char *p = strrchr(path, '/');
