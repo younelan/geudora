@@ -138,6 +138,32 @@ void macmbx_mailer_lmos_mark(MacmbxMailer *m, int account_index,
                                const char *uidl);
 
 /* ================================================================
+ * On-demand fetch — for headers-only / leave-on-server mode
+ *
+ * When configured to download headers only, message bodies and
+ * attachments are fetched on demand when the user views them.
+ * macmbx_mailer handles the crispy_imap connection internally.
+ * ================================================================ */
+
+/* Ensure a message body is fully downloaded.
+ * If the message is a stub (headers only), fetches the full body
+ * from the server via IMAP and updates the local mbox + TOC.
+ * Returns 0 if body is available, -1 on error. */
+int macmbx_mailer_ensure_body(MacmbxMailer *m, MacmbxTOC *toc, int index);
+
+/* Fetch a specific MIME attachment by part number.
+ * Downloads the attachment from the server, decodes it,
+ * saves to the attachments directory.
+ * out_path: filled with the local file path (caller provides buffer).
+ * Returns 0 on success. */
+int macmbx_mailer_fetch_attachment(MacmbxMailer *m, MacmbxTOC *toc,
+                                     int index, const char *part_id,
+                                     char *out_path, int path_size);
+
+/* Check if a message is a stub (headers only, body not downloaded). */
+bool macmbx_mailer_is_stub(MacmbxMailer *m, MacmbxTOC *toc, int index);
+
+/* ================================================================
  * Connection management
  * ================================================================ */
 

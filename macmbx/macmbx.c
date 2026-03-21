@@ -156,6 +156,8 @@ int macmbx_registry_flush(void) {
   return saved;
 }
 
+MacmbxTOC *macmbx_registry_head(void) { return g_registry; }
+
 void macmbx_registry_close_all(void) {
   while (g_registry) {
     MacmbxTOC *t = g_registry;
@@ -637,15 +639,50 @@ char *macmbx_read_headers(MacmbxTOC *toc, int index) {
   return buf;
 }
 
+/* Scan for blank line (header/body separator) in raw message text.
+ * Handles \r\n\r\n, \n\n, and mixed line endings. */
+static long scan_body_start(const char *msg, long len) {
+  for (long i = 0; i < len - 1; i++) {
+    if (msg[i] == '\n') {
+      if (msg[i + 1] == '\n') return i + 2;
+      if (msg[i + 1] == '\r' && i + 2 < len && msg[i + 2] == '\n')
+        return i + 3;
+    } else if (msg[i] == '\r' && msg[i + 1] == '\n') {
+      if (i + 3 < len && msg[i + 2] == '\r' && msg[i + 3] == '\n')
+        return i + 4;
+    }
+  }
+  return 0;
+}
+
 char *macmbx_read_body(MacmbxTOC *toc, int index, long *outLen) {
   if (!toc || index < 0 || index >= toc->count) return NULL;
   MacmbxMsgSum *msg = &toc->msgs[index];
-  if (msg->body_offset <= 0) return NULL;
-  long body_len = msg->length - msg->body_offset;
+
+  int body_off = msg->body_offset;
+
+  /* If body_offset is missing (0), read full message and scan for blank line */
+  if (body_off <= 0) {
+    long full_len = 0;
+    char *full = macmbx_read_message(toc, index, &full_len);
+    if (!full) return NULL;
+    long off = scan_body_start(full, full_len);
+    if (off <= 0 || off >= full_len) { free(full); return NULL; }
+    long blen = full_len - off;
+    char *buf = (char *)malloc(blen + 1);
+    if (!buf) { free(full); return NULL; }
+    memcpy(buf, full + off, blen);
+    buf[blen] = '\0';
+    free(full);
+    if (outLen) *outLen = blen;
+    return buf;
+  }
+
+  long body_len = msg->length - body_off;
   if (body_len <= 0) return NULL;
   FILE *f = fopen(toc->mbox_path, "rb");
   if (!f) return NULL;
-  if (fseek(f, msg->offset + msg->body_offset, SEEK_SET) != 0) {
+  if (fseek(f, msg->offset + body_off, SEEK_SET) != 0) {
     fclose(f); return NULL;
   }
   char *buf = (char *)malloc(body_len + 1);

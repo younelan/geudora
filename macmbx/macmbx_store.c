@@ -207,22 +207,23 @@ static MacmbxNode *scan_directory(const char *dir_path, const char *dir_name) {
  * Store lifecycle
  * ================================================================ */
 
-MacmbxStore *macmbx_store_open(const char *base_path) {
-  if (!base_path) return NULL;
+MacmbxStore *macmbx_store_open(const char *root_path) {
+  if (!root_path) return NULL;
 
   /* Create directory if needed */
-  if (!is_dir(base_path)) {
-    if (mkdir_p(base_path) != 0 && errno != EEXIST) return NULL;
+  if (!is_dir(root_path)) {
+    if (mkdir_p(root_path) != 0 && errno != EEXIST) return NULL;
   }
 
   MacmbxStore *store = (MacmbxStore *)calloc(1, sizeof(MacmbxStore));
   if (!store) return NULL;
 
-  snprintf(store->base_path, sizeof(store->base_path), "%s", base_path);
+  snprintf(store->root_path, sizeof(store->root_path), "%s", root_path);
+  snprintf(store->base_path, sizeof(store->base_path), "%s", root_path);
   store->lock_fd = -1;
 
   /* Scan directory tree */
-  store->root = scan_directory(base_path, "");
+  store->root = scan_directory(root_path, "");
   return store;
 }
 
@@ -237,7 +238,7 @@ void macmbx_store_close(MacmbxStore *store) {
 int macmbx_store_refresh(MacmbxStore *store) {
   if (!store) return -1;
   macmbx_node_free(store->root);
-  store->root = scan_directory(store->base_path, "");
+  store->root = scan_directory(store->root_path, "");
   return store->root ? 0 : -1;
 }
 
@@ -615,4 +616,12 @@ int macmbx_store_list_folders(MacmbxStore *store, char ***paths) {
   collect_paths(store->root->children, store->base_path,
                 MACMBX_NODE_FOLDER, paths, &count, &cap);
   return count;
+}
+
+/* ================================================================
+ * Root directory accessor
+ * ================================================================ */
+
+const char *macmbx_store_root_dir(MacmbxStore *store) {
+  return store ? store->root_path : NULL;
 }

@@ -36,17 +36,20 @@
  * ================================================================ */
 
 typedef enum {
-  MACMBX_UNREAD     = 0,
-  MACMBX_READ       = 1,
-  MACMBX_REPLIED    = 2,
-  MACMBX_FORWARDED  = 3,
-  MACMBX_REDIRECTED = 4,
-  MACMBX_QUEUED     = 5,
-  MACMBX_SENT       = 6,
-  MACMBX_UNSENT     = 7,
-  MACMBX_TIMED      = 8,
-  MACMBX_SENDABLE   = 9,
-  MACMBX_REBUILT    = 10,
+  MACMBX_UNREAD     = 1,   /* matches Eudora StateEnum exactly */
+  MACMBX_READ       = 2,
+  MACMBX_REPLIED    = 3,
+  MACMBX_REDIRECTED = 4,   /* REDIST in Eudora */
+  MACMBX_UNSENDABLE = 5,
+  MACMBX_SENDABLE   = 6,
+  MACMBX_QUEUED     = 7,
+  MACMBX_FORWARDED  = 8,
+  MACMBX_SENT       = 9,
+  MACMBX_UNSENT     = 10,
+  MACMBX_TIMED      = 11,
+  MACMBX_BUSY_SENDING = 12,
+  MACMBX_MESG_ERR   = 13,
+  MACMBX_REBUILT    = 14,
 } MacmbxState;
 
 /* ================================================================
@@ -208,6 +211,11 @@ typedef struct {
   bool has_attachment;
   /* Threading (in-memory only, not on disk) */
   int32_t in_reply_to_hash;  /* hash of In-Reply-To Message-ID */
+  /* UI state (in-memory only, not on disk — used by Eudora) */
+  bool selected;              /* is message selected in list */
+  void *messH;                /* open message window handle */
+  void *mesgErrH;             /* message error handle */
+  void *cache;                /* cached message text (malloc'd) */
 } MacmbxMsgSum;
 
 /* ================================================================
@@ -243,6 +251,33 @@ struct MacmbxTOC {
   MacmbxMsgSum *msgs;
   /* Registry linkage */
   MacmbxTOC *next;
+  /* UI state (in-memory only — used by Eudora, ignored by macmbx) */
+  void *win;                  /* MyWindowPtr — open window for this mailbox */
+  int refN;                   /* open file descriptor for mbox (-1 if closed) */
+  long unread;                /* cached unread count */
+  bool drawer;                /* drawer flag */
+  void *drawerWin;            /* drawer window */
+  long previewID;             /* preview pane ID */
+  void *previewPTE;           /* preview text editor */
+  long boxSize;               /* cached mailbox file size */
+  long volumeFree;            /* free space */
+  long usedK, totalK;         /* size tracking */
+  bool updateBoxSizes;        /* need size update */
+  bool listFocus;             /* list has focus */
+  bool searchFocus;           /* search field has focus */
+  long maxValid;              /* max valid summary index */
+  bool virtualTOC;            /* virtual/IMAP TOC */
+  bool conConMultiScan;       /* concentrator multi-scan */
+  short resort;               /* resort flag */
+  long needRedo;              /* need redo */
+  bool analScanned;           /* analysis scanned */
+  long ezOpenSerialNum;       /* for message.c compat */
+  long updateID;              /* update ID */
+  short updateError;          /* update error */
+  long previewLo;             /* preview range */
+  int64_t lastSameTicks;      /* monotonic time tracking */
+  long mouseTicks;            /* mouse tick count */
+  long userActive;            /* user activity flag */
 };
 
 /* ================================================================
@@ -348,6 +383,9 @@ int macmbx_registry_flush(void);
 
 /* Close all open TOCs. */
 void macmbx_registry_close_all(void);
+
+/* Get head of open TOC linked list (for iteration). */
+MacmbxTOC *macmbx_registry_head(void);
 
 /* ================================================================
  * Message access
@@ -1185,10 +1223,25 @@ struct MacmbxNode {
   MacmbxNode *parent;         /* parent folder */
 };
 
-/* The store — root of the mailbox hierarchy */
+/* The store — mailbox directory manager.
+ *
+ * Takes a single root path from the application.  The store owns
+ * the entire directory tree below it:
+ *
+ *   root/
+ *     In, Out, Trash, Junk, ...     (mailbox files)
+ *     *.toc                          (TOC files)
+ *     My Folder/                     (user subfolder)
+ *       Work, Personal, ...
+ *
+ * Internal system folders (Delivery Folder, Spool Folder, etc.)
+ * are managed privately by macmbx_mailer — the application never
+ * needs to know about them.
+ */
 struct MacmbxStore {
-  char base_path[PATH_MAX];   /* root mailbox directory */
-  MacmbxNode *root;           /* tree of nodes */
+  char root_path[PATH_MAX];   /* application-provided root directory */
+  char base_path[PATH_MAX];   /* alias for root_path (compat) */
+  MacmbxNode *root;           /* tree of mailbox nodes */
   int lock_fd;                /* store-level lock */
 };
 
@@ -1196,10 +1249,14 @@ struct MacmbxStore {
  * Store lifecycle
  * ---------------------------------------------------------------- */
 
-/* Open a mailbox store rooted at the given directory.
- * Scans the directory tree and builds the node hierarchy.
+/* Open a store rooted at the given directory.
+ * The application passes its data root — macmbx manages everything
+ * below it.  Scans the directory tree and builds the mailbox hierarchy.
  * Creates the directory if it doesn't exist. */
-MacmbxStore *macmbx_store_open(const char *base_path);
+MacmbxStore *macmbx_store_open(const char *root_path);
+
+/* Get the root directory path. */
+const char *macmbx_store_root_dir(MacmbxStore *store);
 
 /* Close the store: flush all dirty TOCs, release locks, free tree. */
 void macmbx_store_close(MacmbxStore *store);

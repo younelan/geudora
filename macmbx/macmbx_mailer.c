@@ -120,9 +120,16 @@ static int get_password(MacmbxMailer *m, MacmbxAccount *acct, char *pw, int sz) 
     snprintf(pw, sz, "%s", saved);
     return 0;
   }
-  /* Try callback */
-  if (m->cred_fn)
-    return m->cred_fn(acct->name, acct->server, pw, sz, m->cred_ctx);
+  /* Try callback — try username first, then email, then name */
+  if (m->cred_fn) {
+    const char *user = acct->username[0] ? acct->username : acct->email;
+    if (m->cred_fn(user, acct->server, pw, sz, m->cred_ctx) == 0)
+      return 0;
+    /* Also try email if username didn't match */
+    if (acct->username[0] && acct->email[0])
+      if (m->cred_fn(acct->email, acct->server, pw, sz, m->cred_ctx) == 0)
+        return 0;
+  }
   return -1;
 }
 
@@ -300,12 +307,21 @@ int macmbx_mailer_send(MacmbxMailer *m) {
 int macmbx_mailer_send_account(MacmbxMailer *m, int account_index) {
   if (!m) return -1;
   MacmbxAccount acct;
-  if (get_account(m, account_index, &acct) != 0) return -1;
+  if (get_account(m, account_index, &acct) != 0) {
+    fprintf(stderr, "mailer_send_account: get_account(%d) failed\n", account_index);
+    return -1;
+  }
 
   MacmbxNode *out_node = macmbx_store_find_special(m->store, MACMBX_TYPE_OUT);
-  if (!out_node) return -1;
+  if (!out_node) {
+    fprintf(stderr, "mailer_send_account: no Out mailbox in store\n");
+    return -1;
+  }
   MacmbxTOC *out = macmbx_toc_open(out_node->path);
-  if (!out) return -1;
+  if (!out) {
+    fprintf(stderr, "mailer_send_account: failed to open Out TOC at %s\n", out_node->path);
+    return -1;
+  }
 
   /* Count queued messages for this account */
   uint32_t pers_hash = account_index > 0 ? macmbx_personality_hash(acct.name) : 0;
@@ -316,12 +332,17 @@ int macmbx_mailer_send_account(MacmbxMailer *m, int account_index) {
     if (pers_hash && out->msgs[i].pers_id != pers_hash) continue;
     queued++;
   }
+  fprintf(stderr, "mailer_send_account[%d]: acct='%s' email='%s' smtp='%s' queued=%d out->count=%d\n",
+          account_index, acct.name, acct.email, acct.smtp_server, queued, out->count);
   if (queued == 0) return 0;
 
   /* Connect SMTP */
   progress(m, "Connecting to SMTP...", 0, queued);
   SmtpSession *smtp = connect_smtp(m, &acct);
-  if (!smtp) return -1;
+  if (!smtp) {
+    fprintf(stderr, "mailer_send_account: SMTP connect failed to %s\n", acct.smtp_server);
+    return -1;
+  }
 
   /* Send each queued message */
   int sent = 0;
@@ -658,4 +679,169 @@ int macmbx_mailer_test_connection(MacmbxMailer *m, int account_index) {
 
 void macmbx_mailer_disconnect(MacmbxMailer *m) {
   (void)m; /* Sessions are created and closed per operation */
+}
+
+/* ================================================================
+ * On-demand fetch — headers-only / leave-on-server mode
+ * ================================================================ */
+
+#include "crispy_imap.h"
+
+static const char *mailer_basename(const char *path) {
+  const char *p = strrchr(path, '/');
+  if (!p) p = strrchr(path, '\\');
+  return p ? p + 1 : path;
+}
+
+/* Check if a message is a stub (no body downloaded yet) */
+bool macmbx_mailer_is_stub(MacmbxMailer *m, MacmbxTOC *toc, int index) {
+  (void)m;
+  if (!toc || index < 0 || index >= toc->count) return false;
+  MacmbxMsgSum *msg = &toc->msgs[index];
+  /* A stub has a summary but zero-length body in the mbox */
+  return (msg->flags & MACMBX_FLAG_BX_TEXT) == 0 && msg->length <= msg->body_offset;
+}
+
+/* Connect IMAP for the account that owns this mailbox */
+static ImapSession *connect_imap_for_toc(MacmbxMailer *m, MacmbxTOC *toc) {
+  if (!m || !toc) return NULL;
+
+  /* Determine which account owns this mailbox from personality tag */
+  MacmbxAccount acct;
+  if (macmbx_conf_get_dominant(m->conf, &acct) != 0) return NULL;
+  if (strcasecmp(acct.type, "IMAP") != 0) return NULL;
+
+  ImapTransport tp = crispy_transport_new();
+  ImapSession *imap = (ImapSession *)calloc(1, sizeof(ImapSession));
+  if (!imap) return NULL;
+
+  int port = 143;
+  ImapSecurity security = IMAP_STARTTLS;
+  if (acct.ssl_mode == 1) { security = IMAP_SSL; port = 993; }
+  else if (acct.ssl_mode == 0) { security = IMAP_PLAIN; port = 143; }
+
+  crispy_imap_init(imap, tp);
+  int err = crispy_imap_connect(imap, acct.server, port, security);
+  if (err) { free(imap); return NULL; }
+
+  char pw[256] = "";
+  if (get_password(m, &acct, pw, sizeof(pw)) != 0) {
+    crispy_imap_close(imap); free(imap); return NULL;
+  }
+  const char *user = acct.username[0] ? acct.username : acct.email;
+  err = crispy_imap_login(imap, user, pw);
+  if (err) { crispy_imap_close(imap); free(imap); return NULL; }
+
+  return imap;
+}
+
+/* Ensure message body is fully downloaded */
+int macmbx_mailer_ensure_body(MacmbxMailer *m, MacmbxTOC *toc, int index) {
+  if (!m || !toc || index < 0 || index >= toc->count) return -1;
+  if (!macmbx_mailer_is_stub(m, toc, index)) return 0; /* already have it */
+
+  MacmbxMsgSum *msg = &toc->msgs[index];
+
+  ImapSession *imap = connect_imap_for_toc(m, toc);
+  if (!imap) return -1;
+
+  /* Select the mailbox on the server */
+  const char *mbox_name = mailer_basename(toc->mbox_path);
+  int err = crispy_imap_select(imap, mbox_name);
+  if (err) { crispy_imap_close(imap); free(imap); return -1; }
+
+  /* Fetch the full message by UID */
+  long body_len = 0;
+  char *body = crispy_imap_fetch_message(imap, msg->uid_hash, &body_len);
+  if (!body || body_len == 0) {
+    free(body);
+    crispy_imap_close(imap); free(imap);
+    return -1;
+  }
+
+  /* Replace the stub in the local mbox with the full message */
+  FILE *fp = fopen(toc->mbox_path, "r+b");
+  if (fp) {
+    fseek(fp, 0, SEEK_END);
+    long new_offset = ftell(fp);
+
+    char from_line[256];
+    macmbx_write_from_line(from_line, sizeof(from_line),
+                            msg->from[0] ? msg->from : "unknown");
+    fputs(from_line, fp);
+    fwrite(body, 1, body_len, fp);
+    fputs("\n", fp);
+
+    long new_length = ftell(fp) - new_offset;
+    fclose(fp);
+
+    /* Update summary */
+    msg->offset = new_offset;
+    msg->length = new_length;
+    msg->body_offset = 0;
+    long from_len = (long)strlen(from_line);
+    for (long i = 0; i < body_len - 1; i++) {
+      if (body[i] == '\n' && body[i+1] == '\n') {
+        msg->body_offset = (int)(i + 2 + from_len); break;
+      }
+      if (body[i] == '\r' && body[i+1] == '\n' &&
+          i+3 < body_len && body[i+2] == '\r' && body[i+3] == '\n') {
+        msg->body_offset = (int)(i + 4 + from_len); break;
+      }
+    }
+    toc->dirty = true;
+    macmbx_toc_save(toc);
+  }
+
+  free(body);
+  crispy_imap_close(imap);
+  free(imap);
+  return 0;
+}
+
+/* Fetch a specific MIME attachment by part ID */
+int macmbx_mailer_fetch_attachment(MacmbxMailer *m, MacmbxTOC *toc,
+                                     int index, const char *part_id,
+                                     char *out_path, int path_size) {
+  if (!m || !toc || index < 0 || index >= toc->count || !part_id) return -1;
+
+  MacmbxMsgSum *msg = &toc->msgs[index];
+
+  ImapSession *imap = connect_imap_for_toc(m, toc);
+  if (!imap) return -1;
+
+  const char *mbox_name = mailer_basename(toc->mbox_path);
+  int err = crispy_imap_select(imap, mbox_name);
+  if (err) { crispy_imap_close(imap); free(imap); return -1; }
+
+  /* Fetch the MIME section */
+  long part_len = 0;
+  char *part_data = crispy_imap_fetch_section(imap, msg->uid_hash, part_id, &part_len);
+  if (!part_data || part_len == 0) {
+    free(part_data);
+    crispy_imap_close(imap); free(imap);
+    return -1;
+  }
+
+  /* Save to Attachments directory */
+  char attach_dir[PATH_MAX];
+  snprintf(attach_dir, sizeof(attach_dir), "%s/../Attachments",
+           m->store->root_path);
+  mkdir_p(attach_dir);
+
+  snprintf(out_path, path_size, "%s/%s_part_%s",
+           attach_dir, msg->subject[0] ? msg->subject : "message", part_id);
+
+  FILE *fp = fopen(out_path, "wb");
+  if (fp) {
+    fwrite(part_data, 1, part_len, fp);
+    fclose(fp);
+  } else {
+    err = -1;
+  }
+
+  free(part_data);
+  crispy_imap_close(imap);
+  free(imap);
+  return err;
 }
