@@ -2586,6 +2586,19 @@ static void activate(GtkApplication *app, gpointer user_data) {
       app_state.mailer = macmbx_mailer_new(app_state.conf, app_state.store);
       if (app_state.mailer) {
         macmbx_mailer_set_credentials(app_state.mailer, mailer_keychain_cb, NULL);
+
+        /* Load filters for incoming mail processing */
+        {
+          char filt_path[1024];
+          snprintf(filt_path, sizeof(filt_path), "%s/../Filters",
+                   macmbx_store_root_dir(app_state.store));
+          MacmbxFilterSet *fs = macmbx_filter_load(filt_path);
+          if (fs) {
+            macmbx_mailer_set_filters(app_state.mailer, fs);
+            g_print("Loaded %d filters from %s\n", fs->count, filt_path);
+          }
+        }
+
         idle_scheduler_set_mailer(app_state.mailer);
       }
     }

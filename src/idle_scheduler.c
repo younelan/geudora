@@ -126,6 +126,12 @@ static gboolean check_done_cb(gpointer data) {
     char buf[64];
     snprintf(buf, sizeof(buf), "%d new message(s)", g_check_result);
     eudora_status_set("Ready", "", buf, -1);
+
+    /* Open In mailbox and refresh */
+    extern void eudora_open_mailbox_by_name(const char *name);
+    extern void eudora_refresh_open_mailboxes(void);
+    eudora_open_mailbox_by_name("In");
+    eudora_refresh_open_mailboxes();
   } else {
     eudora_status_set("Ready", "", "No new mail", -1);
   }
@@ -231,11 +237,50 @@ static gboolean add_check_tasks_cb(gpointer data) {
   return G_SOURCE_REMOVE;
 }
 
+/* Preload passwords from keychain into macmbx config (main thread only).
+ * After this, get_password reads from config and never hits keychain again.
+ * This avoids keychain prompts from background threads. */
+#include "keychain.h"
+static bool passwords_preloaded = false;
+static void preload_passwords(void) {
+  if (passwords_preloaded) return;
+  passwords_preloaded = true;
+
+  MacmbxConf *conf = macmbx_mailer_get_conf(g_mailer);
+  if (!conf) return;
+  char pw[256];
+  MacmbxAccount acct;
+
+  /* Dominant account */
+  if (macmbx_conf_get_dominant(conf, &acct) == 0 && acct.server[0]) {
+    char key[256];
+    snprintf(key, sizeof(key), "%s@%s", acct.username, acct.server);
+    if (keychain_find("gEudora", key, pw, sizeof(pw)) == 0) {
+      macmbx_conf_set(conf, "checking_mail", "saved_password", pw);
+    }
+  }
+
+  /* Personality accounts */
+  int n = macmbx_conf_count_accounts(conf);
+  for (int i = 1; i <= n; i++) {
+    if (macmbx_conf_get_account(conf, i, &acct) == 0 && acct.enabled && acct.server[0]) {
+      char key[256];
+      snprintf(key, sizeof(key), "%s@%s", acct.username, acct.server);
+      if (keychain_find("gEudora", key, pw, sizeof(pw)) == 0) {
+        char sec[32]; snprintf(sec, sizeof(sec), "account_%d", i);
+        macmbx_conf_set(conf, sec, "saved_password", pw);
+      }
+    }
+  }
+}
+
 static void process_check(void) {
   if (!need_check || check_in_progress || !g_mailer) return;
   need_check = false;
   check_in_progress = true;
   eudora_status_set("Checking mail...", "", "Connecting...", -1);
+  /* Preload passwords on main thread so background thread hits cache */
+  preload_passwords();
   /* Add task lines on main thread, then start check thread */
   add_check_tasks_cb(NULL);
   g_thread_new("check-mail", check_thread_func, g_mailer);

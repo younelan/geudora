@@ -251,7 +251,9 @@ static Pop3Session *connect_pop3(MacmbxMailer *m, MacmbxAccount *acct) {
     free(pop); return NULL;
   }
   const char *user = acct->username[0] ? acct->username : acct->email;
+  fprintf(stderr, "connect_pop3: authenticating user='%s' pw_len=%d\n", user, (int)strlen(pw));
   err = crispy_pop3_auth(pop, user, pw);
+  fprintf(stderr, "connect_pop3: auth result=%d reply='%s'\n", err, pop->last_reply ? pop->last_reply : "");
   if (err) {
     fprintf(stderr, "connect_pop3: auth failed for %s\n", user);
     crispy_pop3_close(pop); free(pop); return NULL;
@@ -631,9 +633,13 @@ int macmbx_mailer_check_account(MacmbxMailer *m, int account_index) {
   if (!pop) return -1;
 
   /* Get message count */
-  int msg_count = crispy_pop3_stat(pop);
+  int err2 = crispy_pop3_stat(pop);
+  int msg_count = (err2 == 0) ? pop->msg_count : -1;
+  fprintf(stderr, "check_account[%d]: %s@%s STAT err=%d count=%d\n",
+          account_index, acct.username, acct.server, err2, msg_count);
   if (msg_count <= 0) {
     crispy_pop3_close(pop);
+    free(pop);
     progress(m, msg_count == 0 ? "No new mail" : "STAT failed", 0, 0);
     return msg_count == 0 ? 0 : -1;
   }
@@ -643,9 +649,11 @@ int macmbx_mailer_check_account(MacmbxMailer *m, int account_index) {
 
   /* Open inbox */
   MacmbxNode *in_node = macmbx_store_find_special(m->store, MACMBX_TYPE_IN);
-  if (!in_node) { crispy_pop3_close(pop); return -1; }
+  fprintf(stderr, "check_account[%d]: in_node=%p\n", account_index, (void*)in_node);
+  if (!in_node) { crispy_pop3_close(pop); free(pop); return -1; }
   MacmbxTOC *inbox = macmbx_toc_open(in_node->path);
-  if (!inbox) { crispy_pop3_close(pop); return -1; }
+  fprintf(stderr, "check_account[%d]: inbox=%p path=%s\n", account_index, (void*)inbox, in_node->path);
+  if (!inbox) { crispy_pop3_close(pop); free(pop); return -1; }
 
   int downloaded = 0;
   for (int i = 1; i <= msg_count; i++) {
@@ -654,6 +662,7 @@ int macmbx_mailer_check_account(MacmbxMailer *m, int account_index) {
     /* Download message */
     char *msg = NULL;
     long msgLen = crispy_pop3_retr(pop, i, &msg);
+    fprintf(stderr, "check_account[%d]: RETR %d len=%ld\n", account_index, i, msgLen);
     if (msgLen <= 0 || !msg) { free(msg); continue; }
 
     /* Use Message-ID as LMOS key */
@@ -685,6 +694,8 @@ int macmbx_mailer_check_account(MacmbxMailer *m, int account_index) {
 
     /* Append to inbox */
     int idx = macmbx_append_message(inbox, msg, msgLen, NULL, MACMBX_UNREAD, 3);
+    fprintf(stderr, "check_account[%d]: append msg %d → idx=%d inbox->count=%d\n",
+            account_index, i, idx, inbox->count);
     if (idx >= 0) {
       if (account_index > 0)
         macmbx_tag_personality(inbox, idx, acct.name);
@@ -718,6 +729,9 @@ int macmbx_mailer_check_account(MacmbxMailer *m, int account_index) {
   }
 
   crispy_pop3_close(pop);
+  free(pop);
+  fprintf(stderr, "check_account[%d]: downloaded %d messages, saving TOC\n",
+          account_index, downloaded);
   macmbx_toc_save(inbox);
 
   /* Post-receive: run filters */
