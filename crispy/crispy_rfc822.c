@@ -10,6 +10,7 @@
 #include <stdlib.h>
 #include <string.h>
 #include <ctype.h>
+#include <time.h>
 
 /* RFC822 special characters */
 static const char rfc822_specials[] = "()<>@,;:\\\"[].";
@@ -1176,4 +1177,98 @@ int crispy_rfc822_sort_compare(const char *field,
   }
 
   return 0;
+}
+
+/* ================================================================
+ * Address and date display formatting
+ * ================================================================ */
+
+static bool is_white(char c) { return c == ' ' || c == '\t' || c == '\r' || c == '\n'; }
+
+void crispy_rfc822_beautify_from(char *fromStr) {
+  char *s = fromStr;
+  char *lt, *gt, *start;
+  char buf[256];
+  int len;
+
+  if (!s || !*s) return;
+
+  /* Strip leading/trailing whitespace */
+  while (*s && is_white(*s)) s++;
+  len = (int)strlen(s);
+  while (len > 0 && is_white(s[len - 1])) len--;
+  s[len] = '\0';
+
+  /* "Name <addr>" → "Name" */
+  lt = strchr(s, '<');
+  gt = lt ? strchr(lt, '>') : NULL;
+  if (lt && gt) {
+    char *nameEnd = lt;
+    while (nameEnd > s && is_white(nameEnd[-1])) nameEnd--;
+    if (nameEnd > s) {
+      start = s;
+      if (*start == '"' && nameEnd > start + 1 && nameEnd[-1] == '"') {
+        start++; nameEnd--;
+      }
+      len = (int)(nameEnd - start);
+      if (len > 0 && len < (int)sizeof(buf)) {
+        memcpy(buf, start, len); buf[len] = '\0';
+        strcpy(fromStr, buf);
+        return;
+      }
+    }
+    /* No display name — use address inside <> */
+    start = lt + 1;
+    len = (int)(gt - start);
+    if (len > 0 && len < (int)sizeof(buf)) {
+      memcpy(buf, start, len); buf[len] = '\0';
+      strcpy(fromStr, buf);
+      return;
+    }
+  }
+
+  /* Strip surrounding quotes */
+  if (s[0] == '"' && len > 1 && s[len - 1] == '"') {
+    memmove(s, s + 1, len - 2);
+    s[len - 2] = '\0';
+    len -= 2;
+  }
+
+  if (s != fromStr) {
+    memmove(fromStr, s, len + 1);
+  }
+}
+
+void crispy_rfc822_beautify_date(char *dateStr) {
+  /* Parse and reformat: try to produce "YYYY-MM-DD HH:MM" */
+  CrispyDate d;
+  if (crispy_rfc822_parse_date(dateStr, &d)) {
+    snprintf(dateStr, 64, "%04d-%02d-%02d %02d:%02d",
+             d.year, d.month, d.day, d.hours, d.minutes);
+  }
+  /* If parse fails, leave as-is */
+}
+
+char *crispy_rfc822_date_from_secs(char *buf, size_t bufsize, unsigned long secs) {
+  time_t t = (time_t)secs;
+  struct tm *tm = localtime(&t);
+  if (tm)
+    strftime(buf, bufsize, "%a, %d %b %Y %H:%M:%S %z", tm);
+  else
+    buf[0] = '\0';
+  return buf;
+}
+
+bool crispy_rfc822_is_from_line(const char *line) {
+  if (!line) return false;
+  return strncmp(line, "From ", 5) == 0;
+}
+
+void crispy_rfc822_write_from_line(char *buf, size_t bufsize, const char *sender) {
+  time_t now = time(NULL);
+  char dateStr[64];
+  struct tm *tm = localtime(&now);
+  if (tm) strftime(dateStr, sizeof(dateStr), "%a %b %d %H:%M:%S %Y", tm);
+  else strcpy(dateStr, "Thu Jan  1 00:00:00 1970");
+  snprintf(buf, bufsize, "From %s %s\n", sender ? sender : "unknown", dateStr);
 }

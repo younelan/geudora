@@ -185,4 +185,26 @@ bool crispy_rfc822_subjects_match(const char *subj1, const char *subj2);
 int crispy_rfc822_sort_compare(const char *field,
                                 ImapFetchResult *a, ImapFetchResult *b);
 
+/* ================================================================
+ * Address and date display formatting
+ * ================================================================ */
+
+/* Beautify a From address in place: "Name <addr>" → "Name",
+ * strip quotes, trim whitespace. For display in message lists. */
+void crispy_rfc822_beautify_from(char *fromStr);
+
+/* Beautify a date string in place for display.
+ * Reformats to a clean short form. */
+void crispy_rfc822_beautify_date(char *dateStr);
+
+/* Format seconds-since-epoch as RFC822 date into buf.
+ * Returns buf. */
+char *crispy_rfc822_date_from_secs(char *buf, size_t bufsize, unsigned long secs);
+
+/* Check if a line is an mbox "From " separator line. */
+bool crispy_rfc822_is_from_line(const char *line);
+
+/* Write an mbox "From " separator line into buf. */
+void crispy_rfc822_write_from_line(char *buf, size_t bufsize, const char *sender);
+
 #endif /* CRISPY_RFC822_H */
