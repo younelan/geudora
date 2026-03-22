@@ -7,7 +7,8 @@ BUILD_DIR = build
 LIB_SRC = macmbx.c macmbx_build.c macmbx_compact.c macmbx_ops.c macmbx_store.c \
           macmbx_thread.c macmbx_filter.c macmbx_junk.c macmbx_nicknames.c \
           macmbx_sigstat.c macmbx_vcard.c macmbx_conf.c macmbx_emoji.c \
-          macmbx_concentrator.c macmbx_spell.c macmbx_mailer.c
+          macmbx_concentrator.c macmbx_spell.c macmbx_mailer.c \
+          macmbx_unicode.c macmbx_xml.c
 LIB_OBJ = $(patsubst %.c,$(BUILD_DIR)/%.o,$(LIB_SRC))
 
 all: $(BUILD_DIR) libmacmbx.a
