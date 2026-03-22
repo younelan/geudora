@@ -101,6 +101,11 @@ void geditctrl_clean(GtkWidget *ctrl);
 /* Get/set plain text content */
 gchar *geditctrl_get_text(GtkWidget *ctrl);
 gint geditctrl_get_length(GtkWidget *ctrl);
+
+/* Selection */
+gboolean geditctrl_has_selection(GtkWidget *ctrl);
+gchar *geditctrl_get_selected_text(GtkWidget *ctrl);
+void geditctrl_get_selection_bounds(GtkWidget *ctrl, gint *start, gint *end);
 void geditctrl_set_text(GtkWidget *ctrl, const gchar *text, gint len);
 void geditctrl_insert_text(GtkWidget *ctrl, gint offset, const gchar *text, gint len);
 void geditctrl_delete_range(GtkWidget *ctrl, gint offset, gint length);
@@ -130,5 +135,17 @@ void geditctrl_select_range(GtkWidget *ctrl, gint start, gint end);
 
 /* Reset paragraph formatting at a range */
 void geditctrl_plain_para_at(GtkWidget *ctrl, gint start, gint end);
+
+/* Print rendering: render styled document to a cairo context (for printing) */
+double geditctrl_measure_content(GtkWidget *ctrl, PangoContext *pctx, int width);
+double geditctrl_render_to_cairo(GtkWidget *ctrl, cairo_t *cr,
+                                  PangoContext *pctx,
+                                  double x, double y_start,
+                                  int width, double skip_height,
+                                  double max_height);
+
+/* Get HTML markup for the document (or range). Caller frees with g_free(). */
+gchar *geditctrl_get_html(GtkWidget *ctrl);
+gchar *geditctrl_get_html_range(GtkWidget *ctrl, gint start, gint end);
 
 #endif /* geditCTRL_H */

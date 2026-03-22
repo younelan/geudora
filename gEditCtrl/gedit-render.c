@@ -1,4 +1,5 @@
 #include "gedit-state.h"
+#include "geditctrl.h"
 #include <gdk/gdkcairo.h>
 #include <pango/pangocairo.h>
 
@@ -99,11 +100,26 @@ G_GNUC_INTERNAL void gedit_draw_cb(GtkDrawingArea *area, cairo_t *cr, int width,
   double y = 6.0;
   int avail = MAX(10, width - 12);
 
+  /* Determine visible viewport for clip optimization.
+   * Only render paragraphs that overlap [vis_top, vis_bottom]. */
+  double vis_top = 0, vis_bottom = height;
+  GtkWidget *parent = gtk_widget_get_parent(GTK_WIDGET(area));
+  if (parent && GTK_IS_SCROLLED_WINDOW(parent)) {
+    GtkAdjustment *vadj =
+        gtk_scrolled_window_get_vadjustment(GTK_SCROLLED_WINDOW(parent));
+    if (vadj) {
+      vis_top = gtk_adjustment_get_value(vadj);
+      vis_bottom = vis_top + gtk_adjustment_get_page_size(vadj);
+    }
+  }
+
   gint total = g_utf8_strlen(full, -1);
   gint cur = 0;
+  const gchar *cur_ptr = full; /* running byte pointer — avoids O(n) g_utf8_offset_to_pointer */
   gboolean caret_drawn = FALSE;
+  GList *all_style_runs = gedit_document_get_style_runs(doc);
   while (cur <= total) {
-    const gchar *start_ptr = g_utf8_offset_to_pointer(full, cur);
+    const gchar *start_ptr = cur_ptr;
     if (!start_ptr || *start_ptr == '\0')
       break;
     const gchar *p = start_ptr;
@@ -121,43 +137,45 @@ G_GNUC_INTERNAL void gedit_draw_cb(GtkDrawingArea *area, cairo_t *cr, int width,
 
     /* Draw horizontal rule if this paragraph is marked as HR */
     if (pattr.is_hr) {
-      cairo_set_source_rgb(cr, 0.5, 0.5, 0.5);
-      cairo_set_line_width(cr, 1.0);
-      cairo_move_to(cr, x_base + 6, y + 7);
-      cairo_line_to(cr, x_base + width - 6, y + 7);
-      cairo_stroke(cr);
+      if (y + 14 >= vis_top && y <= vis_bottom) {
+        cairo_set_source_rgb(cr, 0.5, 0.5, 0.5);
+        cairo_set_line_width(cr, 1.0);
+        cairo_move_to(cr, x_base + 6, y + 7);
+        cairo_line_to(cr, x_base + width - 6, y + 7);
+        cairo_stroke(cr);
+      }
       y += 14.0;
       g_free(para_text);
       cur += para_chars;
-      if (*p == '\n')
-        cur += 1;
+      cur_ptr = p;
+      if (*p == '\n') { cur += 1; cur_ptr = g_utf8_next_char(p); }
+      if (y > vis_bottom) break; /* past viewport — stop */
       continue;
     }
 
     /* Draw page break if this paragraph is marked as page break */
     if (pattr.page_break) {
-      /* Draw a dashed line to indicate page break */
-      cairo_set_source_rgb(cr, 0.7, 0.7, 0.7);
-      cairo_set_line_width(cr, 2.0);
-      double dashes[] = {5.0, 5.0};
-      cairo_set_dash(cr, dashes, 2, 0);
-      cairo_move_to(cr, x_base + 6, y + 10);
-      cairo_line_to(cr, x_base + width - 6, y + 10);
-      cairo_stroke(cr);
-      cairo_set_dash(cr, NULL, 0, 0); /* Reset dash */
-      
-      /* Draw "Page Break" text */
-      cairo_set_source_rgb(cr, 0.7, 0.7, 0.7);
-      cairo_move_to(cr, x_base + 10, y + 5);
-      PangoLayout *pb_layout = gtk_widget_create_pango_layout(GTK_WIDGET(area), "Page Break");
-      pango_cairo_show_layout(cr, pb_layout);
-      g_object_unref(pb_layout);
-      
+      if (y + 24 >= vis_top && y <= vis_bottom) {
+        cairo_set_source_rgb(cr, 0.7, 0.7, 0.7);
+        cairo_set_line_width(cr, 2.0);
+        double dashes[] = {5.0, 5.0};
+        cairo_set_dash(cr, dashes, 2, 0);
+        cairo_move_to(cr, x_base + 6, y + 10);
+        cairo_line_to(cr, x_base + width - 6, y + 10);
+        cairo_stroke(cr);
+        cairo_set_dash(cr, NULL, 0, 0);
+        cairo_set_source_rgb(cr, 0.7, 0.7, 0.7);
+        cairo_move_to(cr, x_base + 10, y + 5);
+        PangoLayout *pb_layout = gtk_widget_create_pango_layout(GTK_WIDGET(area), "Page Break");
+        pango_cairo_show_layout(cr, pb_layout);
+        g_object_unref(pb_layout);
+      }
       y += 24.0;
       g_free(para_text);
       cur += para_chars;
-      if (*p == '\n')
-        cur += 1;
+      cur_ptr = p;
+      if (*p == '\n') { cur += 1; cur_ptr = g_utf8_next_char(p); }
+      if (y > vis_bottom) break;
       continue;
     }
 
@@ -231,6 +249,25 @@ G_GNUC_INTERNAL void gedit_draw_cb(GtkDrawingArea *area, cairo_t *cr, int width,
     int pxw, pxh;
     pango_layout_get_pixel_size(pl, &pxw, &pxh);
 
+    /* Skip all drawing if paragraph is above or below the visible viewport */
+    double para_h = pxh > 0 ? pxh : 14;
+    gboolean visible = (y + para_h >= vis_top && y <= vis_bottom);
+
+    if (!visible) {
+      /* Off-screen: skip drawing, just advance y.
+       * Still need caret check for scroll-to-caret. */
+      if (s && s->caret_visible && s->caret >= cur && s->caret <= cur + para_chars)
+        caret_drawn = TRUE; /* caret in off-screen paragraph */
+      g_object_unref(pl);
+      g_free(para_text);
+      cur += para_chars;
+      cur_ptr = p;
+      if (*p == '\n') { cur += 1; cur_ptr = g_utf8_next_char(p); }
+      y += para_h;
+      if (y > vis_bottom) break;
+      continue;
+    }
+
     /* Get the first line's alignment offset so the bullet follows the text */
     int align_offset = 0;
     int line_height = pxh;
@@ -288,8 +325,7 @@ G_GNUC_INTERNAL void gedit_draw_cb(GtkDrawingArea *area, cairo_t *cr, int width,
     cairo_restore(cr);
 
     /* Draw graphics in this paragraph */
-    GList *runs = gedit_document_get_style_runs(doc);
-    for (GList *l = runs; l; l = l->next) {
+    for (GList *l = all_style_runs; l; l = l->next) {
       geditStyleRun *run = (geditStyleRun *)l->data;
       if (run->is_graphic && run->graphic && run->offset >= cur &&
           run->offset < cur + para_chars) {
@@ -374,7 +410,6 @@ G_GNUC_INTERNAL void gedit_draw_cb(GtkDrawingArea *area, cairo_t *cr, int width,
         }
       }
     }
-    g_list_free(runs);
 
     if (s && s->caret_visible) {
       gint c = s->caret;
@@ -401,8 +436,11 @@ G_GNUC_INTERNAL void gedit_draw_cb(GtkDrawingArea *area, cairo_t *cr, int width,
     g_object_unref(pl);
     g_free(para_text);
     cur += para_chars;
-    if (*p == '\n')
+    cur_ptr = p; /* p already points past the paragraph text */
+    if (*p == '\n') {
       cur += 1;
+      cur_ptr = g_utf8_next_char(p);
+    }
     y += pxh > 0 ? pxh : 14;
     if (cur > total)
       break;
@@ -422,6 +460,7 @@ G_GNUC_INTERNAL void gedit_draw_cb(GtkDrawingArea *area, cairo_t *cr, int width,
     cairo_stroke(cr);
   }
 
+  g_list_free(all_style_runs);
   g_free(full);
   cairo_restore(cr);
 }
@@ -447,8 +486,10 @@ G_GNUC_INTERNAL void gedit_scroll_to_caret(GtkWidget *area) {
   gint caret_height = 14;
   double max_y = 6.0;
 
-  while (cur <= g_utf8_strlen(full, -1)) {
-    const gchar *start_ptr = g_utf8_offset_to_pointer(full, cur);
+  gint total_chars = g_utf8_strlen(full, -1);
+  const gchar *cur_ptr2 = full;
+  while (cur <= total_chars) {
+    const gchar *start_ptr = cur_ptr2;
     if (!start_ptr || *start_ptr == '\0')
       break;
 
@@ -477,8 +518,11 @@ G_GNUC_INTERNAL void gedit_scroll_to_caret(GtkWidget *area) {
     g_object_unref(pl);
     g_free(para_text);
     cur += para_chars;
-    if (*p == '\n')
+    cur_ptr2 = p;
+    if (*p == '\n') {
       cur += 1;
+      cur_ptr2 = g_utf8_next_char(p);
+    }
     y += pxh > 0 ? pxh : 14;
   }
 
@@ -552,8 +596,10 @@ G_GNUC_INTERNAL void gedit_doc_changed_cb(geditDocument *doc,
         int width = MAX(10, gtk_widget_get_width(area) - 12);
         gint cur = 0;
 
-        while (cur <= g_utf8_strlen(full, -1)) {
-          const gchar *start_ptr = g_utf8_offset_to_pointer(full, cur);
+        gint total3 = g_utf8_strlen(full, -1);
+        const gchar *cur_ptr3 = full;
+        while (cur <= total3) {
+          const gchar *start_ptr = cur_ptr3;
           if (!start_ptr || *start_ptr == '\0')
             break;
 
@@ -576,8 +622,11 @@ G_GNUC_INTERNAL void gedit_doc_changed_cb(geditDocument *doc,
           g_object_unref(pl);
           g_free(para_text);
           cur += para_chars;
-          if (*p == '\n')
+          cur_ptr3 = p;
+          if (*p == '\n') {
             cur += 1;
+            cur_ptr3 = g_utf8_next_char(p);
+          }
         }
 
         int content_height = (int)y + 6;
@@ -588,4 +637,260 @@ G_GNUC_INTERNAL void gedit_doc_changed_cb(geditDocument *doc,
     }
     gtk_widget_queue_draw(area);
   }
+}
+
+/* ── Print rendering: render document to a cairo context without a widget ── */
+
+/* Create a PangoLayout for print (no widget needed) */
+static PangoLayout *
+print_layout_for_paragraph(PangoContext *pctx, geditDocument *doc,
+                           const gchar *text, int width,
+                           gint char_offset, gint para_chars) {
+  PangoLayout *pl = pango_layout_new(pctx);
+  pango_layout_set_text(pl, text ? text : "", -1);
+  pango_layout_set_width(pl, MAX(10, width) * PANGO_SCALE);
+  pango_layout_set_wrap(pl, PANGO_WRAP_WORD_CHAR);
+
+  PangoTabArray *tabs = pango_tab_array_new(10, TRUE);
+  for (int i = 0; i < 10; i++)
+    pango_tab_array_set_tab(tabs, i, PANGO_TAB_LEFT, (i + 1) * 40 * PANGO_SCALE);
+  pango_layout_set_tabs(pl, tabs);
+  pango_tab_array_free(tabs);
+
+  PangoAttrList *alist =
+      gedit_document_get_attr_list_for_range(doc, char_offset, para_chars);
+  if (alist) {
+    pango_layout_set_attributes(pl, alist);
+    pango_attr_list_unref(alist);
+  }
+  return pl;
+}
+
+/**
+ * geditctrl_measure_content - measure total content height for print pagination.
+ * Returns total height in points.
+ */
+double geditctrl_measure_content(GtkWidget *ctrl, PangoContext *pctx, int width) {
+  if (!ctrl) return 0;
+  geditDocument *doc = geditctrl_get_document(ctrl);
+  if (!doc) return 0;
+
+  gchar *full = gedit_document_get_text(doc);
+  if (!full) return 0;
+
+  double y = 0;
+  gint total = g_utf8_strlen(full, -1);
+  gint cur = 0;
+
+  while (cur <= total) {
+    const gchar *start_ptr = g_utf8_offset_to_pointer(full, cur);
+    if (!start_ptr || *start_ptr == '\0') break;
+    const gchar *p = start_ptr;
+    gint para_chars = 0;
+    while (*p && *p != '\n') { p = g_utf8_next_char(p); para_chars++; }
+    gint para_bytes = (gint)(p - start_ptr);
+    gchar *para_text = g_strndup(start_ptr, para_bytes);
+
+    geditParaAttr pattr;
+    gedit_document_get_para_attr(doc, cur, MAX(1, para_chars), &pattr);
+
+    if (pattr.is_hr) { y += 14.0; }
+    else if (pattr.page_break) { y += 24.0; }
+    else {
+      int w = width;
+      if (pattr.quote_level > 0) w -= (pattr.quote_level * 12);
+      if (pattr.bullet) w = MAX(10, w - 12);
+      PangoLayout *pl = print_layout_for_paragraph(pctx, doc, para_text, w,
+                                                    cur, para_chars);
+      int pxw, pxh;
+      pango_layout_get_pixel_size(pl, &pxw, &pxh);
+      y += pxh > 0 ? pxh : 14;
+      g_object_unref(pl);
+    }
+
+    g_free(para_text);
+    cur += para_chars;
+    if (*p == '\n') cur += 1;
+  }
+  g_free(full);
+  return y;
+}
+
+/**
+ * geditctrl_render_to_cairo - render styled document to a print cairo context.
+ *
+ * @ctrl: the gEditCtrl scrolled window
+ * @cr: cairo context (from GtkPrintContext or PDF surface)
+ * @pctx: PangoContext for font rendering
+ * @x, @y_start: top-left of content area on page
+ * @width: content width in pixels/points
+ * @skip_height: skip this many points of content (for page N > 0)
+ * @max_height: stop rendering after this much height (one page)
+ *
+ * Returns: the content height consumed (may be less than max_height on last page)
+ */
+double geditctrl_render_to_cairo(GtkWidget *ctrl, cairo_t *cr,
+                                  PangoContext *pctx,
+                                  double x, double y_start,
+                                  int width, double skip_height,
+                                  double max_height) {
+  if (!ctrl) return 0;
+  geditDocument *doc = geditctrl_get_document(ctrl);
+  if (!doc) return 0;
+
+  gchar *full = gedit_document_get_text(doc);
+  if (!full) return 0;
+
+  double y_content = 0;       /* tracks position in full content */
+  double y_page = y_start;    /* tracks position on the page */
+  gint total = g_utf8_strlen(full, -1);
+  gint cur = 0;
+  double x_base = x;
+
+  cairo_save(cr);
+  cairo_set_source_rgb(cr, 0, 0, 0);
+
+  while (cur <= total) {
+    const gchar *start_ptr = g_utf8_offset_to_pointer(full, cur);
+    if (!start_ptr || *start_ptr == '\0') break;
+    const gchar *p = start_ptr;
+    gint para_chars = 0;
+    while (*p && *p != '\n') { p = g_utf8_next_char(p); para_chars++; }
+    gint para_bytes = (gint)(p - start_ptr);
+    gchar *para_text = g_strndup(start_ptr, para_bytes);
+
+    geditParaAttr pattr;
+    gedit_document_get_para_attr(doc, cur, MAX(1, para_chars), &pattr);
+
+    double para_h = 0;
+
+    if (pattr.is_hr) {
+      para_h = 14.0;
+      if (y_content + para_h > skip_height &&
+          y_page - y_start + para_h <= max_height) {
+        /* Draw HR */
+        cairo_set_source_rgb(cr, 0.5, 0.5, 0.5);
+        cairo_set_line_width(cr, 1.0);
+        cairo_move_to(cr, x_base + 6, y_page + 7);
+        cairo_line_to(cr, x_base + width - 6, y_page + 7);
+        cairo_stroke(cr);
+        cairo_set_source_rgb(cr, 0, 0, 0);
+        y_page += para_h;
+      }
+    } else if (pattr.page_break) {
+      para_h = 24.0;
+      /* Skip page breaks in print — they're visual only */
+    } else {
+      int w = width;
+      double x_para = x_base + pattr.indent;
+      if (pattr.quote_level > 0) {
+        w -= (pattr.quote_level * 12);
+        x_para += (pattr.quote_level * 12);
+      }
+      if (pattr.bullet) w = MAX(10, w - 12);
+
+      PangoLayout *pl = print_layout_for_paragraph(pctx, doc, para_text, w,
+                                                    cur, para_chars);
+
+      if (pattr.alignment == gedit_ALIGN_CENTER)
+        pango_layout_set_alignment(pl, PANGO_ALIGN_CENTER);
+      else if (pattr.alignment == gedit_ALIGN_RIGHT)
+        pango_layout_set_alignment(pl, PANGO_ALIGN_RIGHT);
+
+      int pxw, pxh;
+      pango_layout_get_pixel_size(pl, &pxw, &pxh);
+      para_h = pxh > 0 ? pxh : 14;
+
+      /* Only render if within this page's visible range */
+      if (y_content + para_h > skip_height &&
+          y_page - y_start + para_h <= max_height) {
+
+        double x_draw = x_para;
+
+        /* Quote marks */
+        if (pattr.quote_level > 0)
+          gedit_draw_quote_marks(cr, x_base + pattr.indent, y_page,
+                                 para_h, pattr.quote_level);
+
+        /* Bullet */
+        if (pattr.bullet != gedit_BULLET_NONE) {
+          PangoLayoutLine *first_line = pango_layout_get_line_readonly(pl, 0);
+          int line_h = (int)para_h;
+          if (first_line) {
+            PangoRectangle l_ext;
+            pango_layout_line_get_pixel_extents(first_line, NULL, &l_ext);
+            line_h = l_ext.height;
+          }
+          double bx = x_draw + 4.0;
+          double by = y_page + (line_h / 2.0);
+          cairo_set_source_rgb(cr, 0, 0, 0);
+          cairo_arc(cr, bx, by, 3.0, 0, 2 * G_PI);
+          cairo_fill(cr);
+          x_draw += 12.0;
+        }
+
+        /* Text */
+        cairo_save(cr);
+        cairo_set_source_rgb(cr, 0, 0, 0);
+        cairo_translate(cr, x_draw, y_page);
+        pango_cairo_show_layout(cr, pl);
+        cairo_restore(cr);
+
+        /* Inline images */
+        GList *runs = gedit_document_get_style_runs(doc);
+        for (GList *l = runs; l; l = l->next) {
+          geditStyleRun *run = (geditStyleRun *)l->data;
+          if (run->is_graphic && run->graphic &&
+              run->offset >= cur && run->offset < cur + para_chars) {
+            const gchar *gr_ptr = g_utf8_offset_to_pointer(full, run->offset);
+            gint rel_bytes = (gint)(gr_ptr - start_ptr);
+            PangoRectangle crect, wrect;
+            pango_layout_get_cursor_pos(pl, rel_bytes, &crect, &wrect);
+            double gx = x_draw + crect.x / (double)PANGO_SCALE;
+            double gy = y_page + crect.y / (double)PANGO_SCALE;
+            int gw = run->graphic->width;
+            int gh = run->graphic->height;
+
+            if (run->graphic->texture) {
+              GdkTexture *tex = run->graphic->texture;
+              int tw = gdk_texture_get_width(tex);
+              int th = gdk_texture_get_height(tex);
+              cairo_surface_t *img = cairo_image_surface_create(
+                  CAIRO_FORMAT_ARGB32, tw, th);
+              guchar *pixels = cairo_image_surface_get_data(img);
+              gsize stride = (gsize)cairo_image_surface_get_stride(img);
+              gdk_texture_download(tex, pixels, stride);
+              cairo_surface_mark_dirty(img);
+              cairo_save(cr);
+              cairo_translate(cr, gx, gy);
+              cairo_scale(cr, (double)gw / tw, (double)gh / th);
+              cairo_set_source_surface(cr, img, 0, 0);
+              cairo_paint(cr);
+              cairo_restore(cr);
+              cairo_surface_destroy(img);
+            }
+          }
+        }
+        g_list_free(runs);
+
+        y_page += para_h;
+      } else if (y_content >= skip_height) {
+        /* Past this page — stop */
+        g_object_unref(pl);
+        g_free(para_text);
+        break;
+      }
+
+      g_object_unref(pl);
+    }
+
+    y_content += para_h;
+    g_free(para_text);
+    cur += para_chars;
+    if (*p == '\n') cur += 1;
+  }
+
+  cairo_restore(cr);
+  g_free(full);
+  return y_page - y_start;
 }

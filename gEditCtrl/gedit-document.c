@@ -1197,6 +1197,7 @@ void gedit_document_insert_graphic(geditDocument *self, gint offset,
   gr->width = width;
   gr->height = height;
   gr->texture = texture;
+  gr->src = NULL;
   if (texture)
     g_object_ref(texture);
 

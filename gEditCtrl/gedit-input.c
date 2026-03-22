@@ -301,13 +301,24 @@ static gint gedit_hit_test_graphic(GtkWidget *area, geditDocument *doc,
     double gx, gy; int gw, gh;
     if (!gedit_find_graphic_rect(area, doc, r->offset, &gx, &gy, &gw, &gh))
       continue;
-    /* Check resize handle at bottom-right corner (12x12 hit zone) */
-    if (mx >= gx + gw - 8 && mx <= gx + gw + 4 &&
-        my >= gy + gh - 8 && my <= gy + gh + 4) {
-      *on_handle = TRUE;
-      hit = r->offset;
-      break;
+
+    /* Check resize handles at all 4 corners (12x12 hit zones) */
+    double corners[][2] = {
+      {gx - 4, gy - 4},           /* top-left */
+      {gx + gw - 8, gy - 4},     /* top-right */
+      {gx - 4, gy + gh - 8},     /* bottom-left */
+      {gx + gw - 8, gy + gh - 8} /* bottom-right */
+    };
+    for (int ci = 0; ci < 4; ci++) {
+      if (mx >= corners[ci][0] && mx <= corners[ci][0] + 12 &&
+          my >= corners[ci][1] && my <= corners[ci][1] + 12) {
+        *on_handle = TRUE;
+        hit = r->offset;
+        break;
+      }
     }
+    if (hit >= 0) break;
+
     /* Check if inside the image bounds */
     if (mx >= gx && mx <= gx + gw && my >= gy && my <= gy + gh) {
       hit = r->offset;
@@ -390,9 +401,11 @@ G_GNUC_INTERNAL void gedit_pressed_cb(GtkGestureClick *gesture, gint n_press,
   double y_off = 6.0;
   int width = MAX(10, gtk_widget_get_width(area) - 12);
   gboolean found = FALSE;
+  gint total = g_utf8_strlen(full, -1);
+  const gchar *cur_ptr = full;
 
-  while (cur <= g_utf8_strlen(full, -1)) {
-    const gchar *start_ptr = g_utf8_offset_to_pointer(full, cur);
+  while (cur <= total) {
+    const gchar *start_ptr = cur_ptr;
     if (!start_ptr || *start_ptr == '\0')
       break;
     const gchar *p = start_ptr;
@@ -404,23 +417,54 @@ G_GNUC_INTERNAL void gedit_pressed_cb(GtkGestureClick *gesture, gint n_press,
     gint para_bytes = (gint)(p - start_ptr);
     gchar *para_text = g_strndup(start_ptr, para_bytes);
     PangoLayout *pl = gedit_layout_for_paragraph(area, para_text, width);
-    /* Apply attrs so image shapes affect paragraph height */
     PangoAttrList *al = gedit_document_get_attr_list_for_range(doc, cur, para_chars);
     if (al) { pango_layout_set_attributes(pl, al); pango_attr_list_unref(al); }
     int pxw, pxh;
     pango_layout_get_pixel_size(pl, &pxw, &pxh);
+    /* Ensure empty lines have a clickable height */
+    if (pxh < 14) pxh = 14;
 
     if ((int)y >= (int)y_off && (int)y < (int)(y_off + pxh)) {
       /* Click is within this paragraph's vertical bounds */
-      int byte_index = 0, trailing = 0;
-      pango_layout_xy_to_index(pl, ix * PANGO_SCALE,
-                               (iy - (int)y_off) * PANGO_SCALE, &byte_index,
-                               &trailing);
-      gint char_index = gedit_byte_to_char(para_text, byte_index) + cur;
+      gint char_index;
+      if (para_chars == 0) {
+        /* Empty line — caret goes to start of this line */
+        char_index = cur;
+      } else {
+        int byte_index = 0, trailing = 0;
+        pango_layout_xy_to_index(pl, ix * PANGO_SCALE,
+                                 (iy - (int)y_off) * PANGO_SCALE, &byte_index,
+                                 &trailing);
+        char_index = gedit_byte_to_char(para_text, byte_index) + cur;
+        if (trailing > 0) char_index++;
 
-      /* If click is beyond the text width, move to end of line */
-      if (ix > pxw) {
-        char_index = cur + para_chars;
+        /* If click is past the end of text on this visual line,
+         * place caret at end of that line (not at nearest char).
+         * Find which visual line was clicked and get its end. */
+        int click_line_y = iy - (int)y_off;
+        PangoLayoutIter *li = pango_layout_get_iter(pl);
+        do {
+          PangoRectangle line_ext;
+          pango_layout_iter_get_line_extents(li, NULL, &line_ext);
+          int ly = line_ext.y / PANGO_SCALE;
+          int lh = line_ext.height / PANGO_SCALE;
+          if (click_line_y >= ly && click_line_y < ly + lh) {
+            /* This is the clicked visual line */
+            int line_x_end = (line_ext.x + line_ext.width) / PANGO_SCALE;
+            if (ix > line_x_end) {
+              /* Past end of line text — go to end of this visual line */
+              PangoLayoutLine *pll = pango_layout_iter_get_line_readonly(li);
+              if (pll) {
+                gint line_end_byte = pll->start_index + pll->length;
+                char_index = gedit_byte_to_char(para_text, line_end_byte) + cur;
+              }
+            }
+            break;
+          }
+        } while (pango_layout_iter_next_line(li));
+        pango_layout_iter_free(li);
+
+        if (char_index > cur + para_chars) char_index = cur + para_chars;
       }
 
       s->caret = char_index;
@@ -436,8 +480,11 @@ G_GNUC_INTERNAL void gedit_pressed_cb(GtkGestureClick *gesture, gint n_press,
     g_object_unref(pl);
     g_free(para_text);
     cur += para_chars;
-    if (*p == '\n')
+    cur_ptr = p;
+    if (*p == '\n') {
       cur += 1;
+      cur_ptr = g_utf8_next_char(p);
+    }
     y_off += pxh > 0 ? pxh : 14;
   }
 
@@ -516,9 +563,11 @@ G_GNUC_INTERNAL void gedit_motion_cb(GtkEventControllerMotion *controller,
   double y_off = 6.0;
   int width = MAX(10, gtk_widget_get_width(area) - 12);
   gboolean found = FALSE;
-  
-  while (cur <= g_utf8_strlen(full, -1)) {
-    const gchar *start_ptr = g_utf8_offset_to_pointer(full, cur);
+  gint dtotal = g_utf8_strlen(full, -1);
+  const gchar *dcur_ptr = full;
+
+  while (cur <= dtotal) {
+    const gchar *start_ptr = dcur_ptr;
     if (!start_ptr || *start_ptr == '\0')
       break;
     const gchar *p = start_ptr;
@@ -534,16 +583,41 @@ G_GNUC_INTERNAL void gedit_motion_cb(GtkEventControllerMotion *controller,
     if (al2) { pango_layout_set_attributes(pl, al2); pango_attr_list_unref(al2); }
     int pxw, pxh;
     pango_layout_get_pixel_size(pl, &pxw, &pxh);
+    if (pxh < 14) pxh = 14;
     if ((int)y >= (int)y_off && (int)y < (int)(y_off + pxh)) {
-      int byte_index = 0, trailing = 0;
-      pango_layout_xy_to_index(pl, ix * PANGO_SCALE,
-                               (iy - (int)y_off) * PANGO_SCALE, &byte_index,
-                               &trailing);
-      gint char_index = gedit_byte_to_char(para_text, byte_index) + cur;
+      gint char_index;
+      if (para_chars == 0) {
+        char_index = cur;
+      } else {
+        int byte_index = 0, trailing = 0;
+        pango_layout_xy_to_index(pl, ix * PANGO_SCALE,
+                                 (iy - (int)y_off) * PANGO_SCALE, &byte_index,
+                                 &trailing);
+        char_index = gedit_byte_to_char(para_text, byte_index) + cur;
+        if (trailing > 0) char_index++;
 
-      /* If drag is beyond the text width, move to end of line */
-      if (ix > pxw) {
-        char_index = cur + para_chars;
+        /* Past end of visual line → end of that line */
+        int click_line_y = iy - (int)y_off;
+        PangoLayoutIter *dli = pango_layout_get_iter(pl);
+        do {
+          PangoRectangle dle;
+          pango_layout_iter_get_line_extents(dli, NULL, &dle);
+          int dly = dle.y / PANGO_SCALE;
+          int dlh = dle.height / PANGO_SCALE;
+          if (click_line_y >= dly && click_line_y < dly + dlh) {
+            int lxe = (dle.x + dle.width) / PANGO_SCALE;
+            if (ix > lxe) {
+              PangoLayoutLine *pll = pango_layout_iter_get_line_readonly(dli);
+              if (pll)
+                char_index = gedit_byte_to_char(para_text,
+                    pll->start_index + pll->length) + cur;
+            }
+            break;
+          }
+        } while (pango_layout_iter_next_line(dli));
+        pango_layout_iter_free(dli);
+
+        if (char_index > cur + para_chars) char_index = cur + para_chars;
       }
 
       s->sel_end = char_index;
@@ -557,8 +631,11 @@ G_GNUC_INTERNAL void gedit_motion_cb(GtkEventControllerMotion *controller,
     g_object_unref(pl);
     g_free(para_text);
     cur += para_chars;
-    if (*p == '\n')
+    dcur_ptr = p;
+    if (*p == '\n') {
       cur += 1;
+      dcur_ptr = g_utf8_next_char(p);
+    }
     y_off += pxh > 0 ? pxh : 14;
   }
 

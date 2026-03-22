@@ -14,6 +14,7 @@ typedef struct {
   gint width;  /* pixels */
   gint height; /* pixels */
   GdkTexture *texture;
+  gchar *src;  /* original source URL or file path (for serialization) */
 } geditGraphic;
 
 typedef struct {

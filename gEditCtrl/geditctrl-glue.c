@@ -63,6 +63,50 @@ gchar *geditctrl_get_text(GtkWidget *ctrl) {
   return doc ? gedit_document_get_text(doc) : NULL;
 }
 
+gboolean geditctrl_has_selection(GtkWidget *ctrl) {
+  if (!ctrl || !GTK_IS_SCROLLED_WINDOW(ctrl)) return FALSE;
+  GtkWidget *area = gtk_scrolled_window_get_child(GTK_SCROLLED_WINDOW(ctrl));
+  GEditCtrlState *s = area ? gedit_state_for_area(area) : NULL;
+  return s && s->sel_start != s->sel_end;
+}
+
+gchar *geditctrl_get_selected_text(GtkWidget *ctrl) {
+  if (!ctrl || !GTK_IS_SCROLLED_WINDOW(ctrl)) return NULL;
+  GtkWidget *area = gtk_scrolled_window_get_child(GTK_SCROLLED_WINDOW(ctrl));
+  GEditCtrlState *s = area ? gedit_state_for_area(area) : NULL;
+  if (!s || s->sel_start == s->sel_end) return NULL;
+  geditDocument *doc = geditctrl_get_document(ctrl);
+  if (!doc) return NULL;
+  gint a = MIN(s->sel_start, s->sel_end);
+  gint b = MAX(s->sel_start, s->sel_end);
+  return gedit_document_get_text_range(doc, a, b - a);
+}
+
+void geditctrl_get_selection_bounds(GtkWidget *ctrl, gint *start, gint *end) {
+  if (start) *start = 0;
+  if (end) *end = 0;
+  if (!ctrl || !GTK_IS_SCROLLED_WINDOW(ctrl)) return;
+  GtkWidget *area = gtk_scrolled_window_get_child(GTK_SCROLLED_WINDOW(ctrl));
+  GEditCtrlState *s = area ? gedit_state_for_area(area) : NULL;
+  if (!s) return;
+  if (start) *start = MIN(s->sel_start, s->sel_end);
+  if (end) *end = MAX(s->sel_start, s->sel_end);
+}
+
+gchar *geditctrl_get_html(GtkWidget *ctrl) {
+  if (!ctrl) return NULL;
+  geditDocument *doc = geditctrl_get_document(ctrl);
+  if (!doc) return NULL;
+  gint len = gedit_document_get_length(doc);
+  return gedit_document_get_markup(doc, 0, len);
+}
+
+gchar *geditctrl_get_html_range(GtkWidget *ctrl, gint start, gint end) {
+  if (!ctrl) return NULL;
+  geditDocument *doc = geditctrl_get_document(ctrl);
+  return doc ? gedit_document_get_markup(doc, start, end) : NULL;
+}
+
 gint geditctrl_get_length(GtkWidget *ctrl) {
   if (!ctrl) return 0;
   geditDocument *doc = geditctrl_get_document(ctrl);
@@ -1163,8 +1207,51 @@ void gedit_document_insert_markup(geditDocument *self, gint offset,
         }
         /* If no closing tag found, fall through to ignore */
       }
+      /* <img src="..." width="W" height="H"> — record for Pass 2 */
+      else if (g_ascii_strncasecmp(tag_name, "img", name_len) == 0 && name_len == 3 && !is_closing) {
+        gchar *tag_str = g_strndup(p, (end - p) + 1);
+        gchar *src_val = NULL;
+        int img_w = 0, img_h = 0;
+
+        /* Parse src= */
+        const gchar *src_attr = g_strstr_len(tag_str, -1, "src=");
+        if (!src_attr) src_attr = g_strstr_len(tag_str, -1, "SRC=");
+        if (src_attr) {
+          src_attr += 4;
+          char q = *src_attr;
+          if (q == '"' || q == '\'') {
+            src_attr++;
+            const gchar *src_end = strchr(src_attr, q);
+            if (src_end) src_val = g_strndup(src_attr, src_end - src_attr);
+          }
+        }
+        const gchar *w_attr = g_strstr_len(tag_str, -1, "width=");
+        if (!w_attr) w_attr = g_strstr_len(tag_str, -1, "WIDTH=");
+        if (w_attr) { w_attr += 6; if (*w_attr == '"') w_attr++; img_w = atoi(w_attr); }
+        const gchar *h_attr = g_strstr_len(tag_str, -1, "height=");
+        if (!h_attr) h_attr = g_strstr_len(tag_str, -1, "HEIGHT=");
+        if (h_attr) { h_attr += 7; if (*h_attr == '"') h_attr++; img_h = atoi(h_attr); }
+
+        /* Insert a U+FFFC placeholder and record image info via a span */
+        g_string_append(plain, "\xef\xbf\xbc");
+        MarkupStyleSpan span = {0};
+        span.start = plain->len - 3; /* byte offset of the placeholder */
+        span.end = plain->len;
+        span.bold = -1; span.italic = -1; span.underline = -1;
+        span.font_size = 0;
+        /* Encode image info: stash src/w/h in link_url with "img:" prefix */
+        span.link_url = g_strdup_printf("img:%d:%d:%s",
+                                         img_w, img_h, src_val ? src_val : "");
+        g_array_append_val(spans, span);
+
+        g_free(src_val);
+        g_free(tag_str);
+        p = end + 1;
+        continue;
+      }
+
       /* Skip <tr>, <td>, <th> and closing tags that appear outside a <table> block */
-      /* Ignore: html, head, body, title, meta, link, img, tr, td, th, etc. */
+      /* Ignore: html, head, body, title, meta, link, tr, td, th, etc. */
 
       p = end + 1;
       continue;
@@ -1295,9 +1382,61 @@ void gedit_document_insert_markup(geditDocument *self, gint offset,
                                       sp->font_size > 0 ? sp->font_size : -1);
       }
 
-      /* Links */
+      /* Links or images (images encoded as "img:W:H:src") */
       if (sp->link_url) {
-        gedit_document_set_link(self, sp_off, sp_len, sp->link_url);
+        if (g_str_has_prefix(sp->link_url, "img:")) {
+          /* Parse "img:W:H:src" */
+          int iw = 0, ih = 0;
+          const char *ip = sp->link_url + 4;
+          iw = (int)strtol(ip, (char **)&ip, 10);
+          if (*ip == ':') ip++;
+          ih = (int)strtol(ip, (char **)&ip, 10);
+          if (*ip == ':') ip++;
+          const char *isrc = ip;
+
+          /* Delete the U+FFFC placeholder char at sp_off */
+          gedit_document_delete_range(self, sp_off, 1);
+          /* Adjust subsequent span offsets */
+          for (guint j = i + 1; j < spans->len; j++) {
+            MarkupStyleSpan *nsp = &g_array_index(spans, MarkupStyleSpan, j);
+            if (nsp->start > sp->start) { nsp->start--; nsp->end--; }
+          }
+
+          /* Load texture from path */
+          GdkTexture *tex = NULL;
+          if (isrc[0]) {
+            GFile *file = g_file_new_for_path(isrc);
+            if (!g_file_query_exists(file, NULL)) {
+              g_object_unref(file);
+              file = g_file_new_for_uri(isrc);
+            }
+            if (g_file_query_exists(file, NULL)) {
+              GError *err = NULL;
+              tex = gdk_texture_new_from_file(file, &err);
+              if (err) g_error_free(err);
+            }
+            g_object_unref(file);
+          }
+
+          if (tex) {
+            if (iw <= 0) iw = gdk_texture_get_width(tex);
+            if (ih <= 0) ih = gdk_texture_get_height(tex);
+            gedit_document_insert_graphic(self, sp_off, tex, iw, ih);
+            /* Store src path */
+            GList *all_runs = gedit_document_get_style_runs(self);
+            for (GList *rl = all_runs; rl; rl = rl->next) {
+              geditStyleRun *r = (geditStyleRun *)rl->data;
+              if (r->is_graphic && r->graphic && r->offset == sp_off) {
+                r->graphic->src = g_strdup(isrc);
+                break;
+              }
+            }
+            g_list_free(all_runs);
+            g_object_unref(tex);
+          }
+        } else {
+          gedit_document_set_link(self, sp_off, sp_len, sp->link_url);
+        }
         g_free(sp->link_url);
       }
 
@@ -1520,6 +1659,12 @@ gchar *gedit_document_get_markup(geditDocument *self, gint start, gint end) {
   GList *runs = gedit_document_get_style_runs(self);
   GString *html = g_string_new(NULL);
 
+  /* Build a sorted array of run boundaries within [start, end) for O(1) lookup.
+   * Between runs, text has default style (no bold/italic/etc). */
+
+  /* Pre-compute UTF-8 byte offset for start */
+  const gchar *text_at_start = g_utf8_offset_to_pointer(full_text, start);
+
   /* State tracking for open tags */
   gboolean cur_bold = FALSE, cur_italic = FALSE, cur_underline = FALSE;
   gboolean cur_has_color = FALSE;
@@ -1527,118 +1672,118 @@ gchar *gedit_document_get_markup(geditDocument *self, gint start, gint end) {
   gchar *cur_font_family = NULL;
   gchar *cur_link = NULL;
 
-  /* Walk character by character, checking style at each position */
+  /* Walk by runs: for each position, find the covering run (if any).
+   * Use run list iterator to avoid O(n) scan per position. */
+  GList *run_iter = runs;
+  const gchar *cp = text_at_start;
   gint pos = start;
-  while (pos < end) {
-    /* Find style run covering this position */
-    geditStyleRun style = {0};
-    gedit_document_get_style_at(self, pos, &style);
 
-    /* Determine how far this style extends */
-    gint run_end = pos + (style.length > 0 ? style.length : 1);
-    if (run_end > end) run_end = end;
-    /* Clamp: find the actual end from the run list */
-    for (GList *l = runs; l; l = l->next) {
-      geditStyleRun *r = (geditStyleRun *)l->data;
-      if (r->offset <= pos && r->offset + r->length > pos) {
+  while (pos < end) {
+    /* Advance run_iter to the first run that covers or is past pos */
+    while (run_iter) {
+      geditStyleRun *r = (geditStyleRun *)run_iter->data;
+      if (r->offset + r->length > pos) break;
+      run_iter = run_iter->next;
+    }
+
+    /* Check if current run covers pos */
+    geditStyleRun *cur_run = NULL;
+    gint run_end = end;
+    if (run_iter) {
+      geditStyleRun *r = (geditStyleRun *)run_iter->data;
+      if (r->offset <= pos) {
+        cur_run = r;
         run_end = r->offset + r->length;
         if (run_end > end) run_end = end;
-        break;
+      } else {
+        /* Gap before next run — unstyled text until run starts */
+        run_end = r->offset;
+        if (run_end > end) run_end = end;
       }
     }
-    if (run_end <= pos) run_end = pos + 1;
 
-    /* Close tags that no longer apply */
-    if (cur_link && (!style.link_url || strcmp(cur_link, style.link_url) != 0)) {
-      g_string_append(html, "</a>");
-      g_free(cur_link); cur_link = NULL;
+    /* Close tags for style changes */
+    gboolean rb = cur_run ? cur_run->bold : FALSE;
+    gboolean ri = cur_run ? cur_run->italic : FALSE;
+    gboolean ru = cur_run ? cur_run->underline : FALSE;
+    gint rfs = cur_run ? cur_run->font_size : 0;
+    const gchar *rff = cur_run ? cur_run->font_family : NULL;
+    const gchar *rlu = cur_run ? cur_run->link_url : NULL;
+    gboolean r_has_color = FALSE;
+    if (cur_run && (cur_run->color.red > 0.01 || cur_run->color.green > 0.01 ||
+                    cur_run->color.blue > 0.01))
+      r_has_color = TRUE;
+
+    if (cur_link && (!rlu || strcmp(cur_link, rlu) != 0)) {
+      g_string_append(html, "</a>"); g_free(cur_link); cur_link = NULL;
     }
-    if (cur_underline && !style.underline) {
-      g_string_append(html, "</u>");
-      cur_underline = FALSE;
+    if (cur_underline && !ru) { g_string_append(html, "</u>"); cur_underline = FALSE; }
+    if (cur_italic && !ri) { g_string_append(html, "</i>"); cur_italic = FALSE; }
+    if (cur_bold && !rb) { g_string_append(html, "</b>"); cur_bold = FALSE; }
+    if (cur_font_size && cur_font_size != rfs) {
+      g_string_append(html, "</span>"); cur_font_size = 0;
     }
-    if (cur_italic && !style.italic) {
-      g_string_append(html, "</i>");
-      cur_italic = FALSE;
+    if (cur_font_family && (!rff || strcmp(cur_font_family, rff) != 0)) {
+      g_string_append(html, "</span>"); g_free(cur_font_family); cur_font_family = NULL;
     }
-    if (cur_bold && !style.bold) {
-      g_string_append(html, "</b>");
-      cur_bold = FALSE;
-    }
-    if (cur_font_size && cur_font_size != style.font_size) {
-      g_string_append(html, "</span>");
-      cur_font_size = 0;
-    }
-    if (cur_font_family && (!style.font_family || strcmp(cur_font_family, style.font_family) != 0)) {
-      g_string_append(html, "</span>");
-      g_free(cur_font_family); cur_font_family = NULL;
-    }
-    if (cur_has_color) {
-      /* Check if color reset to black/default */
-      gboolean is_default = (style.color.red < 0.01 && style.color.green < 0.01 &&
-                              style.color.blue < 0.01);
-      if (is_default) {
-        g_string_append(html, "</span>");
-        cur_has_color = FALSE;
-      }
+    if (cur_has_color && !r_has_color) {
+      g_string_append(html, "</span>"); cur_has_color = FALSE;
     }
 
     /* Open new tags */
-    if (style.font_family && style.font_family[0] && !cur_font_family) {
-      g_string_append_printf(html, "<span style=\"font-family:%s\">", style.font_family);
-      cur_font_family = g_strdup(style.font_family);
+    if (rff && rff[0] && !cur_font_family) {
+      g_string_append_printf(html, "<span style=\"font-family:%s\">", rff);
+      cur_font_family = g_strdup(rff);
     }
-    if (style.font_size > 0 && style.font_size != cur_font_size) {
+    if (rfs > 0 && rfs != cur_font_size) {
       if (cur_font_size) g_string_append(html, "</span>");
-      g_string_append_printf(html, "<span style=\"font-size:%dpt\">", style.font_size);
-      cur_font_size = style.font_size;
+      g_string_append_printf(html, "<span style=\"font-size:%dpt\">", rfs);
+      cur_font_size = rfs;
     }
-    if (!cur_has_color && (style.color.red > 0.01 || style.color.green > 0.01 || style.color.blue > 0.01)) {
+    if (r_has_color && !cur_has_color) {
       g_string_append_printf(html, "<span style=\"color:#%02x%02x%02x\">",
-        (int)(style.color.red * 255), (int)(style.color.green * 255), (int)(style.color.blue * 255));
+        (int)(cur_run->color.red * 255), (int)(cur_run->color.green * 255),
+        (int)(cur_run->color.blue * 255));
       cur_has_color = TRUE;
     }
-    if (style.bold && !cur_bold) {
-      g_string_append(html, "<b>");
-      cur_bold = TRUE;
-    }
-    if (style.italic && !cur_italic) {
-      g_string_append(html, "<i>");
-      cur_italic = TRUE;
-    }
-    if (style.underline && !cur_underline) {
-      g_string_append(html, "<u>");
-      cur_underline = TRUE;
-    }
-    if (style.link_url && !cur_link) {
-      g_string_append_printf(html, "<a href=\"%s\">", style.link_url);
-      cur_link = g_strdup(style.link_url);
+    if (rb && !cur_bold) { g_string_append(html, "<b>"); cur_bold = TRUE; }
+    if (ri && !cur_italic) { g_string_append(html, "<i>"); cur_italic = TRUE; }
+    if (ru && !cur_underline) { g_string_append(html, "<u>"); cur_underline = TRUE; }
+    if (rlu && !cur_link) {
+      g_string_append_printf(html, "<a href=\"%s\">", rlu);
+      cur_link = g_strdup(rlu);
     }
 
-    /* Output text content with HTML escaping */
-    for (gint i = pos; i < run_end && i < end; i++) {
-      /* Handle UTF-8: full_text is UTF-8, index by bytes won't work.
-         Use g_utf8 functions to walk correctly. */
-      char c = full_text[i]; /* simplified — works for ASCII portion */
-      if (c == '\n') {
-        g_string_append(html, "<br>\n");
-      } else if (c == '<') {
-        g_string_append(html, "&lt;");
-      } else if (c == '>') {
-        g_string_append(html, "&gt;");
-      } else if (c == '&') {
-        g_string_append(html, "&amp;");
-      } else if (c == '"') {
-        g_string_append(html, "&quot;");
-      } else {
-        g_string_append_c(html, c);
+    /* Emit content for this span */
+    if (cur_run && cur_run->is_graphic && cur_run->graphic) {
+      const char *src = cur_run->graphic->src ? cur_run->graphic->src : "";
+      g_string_append_printf(html, "<img src=\"%s\" width=\"%d\" height=\"%d\">",
+                             src, cur_run->graphic->width, cur_run->graphic->height);
+      /* Skip the U+FFFC char */
+      cp = g_utf8_next_char(cp);
+    } else {
+      /* Output text with HTML escaping — walk UTF-8 chars */
+      for (gint ci = pos; ci < run_end; ci++) {
+        gunichar uc = g_utf8_get_char(cp);
+        if (uc == '\n') g_string_append(html, "<br>\n");
+        else if (uc == '<') g_string_append(html, "&lt;");
+        else if (uc == '>') g_string_append(html, "&gt;");
+        else if (uc == '&') g_string_append(html, "&amp;");
+        else if (uc == '"') g_string_append(html, "&quot;");
+        else if (uc == 0xFFFC) { /* skip */ }
+        else {
+          gchar buf[6];
+          gint blen = g_unichar_to_utf8(uc, buf);
+          g_string_append_len(html, buf, blen);
+        }
+        cp = g_utf8_next_char(cp);
       }
     }
 
     pos = run_end;
   }
 
-  /* Close any remaining open tags (reverse order) */
+  /* Close remaining open tags */
   if (cur_link) { g_string_append(html, "</a>"); g_free(cur_link); }
   if (cur_underline) g_string_append(html, "</u>");
   if (cur_italic) g_string_append(html, "</i>");
@@ -1647,6 +1792,7 @@ gchar *gedit_document_get_markup(geditDocument *self, gint start, gint end) {
   if (cur_font_family) { g_string_append(html, "</span>"); g_free(cur_font_family); }
   if (cur_has_color) g_string_append(html, "</span>");
 
+  g_list_free(runs);
   g_free(full_text);
   return g_string_free(html, FALSE);
 }
