@@ -25,6 +25,8 @@ ADVISED OF THE POSSIBILITY OF SUCH DAMAGE. */
 
 #include "fileutil.h"
 #include "comp.h"
+#include "print.h"
+#include "../crispy/crispy_msg.h"
 /* sendmail.h removed — crispy_smtp handles SMTP, HeadSpec now in comp.h */
 #include "MyRes.h"
 #define SEND_ITEM 100
@@ -275,15 +277,45 @@ static void on_comp_image_selected(GObject *src, GAsyncResult *res, gpointer ud)
   if (file) {
     char *path = g_file_get_path(file);
     if (path) {
-      GdkPixbuf *pixbuf = gdk_pixbuf_new_from_file(path, NULL);
+      /* Copy image to Embedded/ folder via macmbx */
+      extern MacmbxStore *eudora_get_store(void);
+      MacmbxStore *store = eudora_get_store();
+      char *rel_path = NULL;
+      char *abs_path = NULL;
+      if (store) {
+        rel_path = macmbx_store_embed_file(store, path);
+        if (rel_path)
+          abs_path = macmbx_store_resolve_embedded(store, rel_path);
+      }
+
+      const char *load_path = abs_path ? abs_path : path;
+      GdkPixbuf *pixbuf = gdk_pixbuf_new_from_file(load_path, NULL);
       if (pixbuf) {
         int w = gdk_pixbuf_get_width(pixbuf);
         int h = gdk_pixbuf_get_height(pixbuf);
-        /* Scale down if too large */
         if (w > 640) { h = h * 640 / w; w = 640; }
         geditctrl_insert_image((GtkWidget *)ud, pixbuf, w, h);
+
+        /* Store the embedded path on the graphic for serialization */
+        if (abs_path) {
+          geditDocument *doc = geditctrl_get_document((GtkWidget *)ud);
+          GList *runs = gedit_document_get_style_runs(doc);
+          /* Find the just-inserted graphic (last one) */
+          geditStyleRun *last_gr = NULL;
+          for (GList *l = runs; l; l = l->next) {
+            geditStyleRun *r = (geditStyleRun *)l->data;
+            if (r->is_graphic && r->graphic)
+              last_gr = r;
+          }
+          if (last_gr && last_gr->graphic)
+            last_gr->graphic->src = g_strdup(abs_path);
+          g_list_free(runs);
+        }
+
         g_object_unref(pixbuf);
       }
+      g_free(rel_path);
+      g_free(abs_path);
       g_free(path);
     }
     g_object_unref(file);
@@ -618,6 +650,13 @@ static void on_comp_send_clicked(GtkButton *btn, gpointer ud) {
 }
 
 /* Save draft callback — saves and keeps window open */
+static void on_comp_print_clicked(GtkButton *btn, gpointer ud) {
+  (void)ud;
+  MyWindowPtr win = g_object_get_data(G_OBJECT(btn), "mywindow");
+  if (win)
+    PrintOneMessage(win, false, false);
+}
+
 static void on_comp_save_clicked(GtkButton *btn, gpointer ud) {
   (void)btn;
   MessHandle messH = (MessHandle)ud;
@@ -776,6 +815,11 @@ MyWindowPtr OpenComp(MacmbxTOC * tocH, int sumNum, GtkWidget *winWP,
   gtk_widget_set_tooltip_text(emoji_btn, "Insert Emoticon");
   gtk_widget_set_can_focus(emoji_btn, FALSE);
   gtk_box_append(GTK_BOX(toolbar), emoji_btn);
+
+  /* Print button */
+  GtkWidget *print_btn = gtk_button_new_from_icon_name("printer-symbolic");
+  gtk_widget_set_tooltip_text(print_btn, "Print message");
+  gtk_box_append(GTK_BOX(toolbar), print_btn);
 
   gtk_box_append(GTK_BOX(toolbar), gtk_separator_new(GTK_ORIENTATION_VERTICAL));
 
@@ -1005,9 +1049,10 @@ MyWindowPtr OpenComp(MacmbxTOC * tocH, int sumNum, GtkWidget *winWP,
 
   /* Parse headers from the buffer */
   static const char *header_labels[] = {
-    "To:", "From:", "Subject:", "Cc:", "Bcc:", "Attachments:", NULL
+    "To:", "From:", "Subject:", "Cc:", "Bcc:", "Attachments:",
+    "X-Eudora-Attachments:", NULL
   };
-  char *header_values[6] = {NULL, NULL, NULL, NULL, NULL, NULL};
+  char *header_values[7] = {NULL, NULL, NULL, NULL, NULL, NULL, NULL};
   char *body_start = NULL;
 
   if (buffer) {
@@ -1176,9 +1221,13 @@ MyWindowPtr OpenComp(MacmbxTOC * tocH, int sumNum, GtkWidget *winWP,
 
   gtk_grid_attach(GTK_GRID(header_grid), attach_box, 1, 5, 1, 1);
 
-  /* Populate existing attachments from header */
-  if (header_values[5]) {
-    char **parts = g_strsplit(header_values[5], ",", -1);
+  /* Populate existing attachments from headers.
+   * Attachments: uses comma separator (legacy Eudora).
+   * X-Eudora-Attachments: uses semicolon separator (gEudora). */
+  const char *attHdr = header_values[6] ? header_values[6] : header_values[5];
+  const char *attSep = header_values[6] ? ";" : ",";
+  if (attHdr) {
+    char **parts = g_strsplit(attHdr, attSep, -1);
     for (int i = 0; parts && parts[i]; i++) {
       char *trimmed = g_strstrip(g_strdup(parts[i]));
       if (*trimmed)
@@ -1186,8 +1235,9 @@ MyWindowPtr OpenComp(MacmbxTOC * tocH, int sumNum, GtkWidget *winWP,
       g_free(trimmed);
     }
     g_strfreev(parts);
-    g_free(header_values[5]);
   }
+  g_free(header_values[5]);
+  g_free(header_values[6]);
 
   /* Wire the toolbar attach button to the same flow */
   g_signal_connect(attach_btn, "clicked",
@@ -1200,6 +1250,10 @@ MyWindowPtr OpenComp(MacmbxTOC * tocH, int sumNum, GtkWidget *winWP,
   /* Attach emoji popover to the menu button */
   GtkWidget *emo_popover = create_emoji_popover(body_ctrl);
   gtk_menu_button_set_popover(GTK_MENU_BUTTON(emoji_btn), emo_popover);
+
+  /* Wire print button */
+  g_object_set_data(G_OBJECT(print_btn), "mywindow", win);
+  g_signal_connect(print_btn, "clicked", G_CALLBACK(on_comp_print_clicked), NULL);
 
   g_object_set_data(G_OBJECT(winWP), "comp-to", header_entries[0]);
   g_object_set_data(G_OBJECT(winWP), "comp-from", header_entries[1]);
@@ -1243,7 +1297,27 @@ MyWindowPtr OpenComp(MacmbxTOC * tocH, int sumNum, GtkWidget *winWP,
       if (*body_start) {
         char *stop = buffer + strlen(buffer);
         char *bodyText = g_strndup(body_start, stop - body_start);
-        gedit_document_insert_text(doc, 0, bodyText);
+
+        /* Check if this was saved as HTML (Content-Type: text/html) */
+        bool isHTML = false;
+        if (buffer) {
+          const char *ct = g_strstr_len(buffer, body_start - buffer,
+                                         "Content-Type: text/html");
+          if (!ct) ct = g_strstr_len(buffer, body_start - buffer,
+                                      "content-type: text/html");
+          if (ct) isHTML = true;
+        }
+        /* Also auto-detect HTML tags */
+        if (!isHTML && bodyText[0] == '<')
+          isHTML = (g_strstr_len(bodyText, 100, "<b>") ||
+                    g_strstr_len(bodyText, 100, "<i>") ||
+                    g_strstr_len(bodyText, 100, "<img") ||
+                    g_strstr_len(bodyText, 100, "<br>"));
+
+        if (isHTML)
+          gedit_document_insert_markup(doc, 0, bodyText);
+        else
+          gedit_document_insert_text(doc, 0, bodyText);
         g_free(bodyText);
       }
     }
@@ -1277,6 +1351,7 @@ MyWindowPtr OpenComp(MacmbxTOC * tocH, int sumNum, GtkWidget *winWP,
 
   theme_setup_headerbar(winWP, title);
   gtk_window_set_default_size(GTK_WINDOW(winWP), 640, 520);
+  SetWindowMyWindowPtr(winWP, win);
   AttachSelect(messH);
 
   /* Connect close-request for WannaSave dialog (like original CompClose) */
@@ -1704,7 +1779,12 @@ int WriteComp(MessHandle messH, short refN, long offset) {
     return -1;
 
   geditDocument *doc = geditctrl_get_document(win->pte);
-  char *body = gedit_document_get_text(doc);
+  /* Save as HTML to preserve formatting, images, styles */
+  gint docLen = gedit_document_get_length(doc);
+  char *body = gedit_document_get_markup(doc, 0, docLen);
+  bool bodyIsHTML = (body && strstr(body, "<") != NULL);
+  if (!body)
+    body = gedit_document_get_text(doc);
 
   /* Gather headers from the widgets */
   GtkWidget *winWP = win->window;
@@ -1731,17 +1811,41 @@ int WriteComp(MessHandle messH, short refN, long offset) {
   char dateStr[64];
   strftime(dateStr, sizeof(dateStr), "%a %b %d %H:%M:%S %Y", localtime(&now));
 
+  /* Collect attachment paths for persistence */
+  GString *attachHdr = g_string_new("");
+  GtkWidget *attach_flow = g_object_get_data(G_OBJECT(winWP), "comp-attach-flow");
+  if (attach_flow) {
+    GtkWidget *child = gtk_widget_get_first_child(attach_flow);
+    while (child) {
+      GtkWidget *chip = gtk_flow_box_child_get_child(GTK_FLOW_BOX_CHILD(child));
+      if (chip) {
+        const char *apath = g_object_get_data(G_OBJECT(chip), "attach-path");
+        if (apath && apath[0]) {
+          if (attachHdr->len > 0) g_string_append_c(attachHdr, ';');
+          g_string_append(attachHdr, apath);
+        }
+      }
+      child = gtk_widget_get_next_sibling(child);
+    }
+  }
+
   /* Build headers first so we can measure bodyOffset */
-  char *headers = g_strdup_printf(
-      "From %s %s\r\n"
-      "To: %s\r\n"
-      "From: %s\r\n"
-      "Subject: %s\r\n"
-      "Cc: %s\r\n"
-      "Bcc: %s\r\n"
-      "\r\n",
-      from[0] ? from : "user", dateStr,
-      to, from, subject, cc, bcc);
+  GString *hdrBuf = g_string_new("");
+  g_string_append_printf(hdrBuf, "From %s %s\r\n",
+      from[0] ? from : "user", dateStr);
+  g_string_append_printf(hdrBuf, "To: %s\r\n", to);
+  g_string_append_printf(hdrBuf, "From: %s\r\n", from);
+  g_string_append_printf(hdrBuf, "Subject: %s\r\n", subject);
+  g_string_append_printf(hdrBuf, "Cc: %s\r\n", cc);
+  g_string_append_printf(hdrBuf, "Bcc: %s\r\n", bcc);
+  g_string_append(hdrBuf, bodyIsHTML
+      ? "Content-Type: text/html; charset=utf-8\r\n"
+      : "Content-Type: text/plain; charset=utf-8\r\n");
+  if (attachHdr->len > 0)
+    g_string_append_printf(hdrBuf, "X-Eudora-Attachments: %s\r\n", attachHdr->str);
+  g_string_append(hdrBuf, "\r\n");
+  g_string_free(attachHdr, TRUE);
+  char *headers = g_string_free(hdrBuf, FALSE);
 
   long hdr_len = strlen(headers);
   char *msg = g_strdup_printf("%s%s\r\n", headers, body ? body : "");
@@ -1773,6 +1877,8 @@ int WriteComp(MessHandle messH, short refN, long offset) {
       g_strlcpy(tocH->msgs[sumNum].from, to,
                  sizeof(tocH->msgs[sumNum].from));
     tocH->msgs[sumNum].seconds = (unsigned long)time(NULL);
+    if (bodyIsHTML)
+      SetMessOpt(messH, OPT_HTML);
     InvalSum(tocH, sumNum);
   }
 
@@ -2114,15 +2220,12 @@ bool CompSend(MessHandle messH) {
   if ((e = g_object_get_data(G_OBJECT(winWP), "comp-bcc")))
     bcc = gtk_editable_get_text(GTK_EDITABLE(e));
 
-  /* Get body from editor */
+  /* Get body from editor — HTML preserves formatting and images */
   geditDocument *doc = geditctrl_get_document(win->pte);
-  char *body = gedit_document_get_text(doc);
-
-  /* Build RFC822 message */
-  time_t now = time(NULL);
-  char dateBuf[64];
-  struct tm *tm = localtime(&now);
-  strftime(dateBuf, sizeof(dateBuf), "%a, %d %b %Y %H:%M:%S %z", tm);
+  gint docLen = gedit_document_get_length(doc);
+  char *bodyHtml = gedit_document_get_markup(doc, 0, docLen);
+  char *bodyPlain = gedit_document_get_text(doc);
+  bool hasHtml = (bodyHtml && strstr(bodyHtml, "<") != NULL);
 
   /* Extract bare email for From */
   char fromBare[256] = "";
@@ -2140,26 +2243,138 @@ bool CompSend(MessHandle messH) {
     }
   }
 
-  GString *msg = g_string_sized_new(1024);
-  g_string_append_printf(msg, "From: %s\r\n", from);
-  g_string_append_printf(msg, "To: %s\r\n", to);
-  if (cc[0]) g_string_append_printf(msg, "Cc: %s\r\n", cc);
-  if (bcc[0]) g_string_append_printf(msg, "Bcc: %s\r\n", bcc);
-  g_string_append_printf(msg, "Subject: %s\r\n", subject);
-  g_string_append_printf(msg, "Date: %s\r\n", dateBuf);
-  g_string_append(msg, "MIME-Version: 1.0\r\n");
-  g_string_append(msg, "Content-Type: text/plain; charset=utf-8\r\n");
-  g_string_append(msg, "\r\n");
-  if (body) g_string_append(msg, body);
-  g_free(body);
+  /* Collect inline images from HTML — rewrite src to cid: references */
+  CrispyAttachment *atts = NULL;
+  int attCount = 0;
+  int attCap = 8;
+  char *sendHtml = NULL;
+  atts = g_new0(CrispyAttachment, attCap);
 
-  /* Hand message to macmbx_mailer — it queues to Out with QUEUED state */
+  if (hasHtml) {
+    /* Scan for <img src="..."> tags, build attachment list */
+    GString *rewritten = g_string_new(NULL);
+    const char *p = bodyHtml;
+    int cidNum = 0;
+
+    while (*p) {
+      /* Find <img */
+      const char *img = g_strstr_len(p, -1, "<img ");
+      if (!img) img = g_strstr_len(p, -1, "<IMG ");
+      if (!img) {
+        g_string_append(rewritten, p);
+        break;
+      }
+      /* Append everything before <img */
+      g_string_append_len(rewritten, p, img - p);
+
+      /* Find src= */
+      const char *end = strchr(img, '>');
+      if (!end) { g_string_append(rewritten, img); break; }
+
+      const char *src = g_strstr_len(img, end - img, "src=\"");
+      if (!src) src = g_strstr_len(img, end - img, "SRC=\"");
+      if (src) {
+        src += 4;
+        const char *srcEnd = strchr(src, '"');
+        if (srcEnd && srcEnd < end) {
+          char *filePath = g_strndup(src, srcEnd - src);
+
+          /* Check if file exists — skip cid: or http: refs */
+          if (filePath[0] == '/' || g_file_test(filePath, G_FILE_TEST_EXISTS)) {
+            /* Generate Content-ID */
+            char cidBuf[64];
+            snprintf(cidBuf, sizeof(cidBuf), "img%d@eudora.local", cidNum++);
+
+            /* Add to attachment list */
+            if (attCount >= attCap) {
+              attCap *= 2;
+              atts = g_renew(CrispyAttachment, atts, attCap);
+            }
+            CrispyAttachment *a = &atts[attCount++];
+            memset(a, 0, sizeof(*a));
+            a->path = g_strdup(filePath);
+            a->is_inline = true;
+            a->content_id = g_strdup(cidBuf);
+            a->mime_type = crispy_mime_type(filePath);
+
+            /* Rewrite: <img src="cid:..." ... > */
+            g_string_append_len(rewritten, img, src - img);
+            g_string_append_printf(rewritten, "cid:%s", cidBuf);
+            g_string_append_len(rewritten, srcEnd, end - srcEnd + 1);
+          } else {
+            /* Not a local file — keep original tag */
+            g_string_append_len(rewritten, img, end - img + 1);
+          }
+          g_free(filePath);
+        } else {
+          g_string_append_len(rewritten, img, end - img + 1);
+        }
+      } else {
+        g_string_append_len(rewritten, img, end - img + 1);
+      }
+      p = end + 1;
+    }
+    sendHtml = g_string_free(rewritten, FALSE);
+  }
+
+  /* Collect regular file attachments from the flow box */
+  GtkWidget *attach_flow = g_object_get_data(G_OBJECT(winWP), "comp-attach-flow");
+  if (attach_flow) {
+    GtkWidget *child = gtk_widget_get_first_child(attach_flow);
+    while (child) {
+      /* FlowBox wraps children in GtkFlowBoxChild */
+      GtkWidget *chip = gtk_flow_box_child_get_child(GTK_FLOW_BOX_CHILD(child));
+      if (chip) {
+        const char *apath = g_object_get_data(G_OBJECT(chip), "attach-path");
+        if (apath && apath[0]) {
+          if (attCount >= attCap) {
+            attCap *= 2;
+            atts = g_renew(CrispyAttachment, atts, attCap);
+          }
+          CrispyAttachment *a = &atts[attCount++];
+          memset(a, 0, sizeof(*a));
+          a->path = g_strdup(apath);
+          a->is_inline = false;
+          a->mime_type = crispy_mime_type(apath);
+        }
+      }
+      child = gtk_widget_get_next_sibling(child);
+    }
+  }
+
+  /* Build message via crispy_msg */
+  CrispyMsg cmsg = {0};
+  cmsg.from = from;
+  cmsg.to = to;
+  cmsg.cc = cc[0] ? cc : NULL;
+  cmsg.bcc = bcc[0] ? bcc : NULL;
+  cmsg.subject = subject;
+  cmsg.body_plain = bodyPlain;
+  cmsg.body_html = hasHtml ? sendHtml : NULL;
+  cmsg.attachments = atts;
+  cmsg.attachment_count = attCount;
+  cmsg.x_mailer = "Eudora/GTK4";
+
+  long msgLen = 0;
+  char *rawMsg = crispy_msg_build(&cmsg, &msgLen);
+
+  /* Clean up attachment data */
+  for (int i = 0; i < attCount; i++) {
+    g_free((char *)atts[i].path);
+    g_free((char *)atts[i].content_id);
+  }
+  g_free(atts);
+  g_free(sendHtml);
+  g_free(bodyHtml);
+  g_free(bodyPlain);
+
+  /* Hand message to macmbx_mailer */
   extern MacmbxMailer *idle_scheduler_get_mailer(void);
   MacmbxMailer *mailer = idle_scheduler_get_mailer();
-  if (mailer)
-    macmbx_mailer_queue(mailer, msg->str, (long)msg->len, fromBare, NULL);
+  if (mailer && rawMsg)
+    macmbx_mailer_queue(mailer, rawMsg, msgLen, fromBare, NULL);
 
-  g_string_free(msg, TRUE);
+  free(rawMsg);
 
   /* Close immediately — queue is instant, send is async */
   win->isDirty = false;

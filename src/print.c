@@ -49,11 +49,16 @@ ADVISED OF THE POSSIBILITY OF SUCH DAMAGE. */
 #include "macmbx.h"
 #include "macmbx_mailer.h"
 #include "message.h"
+#include "../gEditCtrl/geditctrl.h"
 /* imapdownload.h removed — crispy_imap handles IMAP */
 #include "threading.h"
 #include <gtk/gtk.h>
 #include <pango/pangocairo.h>
 #include <string.h>
+
+/* Module-level page setup — persists across print operations */
+static GtkPageSetup *gPageSetup = NULL;
+static GtkPrintSettings *gPrintSettings = NULL;
 
 /* Functions and globals come from included headers:
  * CommandPeriod, FontID, FontSize etc. from Globals.h
@@ -111,18 +116,28 @@ typedef struct {
     char *returnAddr;      /* return address for page footer */
     char **lines;          /* text split into lines */
     int numLines;          /* total line count */
+    int hdrLineCount;      /* number of message header lines (before blank line) */
     int linesPerPage;      /* lines fitting on one page */
     double lineHeight;     /* pixel height of one line */
+    double hdrLineHeight;  /* pixel height of one header line */
     double marginTop;      /* top margin in points */
     double marginBottom;   /* bottom margin in points */
     double marginLeft;     /* left margin in points */
     double marginRight;    /* right margin in points */
     double headerHeight;   /* height of page header area */
     PangoFontDescription *bodyFont;    /* body text font */
-    PangoFontDescription *headerFont;  /* header/footer font */
+    PangoFontDescription *msgHdrFont;  /* message header font (smaller) */
+    PangoFontDescription *headerFont;  /* page header/footer font */
     PangoContext *pangoCtx;            /* pango context for layouts */
     bool isOutgoing;       /* outgoing message? */
     bool printBlack;       /* force black text */
+    bool useMonospace;     /* fixed-width font (user toggled "Fixed") */
+    char *export_pdf_path; /* PDF export path (NULL if printing directly) */
+    GtkWidget *pte;        /* gEditCtrl widget for WYSIWYG rendering (may be NULL) */
+    double totalContentH;  /* total styled content height (for pagination) */
+    char *headerText;      /* message headers text (rendered separately) */
+    int headerTextLines;   /* number of header lines */
+    double headerBlockH;   /* rendered height of header block */
 } EudoraPrintData;
 
 /************************************************************************
@@ -135,23 +150,26 @@ typedef struct {
  ************************************************************************/
 static char *GetTextFromPTE(GtkWidget *pte)
 {
-    GtkTextBuffer *buf;
-    GtkTextIter start, end;
-
     if (!pte)
         return g_strdup("");
 
-    if (GTK_IS_TEXT_VIEW(pte))
-        buf = gtk_text_view_get_buffer(GTK_TEXT_VIEW(pte));
-    else
-        return g_strdup("");
+    /* gEditCtrl: use its native text extraction */
+    gchar *text = geditctrl_get_text(pte);
+    if (text)
+        return text;
 
-    if (!buf)
-        return g_strdup("");
+    /* Fallback for GtkTextView */
+    if (GTK_IS_TEXT_VIEW(pte)) {
+        GtkTextBuffer *buf = gtk_text_view_get_buffer(GTK_TEXT_VIEW(pte));
+        if (buf) {
+            GtkTextIter start, end;
+            gtk_text_buffer_get_start_iter(buf, &start);
+            gtk_text_buffer_get_end_iter(buf, &end);
+            return gtk_text_buffer_get_text(buf, &start, &end, TRUE);
+        }
+    }
 
-    gtk_text_buffer_get_start_iter(buf, &start);
-    gtk_text_buffer_get_end_iter(buf, &end);
-    return gtk_text_buffer_get_text(buf, &start, &end, TRUE);
+    return g_strdup("");
 }
 
 /************************************************************************
@@ -162,23 +180,24 @@ static char *GetTextFromPTE(GtkWidget *pte)
  ************************************************************************/
 static char *GetSelectedTextFromPTE(GtkWidget *pte)
 {
-    GtkTextBuffer *buf;
-    GtkTextIter start, end;
-
     if (!pte)
         return NULL;
 
-    if (!GTK_IS_TEXT_VIEW(pte))
-        return NULL;
+    /* gEditCtrl selection */
+    if (geditctrl_has_selection(pte))
+        return geditctrl_get_selected_text(pte);
 
-    buf = gtk_text_view_get_buffer(GTK_TEXT_VIEW(pte));
-    if (!buf)
-        return NULL;
+    /* Fallback for GtkTextView */
+    if (GTK_IS_TEXT_VIEW(pte)) {
+        GtkTextBuffer *buf = gtk_text_view_get_buffer(GTK_TEXT_VIEW(pte));
+        if (buf) {
+            GtkTextIter start, end;
+            if (gtk_text_buffer_get_selection_bounds(buf, &start, &end))
+                return gtk_text_buffer_get_text(buf, &start, &end, TRUE);
+        }
+    }
 
-    if (!gtk_text_buffer_get_selection_bounds(buf, &start, &end))
-        return NULL;  /* no selection */
-
-    return gtk_text_buffer_get_text(buf, &start, &end, TRUE);
+    return NULL;
 }
 
 /************************************************************************
@@ -206,18 +225,42 @@ static char *CollectReturnAddr(void)
  ************************************************************************/
 static char *GetMessageTitle(MyWindowPtr win)
 {
-    GtkWidget *winWP;
-    const char *title;
-
     if (!win || !win->window)
         return g_strdup("Message");
 
-    winWP = win->window;
+    GtkWidget *winWP = win->window;
+
+    /* Try window title first */
     if (GTK_IS_WINDOW(winWP)) {
-        title = gtk_window_get_title(GTK_WINDOW(winWP));
-        if (title)
+        const char *title = gtk_window_get_title(GTK_WINDOW(winWP));
+        if (title && *title)
             return g_strdup(title);
     }
+
+    /* Try headerbar title widget (we use custom titlebar) */
+    if (GTK_IS_WINDOW(winWP)) {
+        GtkWidget *hb = gtk_window_get_titlebar(GTK_WINDOW(winWP));
+        if (hb && GTK_IS_HEADER_BAR(hb)) {
+            GtkWidget *tw = gtk_header_bar_get_title_widget(GTK_HEADER_BAR(hb));
+            if (tw && GTK_IS_LABEL(tw)) {
+                const char *label = gtk_label_get_text(GTK_LABEL(tw));
+                if (label && *label)
+                    return g_strdup(label);
+            }
+        }
+    }
+
+    /* Fall back to TOC summary info */
+    extern void MakeMessTitle(char *, MacmbxTOC *, int, bool);
+    MessHandle messH = (MessHandle)GetMyWindowPrivateData(win);
+    if (messH && messH->tocH && messH->sumNum >= 0 &&
+        messH->sumNum < messH->tocH->count) {
+        char title[256];
+        MakeMessTitle(title, messH->tocH, messH->sumNum, true);
+        if (title[0])
+            return g_strdup(title);
+    }
+
     return g_strdup("Message");
 }
 
@@ -302,9 +345,14 @@ static void begin_print(GtkPrintOperation *op, GtkPrintContext *context,
     PangoFontMap *fontmap = pango_cairo_font_map_get_default();
     pd->pangoCtx = pango_font_map_create_context(fontmap);
 
-    /* Create fonts */
-    pd->bodyFont = MakePrintFont();
+    /* Create fonts — use monospace if user toggled Fixed, else proportional */
+    if (pd->useMonospace)
+        pd->bodyFont = pango_font_description_from_string("Monospace 11");
+    else
+        pd->bodyFont = pango_font_description_from_string("Serif 11");
     pd->headerFont = MakeHeaderFont();
+    /* Message headers: smaller sans-serif */
+    pd->msgHdrFont = pango_font_description_from_string("Sans 9");
 
     /* Measure line height using body font */
     tmpLayout = pango_layout_new(pd->pangoCtx);
@@ -328,9 +376,59 @@ static void begin_print(GtkPrintOperation *op, GtkPrintContext *context,
     if (pd->linesPerPage < 1)
         pd->linesPerPage = 1;
 
-    numPages = (pd->numLines + pd->linesPerPage - 1) / pd->linesPerPage;
-    if (numPages < 1)
-        numPages = 1;
+    /* Measure header block height (rendered with smaller font) */
+    double contentWidth = pageWidth - pd->marginLeft - pd->marginRight;
+    pd->headerBlockH = 0;
+    if (pd->headerText && pd->headerText[0]) {
+        PangoLayout *hl = pango_layout_new(pd->pangoCtx);
+        pango_layout_set_font_description(hl, pd->msgHdrFont);
+        pango_layout_set_width(hl, (int)(contentWidth * PANGO_SCALE));
+        pango_layout_set_wrap(hl, PANGO_WRAP_WORD_CHAR);
+        pango_layout_set_text(hl, pd->headerText, -1);
+        PangoRectangle hlr;
+        pango_layout_get_extents(hl, NULL, &hlr);
+        pd->headerBlockH = (double)hlr.height / PANGO_SCALE + 8; /* +8 for padding */
+        g_object_unref(hl);
+    }
+
+    /* Calculate total content height */
+    double bodyContentH = 0;
+    double pageContentH = pageHeight - pd->marginTop - pd->marginBottom
+                          - pd->headerHeight * 2 - 8;
+
+    if (pd->pte) {
+        /* WYSIWYG: measure styled content */
+        bodyContentH = geditctrl_measure_content(pd->pte, pd->pangoCtx,
+                                                  (int)contentWidth);
+    } else {
+        /* Plain text fallback */
+        PangoLayout *pageLayout = pango_layout_new(pd->pangoCtx);
+        pango_layout_set_font_description(pageLayout, pd->bodyFont);
+        pango_layout_set_width(pageLayout, (int)(contentWidth * PANGO_SCALE));
+        pango_layout_set_wrap(pageLayout, PANGO_WRAP_WORD_CHAR);
+        for (int li = 0; li < pd->numLines; li++) {
+            pango_layout_set_text(pageLayout, pd->lines[li], -1);
+            PangoRectangle lr;
+            pango_layout_get_extents(pageLayout, NULL, &lr);
+            double lh = (double)lr.height / PANGO_SCALE;
+            if (lh < pd->lineHeight) lh = pd->lineHeight;
+            bodyContentH += lh;
+        }
+        g_object_unref(pageLayout);
+    }
+
+    pd->totalContentH = pd->headerBlockH + bodyContentH;
+
+    /* Calculate pages: first page has header block, subsequent pages don't */
+    double firstPageContent = pageContentH - pd->headerBlockH;
+    if (firstPageContent < 50) firstPageContent = 50;
+    numPages = 1;
+    double remaining = bodyContentH - firstPageContent;
+    while (remaining > 0) {
+        numPages++;
+        remaining -= pageContentH;
+    }
+    if (numPages < 1) numPages = 1;
 
     gtk_print_operation_set_n_pages(op, numPages);
 }
@@ -414,40 +512,95 @@ static void draw_page(GtkPrintOperation *op, GtkPrintContext *context,
 
     g_object_unref(layout);
 
-    /* ---- Body text ----
-     * Original: PETEPrintPage(PETE, pte, printPort, &r, para, line)
-     * Rendered PETE text directly to the void * printer port, tracking
-     * paragraph and line offsets across pages.
-     *
-     * GTK4: We pre-split into lines and render with Pango line by line. */
+    /* ---- Content area ---- */
     y = pd->marginTop + pd->headerHeight + 4;
+    gdouble pageHeight = gtk_print_context_get_height(context);
+    double maxY = pageHeight - pd->marginBottom - pd->headerHeight;
+    double contentWidth = pageWidth - pd->marginLeft - pd->marginRight;
+    double pageContentH = maxY - y;
 
-    startLine = pageNum * pd->linesPerPage;
-    endLine = startLine + pd->linesPerPage;
-    if (endLine > pd->numLines)
-        endLine = pd->numLines;
+    /* ---- Message headers (page 0 only, gray background, smaller font) ---- */
+    if (pageNum == 0 && pd->headerText && pd->headerText[0]) {
+        /* Gray background behind headers */
+        cairo_save(cr);
+        cairo_set_source_rgb(cr, 0.93, 0.93, 0.93);
+        cairo_rectangle(cr, pd->marginLeft, y, contentWidth, pd->headerBlockH);
+        cairo_fill(cr);
+        cairo_restore(cr);
 
-    layout = pango_layout_new(pd->pangoCtx);
-    pango_layout_set_font_description(layout, pd->bodyFont);
-    pango_layout_set_width(layout,
-        (int)((pageWidth - pd->marginLeft - pd->marginRight) * PANGO_SCALE));
-    pango_layout_set_wrap(layout, PANGO_WRAP_WORD_CHAR);
-
-    for (i = startLine; i < endLine; i++) {
-        pango_layout_set_text(layout, pd->lines[i], -1);
-        cairo_move_to(cr, pd->marginLeft, y);
+        /* Render header text with smaller font */
+        layout = pango_layout_new(pd->pangoCtx);
+        pango_layout_set_font_description(layout, pd->msgHdrFont);
+        pango_layout_set_width(layout, (int)(contentWidth * PANGO_SCALE));
+        pango_layout_set_wrap(layout, PANGO_WRAP_WORD_CHAR);
+        pango_layout_set_text(layout, pd->headerText, -1);
+        cairo_set_source_rgb(cr, 0.15, 0.15, 0.15);
+        cairo_move_to(cr, pd->marginLeft + 4, y + 4);
         pango_cairo_show_layout(cr, layout);
-        y += pd->lineHeight;
+        g_object_unref(layout);
+
+        y += pd->headerBlockH;
     }
 
-    g_object_unref(layout);
+    /* ---- Body: WYSIWYG or plain text ---- */
+    double bodyStartY = (pageNum == 0) ? pd->headerBlockH : 0;
+    double skipH = 0;
+    if (pageNum == 0) {
+        skipH = 0;
+    } else {
+        /* Calculate how much content to skip for this page */
+        double firstPageBody = pageContentH - pd->headerBlockH;
+        skipH = firstPageBody + (pageNum - 1) * pageContentH;
+    }
+    double availH = maxY - y;
+
+    if (pd->pte) {
+        /* WYSIWYG rendering via gEditCtrl */
+        geditctrl_render_to_cairo(pd->pte, cr, pd->pangoCtx,
+                                   pd->marginLeft, y,
+                                   (int)contentWidth, skipH, availH);
+    } else {
+        /* Plain text fallback */
+        layout = pango_layout_new(pd->pangoCtx);
+        pango_layout_set_font_description(layout, pd->bodyFont);
+        pango_layout_set_width(layout, (int)(contentWidth * PANGO_SCALE));
+        pango_layout_set_wrap(layout, PANGO_WRAP_WORD_CHAR);
+
+        /* Skip lines for previous pages */
+        double skipped = 0;
+        int curLine = 0;
+        while (curLine < pd->numLines && skipped < skipH) {
+            pango_layout_set_text(layout, pd->lines[curLine], -1);
+            PangoRectangle lr;
+            pango_layout_get_extents(layout, NULL, &lr);
+            double lh = (double)lr.height / PANGO_SCALE;
+            if (lh < pd->lineHeight) lh = pd->lineHeight;
+            skipped += lh;
+            curLine++;
+        }
+
+        /* Render visible lines */
+        while (curLine < pd->numLines && y < maxY) {
+            pango_layout_set_text(layout, pd->lines[curLine], -1);
+            PangoRectangle lr;
+            pango_layout_get_extents(layout, NULL, &lr);
+            double lh = (double)lr.height / PANGO_SCALE;
+            if (lh < pd->lineHeight) lh = pd->lineHeight;
+            if (y + lh > maxY) break;
+            cairo_set_source_rgb(cr, 0, 0, 0);
+            cairo_move_to(cr, pd->marginLeft, y);
+            pango_cairo_show_layout(cr, layout);
+            y += lh;
+            curLine++;
+        }
+        g_object_unref(layout);
+    }
 
     /* ---- Bottom header / footer ----
      * Original: PrintBottomHeader(pageNum, uRect)
      *   → CollectReturnAddr(returnAddr)
      *   → PrintMessageHeader(returnAddr, pageNum, -hMar, uRect->bottom, ...)
      * Drew horizontal line above footer, return address left, page number right. */
-    gdouble pageHeight = gtk_print_context_get_height(context);
     double footerY = pageHeight - pd->marginBottom;
 
     /* Horizontal line above footer */
@@ -507,6 +660,13 @@ static void print_done(GtkPrintOperation *op, GtkPrintOperationResult result,
         }
     }
 
+    /* If we exported to PDF, open it in Preview.app for print/preview */
+    if (pd->export_pdf_path && result == GTK_PRINT_OPERATION_RESULT_APPLY) {
+        char *cmd = g_strdup_printf("open \"%s\"", pd->export_pdf_path);
+        g_spawn_command_line_async(cmd, NULL);
+        g_free(cmd);
+    }
+
     /* Free line array */
     if (pd->lines) {
         for (int i = 0; i < pd->numLines; i++)
@@ -516,9 +676,13 @@ static void print_done(GtkPrintOperation *op, GtkPrintOperationResult result,
 
     g_free(pd->title);
     g_free(pd->returnAddr);
+    g_free(pd->headerText);
+    g_free(pd->export_pdf_path);
 
     if (pd->bodyFont)
         pango_font_description_free(pd->bodyFont);
+    if (pd->msgHdrFont)
+        pango_font_description_free(pd->msgHdrFont);
     if (pd->headerFont)
         pango_font_description_free(pd->headerFont);
     if (pd->pangoCtx)
@@ -545,8 +709,10 @@ static void print_done(GtkPrintOperation *op, GtkPrintOperationResult result,
  * signals, gtk_print_operation_run. The "now" flag maps to using
  * ACTION_PRINT (skip dialog) vs ACTION_PRINT_DIALOG.
  ************************************************************************/
-static int RunPrintOperation(const char *text, const char *title,
-                             bool isOutgoing, bool now, GtkWindow *parent)
+static int RunPrintOperation(const char *text, const char *headerText,
+                             const char *title, GtkWidget *pte,
+                             bool isOutgoing, bool useMonospace,
+                             bool now, GtkWindow *parent)
 {
     GtkPrintOperation *printOp;
     GtkPrintOperationResult result;
@@ -556,19 +722,43 @@ static int RunPrintOperation(const char *text, const char *title,
     if (!text)
         return -1;
 
+#ifdef __APPLE__
+    /* macOS: GTK tries to launch "evince" for print preview via
+       g_app_info_create_from_commandline, which is stubbed out on macOS.
+       Tell GTK to use Preview.app instead. */
+    {
+        GtkSettings *settings = gtk_settings_get_default();
+        if (settings)
+            g_object_set(settings, "gtk-print-preview-command",
+                         "open %f", NULL);
+    }
+#endif
+
     /* Allocate and populate print data */
     pd = g_new0(EudoraPrintData, 1);
     pd->title = g_strdup(title ? title : "Message");
     pd->returnAddr = CollectReturnAddr();
     pd->isOutgoing = isOutgoing;
+    pd->useMonospace = useMonospace;
+    pd->pte = pte;
+    pd->headerText = g_strdup(headerText ? headerText : "");
 
     /* Split text into lines — original iterated through PETE paragraphs
        and lines via PETEPrintPage. We split on newlines. */
     pd->lines = g_strsplit(text, "\n", -1);
     pd->numLines = 0;
+    pd->hdrLineCount = 0;
     if (pd->lines) {
-        for (int i = 0; pd->lines[i] != NULL; i++)
+        bool foundBlank = false;
+        for (int i = 0; pd->lines[i] != NULL; i++) {
+            /* First blank line separates headers from body */
+            if (!foundBlank && pd->lines[i][0] == '\0') {
+                pd->hdrLineCount = i;
+                foundBlank = true;
+            }
             pd->numLines++;
+        }
+        if (!foundBlank) pd->hdrLineCount = 0;
     }
 
     /* Create print operation */
@@ -580,24 +770,49 @@ static int RunPrintOperation(const char *text, const char *title,
     g_signal_connect(printOp, "draw-page", G_CALLBACK(draw_page), pd);
     g_signal_connect(printOp, "done", G_CALLBACK(print_done), pd);
 
-    /* Original: if (!now) PMPrintDialog showed print dialog.
-       if (now) skipped dialog and printed directly.
-       GTK4: ACTION_PRINT_DIALOG shows dialog, ACTION_PRINT skips it. */
+#ifdef __APPLE__
+    /* macOS: GTK4's Unix print dialog crashes due to broken
+       g_app_info_create_from_commandline stub. Export to PDF and
+       open in Preview.app — user can print from there via Cmd+P.
+       This gives both preview and print access to all printers. */
+    GtkPrintOperationAction action = GTK_PRINT_OPERATION_ACTION_EXPORT;
+    char *tmpdir = g_dir_make_tmp("eudora-print-XXXXXX", NULL);
+    if (!tmpdir) tmpdir = g_strdup("/tmp");
+    char *pdf_path = g_build_filename(tmpdir, "message.pdf", NULL);
+    gtk_print_operation_set_export_filename(printOp, pdf_path);
+    g_free(tmpdir);
+    pd->export_pdf_path = pdf_path;
+#else
     GtkPrintOperationAction action = now
         ? GTK_PRINT_OPERATION_ACTION_PRINT
         : GTK_PRINT_OPERATION_ACTION_PRINT_DIALOG;
+#endif
+
+    /* Use saved page setup and print settings if available */
+    if (gPageSetup)
+        gtk_print_operation_set_default_page_setup(printOp, gPageSetup);
+    if (gPrintSettings)
+        gtk_print_operation_set_print_settings(printOp, gPrintSettings);
 
     result = gtk_print_operation_run(printOp, action, parent, &error);
 
     int err = 0;
     if (result == GTK_PRINT_OPERATION_RESULT_ERROR) {
         if (error) {
-            g_printerr("Eudora: Print failed: %s\n", error->message);
+            g_printerr("Eudora: Print error: %s\n", error->message);
             g_error_free(error);
         }
         err = -1;
     } else if (result == GTK_PRINT_OPERATION_RESULT_CANCEL) {
         err = ECANCELED;
+    }
+
+    /* Save settings for next print */
+    if (result == GTK_PRINT_OPERATION_RESULT_APPLY) {
+        if (gPrintSettings)
+            g_object_unref(gPrintSettings);
+        gPrintSettings = g_object_ref(
+            gtk_print_operation_get_print_settings(printOp));
     }
 
     g_object_unref(printOp);
@@ -653,19 +868,60 @@ int PrintOneMessage(MyWindowPtr win, bool select, bool now)
     if (win->window)
         isOut = (GetWindowKind(win->window) == COMP_WIN);
 
-    /* Get text — if select flag set, try to get just the selection.
-     * Original: if select, PETEPrintSelectionSetup restricted to selection. */
+    /* Build header text (separate from body for styled rendering) */
+    char *headerText = NULL;
+    MessHandle messH = (MessHandle)GetMyWindowPrivateData(win);
+    if (messH && messH->tocH && messH->sumNum >= 0 &&
+        messH->sumNum < messH->tocH->count) {
+        MacmbxMsgSum *sum = &messH->tocH->msgs[messH->sumNum];
+        GString *hdr = g_string_new("");
+
+        if (MessFlagIsSet(messH, FLAG_SHOW_ALL)) {
+            extern char *read_raw_headers(MacmbxTOC *, int, long *);
+            long hdr_len = 0;
+            char *raw = read_raw_headers(messH->tocH, messH->sumNum, &hdr_len);
+            if (raw) {
+                g_string_append_len(hdr, raw, hdr_len);
+                g_free(raw);
+            }
+        } else {
+            if (sum->from[0])
+                g_string_append_printf(hdr, "%s: %s\n",
+                    isOut ? "To" : "From", sum->from);
+            if (sum->seconds) {
+                time_t t = (time_t)sum->seconds;
+                struct tm tm;
+                localtime_r(&t, &tm);
+                char datebuf[64];
+                strftime(datebuf, sizeof(datebuf),
+                         "%a, %b %d, %Y %I:%M %p", &tm);
+                g_string_append_printf(hdr, "Date: %s\n", datebuf);
+            }
+            if (sum->subject[0])
+                g_string_append_printf(hdr, "Subject: %s\n", sum->subject);
+        }
+        headerText = g_string_free(hdr, FALSE);
+    }
+
+    /* Get body text as fallback (used when pte WYSIWYG isn't available) */
     text = NULL;
     if (select)
         text = GetSelectedTextFromPTE(pte);
     if (!text)
         text = GetTextFromPTE(pte);
 
+    /* Check if monospace/fixed-width mode is active */
+    bool mono = false;
+    if (messH && MessFlagIsSet(messH, FLAG_FIXED_WIDTH))
+        mono = true;
+
     title = GetMessageTitle(win);
 
-    err = RunPrintOperation(text, title, isOut, now, parent);
+    err = RunPrintOperation(text, headerText, title, pte,
+                            isOut, mono, now, parent);
 
     g_free(text);
+    g_free(headerText);
     g_free(title);
 
     return err;
@@ -761,7 +1017,8 @@ int PrintSelectedMessages(MacmbxTOC *tocH, bool select, bool now,
         title = GetMessageTitle(win);
 
         /* Print this message */
-        err = RunPrintOperation(text, title, isOut, now, GetParentWindow(win));
+        err = RunPrintOperation(text, NULL, title, win->pte,
+                                isOut, false, now, GetParentWindow(win));
 
         g_free(text);
         text = NULL;
@@ -848,10 +1105,7 @@ int PrintClosedMessage(MacmbxTOC *tocH, short sumNum, bool now)
  * Settings persist via GtkPageSetup and GtkPrintSettings objects.
  ************************************************************************/
 
-/* Module-level page setup — persists across print operations like the
- * original's gPageSetup global (PMPageFormat). */
-static GtkPageSetup *gPageSetup = NULL;
-static GtkPrintSettings *gPrintSettings = NULL;
+/* gPageSetup / gPrintSettings declared near top of file */
 
 void DoPageSetup(GtkWindow *parent)
 {

@@ -30,6 +30,7 @@
 #include "macmbx_conf.h"
 #include "keychain.h"
 #include "wazoo.h"
+#include "print.h"
 #include "StringUtil.h"
 #include <gtk/gtk.h>
 #include <glib/gstdio.h>
@@ -73,6 +74,11 @@ GtkWidget *get_main_window(void) {
 /* Accessor for address books (used by autocomplete in comp.c etc.) */
 MacmbxAddressBooks *get_address_books(void) {
   return app_state.nicknames;
+}
+
+/* Accessor for mailbox store (used by comp.c for embedded files etc.) */
+MacmbxStore *eudora_get_store(void) {
+  return app_state.store;
 }
 
 /* Accessor for filter set (used by filtwin.c, filtrun.c) */
@@ -629,18 +635,43 @@ static void action_new_message(GSimpleAction *action, GVariant *parameter,
 
 static void action_open(GSimpleAction *action, GVariant *parameter,
                         gpointer user_data) {
-  (void)action;
-  (void)parameter;
-  (void)user_data;
-  g_print("Open\n");
+  (void)action; (void)parameter; (void)user_data;
+
+  /* Open = open selected message in current mailbox tab */
+  extern GtkWidget *mailbox_notebook;
+  if (!mailbox_notebook) return;
+  int page_idx = gtk_notebook_get_current_page(GTK_NOTEBOOK(mailbox_notebook));
+  if (page_idx < 0) return;
+  GtkWidget *page = gtk_notebook_get_nth_page(GTK_NOTEBOOK(mailbox_notebook), page_idx);
+  if (!page) return;
+  MacmbxTOC *toc = g_object_get_data(G_OBJECT(page), "macmbx-toc");
+  GtkWidget *tree = g_object_get_data(G_OBJECT(page), "tree-view");
+  if (!toc || !tree) return;
+
+  GtkTreeSelection *sel = gtk_tree_view_get_selection(GTK_TREE_VIEW(tree));
+  GList *rows = gtk_tree_selection_get_selected_rows(sel, NULL);
+  for (GList *l = rows; l; l = l->next) {
+    int *indices = gtk_tree_path_get_indices(l->data);
+    if (indices && indices[0] < toc->count)
+      GetAMessage(toc, indices[0], NULL, NULL, false);
+  }
+  g_list_free_full(rows, (GDestroyNotify)gtk_tree_path_free);
 }
 
 static void action_save(GSimpleAction *action, GVariant *parameter,
                         gpointer user_data) {
-  (void)action;
-  (void)parameter;
-  (void)user_data;
-  g_print("Save\n");
+  (void)action; (void)parameter; (void)user_data;
+
+  /* Save = save the current compose window */
+  GtkWindow *win = gtk_application_get_active_window(
+      GTK_APPLICATION(g_application_get_default()));
+  if (!win) return;
+  GtkWidget *w = GTK_WIDGET(win);
+  MyWindowPtr mywin = g_object_get_data(G_OBJECT(w), "mywindow");
+  if (mywin && mywin->isDirty) {
+    MessHandle messH = g_object_get_data(G_OBJECT(w), "messH");
+    if (messH) CompSave(messH);
+  }
 }
 
 static void action_print(GSimpleAction *action, GVariant *parameter,
@@ -648,47 +679,106 @@ static void action_print(GSimpleAction *action, GVariant *parameter,
   (void)action;
   (void)parameter;
   (void)user_data;
-  g_print("Print\n");
+
+  /* First check if the active window is a standalone message/compose window */
+  GtkWindow *active = gtk_application_get_active_window(
+      GTK_APPLICATION(g_application_get_default()));
+  if (active) {
+    MyWindowPtr mwin = GetWindowMyWindowPtr(GTK_WIDGET(active));
+    if (mwin && mwin->pte) {
+      PrintOneMessage(mwin, false, false);
+      return;
+    }
+  }
+
+  /* Otherwise check the current notebook tab for a mailbox with selections */
+  extern GtkWidget *mailbox_notebook;
+  if (!mailbox_notebook) return;
+
+  int page_idx = gtk_notebook_get_current_page(GTK_NOTEBOOK(mailbox_notebook));
+  if (page_idx < 0) return;
+
+  GtkWidget *page = gtk_notebook_get_nth_page(GTK_NOTEBOOK(mailbox_notebook), page_idx);
+  if (!page) return;
+
+  MacmbxTOC *toc = g_object_get_data(G_OBJECT(page), "macmbx-toc");
+  if (toc) {
+    PrintSelectedMessages(toc, false, false, 0, 0, NULL);
+    return;
+  }
+}
+
+/* Get the focused editable widget (GtkTextView or GtkEntry) */
+static GtkWidget *get_focused_editable(void) {
+  GtkWindow *win = gtk_application_get_active_window(
+      GTK_APPLICATION(g_application_get_default()));
+  if (!win) return NULL;
+  return gtk_window_get_focus(win);
 }
 
 static void action_undo(GSimpleAction *action, GVariant *parameter,
                         gpointer user_data) {
-  (void)action;
-  (void)parameter;
-  (void)user_data;
-  g_print("Undo\n");
+  (void)action; (void)parameter; (void)user_data;
+  GtkWidget *focus = get_focused_editable();
+  if (focus && GTK_IS_TEXT_VIEW(focus)) {
+    GtkTextBuffer *buf = gtk_text_view_get_buffer(GTK_TEXT_VIEW(focus));
+    if (gtk_text_buffer_get_can_undo(buf))
+      gtk_text_buffer_undo(buf);
+  }
 }
 
 static void action_cut(GSimpleAction *action, GVariant *parameter,
                        gpointer user_data) {
-  (void)action;
-  (void)parameter;
-  (void)user_data;
-  g_print("Cut\n");
+  (void)action; (void)parameter; (void)user_data;
+  GtkWidget *focus = get_focused_editable();
+  if (!focus) return;
+  if (GTK_IS_TEXT_VIEW(focus)) {
+    GdkClipboard *cb = gtk_widget_get_clipboard(focus);
+    GtkTextBuffer *buf = gtk_text_view_get_buffer(GTK_TEXT_VIEW(focus));
+    gtk_text_buffer_cut_clipboard(buf, cb, gtk_text_view_get_editable(GTK_TEXT_VIEW(focus)));
+  } else if (GTK_IS_EDITABLE(focus)) {
+    gtk_editable_delete_selection(GTK_EDITABLE(focus));
+  }
 }
 
 static void action_copy(GSimpleAction *action, GVariant *parameter,
                         gpointer user_data) {
-  (void)action;
-  (void)parameter;
-  (void)user_data;
-  g_print("Copy\n");
+  (void)action; (void)parameter; (void)user_data;
+  GtkWidget *focus = get_focused_editable();
+  if (!focus) return;
+  if (GTK_IS_TEXT_VIEW(focus)) {
+    GdkClipboard *cb = gtk_widget_get_clipboard(focus);
+    GtkTextBuffer *buf = gtk_text_view_get_buffer(GTK_TEXT_VIEW(focus));
+    gtk_text_buffer_copy_clipboard(buf, cb);
+  }
 }
 
 static void action_paste(GSimpleAction *action, GVariant *parameter,
                          gpointer user_data) {
-  (void)action;
-  (void)parameter;
-  (void)user_data;
-  g_print("Paste\n");
+  (void)action; (void)parameter; (void)user_data;
+  GtkWidget *focus = get_focused_editable();
+  if (!focus) return;
+  if (GTK_IS_TEXT_VIEW(focus)) {
+    GdkClipboard *cb = gtk_widget_get_clipboard(focus);
+    GtkTextBuffer *buf = gtk_text_view_get_buffer(GTK_TEXT_VIEW(focus));
+    gtk_text_buffer_paste_clipboard(buf, cb, NULL,
+        gtk_text_view_get_editable(GTK_TEXT_VIEW(focus)));
+  }
 }
 
 static void action_select_all(GSimpleAction *action, GVariant *parameter,
                               gpointer user_data) {
-  (void)action;
-  (void)parameter;
-  (void)user_data;
-  g_print("Select All\n");
+  (void)action; (void)parameter; (void)user_data;
+  GtkWidget *focus = get_focused_editable();
+  if (!focus) return;
+  if (GTK_IS_TEXT_VIEW(focus)) {
+    GtkTextBuffer *buf = gtk_text_view_get_buffer(GTK_TEXT_VIEW(focus));
+    GtkTextIter start, end;
+    gtk_text_buffer_get_bounds(buf, &start, &end);
+    gtk_text_buffer_select_range(buf, &start, &end);
+  } else if (GTK_IS_EDITABLE(focus)) {
+    gtk_editable_select_region(GTK_EDITABLE(focus), 0, -1);
+  }
 }
 
 /* Helper: set a GtkEntry field on a comp window by g_object_set_data key */
@@ -1521,7 +1611,7 @@ static void create_toolbars(GtkBox *toolbar_container) {
 
 static GtkWidget *left_wazoo = NULL;       /* GtkNotebook for wazoo tabs */
 static GtkWidget *left_wazoo_box = NULL;   /* VBox: titlebar + notebook */
-static GtkWidget *mailbox_notebook = NULL;  /* GtkNotebook for opened mailboxes */
+GtkWidget *mailbox_notebook = NULL;  /* GtkNotebook for opened mailboxes */
 static GtkWidget *main_hpaned = NULL;
 static GtkWidget *left_wazoo_float = NULL;  /* Floating window when undocked */
 static GtkWidget *wazoo_titlebar = NULL;    /* Title bar widget for drag */

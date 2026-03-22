@@ -51,6 +51,7 @@ extern void MBOpenFolder(void *hStringList, bool isIMAP);
 #include "mydefs.h"
 #include "MyRes.h"
 /* pop.h removed — crispy_pop3 handles POP */
+#include "print.h"
 #include "sort.h"
 #include "toc.h"
 #include "gtk_prefs.h"
@@ -591,7 +592,7 @@ static void on_mbox_row_activated(GtkTreeView *tree_view, GtkTreePath *path,
 static void attach_mbox_context_menu(GtkWidget *tree, MacmbxTOC *toc);
 
 /* Forward declarations for shared header helpers */
-static char *read_raw_headers(MacmbxTOC *tocH, int sumNum, long *hdr_len);
+char *read_raw_headers(MacmbxTOC *tocH, int sumNum, long *hdr_len);
 
 /* ── Drag source for message list (drag messages to sidebar mailboxes) ── */
 
@@ -1036,7 +1037,7 @@ void InitMailboxWin(MyWindowPtr win, MacmbxTOC * toc, bool showIt) {
 
 /* Read raw message headers via macmbx. Caller must g_free the result.
  * Sets *hdr_len to byte length of headers (up to body start). */
-static char *read_raw_headers(MacmbxTOC *tocH, int sumNum, long *hdr_len) {
+char *read_raw_headers(MacmbxTOC *tocH, int sumNum, long *hdr_len) {
   long msg_len = 0;
   char *raw = macmbx_read_message(tocH, sumNum, &msg_len);
   if (!raw) { *hdr_len = 0; return NULL; }
@@ -1269,6 +1270,13 @@ static void on_fixed_toggled(GtkToggleButton *btn, gpointer ud) {
 }
 
 /* Double-click / Enter on tree row → open message window */
+static void on_msg_print(GtkButton *btn, gpointer ud) {
+  (void)ud;
+  MyWindowPtr mwin = g_object_get_data(G_OBJECT(btn), "mywindow");
+  if (mwin)
+    PrintOneMessage(mwin, false, false);
+}
+
 static void on_mbox_row_activated(GtkTreeView *tree_view, GtkTreePath *path,
                                   GtkTreeViewColumn *column, gpointer data) {
   (void)column;
@@ -1392,13 +1400,8 @@ static void on_mbox_row_activated(GtkTreeView *tree_view, GtkTreePath *path,
     }
   }
 
-  /* ── Body: the gEditCtrl from OpenMessage (already has text loaded) ── */
-  GtkWidget *body_scroll = gtk_scrolled_window_new();
-  gtk_scrolled_window_set_policy(GTK_SCROLLED_WINDOW(body_scroll),
-                                  GTK_POLICY_AUTOMATIC, GTK_POLICY_AUTOMATIC);
-  gtk_scrolled_window_set_min_content_height(GTK_SCROLLED_WINDOW(body_scroll), 100);
-  gtk_scrolled_window_set_child(GTK_SCROLLED_WINDOW(body_scroll), mwin->pte);
-  gtk_widget_set_vexpand(body_scroll, TRUE);
+  /* ── Body: the gEditCtrl from OpenMessage (already a scrolled window) ── */
+  gtk_widget_set_vexpand(mwin->pte, TRUE);
 
   /* Make body read-only and apply theme */
   geditctrl_set_editable(mwin->pte, false);
@@ -1424,11 +1427,17 @@ static void on_mbox_row_activated(GtkTreeView *tree_view, GtkTreePath *path,
   g_object_set_data(G_OBJECT(blah_btn), "hdr-box", hdr_box);
   g_signal_connect(blah_btn, "toggled", G_CALLBACK(on_blahblah_toggled), NULL);
 
+  g_object_set_data(G_OBJECT(print_btn), "mywindow", mwin);
+  g_signal_connect(print_btn, "clicked", G_CALLBACK(on_msg_print), NULL);
+
+  /* Store MyWindowPtr on the window for action_print */
+  SetWindowMyWindowPtr(winWP, mwin);
+
   /* ── Layout: toolbar + header + body ── */
   GtkWidget *vbox = gtk_box_new(GTK_ORIENTATION_VERTICAL, 0);
   gtk_box_append(GTK_BOX(vbox), toolbar);
   gtk_box_append(GTK_BOX(vbox), hdr_box);
-  gtk_box_append(GTK_BOX(vbox), body_scroll);
+  gtk_box_append(GTK_BOX(vbox), mwin->pte);
   gtk_window_set_child(GTK_WINDOW(winWP), vbox);
 
   /* Make transient to the toplevel */
