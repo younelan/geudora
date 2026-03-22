@@ -150,6 +150,7 @@ typedef struct SearchInfo {
 /* Search window lifecycle */
 MyWindowPtr SearchOpen(int searchMode);
 void        SearchClose_cb(MyWindowPtr win);
+GtkWidget  *CreateSearchPanel(void);
 
 /* Externally-used functions */
 bool        IsSearchWindow(void *winWP);

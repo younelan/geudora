@@ -1,5 +1,5 @@
 /*
- * GTK4 Mailbox Sidebar for gEudora
+ * GTK4 Mailbox Sidebar for gEudora — GtkTreeView + GtkTreeStore
  * Backed by macmbx library — walks MacmbxNode tree for the sidebar,
  * uses MacmbxStore for create/delete/rename/move operations.
  */
@@ -9,6 +9,18 @@
 #include <pango/pango.h>
 #include <glib.h>
 #include <string.h>
+
+/* ── GtkTreeStore column indices ─────────────────────────────────── */
+
+enum {
+  COL_NAME = 0,   /* display name (may include unread count) */
+  COL_ICON,       /* icon name string */
+  COL_PATH,       /* full filesystem path */
+  COL_UNREAD,     /* unread message count */
+  COL_IS_DIR,     /* TRUE for folders */
+  COL_WEIGHT,     /* PANGO_WEIGHT_BOLD or PANGO_WEIGHT_NORMAL */
+  N_COLUMNS
+};
 
 /* ── Global store reference ─────────────────────────────────────── */
 
@@ -44,170 +56,295 @@ static const char *node_icon_name(MacmbxNode *node) {
   return "mail-unread-symbolic";
 }
 
-/* ── GObject data keys for mailbox rows ────────────────────────── */
-#define MB_KEY_PATH   "mb-path"
-#define MB_KEY_NAME   "mb-name"
-#define MB_KEY_IS_DIR "mb-is-dir"
+/* ── Folder expand/collapse state persistence ──────────────────── */
 
-/* ── Drag and drop callbacks ──────────────────────────────────── */
+#define PREFS_GROUP_SIDEBAR "sidebar"
 
-static GdkContentProvider *on_mb_drag_prepare(GtkDragSource *source,
-                                               double x, double y,
-                                               gpointer ud) {
-  (void)source; (void)x; (void)y;
-  GtkWidget *row = GTK_WIDGET(ud);
-  const char *path = g_object_get_data(G_OBJECT(row), MB_KEY_PATH);
-  if (!path) return NULL;
-  GValue val = G_VALUE_INIT;
-  g_value_init(&val, G_TYPE_STRING);
-  g_value_set_string(&val, path);
-  return gdk_content_provider_new_for_value(&val);
+static GHashTable *g_expanded = NULL; /* path → TRUE for expanded folders */
+
+static void ensure_expanded_table(void) {
+  if (g_expanded) return;
+  g_expanded = g_hash_table_new_full(g_str_hash, g_str_equal, g_free, NULL);
 }
 
-static void on_mb_drag_begin(GtkDragSource *source, GdkDrag *drag,
-                              gpointer ud) {
-  (void)source; (void)drag;
-  gtk_widget_set_opacity(GTK_WIDGET(ud), 0.4);
+static bool is_folder_expanded(const char *path) {
+  ensure_expanded_table();
+  return g_hash_table_contains(g_expanded, path);
 }
 
-static gboolean on_mb_drop(GtkDropTarget *target, const GValue *value,
-                            double x, double y, gpointer ud) {
-  (void)target; (void)x; (void)y;
-  GtkWidget *folder_row = GTK_WIDGET(ud);
-  const char *folder_path = g_object_get_data(G_OBJECT(folder_row), MB_KEY_PATH);
-  if (!folder_path || !G_VALUE_HOLDS_STRING(value)) return FALSE;
+static void set_folder_expanded(const char *path, bool expanded) {
+  ensure_expanded_table();
+  if (expanded)
+    g_hash_table_insert(g_expanded, g_strdup(path), GINT_TO_POINTER(1));
+  else
+    g_hash_table_remove(g_expanded, path);
+}
 
-  const char *src_path = g_value_get_string(value);
-  if (!src_path || !*src_path) return FALSE;
+/* Load expanded state from prefs (pipe-separated paths) */
+static void load_expanded_state(void) {
+  ensure_expanded_table();
+  const char *val = prefs_get_string(PREFS_GROUP_SIDEBAR, "expanded", "");
+  if (!val || !val[0]) return;
+  char *copy = g_strdup(val);
+  char *tok = strtok(copy, "|");
+  while (tok) {
+    g_hash_table_insert(g_expanded, g_strdup(tok), GINT_TO_POINTER(1));
+    tok = strtok(NULL, "|");
+  }
+  g_free(copy);
+}
 
-  /* Use macmbx_store_move if store available */
-  if (g_store) {
-    /* Compute relative paths from store base */
+/* Save expanded state to prefs */
+static void save_expanded_state(void) {
+  if (!g_expanded) return;
+  GString *buf = g_string_new(NULL);
+  GHashTableIter iter;
+  gpointer key;
+  g_hash_table_iter_init(&iter, g_expanded);
+  while (g_hash_table_iter_next(&iter, &key, NULL)) {
+    if (buf->len > 0) g_string_append_c(buf, '|');
+    g_string_append(buf, (const char *)key);
+  }
+  prefs_set_string(PREFS_GROUP_SIDEBAR, "expanded", buf->str);
+  g_string_free(buf, TRUE);
+}
+
+static bool g_expanded_loaded = false;
+
+/* ── GtkTreeView signal callbacks ─────────────────────────────── */
+
+/* row-expanded: save expanded state */
+static void on_row_expanded(GtkTreeView *tree_view, GtkTreeIter *iter,
+                             GtkTreePath *path, gpointer user_data) {
+  (void)tree_view; (void)path; (void)user_data;
+  GtkTreeModel *model = gtk_tree_view_get_model(tree_view);
+  gchar *mbox_path = NULL;
+  gtk_tree_model_get(model, iter, COL_PATH, &mbox_path, -1);
+  if (mbox_path) {
+    set_folder_expanded(mbox_path, true);
+    save_expanded_state();
+    g_free(mbox_path);
+  }
+}
+
+/* row-collapsed: remove expanded state */
+static void on_row_collapsed(GtkTreeView *tree_view, GtkTreeIter *iter,
+                              GtkTreePath *path, gpointer user_data) {
+  (void)tree_view; (void)path; (void)user_data;
+  GtkTreeModel *model = gtk_tree_view_get_model(tree_view);
+  gchar *mbox_path = NULL;
+  gtk_tree_model_get(model, iter, COL_PATH, &mbox_path, -1);
+  if (mbox_path) {
+    set_folder_expanded(mbox_path, false);
+    save_expanded_state();
+    g_free(mbox_path);
+  }
+}
+
+/* row-activated: open the mailbox */
+static void on_row_activated(GtkTreeView *tree_view, GtkTreePath *path,
+                              GtkTreeViewColumn *column, gpointer user_data) {
+  (void)column; (void)user_data;
+  GtkTreeModel *model = gtk_tree_view_get_model(tree_view);
+  GtkTreeIter iter;
+  if (!gtk_tree_model_get_iter(model, &iter, path)) return;
+
+  gboolean is_dir = FALSE;
+  gchar *mbox_path = NULL;
+  gchar *name = NULL;
+  gtk_tree_model_get(model, &iter,
+                     COL_IS_DIR, &is_dir,
+                     COL_PATH, &mbox_path,
+                     COL_NAME, &name,
+                     -1);
+
+  if (is_dir) {
+    /* Toggle expand/collapse for folders */
+    if (gtk_tree_view_row_expanded(tree_view, path))
+      gtk_tree_view_collapse_row(tree_view, path);
+    else
+      gtk_tree_view_expand_row(tree_view, path, FALSE);
+  } else if (mbox_path && *mbox_path) {
+    extern void eudora_open_mailbox(const char *path, const char *name);
+    eudora_open_mailbox(mbox_path, name);
+  }
+
+  g_free(mbox_path);
+  g_free(name);
+}
+
+/* ── Drag and drop ────────────────────────────────────────────── */
+
+/* Drag source: drag mailboxes/folders from the sidebar for reorder */
+static GdkContentProvider *on_sidebar_drag_prepare(GtkDragSource *source,
+                                                     double x, double y,
+                                                     gpointer ud) {
+  (void)source;
+  GtkTreeView *tree_view = GTK_TREE_VIEW(ud);
+  GtkTreePath *path;
+  if (!gtk_tree_view_get_path_at_pos(tree_view, (int)x, (int)y, &path, NULL, NULL, NULL))
+    return NULL;
+
+  GtkTreeModel *model = gtk_tree_view_get_model(tree_view);
+  GtkTreeIter iter;
+  if (!gtk_tree_model_get_iter(model, &iter, path)) {
+    gtk_tree_path_free(path);
+    return NULL;
+  }
+  char *mbox_path = NULL;
+  gtk_tree_model_get(model, &iter, COL_PATH, &mbox_path, -1);
+  gtk_tree_path_free(path);
+  if (!mbox_path) return NULL;
+
+  GdkContentProvider *provider = gdk_content_provider_new_typed(G_TYPE_STRING, mbox_path);
+  g_free(mbox_path);
+  return provider;
+}
+
+/* Drop handler */
+static gboolean on_tree_drop(GtkDropTarget *target, const GValue *value,
+                              double x, double y, gpointer ud) {
+  (void)target;
+  GtkTreeView *tree_view = GTK_TREE_VIEW(ud);
+  if (!G_VALUE_HOLDS_STRING(value)) return FALSE;
+
+  const char *drop_str = g_value_get_string(value);
+  if (!drop_str || !*drop_str) return FALSE;
+
+  /* Find which row is under the cursor */
+  GtkTreePath *path = NULL;
+  gchar *folder_path = NULL;
+  int ix = (int)x, iy = (int)y;
+
+  if (gtk_tree_view_get_path_at_pos(tree_view, ix, iy,
+                                     &path, NULL, NULL, NULL)) {
+    GtkTreeModel *model = gtk_tree_view_get_model(tree_view);
+    GtkTreeIter iter;
+    if (gtk_tree_model_get_iter(model, &iter, path))
+      gtk_tree_model_get(model, &iter, COL_PATH, &folder_path, -1);
+    gtk_tree_path_free(path);
+  }
+
+  if (!folder_path) {
+    /* Dropped on empty space — treat as root */
+    if (g_store)
+      folder_path = g_strdup(g_store->base_path);
+    else
+      return FALSE;
+  }
+
+  gboolean result = FALSE;
+
+  /* Message transfer: "msg:<toc_path>\t<idx1>,<idx2>,..." */
+  if (strncmp(drop_str, "msg:", 4) == 0) {
+    const char *tab = strchr(drop_str + 4, '\t');
+    if (!tab) { g_free(folder_path); return FALSE; }
+
+    /* Extract source TOC path */
+    int path_len = (int)(tab - (drop_str + 4));
+    char *src_path = g_strndup(drop_str + 4, path_len);
+
+    /* Parse message indices */
+    const char *idx_str = tab + 1;
+    int indices[256];
+    int count = 0;
+    while (*idx_str && count < 256) {
+      indices[count++] = (int)strtol(idx_str, (char **)&idx_str, 10);
+      if (*idx_str == ',') idx_str++;
+    }
+
+    if (count > 0) {
+      /* Open source and destination TOCs */
+      MacmbxTOC *src_toc = macmbx_toc_open(src_path);
+      MacmbxTOC *dst_toc = macmbx_toc_open(folder_path);
+      if (src_toc && dst_toc) {
+        /* Transfer messages (move, not copy) — process in reverse order
+         * so indices stay valid as messages are removed */
+        for (int i = count - 1; i >= 0; i--)
+          macmbx_transfer(src_toc, indices[i], dst_toc, false);
+        macmbx_toc_save(src_toc);
+        macmbx_toc_save(dst_toc);
+
+        /* Refresh open mailbox views */
+        extern void eudora_refresh_open_mailboxes(void);
+        eudora_refresh_open_mailboxes();
+
+        /* Update sidebar unread counts */
+        if (g_store) macmbx_store_update_counts(g_store);
+        gtk_mailbox_tree_refresh(GTK_WIDGET(tree_view));
+      }
+    }
+    g_free(src_path);
+    result = TRUE;
+  }
+  /* Mailbox reorder: plain path string */
+  else if (g_store) {
     const char *base = g_store->base_path;
     size_t blen = strlen(base);
-    const char *src_rel = src_path;
+    const char *src_rel = drop_str;
     const char *dst_rel = folder_path;
-    if (strncmp(src_path, base, blen) == 0 && src_path[blen] == '/')
-      src_rel = src_path + blen + 1;
+    if (strncmp(drop_str, base, blen) == 0 && drop_str[blen] == '/')
+      src_rel = drop_str + blen + 1;
     if (strncmp(folder_path, base, blen) == 0 && folder_path[blen] == '/')
       dst_rel = folder_path + blen + 1;
 
     if (macmbx_store_move(g_store, src_rel, dst_rel) == 0) {
-      GtkWidget *listbox = gtk_widget_get_ancestor(folder_row, GTK_TYPE_LIST_BOX);
-      if (listbox) gtk_mailbox_tree_refresh(listbox);
-      return TRUE;
+      gtk_mailbox_tree_refresh(GTK_WIDGET(tree_view));
+      result = TRUE;
     }
   }
-  return FALSE;
+
+  g_free(folder_path);
+  return result;
 }
 
-static GdkDragAction on_mb_drop_enter(GtkDropTarget *target, double x, double y,
-                                       gpointer ud) {
-  (void)target; (void)x; (void)y;
-  gtk_widget_add_css_class(GTK_WIDGET(ud), "mb-drop-target");
+/* Drop target highlight: use CSS class on the whole tree view.
+ * We track the hovered path for visual feedback. */
+static GtkTreePath *g_hover_path = NULL;
+
+static GdkDragAction on_tree_drop_enter(GtkDropTarget *target, double x, double y,
+                                         gpointer ud) {
+  (void)target;
+  GtkTreeView *tree_view = GTK_TREE_VIEW(ud);
+  gtk_widget_add_css_class(GTK_WIDGET(tree_view), "mb-drop-active");
+
+  /* Highlight the row under cursor */
+  GtkTreePath *path = NULL;
+  int ix = (int)x, iy = (int)y;
+  if (gtk_tree_view_get_path_at_pos(tree_view, ix, iy,
+                                     &path, NULL, NULL, NULL)) {
+    gtk_tree_view_set_cursor(tree_view, path, NULL, FALSE);
+    if (g_hover_path) gtk_tree_path_free(g_hover_path);
+    g_hover_path = path;
+  }
   return GDK_ACTION_MOVE;
 }
 
-static void on_mb_drop_leave(GtkDropTarget *target, gpointer ud) {
+static GdkDragAction on_tree_drop_motion(GtkDropTarget *target, double x, double y,
+                                          gpointer ud) {
   (void)target;
-  gtk_widget_remove_css_class(GTK_WIDGET(ud), "mb-drop-target");
+  GtkTreeView *tree_view = GTK_TREE_VIEW(ud);
+  GtkTreePath *path = NULL;
+  int ix = (int)x, iy = (int)y;
+  if (gtk_tree_view_get_path_at_pos(tree_view, ix, iy,
+                                     &path, NULL, NULL, NULL)) {
+    gtk_tree_view_set_cursor(tree_view, path, NULL, FALSE);
+    if (g_hover_path) gtk_tree_path_free(g_hover_path);
+    g_hover_path = path;
+  }
+  return GDK_ACTION_MOVE;
 }
 
-/* Drop onto listbox background — move to root */
-static gboolean on_mb_drop_root(GtkDropTarget *target, const GValue *value,
-                                 double x, double y, gpointer ud) {
-  (void)target; (void)x; (void)y;
-  GtkWidget *listbox = GTK_WIDGET(ud);
-  if (!G_VALUE_HOLDS_STRING(value) || !g_store) return FALSE;
-
-  const char *src_path = g_value_get_string(value);
-  if (!src_path || !*src_path) return FALSE;
-
-  const char *base = g_store->base_path;
-  size_t blen = strlen(base);
-  const char *src_rel = src_path;
-  if (strncmp(src_path, base, blen) == 0 && src_path[blen] == '/')
-    src_rel = src_path + blen + 1;
-
-  if (macmbx_store_move(g_store, src_rel, NULL) == 0) {
-    gtk_mailbox_tree_refresh(listbox);
-    return TRUE;
+static void on_tree_drop_leave(GtkDropTarget *target, gpointer ud) {
+  (void)target;
+  gtk_widget_remove_css_class(GTK_WIDGET(ud), "mb-drop-active");
+  if (g_hover_path) {
+    gtk_tree_path_free(g_hover_path);
+    g_hover_path = NULL;
   }
-  return FALSE;
 }
 
-/* ── Create a single mailbox row widget ────────────────────────── */
-
-static GtkWidget *make_mb_row(MacmbxNode *node, int depth) {
-  gboolean is_dir = (node->type == MACMBX_NODE_FOLDER);
-
-  GtkWidget *row = gtk_list_box_row_new();
-  g_object_set_data_full(G_OBJECT(row), MB_KEY_PATH, g_strdup(node->path), g_free);
-  g_object_set_data_full(G_OBJECT(row), MB_KEY_NAME, g_strdup(node->name), g_free);
-  g_object_set_data(G_OBJECT(row), MB_KEY_IS_DIR, GINT_TO_POINTER(is_dir));
-
-  if (is_dir)
-    gtk_list_box_row_set_activatable(GTK_LIST_BOX_ROW(row), FALSE);
-
-  GtkWidget *hbox = gtk_box_new(GTK_ORIENTATION_HORIZONTAL, 6);
-  gtk_widget_set_margin_start(hbox, 6 + depth * 16);
-  gtk_widget_set_margin_end(hbox, 6);
-  gtk_widget_set_margin_top(hbox, 3);
-  gtk_widget_set_margin_bottom(hbox, 3);
-
-  /* Icon */
-  GtkWidget *icon = gtk_image_new_from_icon_name(node_icon_name(node));
-  gtk_image_set_pixel_size(GTK_IMAGE(icon), 16);
-  gtk_widget_add_css_class(icon, "mb-icon");
-  gtk_box_append(GTK_BOX(hbox), icon);
-
-  /* Name label */
-  GtkWidget *lbl = gtk_label_new(node->name);
-  gtk_label_set_xalign(GTK_LABEL(lbl), 0);
-  gtk_label_set_ellipsize(GTK_LABEL(lbl), PANGO_ELLIPSIZE_END);
-  gtk_widget_set_hexpand(lbl, TRUE);
-  if (is_dir)
-    gtk_widget_add_css_class(lbl, "mb-folder");
-  else if (node->unread > 0)
-    gtk_widget_add_css_class(lbl, "mb-unread");
-  else
-    gtk_widget_add_css_class(lbl, "mb-name");
-  gtk_box_append(GTK_BOX(hbox), lbl);
-
-  /* Unread pill */
-  if (!is_dir && node->unread > 0) {
-    char pill_text[16];
-    snprintf(pill_text, sizeof(pill_text), "%d", node->unread);
-    GtkWidget *pill = gtk_label_new(pill_text);
-    gtk_widget_add_css_class(pill, "mb-pill");
-    gtk_widget_set_halign(pill, GTK_ALIGN_END);
-    gtk_box_append(GTK_BOX(hbox), pill);
-  }
-
-  gtk_list_box_row_set_child(GTK_LIST_BOX_ROW(row), hbox);
-
-  /* Drag source: mailbox files can be dragged */
-  if (!is_dir) {
-    GtkDragSource *drag = gtk_drag_source_new();
-    gtk_drag_source_set_actions(drag, GDK_ACTION_MOVE);
-    g_signal_connect(drag, "prepare", G_CALLBACK(on_mb_drag_prepare), row);
-    g_signal_connect(drag, "drag-begin", G_CALLBACK(on_mb_drag_begin), row);
-    gtk_widget_add_controller(row, GTK_EVENT_CONTROLLER(drag));
-  }
-
-  /* Drop target: folders accept mailbox drops */
-  if (is_dir) {
-    GtkDropTarget *drop = gtk_drop_target_new(G_TYPE_STRING, GDK_ACTION_MOVE);
-    g_signal_connect(drop, "drop", G_CALLBACK(on_mb_drop), row);
-    g_signal_connect(drop, "enter", G_CALLBACK(on_mb_drop_enter), row);
-    g_signal_connect(drop, "leave", G_CALLBACK(on_mb_drop_leave), row);
-    gtk_widget_add_controller(row, GTK_EVENT_CONTROLLER(drop));
-  }
-
-  return row;
-}
-
-/* ── Recursive node tree loading into list box ───────────────── */
+/* ── Recursive node tree loading into GtkTreeStore ───────────── */
 
 /* Fixed ordering for special mailboxes — always shown first at root */
 static const MacmbxType SPECIAL_ORDER[] = {
@@ -217,13 +354,37 @@ static const MacmbxType SPECIAL_ORDER[] = {
 static const char *SPECIAL_NAMES[] = {"In", "Out", "Drafts", "Trash", "Junk"};
 #define N_SPECIALS 5
 
-static void load_node_tree(GtkWidget *listbox, MacmbxNode *node, int depth) {
-  for (MacmbxNode *n = node; n; n = n->next) {
-    GtkWidget *row = make_mb_row(n, depth);
-    gtk_list_box_append(GTK_LIST_BOX(listbox), row);
-    /* Recurse into folder children */
-    if (n->type == MACMBX_NODE_FOLDER && n->children)
-      load_node_tree(listbox, n->children, depth + 1);
+/* Build display name: append unread count for mailboxes */
+static gchar *make_display_name(MacmbxNode *node) {
+  if (node->type == MACMBX_NODE_FOLDER || node->unread <= 0)
+    return g_strdup(node->name);
+  return g_strdup_printf("%s (%d)", node->name, node->unread);
+}
+
+/* Add a single node to the tree store under parent_iter (NULL = root) */
+static void add_node_to_store(GtkTreeStore *store, GtkTreeIter *parent_iter,
+                               MacmbxNode *node) {
+  GtkTreeIter iter;
+  gboolean is_dir = (node->type == MACMBX_NODE_FOLDER);
+  gchar *display = make_display_name(node);
+  int weight = (!is_dir && node->unread > 0) ? PANGO_WEIGHT_BOLD
+                                               : PANGO_WEIGHT_NORMAL;
+
+  gtk_tree_store_append(store, &iter, parent_iter);
+  gtk_tree_store_set(store, &iter,
+                     COL_NAME, display,
+                     COL_ICON, node_icon_name(node),
+                     COL_PATH, node->path,
+                     COL_UNREAD, node->unread,
+                     COL_IS_DIR, is_dir,
+                     COL_WEIGHT, weight,
+                     -1);
+  g_free(display);
+
+  /* Recurse into folder children */
+  if (is_dir && node->children) {
+    for (MacmbxNode *child = node->children; child; child = child->next)
+      add_node_to_store(store, &iter, child);
   }
 }
 
@@ -232,7 +393,7 @@ static gint node_name_cmp(gconstpointer a, gconstpointer b) {
   return g_ascii_strcasecmp(na->name, nb->name);
 }
 
-static void load_store_into_listbox(GtkWidget *listbox, MacmbxStore *store) {
+static void load_store_into_treestore(GtkTreeStore *ts, MacmbxStore *store) {
   MacmbxNode *root = macmbx_store_root(store);
   if (!root) return;
 
@@ -242,20 +403,17 @@ static void load_store_into_listbox(GtkWidget *listbox, MacmbxStore *store) {
   /* Phase 1: add special mailboxes in fixed order */
   GHashTable *shown = g_hash_table_new(g_str_hash, g_str_equal);
   for (int i = 0; i < N_SPECIALS; i++) {
-    /* Find by name for Drafts (type NORMAL), by type for others */
     MacmbxNode *node = NULL;
     if (SPECIAL_ORDER[i] != MACMBX_TYPE_NORMAL)
       node = macmbx_store_find_special(store, SPECIAL_ORDER[i]);
     else
       node = macmbx_store_find_by_name(store, SPECIAL_NAMES[i]);
     if (!node) continue;
-    GtkWidget *row = make_mb_row(node, 0);
-    gtk_list_box_append(GTK_LIST_BOX(listbox), row);
+    add_node_to_store(ts, NULL, node);
     g_hash_table_insert(shown, node->name, node);
   }
 
   /* Phase 2: add remaining nodes (folders first, then mailboxes, sorted) */
-  /* Collect non-special top-level nodes */
   GPtrArray *folders = g_ptr_array_new();
   GPtrArray *mailboxes = g_ptr_array_new();
   for (MacmbxNode *n = root; n; n = n->next) {
@@ -272,49 +430,127 @@ static void load_store_into_listbox(GtkWidget *listbox, MacmbxStore *store) {
   g_ptr_array_sort(mailboxes, node_name_cmp);
 
   /* Add folders (with recursive children) */
-  for (guint i = 0; i < folders->len; i++) {
-    MacmbxNode *n = g_ptr_array_index(folders, i);
-    GtkWidget *row = make_mb_row(n, 0);
-    gtk_list_box_append(GTK_LIST_BOX(listbox), row);
-    if (n->children)
-      load_node_tree(listbox, n->children, 1);
-  }
+  for (guint i = 0; i < folders->len; i++)
+    add_node_to_store(ts, NULL, g_ptr_array_index(folders, i));
 
   /* Add regular mailboxes */
-  for (guint i = 0; i < mailboxes->len; i++) {
-    MacmbxNode *n = g_ptr_array_index(mailboxes, i);
-    GtkWidget *row = make_mb_row(n, 0);
-    gtk_list_box_append(GTK_LIST_BOX(listbox), row);
-  }
+  for (guint i = 0; i < mailboxes->len; i++)
+    add_node_to_store(ts, NULL, g_ptr_array_index(mailboxes, i));
 
   g_ptr_array_free(folders, TRUE);
   g_ptr_array_free(mailboxes, TRUE);
 }
 
+/* ── Restore expand/collapse state after populating the tree ──── */
+
+static gboolean restore_expand_foreach(GtkTreeModel *model, GtkTreePath *path,
+                                        GtkTreeIter *iter, gpointer data) {
+  GtkTreeView *tree_view = GTK_TREE_VIEW(data);
+  gboolean is_dir = FALSE;
+  gchar *mbox_path = NULL;
+  gtk_tree_model_get(model, iter, COL_IS_DIR, &is_dir, COL_PATH, &mbox_path, -1);
+  if (is_dir && mbox_path && is_folder_expanded(mbox_path))
+    gtk_tree_view_expand_row(tree_view, path, FALSE);
+  g_free(mbox_path);
+  return FALSE; /* continue iteration */
+}
+
+static void restore_expanded_state(GtkTreeView *tree_view) {
+  GtkTreeModel *model = gtk_tree_view_get_model(tree_view);
+  if (!model) return;
+  gtk_tree_model_foreach(model, restore_expand_foreach, tree_view);
+}
+
 /* ── Public API ────────────────────────────────────────────────── */
 
 GtkWidget *gtk_mailbox_tree_new(void) {
-  GtkWidget *listbox = gtk_list_box_new();
-  gtk_list_box_set_selection_mode(GTK_LIST_BOX(listbox), GTK_SELECTION_SINGLE);
-  gtk_widget_add_css_class(listbox, "mb-sidebar");
+  /* Load persisted expand state on first call */
+  if (!g_expanded_loaded) {
+    load_expanded_state();
+    g_expanded_loaded = true;
+  }
 
-  /* Drop target on the listbox background — moves mailbox to root */
-  GtkDropTarget *root_drop = gtk_drop_target_new(G_TYPE_STRING, GDK_ACTION_MOVE);
-  g_signal_connect(root_drop, "drop", G_CALLBACK(on_mb_drop_root), listbox);
-  gtk_widget_add_controller(listbox, GTK_EVENT_CONTROLLER(root_drop));
+  /* Create the GtkTreeStore */
+  GtkTreeStore *store = gtk_tree_store_new(N_COLUMNS,
+      G_TYPE_STRING,   /* COL_NAME */
+      G_TYPE_STRING,   /* COL_ICON */
+      G_TYPE_STRING,   /* COL_PATH */
+      G_TYPE_INT,      /* COL_UNREAD */
+      G_TYPE_BOOLEAN,  /* COL_IS_DIR */
+      G_TYPE_INT       /* COL_WEIGHT */
+  );
 
-  return listbox;
+  /* Create the GtkTreeView */
+  GtkWidget *tree_view = gtk_tree_view_new_with_model(GTK_TREE_MODEL(store));
+  g_object_unref(store); /* tree view holds ref */
+
+  gtk_tree_view_set_headers_visible(GTK_TREE_VIEW(tree_view), FALSE);
+  gtk_tree_view_set_show_expanders(GTK_TREE_VIEW(tree_view), TRUE);
+  gtk_tree_view_set_enable_tree_lines(GTK_TREE_VIEW(tree_view), FALSE);
+  gtk_tree_view_set_level_indentation(GTK_TREE_VIEW(tree_view), 4);
+  gtk_widget_add_css_class(tree_view, "mb-sidebar");
+
+  /* Single column: icon + name */
+  GtkTreeViewColumn *col = gtk_tree_view_column_new();
+  gtk_tree_view_column_set_expand(col, TRUE);
+
+  /* Icon cell renderer */
+  GtkCellRenderer *icon_renderer = gtk_cell_renderer_pixbuf_new();
+  gtk_tree_view_column_pack_start(col, icon_renderer, FALSE);
+  gtk_tree_view_column_add_attribute(col, icon_renderer, "icon-name", COL_ICON);
+
+  /* Text cell renderer */
+  GtkCellRenderer *text_renderer = gtk_cell_renderer_text_new();
+  g_object_set(text_renderer, "ellipsize", PANGO_ELLIPSIZE_END, NULL);
+  gtk_tree_view_column_pack_start(col, text_renderer, TRUE);
+  gtk_tree_view_column_add_attribute(col, text_renderer, "text", COL_NAME);
+  gtk_tree_view_column_add_attribute(col, text_renderer, "weight", COL_WEIGHT);
+
+  gtk_tree_view_append_column(GTK_TREE_VIEW(tree_view), col);
+
+  /* Selection mode */
+  GtkTreeSelection *sel = gtk_tree_view_get_selection(GTK_TREE_VIEW(tree_view));
+  gtk_tree_selection_set_mode(sel, GTK_SELECTION_SINGLE);
+
+  /* Connect signals */
+  g_signal_connect(tree_view, "row-activated",
+                   G_CALLBACK(on_row_activated), NULL);
+  g_signal_connect(tree_view, "row-expanded",
+                   G_CALLBACK(on_row_expanded), NULL);
+  g_signal_connect(tree_view, "row-collapsed",
+                   G_CALLBACK(on_row_collapsed), NULL);
+
+  /* Drop target: messages and mailbox reorder */
+  GtkDropTarget *drop = gtk_drop_target_new(G_TYPE_STRING,
+                          GDK_ACTION_MOVE | GDK_ACTION_COPY);
+  g_signal_connect(drop, "drop", G_CALLBACK(on_tree_drop), tree_view);
+  g_signal_connect(drop, "enter", G_CALLBACK(on_tree_drop_enter), tree_view);
+  g_signal_connect(drop, "motion", G_CALLBACK(on_tree_drop_motion), tree_view);
+  g_signal_connect(drop, "leave", G_CALLBACK(on_tree_drop_leave), tree_view);
+  gtk_widget_add_controller(tree_view, GTK_EVENT_CONTROLLER(drop));
+
+  /* Drag source: drag mailboxes/folders for reorder */
+  GtkDragSource *drag = gtk_drag_source_new();
+  gtk_drag_source_set_actions(drag, GDK_ACTION_MOVE);
+  g_signal_connect(drag, "prepare", G_CALLBACK(on_sidebar_drag_prepare), tree_view);
+  gtk_event_controller_set_propagation_phase(GTK_EVENT_CONTROLLER(drag),
+                                              GTK_PHASE_BUBBLE);
+  gtk_widget_add_controller(tree_view, GTK_EVENT_CONTROLLER(drag));
+
+  return tree_view;
 }
 
-void gtk_mailbox_tree_load(GtkWidget *listbox, MacmbxStore *store) {
-  if (!GTK_IS_LIST_BOX(listbox) || !store) return;
+void gtk_mailbox_tree_load(GtkWidget *tree, MacmbxStore *store) {
+  if (!GTK_IS_TREE_VIEW(tree) || !store) return;
 
-  /* Clear existing rows */
-  GtkWidget *child;
-  while ((child = gtk_widget_get_first_child(listbox)) != NULL)
-    gtk_list_box_remove(GTK_LIST_BOX(listbox), child);
+  GtkTreeStore *ts = GTK_TREE_STORE(gtk_tree_view_get_model(GTK_TREE_VIEW(tree)));
+  if (!ts) return;
 
-  load_store_into_listbox(listbox, store);
+  gtk_tree_store_clear(ts);
+  load_store_into_treestore(ts, store);
+
+  /* Restore expand/collapse state */
+  restore_expanded_state(GTK_TREE_VIEW(tree));
 }
 
 void gtk_mailbox_tree_refresh(GtkWidget *tree) {

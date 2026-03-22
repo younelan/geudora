@@ -592,6 +592,67 @@ static void attach_mbox_context_menu(GtkWidget *tree, MacmbxTOC *toc);
 
 /* Forward declarations for shared header helpers */
 static char *read_raw_headers(MacmbxTOC *tocH, int sumNum, long *hdr_len);
+
+/* ── Drag source for message list (drag messages to sidebar mailboxes) ── */
+
+/* GTK4 DnD: attach GtkDragSource to the ScrolledWindow that wraps the TreeView.
+ * This avoids conflicting with TreeView's internal gesture handling.
+ * The prepare callback reads the TreeView selection. */
+
+static GdkContentProvider *on_msg_drag_prepare(GtkDragSource *source,
+                                                double x, double y,
+                                                gpointer ud) {
+  (void)source; (void)x; (void)y;
+  GtkWidget *tree = GTK_WIDGET(ud);
+  MacmbxTOC *toc = g_object_get_data(G_OBJECT(tree), "mbox-toc");
+  if (!toc) return NULL;
+
+  GtkTreeSelection *sel = gtk_tree_view_get_selection(GTK_TREE_VIEW(tree));
+  if (gtk_tree_selection_count_selected_rows(sel) == 0) return NULL;
+
+  GList *rows = gtk_tree_selection_get_selected_rows(sel, NULL);
+  if (!rows) return NULL;
+
+  GString *data = g_string_new("msg:");
+  g_string_append(data, toc->mbox_path);
+  g_string_append_c(data, '\t');
+
+  bool first = true;
+  for (GList *l = rows; l; l = l->next) {
+    GtkTreePath *path = l->data;
+    int *indices = gtk_tree_path_get_indices(path);
+    if (indices) {
+      if (!first) g_string_append_c(data, ',');
+      g_string_append_printf(data, "%d", indices[0]);
+      first = false;
+    }
+  }
+  g_list_free_full(rows, (GDestroyNotify)gtk_tree_path_free);
+
+  char *str = g_string_free(data, FALSE);
+  GdkContentProvider *provider = gdk_content_provider_new_typed(G_TYPE_STRING, str);
+  g_free(str);
+  return provider;
+}
+
+/* Attach drag source directly to the message list TreeView.
+ * GtkDragSource with propagation phase BUBBLE avoids interfering
+ * with TreeView's row selection (which uses CAPTURE phase). */
+static void attach_msg_drag_source(GtkWidget *tree, MacmbxTOC *toc) {
+  g_object_set_data(G_OBJECT(tree), "mbox-toc", toc);
+
+  GtkDragSource *drag = gtk_drag_source_new();
+  gtk_drag_source_set_actions(drag, GDK_ACTION_MOVE);
+  g_signal_connect(drag, "prepare", G_CALLBACK(on_msg_drag_prepare), tree);
+  gtk_event_controller_set_propagation_phase(GTK_EVENT_CONTROLLER(drag),
+                                              GTK_PHASE_BUBBLE);
+  gtk_widget_add_controller(tree, GTK_EVENT_CONTROLLER(drag));
+}
+
+/* No-op — kept for compatibility with existing call sites */
+static void wire_msg_drag_to_scroll(GtkWidget *scroll, GtkWidget *tree) {
+  (void)scroll; (void)tree;
+}
 static gchar *extract_header(const char *text, long textLen, const char *name);
 static GtkWidget *build_header_grid(const char *raw, long hdr_len, MacmbxMsgSum * sum);
 
@@ -914,6 +975,7 @@ void InitMailboxWin(MyWindowPtr win, MacmbxTOC * toc, bool showIt) {
   GtkWidget *scroll1 = gtk_scrolled_window_new();
   gtk_scrolled_window_set_child(GTK_SCROLLED_WINDOW(scroll1), tree);
   gtk_widget_set_vexpand(scroll1, TRUE);
+  wire_msg_drag_to_scroll(scroll1, tree);
   gtk_paned_set_start_child(GTK_PANED(vpaned), scroll1);
   gtk_paned_set_resize_start_child(GTK_PANED(vpaned), TRUE);
 
@@ -955,6 +1017,9 @@ void InitMailboxWin(MyWindowPtr win, MacmbxTOC * toc, bool showIt) {
 
   /* Right-click context menu */
   attach_mbox_context_menu(tree, toc);
+
+  /* Drag source: drag messages from list to sidebar mailboxes */
+  attach_msg_drag_source(tree, toc);
 
   /* Auto-select first message */
   if (toc->count > 0) {
@@ -1932,6 +1997,7 @@ GtkWidget *CreateMailboxPanel(MacmbxTOC *toc) {
   GtkWidget *scroll1 = gtk_scrolled_window_new();
   gtk_scrolled_window_set_child(GTK_SCROLLED_WINDOW(scroll1), tree);
   gtk_widget_set_vexpand(scroll1, TRUE);
+  wire_msg_drag_to_scroll(scroll1, tree);
   gtk_paned_set_start_child(GTK_PANED(vpaned), scroll1);
   gtk_paned_set_resize_start_child(GTK_PANED(vpaned), TRUE);
 
@@ -1973,6 +2039,9 @@ GtkWidget *CreateMailboxPanel(MacmbxTOC *toc) {
 
   /* Right-click context menu */
   attach_mbox_context_menu(tree, toc);
+
+  /* Drag source: drag messages from list to sidebar mailboxes */
+  attach_msg_drag_source(tree, toc);
 
   /* Auto-select first message */
   if (toc->count > 0) {
@@ -2329,6 +2398,7 @@ GtkWidget *CreateMailboxPanelMacmbx(MacmbxTOC *mtoc) {
   GtkWidget *scroll1 = gtk_scrolled_window_new();
   gtk_scrolled_window_set_child(GTK_SCROLLED_WINDOW(scroll1), tree);
   gtk_widget_set_vexpand(scroll1, TRUE);
+  wire_msg_drag_to_scroll(scroll1, tree);
   gtk_paned_set_start_child(GTK_PANED(vpaned), scroll1);
   gtk_paned_set_resize_start_child(GTK_PANED(vpaned), TRUE);
 
