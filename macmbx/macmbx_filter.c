@@ -879,3 +879,54 @@ int macmbx_filter_save(MacmbxFilterSet *fs) {
   fclose(f);
   return 0;
 }
+
+/* ================================================================
+ * Filter usage tracking (last match timestamps)
+ *
+ * Binary file format: array of { int32_t id; uint32_t timestamp; }
+ * ================================================================ */
+
+typedef struct { int32_t id; uint32_t when; } FilterUsageRecord;
+
+int macmbx_filter_load_usage(MacmbxFilterSet *fs, const char *usage_path) {
+  if (!fs || !usage_path) return -1;
+  FILE *f = fopen(usage_path, "rb");
+  if (!f) return 0; /* no file = no history, not an error */
+
+  FilterUsageRecord rec;
+  while (fread(&rec, sizeof(rec), 1, f) == 1) {
+    for (int i = 0; i < fs->count; i++) {
+      if (fs->rules[i].id == rec.id) {
+        fs->rules[i].last_match = rec.when;
+        break;
+      }
+    }
+  }
+  fclose(f);
+  return 0;
+}
+
+int macmbx_filter_save_usage(MacmbxFilterSet *fs, const char *usage_path) {
+  if (!fs || !usage_path) return -1;
+  FILE *f = fopen(usage_path, "wb");
+  if (!f) return -1;
+
+  for (int i = 0; i < fs->count; i++) {
+    if (fs->rules[i].last_match == 0) continue;
+    FilterUsageRecord rec;
+    rec.id = (int32_t)fs->rules[i].id;
+    rec.when = fs->rules[i].last_match;
+    fwrite(&rec, sizeof(rec), 1, f);
+  }
+  fclose(f);
+  return 0;
+}
+
+int macmbx_filter_note_match(MacmbxFilterSet *fs, int rule_index,
+                               const char *usage_path) {
+  if (!fs || rule_index < 0 || rule_index >= fs->count) return -1;
+  fs->rules[rule_index].last_match = (uint32_t)time(NULL);
+  if (usage_path)
+    return macmbx_filter_save_usage(fs, usage_path);
+  return 0;
+}

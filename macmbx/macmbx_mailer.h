@@ -64,6 +64,7 @@ void macmbx_mailer_set_cert_callback(MacmbxMailer *m, MacmbxMailerCertFn fn, voi
 
 /* Set filter set (applied after receive). Optional. */
 void macmbx_mailer_set_filters(MacmbxMailer *m, MacmbxFilterSet *filters);
+MacmbxFilterSet *macmbx_mailer_get_filters(MacmbxMailer *m);
 
 /* Set junk config (scoring after receive). Optional. */
 void macmbx_mailer_set_junk(MacmbxMailer *m, MacmbxJunkConfig *junk);

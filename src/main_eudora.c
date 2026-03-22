@@ -82,6 +82,14 @@ MacmbxFilterSet *get_filter_set(void) {
   return NULL;
 }
 
+/* Open a message from any TOC (used by search results, etc.) */
+void eudora_open_message(MacmbxTOC *toc, int index) {
+  extern MyWindowPtr OpenMessage(MacmbxTOC *tocH, short sumNum,
+                                  GtkWidget *winWP, MyWindowPtr win,
+                                  bool showIt, bool dontStrip);
+  OpenMessage(toc, (short)index, NULL, NULL, true, false);
+}
+
 /* Forward declarations */
 static GtkWidget *create_message_list(void);
 static void open_mailbox_tab(const char *name, const char *path);
@@ -90,43 +98,27 @@ static GtkWidget *open_panel_tab_icon(const char *panel_id, const char *title,
                                        GtkWidget *(*builder)(void));
 
 /*
- * read_message_raw - Read entire message from mailbox file (headers + body).
+ * read_message_raw - Read entire message from mailbox via macmbx.
  * Returns allocated string (caller must g_free), or NULL on error.
  */
 static gchar *read_message_raw(MacmbxTOC *toc, int msg_index) {
   if (!toc || msg_index < 0 || msg_index >= toc->count)
     return NULL;
 
-  MacmbxMsgSum *sum = &toc->msgs[msg_index];
-  FILE *fp = fopen(toc->mbox_path, "rb");
-  if (!fp)
-    fp = fopen(toc, "rb");
-  if (!fp)
-    return NULL;
-
-  if (fseek(fp, sum->offset, SEEK_SET) != 0) {
-    fclose(fp);
-    return NULL;
-  }
-
-  long len = sum->length;
-  if (len <= 0 || len > 10 * 1024 * 1024) {
-    fclose(fp);
-    return NULL;
-  }
-
-  gchar *buf = g_malloc(len + 1);
-  size_t nread = fread(buf, 1, len, fp);
-  fclose(fp);
-  buf[nread] = '\0';
+  long len = 0;
+  char *buf = macmbx_read_message(toc, msg_index, &len);
+  if (!buf) return NULL;
 
   /* Ensure valid UTF-8 — auto-convert from Windows-1252 if needed */
-  if (!g_utf8_validate(buf, nread, NULL)) {
+  if (!g_utf8_validate(buf, len, NULL)) {
     gchar *utf8 = ensure_utf8(buf);
-    g_free(buf);
+    free(buf);
     return utf8;
   }
-  return buf;
+  /* Transfer ownership to g_malloc'd memory for consistency */
+  gchar *gbuf = g_strdup(buf);
+  free(buf);
+  return gbuf;
 }
 
 /* Headers we display (case-insensitive match). Order matters for display. */
@@ -403,59 +395,30 @@ static int get_selected_message_index(void) {
 }
 
 /*
- * extract_reply_address - Extract reply-to address from message headers.
+ * extract_reply_address - Extract reply-to address via macmbx.
  * Falls back to From header if Reply-To not found.
  */
 static gchar *extract_reply_address(MacmbxTOC *toc, int msg_index) {
   if (!toc || msg_index < 0 || msg_index >= toc->count)
     return NULL;
 
-  MacmbxMsgSum *sum = &toc->msgs[msg_index];
-  FILE *fp = fopen(toc->mbox_path, "rb");
-  if (!fp)
-    fp = fopen(toc, "rb");
-  if (!fp)
-    return g_strdup(sum->from);
+  /* Try Reply-To first */
+  char *reply_to = macmbx_read_header_field(toc, msg_index, "Reply-To");
+  if (reply_to && reply_to[0])
+    return reply_to;
+  free(reply_to);
 
-  if (fseek(fp, sum->offset, SEEK_SET) != 0) {
-    fclose(fp);
-    return g_strdup(sum->from);
-  }
+  /* Fall back to From */
+  char *from = macmbx_read_header_field(toc, msg_index, "From");
+  if (from && from[0])
+    return from;
+  free(from);
 
-  /* Read just the headers (up to first blank line, max 8KB) */
-  char hdr[8192];
-  size_t nread = fread(hdr, 1, sizeof(hdr) - 1, fp);
-  fclose(fp);
-  hdr[nread] = '\0';
-
-  /* Look for Reply-To header first */
-  const char *p = strcasestr(hdr, "\nReply-To:");
-  if (p) {
-    p += 10; /* skip "\nReply-To:" */
-    while (*p == ' ' || *p == '\t') p++;
-    const char *end = strchr(p, '\n');
-    if (!end) end = p + strlen(p);
-    /* Trim \r */
-    while (end > p && (end[-1] == '\r' || end[-1] == '\n')) end--;
-    return g_strndup(p, end - p);
-  }
-
-  /* Fall back to From header */
-  p = strcasestr(hdr, "\nFrom:");
-  if (p) {
-    p += 6;
-    while (*p == ' ' || *p == '\t') p++;
-    const char *end = strchr(p, '\n');
-    if (!end) end = p + strlen(p);
-    while (end > p && (end[-1] == '\r' || end[-1] == '\n')) end--;
-    return g_strndup(p, end - p);
-  }
-
-  return g_strdup(sum->from);
+  return g_strdup(toc->msgs[msg_index].from);
 }
 
 /*
- * extract_all_recipients - Extract To and Cc addresses from message headers.
+ * extract_all_recipients - Extract To and Cc addresses via macmbx.
  * For Reply All - returns To and Cc combined.
  */
 static void extract_all_recipients(MacmbxTOC *toc, int msg_index,
@@ -465,44 +428,8 @@ static void extract_all_recipients(MacmbxTOC *toc, int msg_index,
   if (!toc || msg_index < 0 || msg_index >= toc->count)
     return;
 
-  MacmbxMsgSum *sum = &toc->msgs[msg_index];
-  FILE *fp = fopen(toc->mbox_path, "rb");
-  if (!fp)
-    fp = fopen(toc, "rb");
-  if (!fp)
-    return;
-
-  if (fseek(fp, sum->offset, SEEK_SET) != 0) {
-    fclose(fp);
-    return;
-  }
-
-  char hdr[8192];
-  size_t nread = fread(hdr, 1, sizeof(hdr) - 1, fp);
-  fclose(fp);
-  hdr[nread] = '\0';
-
-  /* Extract To: */
-  const char *p = strcasestr(hdr, "\nTo:");
-  if (p) {
-    p += 4;
-    while (*p == ' ' || *p == '\t') p++;
-    const char *end = strchr(p, '\n');
-    if (!end) end = p + strlen(p);
-    while (end > p && (end[-1] == '\r' || end[-1] == '\n')) end--;
-    *out_to = g_strndup(p, end - p);
-  }
-
-  /* Extract Cc: */
-  p = strcasestr(hdr, "\nCc:");
-  if (p) {
-    p += 4;
-    while (*p == ' ' || *p == '\t') p++;
-    const char *end = strchr(p, '\n');
-    if (!end) end = p + strlen(p);
-    while (end > p && (end[-1] == '\r' || end[-1] == '\n')) end--;
-    *out_cc = g_strndup(p, end - p);
-  }
+  *out_to = macmbx_read_header_field(toc, msg_index, "To");
+  *out_cc = macmbx_read_header_field(toc, msg_index, "Cc");
 }
 
 /*
@@ -1477,10 +1404,11 @@ static void tb_redirect(GtkButton *b, gpointer u) {
   (void)b;(void)u; action_forward(NULL, NULL, NULL);
 }
 
-/* Search — placeholder */
+/* Search — opens search panel tab */
 static void tb_search(GtkButton *b, gpointer u) {
   (void)b;(void)u;
-  g_print("Search not yet implemented\n");
+  extern GtkWidget *CreateSearchPanel(void);
+  open_panel_tab_icon("search", "Search", "edit-find-symbolic", CreateSearchPanel);
 }
 
 /*

@@ -663,6 +663,7 @@ typedef struct {
   int condition_count;
   MacmbxAction actions[MACMBX_MAX_ACTIONS];
   int action_count;
+  uint32_t last_match;       /* timestamp of last match (seconds since epoch) */
 } MacmbxRule;
 
 /* Filter set — collection of rules */
@@ -701,6 +702,16 @@ MacmbxFilterSet *macmbx_filter_load(const char *path);
 
 /* Save to Eudora Filters file. Returns 0 on success. */
 int macmbx_filter_save(MacmbxFilterSet *fs);
+
+/* Load/save filter usage (last match timestamps).
+ * usage_path: binary file alongside the Filters file.
+ * Populates rule->last_match from file, or writes them back. */
+int macmbx_filter_load_usage(MacmbxFilterSet *fs, const char *usage_path);
+int macmbx_filter_save_usage(MacmbxFilterSet *fs, const char *usage_path);
+
+/* Note that a rule matched. Updates last_match and saves usage file. */
+int macmbx_filter_note_match(MacmbxFilterSet *fs, int rule_index,
+                               const char *usage_path);
 
 /* --- Rule management --- */
 

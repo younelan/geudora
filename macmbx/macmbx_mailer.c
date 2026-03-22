@@ -102,6 +102,10 @@ void macmbx_mailer_set_filters(MacmbxMailer *m, MacmbxFilterSet *filters) {
   if (m) m->filters = filters;
 }
 
+MacmbxFilterSet *macmbx_mailer_get_filters(MacmbxMailer *m) {
+  return m ? m->filters : NULL;
+}
+
 void macmbx_mailer_set_junk(MacmbxMailer *m, MacmbxJunkConfig *junk) {
   if (m) m->junk = junk;
 }

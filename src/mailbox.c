@@ -969,23 +969,23 @@ void InitMailboxWin(MyWindowPtr win, MacmbxTOC * toc, bool showIt) {
 
 /* ── Message viewer toolbar helpers ── */
 
-/* Read raw message headers from disk. Caller must g_free the result.
+/* Read raw message headers via macmbx. Caller must g_free the result.
  * Sets *hdr_len to byte length of headers (up to body start). */
 static char *read_raw_headers(MacmbxTOC *tocH, int sumNum, long *hdr_len) {
-  MacmbxMsgSum * sum = &tocH->msgs[sumNum];
-  FILE *fp = fopen(tocH->mbox_path, "r");
-  if (!fp) { *hdr_len = 0; return NULL; }
-  fseek(fp, sum->offset, SEEK_SET);
-  long rawLen = sum->length;
-  char *raw = g_malloc(rawLen + 1);
-  size_t nrd = fread(raw, 1, rawLen, fp);
-  fclose(fp);
-  raw[nrd] = '\0';
+  long msg_len = 0;
+  char *raw = macmbx_read_message(tocH, sumNum, &msg_len);
+  if (!raw) { *hdr_len = 0; return NULL; }
+
+  MacmbxMsgSum *sum = &tocH->msgs[sumNum];
   long body_off = sum->body_offset;
-  if (body_off <= 0 || body_off > (long)nrd)
-    body_off = find_body_start(raw, nrd);
-  *hdr_len = (body_off > 0) ? body_off : (long)nrd;
-  return raw;
+  if (body_off <= 0 || body_off > msg_len)
+    body_off = find_body_start(raw, msg_len);
+  *hdr_len = (body_off > 0) ? body_off : msg_len;
+
+  /* Transfer to g_malloc'd memory */
+  gchar *gbuf = g_strdup(raw);
+  free(raw);
+  return gbuf;
 }
 
 /* Build a normal (weeded) header grid from raw message text.
@@ -1393,25 +1393,20 @@ static int mbox_tree_selected_index(GtkTreeView *tree) {
   return idx;
 }
 
-/* Read raw message from mailbox file */
+/* Read raw message from mailbox via macmbx */
 static gchar *mbox_read_raw(MacmbxTOC *toc, int idx) {
   if (!toc || idx < 0 || idx >= toc->count) return NULL;
-  MacmbxMsgSum * sum = &toc->msgs[idx];
-  FILE *fp = fopen(toc->mbox_path, "rb");
-  if (!fp) fp = fopen(toc, "rb");
-  if (!fp) return NULL;
-  if (fseek(fp, sum->offset, SEEK_SET) != 0) { fclose(fp); return NULL; }
-  long len = sum->length;
-  if (len <= 0 || len > 10*1024*1024) { fclose(fp); return NULL; }
-  char *buf = g_malloc(len + 1);
-  size_t nread = fread(buf, 1, len, fp);
-  fclose(fp);
-  buf[nread] = '\0';
-  if (!g_utf8_validate(buf, nread, NULL)) {
+  long len = 0;
+  char *buf = macmbx_read_message(toc, idx, &len);
+  if (!buf) return NULL;
+  if (!g_utf8_validate(buf, len, NULL)) {
     gchar *utf8 = ensure_utf8(buf);
-    g_free(buf);
+    free(buf);
     return utf8;
   }
+  /* Transfer to g_malloc */
+  gchar *gbuf = g_strdup(buf);
+  free(buf);
   return buf;
 }
 
