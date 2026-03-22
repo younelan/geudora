@@ -2,6 +2,7 @@
 #include "geditctrl.h"
 #include "gedit-clipboard.h"
 #include "gedit-print.h"
+#include "gedit-table.h"
 #include <gtk/gtk.h>
 #include <string.h>
 
@@ -1082,7 +1083,88 @@ void gedit_document_insert_markup(geditDocument *self, gint offset,
         g_free(close_tag);
         if (close_pos) { p = close_pos + 1; continue; }
       }
-      /* Ignore: html, head, body, title, meta, link, img, table, tr, td, th, etc. */
+      /* Handle <table>: parse the entire table block and insert text content */
+      else if (!is_closing &&
+               g_ascii_strncasecmp(tag_name, "table", name_len) == 0 && name_len == 5) {
+        /* Find the closing </table> tag */
+        const gchar *table_start = p;
+        const gchar *scan_t = end + 1;
+        const gchar *table_end_tag = NULL;
+        int nesting = 1;
+        while (*scan_t && nesting > 0) {
+          if (*scan_t == '<') {
+            if (g_ascii_strncasecmp(scan_t + 1, "table", 5) == 0 &&
+                (scan_t[6] == '>' || scan_t[6] == ' ' || scan_t[6] == '/'))
+              nesting++;
+            else if (g_ascii_strncasecmp(scan_t + 1, "/table", 6) == 0) {
+              nesting--;
+              if (nesting == 0) { table_end_tag = scan_t; break; }
+            }
+          }
+          scan_t++;
+        }
+        if (table_end_tag) {
+          const gchar *after_close = strchr(table_end_tag, '>');
+          if (after_close) after_close++; else after_close = table_end_tag + 8;
+          int table_html_len = (int)(after_close - table_start);
+          /* Parse table into GEditTable to extract text content */
+          {
+            /* Reuse the HTML parser from gedit-table to build the data model */
+            /* We insert a text-based representation into the document */
+            const gchar *tEnd = table_start + table_html_len;
+            /* Minimal inline parse: find <tr>/<td>/<th> and extract text */
+            if (plain->len > 0 && plain->str[plain->len - 1] != '\n')
+              g_string_append_c(plain, '\n');
+            const gchar *tp = end + 1; /* past <table ...> */
+            while (tp < tEnd) {
+              if (*tp == '<') {
+                const gchar *tge = strchr(tp, '>');
+                if (!tge) break;
+                int tl = (int)(tge - tp - 1);
+                const gchar *tn = tp + 1;
+                gboolean tclosing = (tn[0] == '/');
+                const gchar *tnn = tclosing ? tn + 1 : tn;
+                int tnl = 0;
+                while (tnl < tl && tnn[tnl] != ' ' && tnn[tnl] != '/' && tnn[tnl] != '>') tnl++;
+                if (tclosing && g_ascii_strncasecmp(tnn, "tr", tnl) == 0 && tnl == 2) {
+                  if (plain->len > 0 && plain->str[plain->len - 1] != '\n')
+                    g_string_append_c(plain, '\n');
+                }
+                else if (!tclosing &&
+                         ((g_ascii_strncasecmp(tnn, "td", tnl) == 0 && tnl == 2) ||
+                          (g_ascii_strncasecmp(tnn, "th", tnl) == 0 && tnl == 2))) {
+                  /* If not the first cell in the row, add a tab separator */
+                  if (plain->len > 0 && plain->str[plain->len - 1] != '\n' &&
+                      plain->str[plain->len - 1] != '\t')
+                    g_string_append_c(plain, '\t');
+                }
+                tp = tge + 1;
+                continue;
+              }
+              else if (*tp == '&') {
+                if (g_str_has_prefix(tp, "&amp;"))  { g_string_append_c(plain, '&'); tp += 5; }
+                else if (g_str_has_prefix(tp, "&lt;"))  { g_string_append_c(plain, '<'); tp += 4; }
+                else if (g_str_has_prefix(tp, "&gt;"))  { g_string_append_c(plain, '>'); tp += 4; }
+                else if (g_str_has_prefix(tp, "&nbsp;")) { g_string_append_c(plain, ' '); tp += 6; }
+                else if (g_str_has_prefix(tp, "&quot;")) { g_string_append_c(plain, '"'); tp += 6; }
+                else { g_string_append_c(plain, *tp); tp++; }
+                continue;
+              }
+              else {
+                g_string_append_c(plain, *tp);
+                tp++;
+              }
+            }
+            if (plain->len > 0 && plain->str[plain->len - 1] != '\n')
+              g_string_append_c(plain, '\n');
+          }
+          p = after_close;
+          continue;
+        }
+        /* If no closing tag found, fall through to ignore */
+      }
+      /* Skip <tr>, <td>, <th> and closing tags that appear outside a <table> block */
+      /* Ignore: html, head, body, title, meta, link, img, tr, td, th, etc. */
 
       p = end + 1;
       continue;
