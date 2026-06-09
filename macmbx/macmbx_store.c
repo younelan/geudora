@@ -625,3 +625,89 @@ int macmbx_store_list_folders(MacmbxStore *store, char ***paths) {
 const char *macmbx_store_root_dir(MacmbxStore *store) {
   return store ? store->root_path : NULL;
 }
+
+/* ================================================================
+ * Embedded files (inline images, etc.)
+ * ================================================================ */
+
+char *macmbx_store_embedded_dir(MacmbxStore *store) {
+  if (!store) return NULL;
+  char path[PATH_MAX];
+  snprintf(path, sizeof(path), "%s/Embedded", store->base_path);
+#ifdef _WIN32
+  _mkdir(path);
+#else
+  mkdir(path, 0755);
+#endif
+  return strdup(path);
+}
+
+char *macmbx_store_resolve_embedded(MacmbxStore *store, const char *rel_path) {
+  if (!store || !rel_path) return NULL;
+  char path[PATH_MAX];
+  snprintf(path, sizeof(path), "%s/%s", store->base_path, rel_path);
+  return strdup(path);
+}
+
+char *macmbx_store_embed_file(MacmbxStore *store, const char *src_path) {
+  if (!store || !src_path) return NULL;
+
+  /* If the file is already inside Embedded/, don't copy — return its relative path */
+  char *emb_dir = macmbx_store_embedded_dir(store);
+  if (emb_dir && strncmp(src_path, emb_dir, strlen(emb_dir)) == 0) {
+    const char *rel = src_path + strlen(store->base_path) + 1;
+    char *result = strdup(rel);
+    free(emb_dir);
+    return result;
+  }
+
+  /* Ensure Embedded/ exists */
+  if (!emb_dir) return NULL;
+
+  /* Extract filename from source path */
+  const char *basename = strrchr(src_path, '/');
+  if (!basename) basename = strrchr(src_path, '\\');
+  basename = basename ? basename + 1 : src_path;
+
+  /* Generate unique name if file already exists */
+  char dst[PATH_MAX];
+  snprintf(dst, sizeof(dst), "%s/%s", emb_dir, basename);
+
+  struct stat st;
+  if (stat(dst, &st) == 0) {
+    /* File exists — add numeric suffix */
+    const char *dot = strrchr(basename, '.');
+    char name[256], ext[64];
+    if (dot) {
+      snprintf(name, sizeof(name), "%.*s", (int)(dot - basename), basename);
+      snprintf(ext, sizeof(ext), "%s", dot);
+    } else {
+      snprintf(name, sizeof(name), "%s", basename);
+      ext[0] = '\0';
+    }
+    for (int i = 1; i < 10000; i++) {
+      snprintf(dst, sizeof(dst), "%s/%s_%d%s", emb_dir, name, i, ext);
+      if (stat(dst, &st) != 0) break;
+    }
+  }
+
+  /* Copy file */
+  FILE *in = fopen(src_path, "rb");
+  if (!in) { free(emb_dir); return NULL; }
+  FILE *out = fopen(dst, "wb");
+  if (!out) { fclose(in); free(emb_dir); return NULL; }
+
+  char buf[8192];
+  size_t n;
+  while ((n = fread(buf, 1, sizeof(buf), in)) > 0)
+    fwrite(buf, 1, n, out);
+  fclose(in);
+  fclose(out);
+
+  /* Return relative path from store root: "Embedded/filename.jpg" */
+  const char *rel = dst + strlen(store->base_path) + 1;
+  char *result = strdup(rel);
+
+  free(emb_dir);
+  return result;
+}

@@ -1387,4 +1387,20 @@ int macmbx_store_list_folders(MacmbxStore *store, char ***paths);
 /* Free the node tree (internal use). */
 void macmbx_node_free(MacmbxNode *node);
 
+/* ================================================================
+ * Embedded files (inline images, etc.)
+ *
+ * Stores files in <store_root>/Embedded/ with unique names.
+ * Returns relative paths for use in HTML (e.g. "Embedded/img001.jpg").
+ * ================================================================ */
+
+/* Copy a file into the Embedded folder. Returns relative path. Caller frees. */
+char *macmbx_store_embed_file(MacmbxStore *store, const char *src_path);
+
+/* Resolve a relative embedded path to absolute. Caller frees. */
+char *macmbx_store_resolve_embedded(MacmbxStore *store, const char *rel_path);
+
+/* Get the Embedded directory path (creates if needed). Caller frees. */
+char *macmbx_store_embedded_dir(MacmbxStore *store);
+
 #endif /* MACMBX_H */
