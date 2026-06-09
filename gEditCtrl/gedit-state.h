@@ -22,6 +22,9 @@ typedef struct {
     gint resize_orig_h;        /* original height at drag start */
     gint selected_graphic;     /* char offset of selected graphic, -1 if none */
 
+    /* Editable state — FALSE means read-only (selection OK, no text changes) */
+    gboolean editable;
+
     /* Theming colors — all default to 0 (unset), meaning white bg / black text */
     gboolean has_theme;
     GdkRGBA bg_color;          /* background */

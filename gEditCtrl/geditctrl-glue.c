@@ -207,6 +207,7 @@ GtkWidget *geditctrl_new(void) {
   s->caret_visible = TRUE;
   s->preferred_x = -1;
   s->resizing = FALSE;
+  s->editable = TRUE;
   s->resize_graphic_offset = -1;
   s->selected_graphic = -1;
 
@@ -575,6 +576,26 @@ void geditctrl_insert_image(GtkWidget *ctrl, GdkPixbuf *pixbuf, gint width,
   gtk_widget_queue_draw(area);
 }
 
+void geditctrl_insert_custom_graphic(GtkWidget *ctrl, gint width, gint height,
+                                     geditGraphicDrawFunc draw_func,
+                                     gpointer draw_data,
+                                     GDestroyNotify draw_data_destroy) {
+  if (!GTK_IS_SCROLLED_WINDOW(ctrl))
+    return;
+  GtkWidget *area = gtk_scrolled_window_get_child(GTK_SCROLLED_WINDOW(ctrl));
+  if (!GTK_IS_WIDGET(area))
+    return;
+  GEditCtrlState *s = gedit_state_for_area(area);
+  geditDocument *doc = s ? s->doc : NULL;
+  if (!s || !doc || !draw_func)
+    return;
+  gedit_document_insert_custom_graphic(doc, s->caret, width, height,
+                                       draw_func, draw_data, draw_data_destroy);
+  s->caret++;
+  s->sel_start = s->caret;
+  s->sel_end = s->caret;
+  gtk_widget_queue_draw(area);
+}
 
 void geditctrl_insert_hr(GtkWidget *ctrl) {
   if (!GTK_IS_SCROLLED_WINDOW(ctrl))
@@ -786,23 +807,13 @@ void geditctrl_plain_para_at(GtkWidget *ctrl, gint start, gint end) {
 
 void geditctrl_set_editable(GtkWidget *ctrl, gboolean editable) {
   if (!ctrl) return;
-  geditDocument *doc = geditctrl_get_document(ctrl);
-  if (!doc) return;
-  GtkTextBuffer *buf = gedit_document_get_buffer(doc);
-  if (!buf) return;
-  /* If the entire buffer should be read-only, apply a non-editable tag
-     over the whole range; otherwise remove it. */
-  GtkTextIter start, end;
-  gtk_text_buffer_get_bounds(buf, &start, &end);
-  GtkTextTagTable *table = gtk_text_buffer_get_tag_table(buf);
-  GtkTextTag *tag = gtk_text_tag_table_lookup(table, "readonly");
-  if (!editable) {
-    if (!tag)
-      tag = gtk_text_buffer_create_tag(buf, "readonly", "editable", FALSE, NULL);
-    gtk_text_buffer_apply_tag(buf, tag, &start, &end);
-  } else if (tag) {
-    gtk_text_buffer_remove_tag(buf, tag, &start, &end);
-  }
+
+  /* Set the flag on the state — key/input handlers check this.
+   * The state is stored on both the scrolled window and the drawing area
+   * (same pointer). Use the scrolled window's copy since get_child may
+   * return a GtkViewport wrapper, not the drawing area directly. */
+  GEditCtrlState *s = g_object_get_data(G_OBJECT(ctrl), "gedit-state");
+  if (s) s->editable = editable;
 }
 
 void geditctrl_set_rich_text(GtkWidget *ctrl, gint offset, gboolean is_rich) {

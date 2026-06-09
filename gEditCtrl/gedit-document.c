@@ -56,12 +56,18 @@ static geditGraphic *gedit_graphic_copy(const geditGraphic *src) {
   memcpy(g, src, sizeof(geditGraphic));
   if (g->texture)
     g_object_ref(g->texture);
+  if (g->src)
+    g->src = g_strdup(g->src);
+  g->draw_data_destroy = NULL; /* copy does not own draw_data */
   return g;
 }
 
 static void gedit_graphic_free(geditGraphic *g) {
   if (g->texture)
     g_object_unref(g->texture);
+  if (g->draw_data_destroy && g->draw_data)
+    g->draw_data_destroy(g->draw_data);
+  g_free(g->src);
   g_free(g);
 }
 
@@ -1222,6 +1228,69 @@ void gedit_document_insert_graphic(geditDocument *self, gint offset,
   } else {
     self->style_runs = g_list_prepend(self->style_runs, run);
   }
+
+  g_mutex_unlock(&self->mutex);
+  g_signal_emit(self, signals[DOCUMENT_CHANGED], 0);
+}
+
+void gedit_document_insert_custom_graphic(geditDocument *self, gint offset,
+                                          gint width, gint height,
+                                          geditGraphicDrawFunc draw_func,
+                                          gpointer draw_data,
+                                          GDestroyNotify draw_data_destroy) {
+  g_return_if_fail(gedit_DOCUMENT(self));
+  g_return_if_fail(draw_func != NULL);
+  g_mutex_lock(&self->mutex);
+
+  geditSnapshot *snap = gedit_snapshot_new(self);
+  g_queue_push_head(self->undo_stack, snap);
+  if (self->redo_stack) {
+    g_queue_free_full(self->redo_stack, (GDestroyNotify)gedit_snapshot_free);
+    self->redo_stack = g_queue_new();
+  }
+
+  /* Insert placeholder character U+FFFC */
+  GtkTextIter iter;
+  gtk_text_buffer_get_iter_at_offset(self->buffer, &iter, offset);
+  gtk_text_buffer_insert(self->buffer, &iter, "\xef\xbf\xbc", -1);
+
+  /* Shift existing runs past insertion point */
+  for (GList *l = self->style_runs; l; l = l->next) {
+    geditStyleRun *r = (geditStyleRun *)l->data;
+    if (r->offset >= offset)
+      r->offset += 1;
+  }
+
+  geditGraphic *gr = g_new0(geditGraphic, 1);
+  gr->offset = offset;
+  gr->width = width;
+  gr->height = height;
+  gr->texture = NULL;
+  gr->src = NULL;
+  gr->draw_func = draw_func;
+  gr->draw_data = draw_data;
+  gr->draw_data_destroy = draw_data_destroy;
+
+  geditStyleRun *run = g_new0(geditStyleRun, 1);
+  run->offset = offset;
+  run->length = 1;
+  run->is_graphic = TRUE;
+  run->graphic = gr;
+
+  /* Insert in sorted order */
+  GList *l = self->style_runs;
+  GList *prev = NULL;
+  while (l) {
+    geditStyleRun *r = (geditStyleRun *)l->data;
+    if (r->offset > offset)
+      break;
+    prev = l;
+    l = l->next;
+  }
+  if (prev)
+    self->style_runs = g_list_insert_before(self->style_runs, l, run);
+  else
+    self->style_runs = g_list_prepend(self->style_runs, run);
 
   g_mutex_unlock(&self->mutex);
   g_signal_emit(self, signals[DOCUMENT_CHANGED], 0);

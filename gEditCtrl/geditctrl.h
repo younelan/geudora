@@ -31,6 +31,10 @@ void geditctrl_change_font_size(GtkWidget *ctrl, gint delta_points);
 void geditctrl_set_font_size(GtkWidget *ctrl, gint points);
 void geditctrl_insert_image(GtkWidget *ctrl, GdkPixbuf *texture, gint width,
                             gint height);
+void geditctrl_insert_custom_graphic(GtkWidget *ctrl, gint width, gint height,
+                                     geditGraphicDrawFunc draw_func,
+                                     gpointer draw_data,
+                                     GDestroyNotify draw_data_destroy);
 
 /* Forward a key event (from a toplevel/window controller) to the control.
  * Returns GDK_EVENT_STOP if the event was handled. */

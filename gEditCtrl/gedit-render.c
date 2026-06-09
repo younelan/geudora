@@ -339,7 +339,13 @@ G_GNUC_INTERNAL void gedit_draw_cb(GtkDrawingArea *area, cairo_t *cr, int width,
         int gw = run->graphic->width;
         int gh = run->graphic->height;
 
-        if (run->graphic->texture) {
+        if (run->graphic->draw_func) {
+          /* Custom-draw graphic (charts, graphs, etc.) */
+          cairo_save(cr);
+          cairo_translate(cr, gx, gy);
+          run->graphic->draw_func(cr, gw, gh, run->graphic->draw_data);
+          cairo_restore(cr);
+        } else if (run->graphic->texture) {
           GdkTexture *tex = run->graphic->texture;
           int tw = gdk_texture_get_width(tex);
           int th = gdk_texture_get_height(tex);
@@ -851,7 +857,12 @@ double geditctrl_render_to_cairo(GtkWidget *ctrl, cairo_t *cr,
             int gw = run->graphic->width;
             int gh = run->graphic->height;
 
-            if (run->graphic->texture) {
+            if (run->graphic->draw_func) {
+              cairo_save(cr);
+              cairo_translate(cr, gx, gy);
+              run->graphic->draw_func(cr, gw, gh, run->graphic->draw_data);
+              cairo_restore(cr);
+            } else if (run->graphic->texture) {
               GdkTexture *tex = run->graphic->texture;
               int tw = gdk_texture_get_width(tex);
               int th = gdk_texture_get_height(tex);

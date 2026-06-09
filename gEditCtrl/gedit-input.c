@@ -333,7 +333,6 @@ G_GNUC_INTERNAL void gedit_pressed_cb(GtkGestureClick *gesture, gint n_press,
                                       gdouble x, gdouble y,
                                       gpointer user_data) {
   (void)gesture;
-  (void)n_press;
   GtkWidget *area = GTK_WIDGET(user_data);
   GEditCtrlState *s = gedit_state_for_area(area);
   geditDocument *doc = s ? s->doc : NULL;
@@ -496,6 +495,65 @@ G_GNUC_INTERNAL void gedit_pressed_cb(GtkGestureClick *gesture, gint n_press,
     s->sel_start = doc_len;
     s->sel_end = doc_len;
     s->dragging = TRUE;
+  }
+
+  /* Double-click: select word. Triple-click: select line. */
+  if (n_press >= 2 && full) {
+    gint pos = s->caret;
+    gint doc_len = g_utf8_strlen(full, -1);
+
+    if (n_press == 2) {
+      /* Select word: expand left/right to word boundaries.
+       * Word chars: alphanumeric + underscore. */
+      gint wstart = pos, wend = pos;
+
+      /* Walk left to find word start */
+      while (wstart > 0) {
+        const gchar *p = g_utf8_offset_to_pointer(full, wstart - 1);
+        gunichar uc = g_utf8_get_char(p);
+        if (!g_unichar_isalnum(uc) && uc != '_') break;
+        wstart--;
+      }
+      /* Walk right to find word end */
+      while (wend < doc_len) {
+        const gchar *p = g_utf8_offset_to_pointer(full, wend);
+        gunichar uc = g_utf8_get_char(p);
+        if (!g_unichar_isalnum(uc) && uc != '_') break;
+        wend++;
+      }
+      /* If we didn't expand at all (clicked on whitespace/punctuation),
+       * select the single non-word character */
+      if (wstart == wend && pos < doc_len) {
+        wstart = pos;
+        wend = pos + 1;
+      }
+
+      s->sel_start = wstart;
+      s->sel_end = wend;
+      s->sel_anchor = wstart;
+      s->caret = wend;
+    } else {
+      /* Triple-click: select entire line (paragraph).
+       * Find \n before and after caret position. */
+      gint lstart = pos, lend = pos;
+
+      while (lstart > 0) {
+        const gchar *p = g_utf8_offset_to_pointer(full, lstart - 1);
+        if (*p == '\n') break;
+        lstart--;
+      }
+      while (lend < doc_len) {
+        const gchar *p = g_utf8_offset_to_pointer(full, lend);
+        if (*p == '\n') { lend++; break; }
+        lend++;
+      }
+
+      s->sel_start = lstart;
+      s->sel_end = lend;
+      s->sel_anchor = lstart;
+      s->caret = lend;
+    }
+    s->dragging = FALSE;
   }
 
   g_signal_emit_by_name(doc, "selection-changed");
@@ -690,28 +748,43 @@ G_GNUC_INTERNAL gboolean gedit_key_pressed_cb(GtkEventControllerKey *controller,
   if (!s || !doc)
     return GDK_EVENT_PROPAGATE;
 
-  /* Undo / Redo / Clipboard shortcuts */
+  /* Clipboard and undo shortcuts */
   if ((mods & (GDK_CONTROL_MASK | GDK_META_MASK | GDK_SUPER_MASK)) &&
       !(mods & GDK_ALT_MASK)) {
     guint lower_key = gdk_keyval_to_lower(keyval);
+
+    /* Copy always works (even read-only) */
+    if (lower_key == GDK_KEY_c) {
+      if (s->sel_start != s->sel_end)
+        gedit_clipboard_copy(area, s->sel_start, s->sel_end, doc);
+      return GDK_EVENT_STOP;
+    }
+    /* Select All always works */
+    if (lower_key == GDK_KEY_a) {
+      gint doc_len = gedit_document_get_length(doc);
+      s->sel_start = 0;
+      s->sel_end = doc_len;
+      s->sel_anchor = 0;
+      s->caret = doc_len;
+      g_signal_emit_by_name(doc, "selection-changed");
+      gtk_widget_queue_draw(area);
+      return GDK_EVENT_STOP;
+    }
+
+    /* Everything below modifies content — block in read-only mode */
+    if (!s->editable) return GDK_EVENT_PROPAGATE;
+
     if (lower_key == GDK_KEY_z) {
-      if (mods & GDK_SHIFT_MASK) {
+      if (mods & GDK_SHIFT_MASK)
         gedit_document_redo(doc);
-      } else {
+      else
         gedit_document_undo(doc);
-      }
       gtk_widget_queue_draw(area);
       return GDK_EVENT_STOP;
     }
     if (lower_key == GDK_KEY_y) {
       gedit_document_redo(doc);
       gtk_widget_queue_draw(area);
-      return GDK_EVENT_STOP;
-    }
-    if (lower_key == GDK_KEY_c) {
-      if (s->sel_start != s->sel_end) {
-        gedit_clipboard_copy(area, s->sel_start, s->sel_end, doc);
-      }
       return GDK_EVENT_STOP;
     }
     if (lower_key == GDK_KEY_x) {
@@ -735,6 +808,18 @@ G_GNUC_INTERNAL gboolean gedit_key_pressed_cb(GtkEventControllerKey *controller,
       s->sel_anchor = -1;
       return GDK_EVENT_STOP;
     }
+  }
+
+  /* All keys below modify the document — block in read-only mode.
+   * Arrow keys and navigation are handled further down and allowed. */
+  if (!s->editable) {
+    /* Allow arrow keys, Home, End, Page Up/Down in read-only */
+    if (keyval == GDK_KEY_Left || keyval == GDK_KEY_Right ||
+        keyval == GDK_KEY_Up || keyval == GDK_KEY_Down ||
+        keyval == GDK_KEY_Home || keyval == GDK_KEY_End ||
+        keyval == GDK_KEY_Page_Up || keyval == GDK_KEY_Page_Down)
+      goto handle_navigation;
+    return GDK_EVENT_PROPAGATE;
   }
 
   if (keyval == GDK_KEY_Return || keyval == GDK_KEY_KP_Enter) {
@@ -825,7 +910,8 @@ G_GNUC_INTERNAL gboolean gedit_key_pressed_cb(GtkEventControllerKey *controller,
     return GDK_EVENT_STOP;
   }
 
-  /* Enhanced arrow key handling with Ctrl/Cmd modifiers */
+  /* Navigation keys — always allowed, even in read-only mode */
+handle_navigation:
   if (keyval == GDK_KEY_Home || keyval == GDK_KEY_End ||
       keyval == GDK_KEY_Left || keyval == GDK_KEY_Right ||
       keyval == GDK_KEY_Up || keyval == GDK_KEY_Down) {

@@ -9,12 +9,20 @@ G_BEGIN_DECLS
 typedef struct _geditDocument geditDocument;
 typedef struct _geditDocumentClass geditDocumentClass;
 
+/* Custom draw callback for host-drawn graphics (charts, graphs, etc.).
+ * Called during rendering with cairo translated to the graphic's position. */
+typedef void (*geditGraphicDrawFunc)(cairo_t *cr, int width, int height,
+                                     gpointer user_data);
+
 typedef struct {
   gint offset; /* char offset */
   gint width;  /* pixels */
   gint height; /* pixels */
   GdkTexture *texture;
   gchar *src;  /* original source URL or file path (for serialization) */
+  geditGraphicDrawFunc draw_func;   /* custom draw callback, or NULL */
+  gpointer draw_data;               /* user data for draw_func */
+  GDestroyNotify draw_data_destroy; /* destructor for draw_data, or NULL */
 } geditGraphic;
 
 typedef struct {
@@ -108,6 +116,11 @@ void gedit_document_add_style_run(geditDocument *self, gint offset, gint length,
 void gedit_document_insert_graphic(geditDocument *self, gint offset,
                                    GdkTexture *texture, gint width,
                                    gint height);
+void gedit_document_insert_custom_graphic(geditDocument *self, gint offset,
+                                          gint width, gint height,
+                                          geditGraphicDrawFunc draw_func,
+                                          gpointer draw_data,
+                                          GDestroyNotify draw_data_destroy);
 void gedit_document_toggle_style(geditDocument *self, gint offset, gint length,
                                  gboolean bold, gboolean italic,
                                  gboolean underline);
