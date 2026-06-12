@@ -34,75 +34,12 @@ DAMAGE. */
 #include "message.h"
 #include "gtk_settings.h"
 #include "StringUtil.h"
+#include "macmbx.h"
 
 #include <string.h>
 #include <ctype.h>
 
-/* --- Emoticon mapping table --- */
-
-typedef struct {
-    const char *ascii;     /* ASCII pattern, e.g. ":-)" */
-    const char *emoji;     /* UTF-8 emoji, e.g. "\xF0\x9F\x98\x80" */
-    const char *meaning;   /* Human-readable, e.g. "smile" */
-    int ascii_len;         /* strlen(ascii), computed at init */
-} EmoEntry;
-
-/*
- * Mapping table — ordered longest-first within each starting character
- * so longer patterns match before shorter ones (e.g. ":-)" before ":)").
- *
- * These are the standard emoticons from original Eudora plus common extras.
- */
-static EmoEntry emo_table[] = {
-    /* Smileys */
-    {":-)",   "\xF0\x9F\x98\x80", "smile",       0},   /* 😀 */
-    {":)",    "\xF0\x9F\x98\x80", "smile",       0},   /* 😀 */
-    {";-)",   "\xF0\x9F\x98\x89", "wink",        0},   /* 😉 */
-    {";)",    "\xF0\x9F\x98\x89", "wink",        0},   /* 😉 */
-    {":-D",   "\xF0\x9F\x98\x83", "big grin",    0},   /* 😃 */
-    {":D",    "\xF0\x9F\x98\x83", "big grin",    0},   /* 😃 */
-    {":-P",   "\xF0\x9F\x98\x9B", "tongue",      0},   /* 😛 */
-    {":P",    "\xF0\x9F\x98\x9B", "tongue",      0},   /* 😛 */
-    {":-p",   "\xF0\x9F\x98\x9B", "tongue",      0},   /* 😛 */
-    {":p",    "\xF0\x9F\x98\x9B", "tongue",      0},   /* 😛 */
-    {":-(",   "\xF0\x9F\x98\x9E", "sad",         0},   /* 😞 */
-    {":(",    "\xF0\x9F\x98\x9E", "sad",         0},   /* 😞 */
-    {":-/",   "\xF0\x9F\x98\x95", "confused",    0},   /* 😕 */
-    {":/",    "\xF0\x9F\x98\x95", "confused",    0},   /* 😕 */
-    {":-|",   "\xF0\x9F\x98\x90", "neutral",     0},   /* 😐 */
-    {":|",    "\xF0\x9F\x98\x90", "neutral",     0},   /* 😐 */
-    {":-O",   "\xF0\x9F\x98\xAE", "surprised",   0},   /* 😮 */
-    {":O",    "\xF0\x9F\x98\xAE", "surprised",   0},   /* 😮 */
-    {":-o",   "\xF0\x9F\x98\xAE", "surprised",   0},   /* 😮 */
-    {":o",    "\xF0\x9F\x98\xAE", "surprised",   0},   /* 😮 */
-    {":'(",   "\xF0\x9F\x98\xA2", "cry",         0},   /* 😢 */
-    {":'-(",  "\xF0\x9F\x98\xA2", "cry",         0},   /* 😢 */
-    {":-*",   "\xF0\x9F\x98\x98", "kiss",        0},   /* 😘 */
-    {":*",    "\xF0\x9F\x98\x98", "kiss",        0},   /* 😘 */
-    {"B-)",   "\xF0\x9F\x98\x8E", "cool",        0},   /* 😎 */
-    {"B)",    "\xF0\x9F\x98\x8E", "cool",        0},   /* 😎 */
-    {":-S",   "\xF0\x9F\x98\x96", "confounded",  0},   /* 😖 */
-    {":S",    "\xF0\x9F\x98\x96", "confounded",  0},   /* 😖 */
-    {":-s",   "\xF0\x9F\x98\x96", "confounded",  0},   /* 😖 */
-    {":s",    "\xF0\x9F\x98\x96", "confounded",  0},   /* 😖 */
-    {">:-(",  "\xF0\x9F\x98\xA0", "angry",       0},   /* 😠 */
-    {">:(",   "\xF0\x9F\x98\xA0", "angry",       0},   /* 😠 */
-    {":-X",   "\xF0\x9F\xA4\x90", "mute",        0},   /* 🤐 */
-    {":X",    "\xF0\x9F\xA4\x90", "mute",        0},   /* 🤐 */
-
-    /* Other common */
-    {"<3",    "\xE2\x9D\xA4\xEF\xB8\x8F", "heart",  0},  /* ❤️ */
-    {"</3",   "\xF0\x9F\x92\x94", "broken heart", 0}, /* 💔 */
-    {"O:-)",  "\xF0\x9F\x98\x87", "angel",       0},   /* 😇 */
-    {"O:)",   "\xF0\x9F\x98\x87", "angel",       0},   /* 😇 */
-    {"XD",    "\xF0\x9F\x98\x86", "laughing",    0},   /* 😆 */
-    {"xD",    "\xF0\x9F\x98\x86", "laughing",    0},   /* 😆 */
-    {":^)",   "\xF0\x9F\x98\x8F", "smirk",       0},   /* 😏 */
-};
-
-#define EMO_TABLE_SIZE (sizeof(emo_table) / sizeof(emo_table[0]))
-
-static bool emo_initted = false;
+/* Emoji table now lives in macmbx; no private table needed. */
 
 /* Access to global settings */
 extern AppSettings *prefs_load(void);
@@ -120,16 +57,10 @@ static bool emo_enabled(void)
 
 /***********************************************************************
  * EmoInit - initialize the emoticon system
+ * macmbx emoji table is static; nothing to do here.
  ***********************************************************************/
 void EmoInit(void)
 {
-    if (emo_initted) return;
-
-    /* Compute ascii_len for each entry */
-    for (size_t i = 0; i < EMO_TABLE_SIZE; i++)
-        emo_table[i].ascii_len = (int)strlen(emo_table[i].ascii);
-
-    emo_initted = true;
 }
 
 /***********************************************************************
@@ -151,7 +82,9 @@ bool EmoDo(void)
  ***********************************************************************/
 int EmoCount(void)
 {
-    return (int)EMO_TABLE_SIZE;
+    int count = 0;
+    macmbx_emoji_table(&count);
+    return count;
 }
 
 /***********************************************************************
@@ -159,20 +92,26 @@ int EmoCount(void)
  ***********************************************************************/
 const char *EmoGetAscii(int index)
 {
-    if (index < 0 || index >= (int)EMO_TABLE_SIZE) return "";
-    return emo_table[index].ascii;
+    int count = 0;
+    const MacmbxEmoji *table = macmbx_emoji_table(&count);
+    if (index < 0 || index >= count) return "";
+    return table[index].ascii;
 }
 
 const char *EmoGetEmoji(int index)
 {
-    if (index < 0 || index >= (int)EMO_TABLE_SIZE) return "";
-    return emo_table[index].emoji;
+    int count = 0;
+    const MacmbxEmoji *table = macmbx_emoji_table(&count);
+    if (index < 0 || index >= count) return "";
+    return table[index].emoji;
 }
 
 const char *EmoGetMeaning(int index)
 {
-    if (index < 0 || index >= (int)EMO_TABLE_SIZE) return "";
-    return emo_table[index].meaning;
+    int count = 0;
+    const MacmbxEmoji *table = macmbx_emoji_table(&count);
+    if (index < 0 || index >= count) return "";
+    return table[index].name;
 }
 
 /***********************************************************************
@@ -202,14 +141,17 @@ static GtkTextTag *emo_get_or_create_tag(GtkTextBuffer *buffer)
 /***********************************************************************
  * emo_scan_text - scan a C string for the first emoticon match.
  *
- * Like the original EmoScanPtr: checks word boundaries, prefers
- * longest match at each position.
+ * Uses macmbx_emoji_table() to iterate patterns with word-boundary
+ * checks, preferring the longest match at each position.
  *
- * Returns the index into emo_table, or -1 if none found.
+ * Returns the index into the macmbx emoji table, or -1 if none found.
  * Sets *match_offset to the byte offset of the match within 'text'.
  ***********************************************************************/
 static int emo_scan_text(const char *text, int text_len, int start_offset, int *match_offset)
 {
+    int count = 0;
+    const MacmbxEmoji *table = macmbx_emoji_table(&count);
+
     for (int pos = start_offset; pos < text_len; pos++) {
         /* Word boundary check: no word/digit char immediately before */
         if (pos > 0 && is_word_or_digit(text[pos - 1]))
@@ -218,16 +160,16 @@ static int emo_scan_text(const char *text, int text_len, int start_offset, int *
         int best = -1;
         int best_len = 0;
 
-        for (size_t i = 0; i < EMO_TABLE_SIZE; i++) {
-            int alen = emo_table[i].ascii_len;
+        for (int i = 0; i < count; i++) {
+            int alen = (int)strlen(table[i].ascii);
             if (alen > text_len - pos) continue;
-            if (memcmp(text + pos, emo_table[i].ascii, alen) != 0) continue;
+            if (memcmp(text + pos, table[i].ascii, alen) != 0) continue;
             /* Word boundary check: no word/digit char immediately after */
             if (pos + alen < text_len && is_word_or_digit(text[pos + alen]))
                 continue;
             /* Prefer longest match */
             if (alen > best_len) {
-                best = (int)i;
+                best = i;
                 best_len = alen;
             }
         }
@@ -250,8 +192,10 @@ static int emo_scan_text(const char *text, int text_len, int start_offset, int *
  ***********************************************************************/
 void EmoScanPte(GtkWidget *pte, bool toCompletion)
 {
-    if (!emo_initted) EmoInit();
     if (!pte) return;
+
+    int tbl_count = 0;
+    const MacmbxEmoji *tbl = macmbx_emoji_table(&tbl_count);
 
     geditDocument *doc = geditctrl_get_document(pte);
     if (!doc) return;
@@ -273,8 +217,8 @@ void EmoScanPte(GtkWidget *pte, bool toCompletion)
         int emo_idx = emo_scan_text(text, text_len, scan_pos, &match_offset);
         if (emo_idx < 0) break;
 
-        int ascii_len = emo_table[emo_idx].ascii_len;
-        const char *emoji = emo_table[emo_idx].emoji;
+        int ascii_len = (int)strlen(tbl[emo_idx].ascii);
+        const char *emoji = tbl[emo_idx].emoji;
         int emoji_byte_len = (int)strlen(emoji);
 
         /* ASCII emoticon patterns are pure ASCII, so byte offset == char offset */
@@ -321,7 +265,6 @@ void EmoScanPte(GtkWidget *pte, bool toCompletion)
  ***********************************************************************/
 void EmoScan(void)
 {
-    if (!emo_initted) EmoInit();
     /* In GTK port, individual editors call EmoScanPte directly
      * after text changes.  This global scan is a no-op placeholder
      * for now — the idle loop integration will be added when the
@@ -369,13 +312,7 @@ void EmoSearchAndDestroyPte(GtkWidget *pte)
         if (!emoji_text) continue;
 
         /* Find which emoticon this emoji corresponds to */
-        const char *ascii_replacement = NULL;
-        for (size_t i = 0; i < EMO_TABLE_SIZE; i++) {
-            if (strcmp(emoji_text, emo_table[i].emoji) == 0) {
-                ascii_replacement = emo_table[i].ascii;
-                break;
-            }
-        }
+        const char *ascii_replacement = macmbx_emoji_reverse(emoji_text);
         g_free(emoji_text);
 
         if (ascii_replacement) {
@@ -411,10 +348,11 @@ void EmoSearchAndDestroy(void)
 int EmoInsert(MyWindowPtr win, int item)
 {
     if (!win || !win->pte) return -1;
-    if (item < 0 || item >= (int)EMO_TABLE_SIZE) return -1;
-    if (!emo_initted) EmoInit();
+    int count = 0;
+    const MacmbxEmoji *table = macmbx_emoji_table(&count);
+    if (item < 0 || item >= count) return -1;
 
-    geditctrl_insert_emoji(win->pte, emo_table[item].emoji);
+    geditctrl_insert_emoji(win->pte, table[item].emoji);
     return 0;
 }
 

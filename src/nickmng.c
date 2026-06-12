@@ -35,7 +35,7 @@ ADVISED OF THE POSSIBILITY OF SUCH DAMAGE. */
 #include <sys/stat.h>
 #include <sys/time.h>
 #include "lineio.h"
-#include "sort.h"
+/* sort.h removed -- now using stdlib qsort */
 #include "util.h"
 /* imapdownload.h removed — crispy_imap handles IMAP */
 #include "threading.h"
@@ -367,11 +367,10 @@ bool NeatenLine(char * line, long *len);
 void CheckForNicknameBogosity(short which);
 bool SaveIndNickFile(short which, bool saveChangeBits);
 bool SaveFileFast(short which, bool saveChangeBits);
-int NickOffsetCompare(NickOffSetSortType *n1, NickOffSetSortType *n2);
-void NickOffsetSwap(NickOffSetSortType *n1, NickOffSetSortType *n2);
+int NickOffsetCompare(const void *a, const void *b);
 char * StripQualifiersAndHonorifics(char * name, char * strippedName);
 int AddHandleToAddressHashes(TextAddrHandle sourceHandle, AccuPtr a);
-int SortAddrNameCompare(char * *s1, char * *s2);
+int SortAddrNameCompare(const void *a, const void *b);
 
 #define This Aliases[which]
 
@@ -3014,14 +3013,12 @@ bool SaveFileFast(short which, bool saveChangeBits) {
   memmove(addressOffsetHandle + (theSize / sizeof(NickOffSetSortType)), &dummyValue, sizeof(NickOffSetSortType));
   memmove(notesOffsetHandle + (theSize / sizeof(NickOffSetSortType)), &dummyValue, sizeof(NickOffSetSortType));
 
-  QuickSort((char *)addressOffsetHandle, sizeof(NickOffSetSortType), 0,
-            numOfNicks - 1, (int (*)())NickOffsetCompare,
-            (void (*)())NickOffsetSwap);
+  qsort(addressOffsetHandle, numOfNicks, sizeof(NickOffSetSortType),
+        NickOffsetCompare);
   { void *_r = realloc(addressOffsetHandle, theSize); if (_r) addressOffsetHandle = _r; }
 
-  QuickSort((char *)notesOffsetHandle, sizeof(NickOffSetSortType), 0,
-            numOfNicks - 1, (int (*)())NickOffsetCompare,
-            (void (*)())NickOffsetSwap);
+  qsort(notesOffsetHandle, numOfNicks, sizeof(NickOffSetSortType),
+        NickOffsetCompare);
   { void *_r = realloc(notesOffsetHandle, theSize); if (_r) notesOffsetHandle = _r; }
 
 
@@ -3532,7 +3529,9 @@ bool NickFileOkForFastSave(short which) {
 /************************************************************************
  * NickOffsetCompare - compare two names
  ************************************************************************/
-int NickOffsetCompare(NickOffSetSortType *n1, NickOffSetSortType *n2) {
+int NickOffsetCompare(const void *a, const void *b) {
+  const NickOffSetSortType *n1 = (const NickOffSetSortType *)a;
+  const NickOffSetSortType *n2 = (const NickOffSetSortType *)b;
   int result;
 
   if (n1->nickIndex >= TotalNumOfNicks)
@@ -3546,17 +3545,6 @@ int NickOffsetCompare(NickOffSetSortType *n1, NickOffSetSortType *n2) {
     result = n1->offset > n2->offset ? 1 : -1;
 
   return (result);
-}
-
-/************************************************************************
- * NickNameSwap - swap two names
- ************************************************************************/
-void NickOffsetSwap(NickOffSetSortType *n1, NickOffSetSortType *n2) {
-  NickOffSetSortType temp;
-
-  memmove(&temp, n2, sizeof(NickOffSetSortType));
-  memmove(n2, n1, sizeof(NickOffSetSortType));
-  memmove(n1, &temp, sizeof(NickOffSetSortType));
 }
 
 /************************************************************************
@@ -4369,8 +4357,7 @@ char **SortBinAddr(char **addresses) {
     addressVector[i] = (char *)addresses[i];
 
   // now sort the vector
-  QuickSort(addressVector, sizeof(char *), 0, count - 1,
-            (void *)SortAddrNameCompare, (void *)PtrSwap);
+  qsort(addressVector, count, sizeof(char *), SortAddrNameCompare);
 
   // rebuild the addresses array with sorted order
   char **sorted = (char **)g_malloc0((count + 1) * sizeof(char *));
@@ -4394,7 +4381,9 @@ char **SortBinAddr(char **addresses) {
  *name. This is an insanely expensive comparison, but we don't usually sort huge
  *  lists of addresses and cpu is cheap
  ************************************************************************/
-int SortAddrNameCompare(char * *s1, char * *s2) {
+int SortAddrNameCompare(const void *a, const void *b) {
+  char * const *s1 = (char * const *)a;
+  char * const *s2 = (char * const *)b;
   char first[128], last[128], n1[128], n2[128];
 
   g_strlcpy((char *)(n1), (char *)(*s1), sizeof(n1));

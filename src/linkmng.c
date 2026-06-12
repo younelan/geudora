@@ -58,8 +58,7 @@ int ParseProtocolFromURLPtr(char *url, long len, unsigned char *proto);
 int OpenOtherURLPtr(unsigned char *proto, char *url, long len);
 unsigned long SecsToLocalDateTime(unsigned long secs);
 bool LinkHasCustomIcons(void);
-void QuickSort(void *base, int nmemb, int size,
-               int (*compare)(const void *, const void *));
+/* QuickSort removed -- now using stdlib qsort */
 void *GetIconSuite(void **suite, int id, unsigned long svData);
 void *DupIconSuite(void *suite, short id);
 bool IsAdwareMode(void); /* GTK port: IsAdwareMode/IsAdInPlaylist are

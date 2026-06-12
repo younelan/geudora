@@ -52,7 +52,7 @@ extern void MBOpenFolder(void *hStringList, bool isIMAP);
 #include "MyRes.h"
 /* pop.h removed — crispy_pop3 handles POP */
 #include "print.h"
-#include "sort.h"
+/* sort.h removed -- now using stdlib qsort */
 #include "toc.h"
 #include "gtk_prefs.h"
 /* trans.h removed — crispy handles network */
@@ -281,8 +281,7 @@ int BoxMatchScore(unsigned char *name, unsigned char *candidate);
 #include "crispy_rfc822.h"
 int BoxMatchMenuItemsIn1Menu(MenuHandle mh, AccuPtr a, unsigned char *name,
                              int score());
-int CompareMAS(MenuAndScorePtr mas1, MenuAndScorePtr mas2);
-void SwapMAS(MenuAndScorePtr mas1, MenuAndScorePtr mas2);
+int CompareMAS(const void *a, const void *b);
 void DeleteMessageLo(MacmbxTOC * tocH, int sumNum, bool nuke);
 
 /* Allocate/free helpers that replace legacy "Handle" based NuHandle
@@ -3938,24 +3937,17 @@ int BoxMatchMenuItems(unsigned char *name, MenuAndScoreHandle *mashPtr,
     *mashPtr = (MenuAndScoreHandle)a.data;
     int count = a.offset / sizeof(MenuAndScore);
     if (outCount) *outCount = count;
-    QuickSort((unsigned char *)(*(a.data)), sizeof(MenuAndScore), 0,
-              count - 1, CompareMAS, SwapMAS);
+    qsort((void *)(*(a.data)), count, sizeof(MenuAndScore), CompareMAS);
     // a.data is char* (Accumulator field), not a Handle — UL() removed
   }
 
   return err ? err : (a.data ? 0 : ENOENT);
 }
 
-int CompareMAS(MenuAndScorePtr mas1, MenuAndScorePtr mas2) {
+int CompareMAS(const void *a, const void *b) {
+  const MenuAndScore *mas1 = (const MenuAndScore *)a;
+  const MenuAndScore *mas2 = (const MenuAndScore *)b;
   return (mas1->score - mas2->score);
-}
-
-void SwapMAS(MenuAndScorePtr mas1, MenuAndScorePtr mas2) {
-  MenuAndScore mas;
-
-  mas = *mas2;
-  *mas2 = *mas1;
-  *mas1 = mas;
 }
 
 /************************************************************************

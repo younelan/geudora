@@ -154,7 +154,9 @@ static void on_comp_selection_changed(geditDocument *doc, gpointer ud) {
     g_signal_handlers_unblock_matched(underline_tb, G_SIGNAL_MATCH_DATA, 0, 0, NULL, NULL, body_ctrl);
   }
   if (color_btn) {
+    g_signal_handlers_block_matched(color_btn, G_SIGNAL_MATCH_DATA, 0, 0, NULL, NULL, body_ctrl);
     gtk_color_dialog_button_set_rgba(GTK_COLOR_DIALOG_BUTTON(color_btn), &style.color);
+    g_signal_handlers_unblock_matched(color_btn, G_SIGNAL_MATCH_DATA, 0, 0, NULL, NULL, body_ctrl);
   }
   if (size_dd) {
     static const gint sizes[] = {8, 10, 12, 14, 16, 18, 20, 24, 28, 36};
