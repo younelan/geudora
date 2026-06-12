@@ -31,7 +31,8 @@ SRC_EXCLUDE = src/scripting_ae.c src/tcp.c src/ssl.c src/TransStream.c \
               src/compact.c src/junk.c src/filtrun.c \
               src/trans.c src/lex822.c src/header.c src/mime.c \
               src/hexbin.c src/toc.c src/buildtoc.c src/filters.c \
-              src/sasl.c src/scripting_dbus.c
+              src/sasl.c src/scripting_dbus.c \
+              src/vcard.c src/FiltDefs.c src/sort.c
 ifeq ($(shell uname),Darwin)
   SRC_EXCLUDE += src/scripting_ae.c
 endif
